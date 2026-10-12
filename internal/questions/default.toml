@@ -1,0 +1,19 @@
+# Built-in Jev question catalogue (spec: "Jev question catalogue").
+# TODO(M1): add every row of the spec table. Users override this file with
+# .git/prt/prt.questions.toml or $XDG_CONFIG_HOME/prt/prt.questions.toml.
+
+[[question]]
+scope = "unit"
+id = "kind"
+type = "C"
+prompt = "What kind of change is this unit?"
+options = ["feature", "bugfix", "refactor", "perf", "test", "config", "docs", "dependency", "generated", "formatting"]
+feeds = ["composition", "collapse"]
+
+[[question]]
+scope = "unit"
+id = "risk"
+type = "S"
+prompt = "Overall risk if this change is wrong."
+options = ["1: negligible", "2: low", "3: moderate", "4: high", "5: severe"]
+feeds = ["everything"]

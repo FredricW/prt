@@ -1,0 +1,38 @@
+# Binaries
+/bin/
+/dist/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+
+# Go tooling output
+*.out
+coverage.*
+*.coverprofile
+go.work
+go.work.sum
+
+# Generated fixture repository (built by `make fixtures` from testdata/fixtures)
+/testdata/fixture-repo/
+
+# Logs and local state
+*.log
+.env
+.env.*
+
+# Editors / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# Scratch files
+/scratch/
+/tmp/
+*.tmp
+
+# Claude Code local settings (shared settings.json is committed)
+.claude/settings.local.json

@@ -1,0 +1,37 @@
+# prt — see CLAUDE.md for the contract of each target.
+export CGO_ENABLED := 1
+
+FIXTURE_SRC  := testdata/fixtures
+FIXTURE_REPO := testdata/fixture-repo
+
+.PHONY: build test lint check demo fixtures snapshot
+
+build:
+	CGO_ENABLED=1 go build -o bin/prt ./cmd/prt
+
+test:
+	CGO_ENABLED=1 go test ./...
+
+lint:
+	golangci-lint run ./...
+
+# Must pass before every commit.
+check:
+	go vet ./...
+	$(MAKE) test
+	$(MAKE) lint
+
+# Regenerate the fixture repo from committed sources (deterministic SHAs).
+fixtures:
+	go run ./tools/fixturegen -src $(FIXTURE_SRC) -out $(FIXTURE_REPO)
+
+$(FIXTURE_REPO)/.git:
+	go run ./tools/fixturegen -src $(FIXTURE_SRC) -out $(FIXTURE_REPO)
+
+# Interactive TUI against the fixture repo, fully offline.
+demo: build | $(FIXTURE_REPO)/.git
+	./bin/prt --no-daemon --offline --repo $(FIXTURE_REPO)
+
+# Non-interactive: render a few screens to stdout (for agents and CI).
+snapshot: build | $(FIXTURE_REPO)/.git
+	./bin/prt --no-daemon --offline --snapshot --width 120 --height 30 --repo $(FIXTURE_REPO)

@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "defaultMode": "dontAsk",
+    "allow": [
+      "Agent",
+      "Bash(cat *)",
+      "Bash(cp *)",
+      "Bash(curl *)",
+      "Bash(gh *)",
+      "Bash(git *)",
+      "Bash(go *)",
+      "Bash(golangci-lint *)",
+      "Bash(ls *)",
+      "Bash(make *)",
+      "Bash(mkdir *)",
+      "Bash(mv *)",
+      "Bash(ollama *)",
+      "Bash(rm -rf ./*)",
+      "Edit",
+      "Glob",
+      "Grep",
+      "Read",
+      "Workflow",
+      "Write"
+    ],
+    "deny": [
+      "Bash(rm -rf ~*)",
+      "Bash(rm -rf /*)",
+      "Bash(sudo *)",
+      "Bash(git push --force*)",
+      "Bash(git push -f*)",
+      "Bash(git reset --hard*)"
+    ]
+  }
+}
