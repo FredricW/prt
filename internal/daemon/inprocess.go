@@ -547,7 +547,7 @@ func (c *InProcess) addItem(ctx context.Context, id string, fill func(*model.Ite
 	}
 	it = model.Item{ID: id, Source: model.SourceAdded, Section: model.SectionAdded}
 	fill(&it)
-	c.setUrgency(&it)
+	c.setUrgency(ctx, &it, false)
 	err = c.d.Store.UpsertItem(ctx, it)
 	c.itemMu.Unlock()
 	if err != nil {

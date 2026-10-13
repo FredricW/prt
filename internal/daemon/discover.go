@@ -243,6 +243,7 @@ func (c *InProcess) upsertDiscovered(ctx context.Context, id string, fill func(*
 	c.itemMu.Lock()
 	it, err := c.d.Store.Item(ctx, id)
 	var before []byte
+	prevHead := ""
 	switch {
 	case errors.Is(err, store.ErrNotFound):
 		it = model.Item{ID: id, Source: model.SourceRanked}
@@ -251,9 +252,10 @@ func (c *InProcess) upsertDiscovered(ctx context.Context, id string, fill func(*
 		return fmt.Errorf("daemon: load %s: %w", id, err)
 	default:
 		before = itemKey(it)
+		prevHead = it.HeadSHA
 	}
 	fill(&it)
-	c.setUrgency(&it)
+	c.setUrgency(ctx, &it, before != nil && prevHead == it.HeadSHA)
 	if before != nil && bytes.Equal(before, itemKey(it)) {
 		// Unchanged: no write and no event (a discovery pass would
 		// otherwise make every client reload the list once per item).
@@ -280,13 +282,21 @@ func itemKey(it model.Item) []byte {
 	return b
 }
 
-// setUrgency computes the M0 urgency and minutes from item metadata alone;
-// it equals what the aggregate stage computes once the diff's line counts
-// are known. TODO(M3): keep label terms from the stored ItemAgg.
-func (c *InProcess) setUrgency(it *model.Item) {
+// setUrgency recomputes the urgency from fresh item metadata. Minutes come
+// from the stored ItemAgg (label-based once any label is known) when that
+// aggregate describes the item's current head: sameHead (discovery did not
+// move the head in this pass), not stale, and analysed at this head or on
+// its first analysis. Otherwise they are the stand-in from the line counts.
+// TODO(M3): keep label terms from the stored ItemAgg too.
+func (c *InProcess) setUrgency(ctx context.Context, it *model.Item, sameHead bool) {
 	age, release, ciRed := aggregate.Facts(*it, c.d.Config.GitHub.ReleaseBranches, c.now())
 	in := aggregate.Input{Item: *it, Weights: c.d.Config.Rank, AgeDays: age, Release: release, CIRedAfterApproval: ciRed}
 	it.Minutes = aggregate.StandInMinutes(it.Additions + it.Deletions)
+	if sameHead && it.State != model.StateStale && (it.AnalysedSHA == "" || it.AnalysedSHA == it.HeadSHA) {
+		if agg, ok, err := c.d.Store.Agg(ctx, it.ID); err == nil && ok {
+			it.Minutes = agg.Minutes
+		}
+	}
 	_, it.Urgency, it.Why = aggregate.Urgency(in, it.Minutes)
 }
 
