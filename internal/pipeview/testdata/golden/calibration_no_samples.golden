@@ -1,0 +1,9 @@
+┌─ Calibration ──────────────────────────────────┐
+│ no sampled double reviews yet                  │
+│   (calibration_sample .05)                     │
+│ question   overrides/labels  rate              │
+│ risk                   6/20   30% ⚑ reword?    │
+│ behaviour              4/24   17% ⚑ reword?    │
+│ kind                   2/40    5%              │
+│ ⚑ over 15% overrides · 30 days                 │
+└────────────────────────────────────────────────┘

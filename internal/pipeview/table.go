@@ -21,20 +21,23 @@ type cols struct {
 	find, cost, calib                   int
 }
 
+// lead is the width of a row's selection mark and "#" column ("▸  3 ").
+const lead = 2 + 2 + 1
+
 // tableCols fits the columns to width w; longest is the widest group name,
 // which the name column takes when it can (up to 3/5 of the flexible
-// width), leaving the rest to the rule.
+// width), leaving the rest to the "why" (rule) column.
 func tableCols(w, longest int) cols {
-	c := cols{tier: 15, status: 12, time: 6, find: 4, cost: 7}
+	c := cols{tier: 15, status: 14, time: 6, find: 4, cost: 7}
 	if w >= wideTable {
 		c.wide, c.ctx, c.calib = true, 13, 10
-		fixed := 2 + c.tier + c.ctx + c.status + c.time + c.find + c.cost + c.calib + 8
+		fixed := lead + c.tier + c.ctx + c.status + c.time + c.find + c.cost + c.calib + 8
 		flex := max(w-fixed, 24)
 		c.name = clampInt(longest, 12, max(12, flex*3/5))
 		c.rule = flex - c.name
 		return c
 	}
-	fixed := 2 + c.tier + c.status + c.time + c.find + c.cost + 5
+	fixed := lead + c.tier + c.status + c.time + c.find + c.cost + 5
 	c.name = max(w-fixed, 8)
 	return c
 }
@@ -55,17 +58,55 @@ func tierText(r model.Review) string {
 	return string(r.Tier)
 }
 
-// statusText is the status column ("running 12s" with a clock).
+// statusText is the status column with its glyph ("✓ done", "▶ running
+// 12s" with a clock, "◌ queued", "✗ failed", "– skipped", "stale labels").
 func (m *Model) statusText(r model.Review) string {
 	switch r.Status {
 	case "":
 		return "—"
 	case model.ReviewRunning:
 		if el := m.elapsed(r.StartedAt); el != "" {
-			return "running " + el
+			return "▶ running " + el
 		}
+		return "▶ running"
+	case model.ReviewDone:
+		return "✓ done"
+	case model.ReviewQueued:
+		return "◌ queued"
+	case model.ReviewFailed:
+		return "✗ failed"
+	case model.ReviewSkipped:
+		return "– skipped"
+	case model.ReviewStaleLabels:
+		return "stale labels"
 	}
 	return string(r.Status)
+}
+
+// statusStyled colours the status cell: done green, running blue, failed
+// red, queued, skipped and stale labels dim.
+func (m *Model) statusStyled(r model.Review, s string) string {
+	switch r.Status {
+	case model.ReviewDone:
+		return m.st.good.Render(s)
+	case model.ReviewRunning:
+		return m.st.blue.Render(s)
+	case model.ReviewFailed:
+		return m.st.warn.Render(s)
+	case model.ReviewQueued, model.ReviewSkipped, model.ReviewStaleLabels:
+		return m.st.dim.Render(s)
+	}
+	return s
+}
+
+// tierStyled colours the tier cell (theme.Tier: none dim, fast green, deep
+// accent, fast → deep warm).
+func (m *Model) tierStyled(r model.Review, s string) string {
+	tier := r.Tier
+	if r.UserSkipped {
+		tier = model.TierNone
+	}
+	return m.st.th.Tier(tier, r.EscalatedOf != nil).Render(s)
 }
 
 // timeText is the time column: wall time once there is one.
@@ -123,36 +164,45 @@ func (rw row) nameText() string {
 	return rw.name
 }
 
-// buildTable adds the routing table section.
-func (m *Model) buildTable(b *docBuilder) {
-	b.add(m.st.head.Render("Routing") + m.st.dim.Render("  D deep · s skip · c call log · r re-review"))
-	b.rowTop = make([]int, len(m.rows))
-	b.rowEnd = make([]int, len(m.rows))
+// buildTable adds the routing table in a titled box of width w ("Routing ·
+// one call per group"; heavy when the selection is in it and colour is
+// off). Row positions are recorded relative to b.
+func (m *Model) buildTable(b *docBuilder, w int) {
+	inner := max(1, w-4)
+	var t docBuilder
+	t.rowTop = make([]int, len(m.rows))
+	t.rowEnd = make([]int, len(m.rows))
 	if len(m.rows) == 0 {
-		b.add(m.st.dim.Render("  no routing decisions yet (stage 6 has not run for this item)"))
-		return
+		t.add(m.st.dim.Render("no routing decisions yet (stage 6 has not run for this item)"))
+	} else {
+		longest := 0
+		for _, rw := range m.rows {
+			longest = max(longest, ansi.StringWidth(rw.nameText()))
+		}
+		c := tableCols(inner, longest)
+		t.add(m.st.dim.Render(m.tableHeader(c)))
+		for i, rw := range m.rows {
+			t.rowTop[i] = len(t.lines)
+			m.addRow(&t, c, i, rw)
+			t.rowEnd[i] = len(t.lines)
+		}
 	}
-	longest := 0
-	for _, rw := range m.rows {
-		longest = max(longest, ansi.StringWidth(rw.nameText()))
-	}
-	c := tableCols(m.w, longest)
-	b.add(m.st.dim.Render(m.tableHeader(c)))
-	for i, rw := range m.rows {
-		b.rowTop[i] = len(b.lines)
-		m.addRow(b, c, i, rw)
-		b.rowEnd[i] = len(b.lines)
+	top := len(b.lines) + 1 // the box's top border
+	b.add(m.boxLines("Routing · one call per group", "D deep · s skip · c call log", t.lines, w, m.panel == panelTable && len(m.rows) > 0)...)
+	b.rowTop, b.rowEnd = make([]int, len(m.rows)), make([]int, len(m.rows))
+	for i := range m.rows {
+		b.rowTop[i], b.rowEnd[i] = t.rowTop[i]+top, t.rowEnd[i]+top
 		for y := b.rowTop[i]; y < b.rowEnd[i]; y++ {
-			b.hit(hit{y: y, x0: 0, x1: m.w, idx: i, table: true})
+			b.hit(hit{y: y, x0: 0, x1: w, idx: i, table: true})
 		}
 	}
 }
 
 // tableHeader is the dim column header line.
 func (m *Model) tableHeader(c cols) string {
-	parts := []string{"  " + padRight("group", c.name), padRight("tier", c.tier)}
+	parts := []string{"   # " + padRight("group", c.name), padRight("tier", c.tier)}
 	if c.wide {
-		parts = append(parts, padRight("rule", c.rule), padRight("context", c.ctx))
+		parts = append(parts, padRight("why", c.rule), padRight("context", c.ctx))
 	}
 	parts = append(parts, padRight("status", c.status), padLeft("time", c.time), padLeft("find", c.find), padLeft("cost", c.cost))
 	if c.wide {
@@ -162,8 +212,8 @@ func (m *Model) tableHeader(c cols) string {
 }
 
 // addRow adds one routing row: the main line, on narrow widths a dim line
-// with rule, context and calibration, and a note line for a queue note or
-// an error.
+// with the rule, context and calibration, and a note line for a queue
+// note, a stale-labels note or an error.
 func (m *Model) addRow(b *docBuilder, c cols, i int, rw row) {
 	r := rw.rev
 	mark := "  "
@@ -173,19 +223,17 @@ func (m *Model) addRow(b *docBuilder, c cols, i int, rw row) {
 			mark = "▸ "
 		}
 	}
+	num := m.st.dim.Render(padLeft(fmt.Sprint(i+1), 2))
 	name := padRight(rw.nameText(), c.name)
 	if i == m.row && m.panel == panelTable {
 		name = m.st.sel.Render(name)
 	}
-	parts := []string{mark + name, padRight(tierText(r), c.tier)}
+	parts := []string{mark + num + " " + name, m.tierStyled(r, padRight(tierText(r), c.tier))}
 	if c.wide {
 		parts = append(parts, m.st.dim.Render(padRight(ruleText(r), c.rule)), padRight(ctxCell(r), c.ctx))
 	}
-	status := padRight(m.statusText(r), c.status)
-	if r.Status == model.ReviewFailed {
-		status = m.st.warn.Render(status)
-	}
-	parts = append(parts, status, padLeft(timeText(r), c.time), padLeft(findText(r), c.find), padLeft(costText(r), c.cost))
+	parts = append(parts, m.statusStyled(r, padRight(m.statusText(r), c.status)), padLeft(timeText(r), c.time),
+		padLeft(findText(r), c.find), padLeft(costText(r), c.cost))
 	if c.wide {
 		parts = append(parts, m.calibStyled(r))
 	}
@@ -198,7 +246,7 @@ func (m *Model) addRow(b *docBuilder, c cols, i int, rw row) {
 		if len(r.Context)+len(r.ContextNone) > 0 {
 			sub = append(sub, "ctx "+ctxCell(r))
 		}
-		line := m.st.dim.Render("    " + strings.Join(sub, " · "))
+		line := m.st.dim.Render("       " + strings.Join(sub, " · "))
 		if ct := calibText(r); ct != "" {
 			if len(sub) > 0 {
 				line += m.st.dim.Render(" · ")
@@ -210,10 +258,13 @@ func (m *Model) addRow(b *docBuilder, c cols, i int, rw row) {
 		}
 	}
 	if r.QueueNote != "" {
-		b.add(m.st.dim.Render("    ↳ " + r.QueueNote))
+		b.add(m.st.dim.Render("       ↳ " + r.QueueNote))
+	}
+	if r.Status == model.ReviewStaleLabels && r.StaleNote != "" {
+		b.add(m.st.dim.Render("       ↳ " + r.StaleNote))
 	}
 	if r.Err != "" {
-		b.add(m.st.warn.Render("    ↳ error: " + r.Err))
+		b.add(m.st.warn.Render("       ↳ error: " + r.Err))
 	}
 }
 

@@ -1,29 +1,29 @@
-Pipeline · #104 Empty
+prt · #104 Empty · pipeline
 
 Stages  no run yet
-┏━━━━━━━━━━━━┓ ╭────────────╮ ╭────────────╮ ╭────────────╮ ╭────────────╮ ╭────────────╮ ╭────────────╮ ╭────────────╮
-┃parse ·     ┃ │link ·      │ │embed ·     │ │jev ·       │ │cluster ·   │ │route ·     │ │review ·    │ │agg ·       │
-┃not run     ┃ │not run     │ │not run     │ │not run     │ │not run     │ │not run     │ │not run     │ │not run     │
-┃            ┃ │            │ │            │ │            │ │            │ │            │ │            │ │            │
-┗━━━━━━━━━━━━┛ ╰────────────╯ ╰────────────╯ ╰────────────╯ ╰────────────╯ ╰────────────╯ ╰────────────╯ ╰────────────╯
+┏━━━━━━━━━━┓   ┌╌╌╌╌╌╌╌╌╌╌┐   ┌╌╌╌╌╌╌╌╌╌╌┐   ┌╌╌╌╌╌╌╌╌╌╌┐   ┌╌╌╌╌╌╌╌╌╌╌┐   ┌╌╌╌╌╌╌╌╌╌╌┐   ┌╌╌╌╌╌╌╌╌╌╌┐   ┌╌╌╌╌╌╌╌╌╌╌┐
+┃◌ parse   ┃   ╎◌ link    ╎   ╎◌ embed   ╎   ╎◌ jev     ╎   ╎◌ cluster ╎   ╎◌ route   ╎   ╎◌ review  ╎   ╎◌ agg     ╎
+┃not run   ┃ → ╎not run   ╎ → ╎not run   ╎ → ╎not run   ╎ → ╎not run   ╎ → ╎not run   ╎ → ╎not run   ╎ → ╎not run   ╎
+┗━━━━━━━━━━┛   └╌╌╌╌╌╌╌╌╌╌┘   └╌╌╌╌╌╌╌╌╌╌┘   └╌╌╌╌╌╌╌╌╌╌┘   └╌╌╌╌╌╌╌╌╌╌┘   └╌╌╌╌╌╌╌╌╌╌┘   └╌╌╌╌╌╌╌╌╌╌┘   └╌╌╌╌╌╌╌╌╌╌┘
 
-Routing  D deep · s skip · c call log · r re-review
-  no routing decisions yet (stage 6 has not run for this item)
+┌─ Routing · one call per group ────────────── D deep · s skip · c call log ─┐  ┌─ Rules · prt.routing.toml ── e edit ─┐
+│ no routing decisions yet (stage 6 has not run for this item)               │  │ no routing rules loaded yet          │
+└────────────────────────────────────────────────────────────────────────────┘  └──────────────────────────────────────┘
 
-Totals
-  no review data yet
+totals: no review data yet                                                      ┌─ Grouping ───────────────────────────┐
+                                                                                │ no grouping data yet                 │
+                                                                                └──────────────────────────────────────┘
 
-Rules  e edit
-  no routing rules loaded yet
+                                                                                ┌─ Calibration ────────────────────────┐
+                                                                                │ no sampled double reviews yet        │
+                                                                                │   (calibration_sample)               │
+                                                                                └──────────────────────────────────────┘
 
-Grouping
-  no grouping data yet
+                                                                                ┌─ Urgency ────────────────────────────┐
+                                                                                │ no urgency terms yet                 │
+                                                                                └──────────────────────────────────────┘
 
-Calibration
-  no sampled double reviews yet (calibration_sample)
 
-Urgency  weights from prt.toml [rank]
-  no urgency terms yet
 
 
 

@@ -1,38 +1,38 @@
-Pipeline · #102 Rename fetchUser · ready
+prt · #102 Rename fetchUser · pipeline                                                                    ✓ done · ready
 
 Stages  run 10-13 10:00:00 · fetch ✓ 300 ms
-┏━━━━━━━━━━━━┓ ╭────────────╮ ╭────────────╮ ╭────────────╮ ╭────────────╮ ╭────────────╮ ╭────────────╮ ╭────────────╮
-┃parse ✓     ┃ │link ✓      │ │embed –     │ │jev ≡       │ │cluster ✓   │ │route ·     │ │review ·    │ │agg ✓       │
-┃60 ms       ┃ │20 ms       │ │skipped     │ │cached      │ │4 ms        │ │not run     │ │not run     │ │3 ms        │
-┃0→3         ┃ │3→0         │ │            │ │3→3         │ │3→1         │ │            │ │            │ │3→1         │
-┗━━━━━━━━━━━━┛ ╰────────────╯ ╰────────────╯ ╰────────────╯ ╰────────────╯ ╰────────────╯ ╰────────────╯ ╰────────────╯
+┏━━━━━━━━━━┓   ┌──────────┐   ┌──────────┐   ┌──────────┐   ┌──────────┐   ┌╌╌╌╌╌╌╌╌╌╌┐   ┌╌╌╌╌╌╌╌╌╌╌┐   ┌──────────┐
+┃✓ parse   ┃   │✓ link    │   │– embed   │   │≡ jev     │   │✓ cluster │   ╎◌ route   ╎   ╎◌ review  ╎   │✓ agg     │
+┃0→3       ┃ → │3→0       │ → │          │ → │3→3       │ → │3→1       │ → ╎          ╎ → ╎          ╎ → │3→1       │
+┃60 ms     ┃   │20 ms     │   │skipped   │   │cached    │   │4 ms      │   ╎not run   ╎   ╎not run   ╎   │3 ms      │
+┗━━━━━━━━━━┛   └──────────┘   └──────────┘   └──────────┘   └──────────┘   └╌╌╌╌╌╌╌╌╌╌┘   └╌╌╌╌╌╌╌╌╌╌┘   └──────────┘
 
-Routing  D deep · s skip · c call log · r re-review
-  no routing decisions yet (stage 6 has not run for this item)
+┌─ Routing · one call per group ────────────── D deep · s skip · c call log ─┐  ┌─ Rules · prt.routing.toml ── e edit ─┐
+│ no routing decisions yet (stage 6 has not run for this item)               │  │ no routing rules loaded yet          │
+└────────────────────────────────────────────────────────────────────────────┘  └──────────────────────────────────────┘
 
-Totals
-  no review data yet
+totals: no review data yet                                                      ┌─ Grouping ───────────────────────────┐
+                                                                                │ 3 units → 1 group + 0 ungrouped      │
+                                                                                │ structural none                      │
+                                                                                │ embed candidates 0 · mechanical      │
+                                                                                │   candidates 3                       │
+                                                                                │ jev asked 0 pairs · rejected 0 ·     │
+                                                                                │   cut 0                              │
+                                                                                │ kept none                            │
+                                                                                │ mechanical 1 (2 units collapsed) ·   │
+                                                                                │   ejected 0 · user edits 0           │
+                                                                                │ embed: no embedding model: groups    │
+                                                                                │   from structural links only         │
+                                                                                └──────────────────────────────────────┘
 
-Rules  e edit
-  no routing rules loaded yet
+                                                                                ┌─ Calibration ────────────────────────┐
+                                                                                │ no sampled double reviews yet        │
+                                                                                │   (calibration_sample)               │
+                                                                                └──────────────────────────────────────┘
 
-Grouping
-  units 3 → structural none
-    → embed candidates 0 · mechanical candidates 3
-    → jev asked 0 pairs: kept none · rejected 0 · cut 0
-    → groups 1 · mechanical 1 (2 units collapsed) · ejected 0 · ungrouped 0 · user edits 0
-  embed: no embedding model: groups from structural links only
-
-Calibration
-  no sampled double reviews yet (calibration_sample)
-
-Urgency  weights from prt.toml [rank]
-  no urgency terms yet
-
-
-
-
-
+                                                                                ┌─ Urgency ────────────────────────────┐
+                                                                                │ no urgency terms yet                 │
+                                                                                └──────────────────────────────────────┘
 
 
 

@@ -9,6 +9,13 @@
 // root routes keys to HandleKey, and actions that need the daemon (D, s, r,
 // e, c, $) come back through PendingAction for the root to execute.
 //
+// The look follows docs/design/v3/Pipeline.dc.html through internal/theme:
+// a "prt · #N title · pipeline" header with the run state on the right,
+// stage boxes joined by "→", the routing table in a titled box with the
+// totals under it, and the Rules, Grouping, Calibration and Urgency boxes
+// in a right column from 120 columns (stacked below the totals on
+// narrower pages).
+//
 // The selection lives in the stage strip or in the routing table
 // (NextPanel/PrevPanel switch); the page is one document that scrolls so
 // the selection stays visible. A stage log (enter on a stage), the call log

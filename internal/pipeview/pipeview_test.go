@@ -14,6 +14,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/muesli/termenv"
 
 	"github.com/fredricw/prt/internal/model"
 	"github.com/fredricw/prt/internal/proto"
@@ -183,17 +184,19 @@ func TestViewDimensionsAndPlain(t *testing.T) {
 }
 
 func TestFullContent(t *testing.T) {
-	m := newModel(t, load(t, "full"), 120, 80)
+	m := newModel(t, load(t, "full"), 200, 80)
 	v := m.View()
 	for _, want := range []string{
 		"fast → deep .42", "deep (forced)", "none (skipped)", "running 12s", "↳ over cost cap: est $0.14",
 		"↳ error: timeout after 30s", "ai·Retry wrapper tweaks", "‹config defaults›", "✓ agree",
-		"reviews 12.4 s · all-deep sequential ~48 s", "cost $0.18 of $0.40 cap · 1 queued over cap",
+		"time 12.4 s parallel vs ~48 s all-deep sequential", "cost $0.18 of $0.40 cap · 1 queued over cap",
 		"jev 31 calls · $0.0123", "n none 2 · f fast 3 · d deep 2",
 		"3 if true → fast", "4 rows", "2 rows decided outside the rules",
-		"fast-tier miss rate .12 (3 of 25 samples, 30 days)", "label overrides risk 4 · behaviour 2 · kind 2",
+		"fast-tier miss rate 12% · 30 days (3 of 25 samples)", "label overrides risk 4 · behaviour 2 · kind 2",
 		"structural calls 4 · tests 3 · moved 2", "kept same intent 3 · caller update 2 · test for 1",
-		"review ⟳", "embed ≡", "agg ·", "run 10-13 14:03:00 · fetch ✓ 400 ms",
+		"▶ review", "≡ embed", "◌ agg", "run 10-13 14:03:00 · fetch ✓ 400 ms",
+		"prt · #101 Cache user lookups · pipeline", "▶ reviewing · 17s elapsed",
+		"Routing · one call per group", "Rules · prt.routing.toml", "sampled a group to deep too: agrees",
 	} {
 		contains(t, v, want)
 	}
@@ -204,9 +207,9 @@ func TestFullContent(t *testing.T) {
 }
 
 func TestPreM3AndEmpty(t *testing.T) {
-	v := func() string { m := newModel(t, load(t, "prem3"), 120, 60); return m.View() }()
+	v := func() string { m := newModel(t, load(t, "prem3"), 200, 60); return m.View() }()
 	for _, want := range []string{"no routing decisions yet", "no review data yet", "no routing rules loaded yet",
-		"no sampled double reviews yet (calibration_sample)", "embed: no embedding model", "route ·"} {
+		"no sampled double reviews yet (calibration_sample)", "embed: no embedding model", "◌ route"} {
 		contains(t, v, want)
 	}
 	m := newModel(t, proto.Detail{Item: model.Item{ID: "pr:9"}}, 80, 40)
@@ -222,7 +225,7 @@ func TestPreM3AndEmpty(t *testing.T) {
 }
 
 func TestNoKeyNote(t *testing.T) {
-	m := newModel(t, load(t, "nokey"), 120, 60)
+	m := newModel(t, load(t, "nokey"), 200, 60)
 	v := m.View()
 	contains(t, v, "note: reviews skipped: PRT_ANTHROPIC_API_KEY not set")
 	contains(t, v, "↳ no PRT_ANTHROPIC_API_KEY")
@@ -382,7 +385,7 @@ func TestScrollFollowsSelection(t *testing.T) {
 	v := m.View()
 	contains(t, v, "label overrides")
 	press(t, &m, "home")
-	contains(t, m.View(), "Pipeline · #101")
+	contains(t, m.View(), "#101 Cache user lookups · pipeline")
 	// j past the last row scrolls the page.
 	m = newModel(t, load(t, "full"), 120, 30)
 	for range 7 {
@@ -395,7 +398,7 @@ func TestScrollFollowsSelection(t *testing.T) {
 	}
 	press(t, &m, "k")
 	v = m.View()
-	contains(t, v, "▸ Logger cleanup")
+	contains(t, v, "▸  6 Logger cleanup")
 }
 
 func TestMouse(t *testing.T) {
@@ -530,6 +533,154 @@ func TestNilFieldsDoNotPanic(t *testing.T) {
 	zero.Update(tea.MouseMsg{})
 	if zero.HandleKey(keyMsg("j")) {
 		t.Error("zero model consumed a key")
+	}
+}
+
+// m5Calibration is an M5 calibration record: per-question override rates,
+// two over the 15% flag.
+func m5Calibration() *model.CalibrationStats {
+	agree := false
+	return &model.CalibrationStats{
+		Samples: 25, Misses: 3, MissRate: 0.12, LastAgree: &agree, LastAt: "2026-10-13T14:02:50Z",
+		LastGroup: "Middleware verify", FlagAbove: 0.15,
+		Questions: []model.QuestionRate{
+			{Question: "risk", Overrides: 6, Labels: 20, Rate: 0.30, Flagged: true},
+			{Question: "behaviour", Overrides: 4, Labels: 24, Rate: 0.1667, Flagged: true},
+			{Question: "kind", Overrides: 2, Labels: 40, Rate: 0.05},
+		},
+	}
+}
+
+func TestCalibrationGolden(t *testing.T) {
+	unflagged := m5Calibration()
+	unflagged.Questions = unflagged.Questions[2:]
+	agree := true
+	unflagged.LastAgree, unflagged.LastGroup = &agree, ""
+	noOverrides := m5Calibration()
+	noOverrides.Questions = nil
+	noSamples := m5Calibration()
+	noSamples.Samples, noSamples.Misses, noSamples.MissRate, noSamples.LastAgree = 0, 0, 0, nil
+	cases := map[string]*model.CalibrationStats{
+		"calibration_flagged":     m5Calibration(),
+		"calibration_unflagged":   unflagged,
+		"calibration_no_override": noOverrides,
+		"calibration_no_samples":  noSamples,
+		"calibration_none":        nil,
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			d := load(t, "full")
+			d.Agg.Calibration = c
+			m := newModel(t, d, 120, 30)
+			got := strings.Join(m.boxLines("Calibration", "", m.calibrationLines(46), 50, false), "\n") + "\n"
+			path := filepath.Join("testdata", "golden", name+".golden")
+			if *update {
+				if err := os.WriteFile(path, []byte(got), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				return
+			}
+			want, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatalf("read golden (run with -update): %v", err)
+			}
+			if got != string(want) {
+				t.Errorf("calibration mismatch\n--- got\n%s\n--- want\n%s", got, want)
+			}
+		})
+	}
+}
+
+func TestCalibrationContent(t *testing.T) {
+	d := load(t, "full")
+	d.Agg.Calibration = m5Calibration()
+	m := newModel(t, d, 200, 80)
+	v := m.View()
+	for _, want := range []string{
+		"sampled Middleware verify to deep too: disagrees", "fast-tier miss rate 12% · 30 days (3 of 25 samples)",
+		"question", "overrides/labels  rate", "6/20   30% ⚑ reword?", "4/24   17% ⚑ reword?",
+	} {
+		contains(t, v, want)
+	}
+	lacks(t, v, "label overrides") // the M3 line only shows for older aggregates
+	if strings.Contains(v, "2/40    5% ⚑") {
+		t.Errorf("unflagged question flagged:\n%s", v)
+	}
+	// An older aggregate (no FlagAbove, no Questions) keeps the counts line.
+	m = newModel(t, load(t, "full"), 200, 80)
+	contains(t, m.View(), "label overrides risk 4 · behaviour 2 · kind 2")
+}
+
+func TestStaleLabelsRow(t *testing.T) {
+	d := load(t, "full")
+	for i := range d.Reviews {
+		if d.Reviews[i].GroupID == "g3cccccccccc" {
+			d.Reviews[i].Status = model.ReviewStaleLabels
+			d.Reviews[i].StaleNote = "labels changed since review: risk overridden on 1 unit"
+		}
+	}
+	for _, w := range []int{200, 70} {
+		m := newModel(t, d, w, 80)
+		v := m.View()
+		contains(t, v, "stale labels")
+		contains(t, v, "↳ labels changed since review: risk overridden on 1 unit")
+		press(t, &m, "j", "j", "D")
+		a, ok := m.PendingAction()
+		if !ok || a.Kind != ActForceDeep || a.GroupID != "g3cccccccccc" {
+			t.Errorf("width %d: D on a stale-labels row: %+v %v (note %q)", w, a, ok, m.note)
+		}
+	}
+}
+
+func TestDesignGoldens(t *testing.T) {
+	cases := map[string]func(t *testing.T) Model{
+		"wide":       func(t *testing.T) Model { return newModel(t, load(t, "full"), 200, 60) },
+		"design_120": func(t *testing.T) Model { return newModel(t, load(t, "full"), 120, 60) },
+		"stacked":    func(t *testing.T) Model { return newModel(t, load(t, "full"), 100, 90) },
+	}
+	for name, build := range cases {
+		t.Run(name, func(t *testing.T) {
+			m := build(t)
+			got := m.View() + "\n"
+			path := filepath.Join("testdata", "golden", name+".golden")
+			if *update {
+				if err := os.WriteFile(path, []byte(got), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				return
+			}
+			want, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatalf("read golden (run with -update): %v", err)
+			}
+			if got != string(want) {
+				t.Errorf("View mismatch\n--- got\n%s\n--- want\n%s", got, want)
+			}
+		})
+	}
+}
+
+func TestColourRenderer(t *testing.T) {
+	r := lipgloss.NewRenderer(io.Discard)
+	r.SetColorProfile(termenv.TrueColor)
+	r.SetHasDarkBackground(true)
+	for _, w := range []int{60, 120, 200} {
+		m := New(r)
+		m.SetSize(w, 60)
+		m.SetNow(fixedNow)
+		m.SetDetail(load(t, "full"))
+		v := m.View()
+		if !strings.Contains(v, "\x1b[") {
+			t.Fatalf("width %d: no escape codes with a colour renderer", w)
+		}
+		for i, l := range strings.Split(v, "\n") {
+			if lw := ansi.StringWidth(l); lw > w {
+				t.Errorf("width %d: line %d is %d wide", w, i, lw)
+			}
+		}
+		if w == 200 && !strings.Contains(v, "█") {
+			t.Error("tier mix bar not drawn as blocks with colour")
+		}
 	}
 }
 

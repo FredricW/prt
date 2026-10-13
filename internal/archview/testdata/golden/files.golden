@@ -1,0 +1,40 @@
+7 modules · 7 edges                                                                                                               #482 · modules touched + 1 hop
+┏━ Files in web/auth ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓ ┌─ Per module ──────────────────┐
+┃   web/auth/session.ts                                                                                              +40 −12 ┃ │ module   units risk tests you │
+┃ ▸ web/auth/token.ts                                                                                             +31 −0 new ┃ │ w/auth       3    5     ✗   ★ │
+┃                                                                                                                            ┃ │ w/compo…     1    3     ✗   ★ │
+┃ enter opens in Code · j/k move · esc closes                                                                                ┃ │ w/api        2    3     ?   ★ │
+┃                                                                                                                            ┃ │ s/auth       3    4     ✓     │
+┃                                                                                                                            ┃ │ s/middl…     4    3     ✓     │
+┃                                                                                                                            ┃ │ s/sessi…     2    1     ✓     │
+┃                                                                                                                            ┃ └───────────────────────────────┘
+┃                                                                                                                            ┃ ┌─ Contracts crossing edges ────┐
+┃                                                                                                                            ┃ │ ⚠ w/auth → w/app, w/componen… │
+┃                                                                                                                            ┃ │   expiresAt ISO → ms · break… │
+┃                                                                                                                            ┃ └───────────────────────────────┘
+┃                                                                                                                            ┃ ┌─ Net effect ──────────────────┐
+┃                                                                                                                            ┃ │ new module server/middleware  │
+┃                                                                                                                            ┃ │ server/session removed        │
+┃                                                                                                                            ┃ │ web/api now imports           │
+┃                                                                                                                            ┃ │ server/middleware             │
+┃                                                                                                                            ┃ │ and 2 more import changes     │
+┃                                                                                                                            ┃ └───────────────────────────────┘
+┃                                                                                                                            ┃ ┌─ Legend ──────────────────────┐
+┃                                                                                                                            ┃ │ ● changed  ★ yours            │
+┃                                                                                                                            ┃ │ + new module / edge           │
+┃                                                                                                                            ┃ │ ✕ ╌ removed  ── unchanged     │
+┃                                                                                                                            ┃ └───────────────────────────────┘
+┃                                                                                                                            ┃  Graph from import analysis.
+┃                                                                                                                            ┃
+┃                                                                                                                            ┃
+┃                                                                                                                            ┃
+┃                                                                                                                            ┃
+┃                                                                                                                            ┃
+┃                                                                                                                            ┃
+┃                                                                                                                            ┃
+┃                                                                                                                            ┃
+┃                                                                                                                            ┃
+┃                                                                                                                            ┃
+┃                                                                                                                            ┃
+┃                                                                                                                            ┃
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛

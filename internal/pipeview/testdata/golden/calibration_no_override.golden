@@ -1,0 +1,7 @@
+┌─ Calibration ──────────────────────────────────┐
+│ sampled Middleware verify to deep too:         │
+│   disagrees · 10-13 14:02:50                   │
+│ fast-tier miss rate 12% · 30 days (3 of 25     │
+│   samples)                                     │
+│ no overrides in 30 days                        │
+└────────────────────────────────────────────────┘

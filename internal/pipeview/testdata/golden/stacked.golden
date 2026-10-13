@@ -1,0 +1,90 @@
+prt · #101 Cache user lookups · pipeline              ▶ reviewing · 17s elapsed · analysing (review)
+
+Stages  run 10-13 14:03:00 · fetch ✓ 400 ms
+┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌╌╌╌╌╌╌╌╌╌┐
+│✓ parse  │ │✓ link   │ │≡ embed  │ │✓ jev    │ │✓ cluster│ │✓ route  │ │▶ review │ ╎◌ agg    ╎
+│0→24     │ │24→9     │ │24→12    │ │24→6     │ │24→7     │ │7→7      │ │7→…      │ ╎         ╎
+│120 ms   │ │85 ms    │ │cached   │ │2.3 s    │ │40 ms    │ │5 ms     │ │13s      │ ╎queued   ╎
+└─────────┘ └─────────┘ └─────────┘ └─────────┘ └─────────┘ └─────────┘ └─────────┘ └╌╌╌╌╌╌╌╌╌┘
+
+┏━ Routing · one call per group ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ D deep · s skip · c call log ━┓
+┃    # group                                    tier            status           time find    cost ┃
+┃ ▸  1 Cache getUser results                    fast → deep .42 ✓ done          8.4 s    2 $0.0412 ┃
+┃        if true → fast · ctx callers,types                                                        ┃
+┃    2 ‹rename fetchUser›                       none            – skipped           —    —       — ┃
+┃        if mechanical || kind == docs → none                                                      ┃
+┃    3 ai·Retry wrapper tweaks                  fast            ✓ done          2.1 s    0 $0.0339 ┃
+┃        if true → fast · ctx tests · ✓ agree                                                      ┃
+┃    4 Session token checks                     deep (forced)   ▶ running 12s       —    —       — ┃
+┃        forced deep (D) · ctx callers,tests,config                                                ┃
+┃    5 ‹config defaults›                        fast            ◌ queued            —    —       — ┃
+┃        if true → fast · ctx config                                                               ┃
+┃        ↳ over cost cap: est $0.14, $0.05 of $0.40 left                                           ┃
+┃    6 Logger cleanup                           fast            ✗ failed       30.0 s    — $0.0021 ┃
+┃        if true → fast                                                                            ┃
+┃        ↳ error: timeout after 30s (retried once)                                                 ┃
+┃    7 Docs typo                                none (skipped)  – skipped           —    —       — ┃
+┃        skipped by user (s)                                                                       ┃
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+
+tier mix nnnnnnnffffffffffddddddd n none 2 · f fast 3 · d deep 2
+time 12.4 s parallel vs ~48 s all-deep sequential
+cost $0.18 of $0.40 cap · 1 queued over cap ($ raises it)  ·  jev 31 calls · $0.0123
+7 groups: done 2 · running 1 · queued 1 · failed 1 · skipped 2 · escalations 1 · calibration
+  samples 1 · findings 2
+
+┌─ Rules · prt.routing.toml ────────────────────────────────────────────────────────────── e edit ─┐
+│ 1 if mechanical || kind == docs → none  1 row                                                    │
+│ 2 if risk >= 4 || tag.auth → deep  +security · ctx callers · 0 rows                              │
+│ 3 if true → fast  4 rows                                                                         │
+│ – 2 rows decided outside the rules (forced, skipped or labels unknown)                           │
+│ deep_slots 2 · cost_cap_usd $0.40 · escalate_below .60 · calibration_sample .05                  │
+│ source builtin · e edits .git/prt/prt.routing.toml                                               │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+┌─ Grouping ───────────────────────────────────────────────────────────────────────────────────────┐
+│ 24 units → 6 groups + 1 ungrouped                                                                │
+│ structural calls 4 · tests 3 · moved 2                                                           │
+│ embed candidates 12 · mechanical candidates 5                                                    │
+│ jev asked 12 pairs · rejected 5 · cut 1                                                          │
+│ kept same intent 3 · caller update 2 · test for 1                                                │
+│ mechanical 1 (4 units collapsed) · ejected 1 · user edits 0                                      │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+┌─ Calibration ────────────────────────────────────────────────────────────────────────────────────┐
+│ sampled a group to deep too: agrees · 10-13 14:02:50                                             │
+│ fast-tier miss rate 12% · 30 days (3 of 25 samples)                                              │
+│ label overrides risk 4 · behaviour 2 · kind 2                                                    │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+┌─ Urgency ───────────────────────────────────────────────────────── weights from prt.toml [rank] ─┐
+│ asked you 3.00×1.00=+3.00 · risk 0.50×4.00=+2.00 · size 0.10×18.00=-1.80                         │
+│ total +3.20 · why: asked you · risk                                                              │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

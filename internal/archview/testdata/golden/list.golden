@@ -1,0 +1,30 @@
+7 modules · 7 edges                                         #482 · modules touched + 1 hop
+┌─ Module graph · depth 1 ─────────────────────────────┐ ┌─ Per module ──────────────────┐
+│ ── hop 0 ─────────────────────────────────────────── │ │ module   units risk tests you │
+│ ▸ ● ★ web/auth                                       │ │ w/auth       3    5     ✗   ★ │
+│     2 eyes · r5 · ✗ · ⚠1                             │ │ w/compo…     1    3     ✗   ★ │
+│   ● ★ web/components                                 │ │ w/api        2    3     ?   ★ │
+│     1 eyes · r3 · ✗                                  │ │ s/auth       3    4     ✓     │
+│   ● ★ web/api                                        │ │ s/middl…     4    3     ✓     │
+│     1 eyes · r3 · ?                                  │ │ s/sessi…     2    1     ✓     │
+│   ● server/auth                                      │ └───────────────────────────────┘
+│     skim · r4 · +1 undoc                             │ ┌─ Contracts crossing edges ────┐
+│   + server/middleware                                │ │ ⚠ w/auth → w/app, w/componen… │
+│     skim · r3                                        │ │   expiresAt ISO → ms · break… │
+│   ✕ server/session                                   │ └───────────────────────────────┘
+│     skip · r1                                        │ ┌─ Net effect ──────────────────┐
+│ ── hop 1 ─────────────────────────────────────────── │ │ new module server/middleware  │
+│   web/app                                            │ │ server/session removed        │
+│     4 files                                          │ │ web/api now imports           │
+│ ── edges ─────────────────────────────────────────── │ │ server/middleware             │
+│   server/auth → server/session (removed) · 1 import  │ │ and 2 more import changes     │
+│   server/middleware → server/auth · 1 import         │ └───────────────────────────────┘
+│   web/api → server/middleware (new) · 1 import       │ ┌─ Legend ──────────────────────┐
+│   web/api → server/session (removed) · 1 import      │ │ ● changed  ★ yours            │
+│   web/app → web/auth · 2 imports · ⚠ expiresAt ISO … │ │ + new module / edge           │
+│   web/auth → web/api · 3 imports                     │ │ ✕ ╌ removed  ── unchanged     │
+│   web/components → web/auth · 1 import · ⚠ expiresA… │ └───────────────────────────────┘
+│                                                      │  Graph from import analysis.
+│                                                      │
+│                                                      │
+└──────────────────────────────────────────────────────┘

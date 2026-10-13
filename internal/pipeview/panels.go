@@ -2,9 +2,12 @@ package pipeview
 
 import (
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/fredricw/prt/internal/model"
 )
@@ -30,54 +33,107 @@ var linkOrder = []model.LinkKind{
 	model.LinkMechanical, model.LinkEmbedNeighbor,
 }
 
-// addPara adds a logical line wrapped to the page width.
-func (m *Model) addPara(b *docBuilder, s string) { b.add(wrap(s, m.w, 4)...) }
+// paras wraps each logical line to w cells (continuation lines indented by
+// two spaces).
+func paras(w int, lines ...string) []string {
+	var out []string
+	for _, l := range lines {
+		out = append(out, wrap(l, w, 2)...)
+	}
+	return out
+}
 
-// buildTotals adds the totals section from Agg.Review.
-func (m *Model) buildTotals(b *docBuilder) {
-	b.add(m.st.head.Render("Totals"))
+// pack joins parts with sep into as few lines of w cells as it can,
+// starting a new line before a part that does not fit (a part wider than
+// w is wrapped on its own).
+func pack(w int, sep string, parts ...string) []string {
+	var out []string
+	cur := ""
+	for _, p := range parts {
+		switch {
+		case cur == "":
+			cur = p
+		case ansi.StringWidth(cur+sep+p) <= w:
+			cur += sep + p
+		default:
+			out = append(out, wrap(cur, w, 2)...)
+			cur = p
+		}
+	}
+	if cur != "" {
+		out = append(out, wrap(cur, w, 2)...)
+	}
+	return out
+}
+
+// totalsLines is the totals block under the routing box (v3: tier mix,
+// time vs all-deep, cost of cap, jev calls on one line), then the status
+// counts and the review note.
+func (m *Model) totalsLines(w int) []string {
 	var rs *model.ReviewStats
 	if m.d.Agg != nil {
 		rs = m.d.Agg.Review
 	}
 	if rs == nil {
-		b.add(m.st.dim.Render("  no review data yet"))
-		return
+		return []string{m.st.dim.Render("totals: no review data yet")}
 	}
-	m.addPara(b, "  tier mix  "+tierBar(rs.Tiers)+"  "+m.st.dim.Render(tierLegend(rs.Tiers)))
+	sep := m.st.dim.Render("  ·  ")
+	mix := m.st.dim.Render("tier mix ") + m.tierBarStyled(rs.Tiers) + " " + m.st.dim.Render(tierLegend(rs.Tiers))
+	elapsed := "—"
+	if rs.ElapsedMs > 0 {
+		elapsed = dur(rs.ElapsedMs)
+	}
+	timeS := m.st.dim.Render("time ") + m.st.title.Render(elapsed) + m.st.dim.Render(" parallel vs "+estimate(rs.AllDeepEstMs)+" all-deep sequential")
+	cost := m.st.dim.Render("cost ") + m.st.title.Render(money(rs.Cost))
+	if rs.CapUSD > 0 {
+		cost += " of " + money(rs.CapUSD) + " cap"
+	} else {
+		cost += m.st.dim.Render(" (no cap)")
+	}
+	if rs.OverCap > 0 {
+		cost += m.st.warn.Render(fmt.Sprintf(" · %d queued over cap", rs.OverCap)) + m.st.dim.Render(" ($ raises it)")
+	}
+	jev := fmt.Sprintf("jev %s · %s", plural(rs.JevCalls, "call", "calls"), money(rs.JevCost))
+	if rs.JevCached {
+		jev += m.st.dim.Render(" (cached)")
+	}
+	out := pack(w, sep, mix, timeS, cost, jev)
 	var st []string
 	for _, s := range statusOrder {
 		if n := rs.Status[s]; n > 0 {
 			st = append(st, fmt.Sprintf("%s %d", s, n))
 		}
 	}
+	counts := plural(rs.Groups, "group", "groups")
 	if len(st) > 0 {
-		m.addPara(b, "  "+plural(rs.Groups, "group", "groups")+": "+strings.Join(st, " · "))
+		counts += ": " + strings.Join(st, " · ")
 	}
-	elapsed := "—"
-	if rs.ElapsedMs > 0 {
-		elapsed = dur(rs.ElapsedMs)
-	}
-	m.addPara(b, fmt.Sprintf("  reviews %s · all-deep sequential %s", elapsed, estimate(rs.AllDeepEstMs)))
-	cost := "  cost " + money(rs.Cost)
-	if rs.CapUSD > 0 {
-		cost += " of " + money(rs.CapUSD) + " cap"
-	} else {
-		cost += " (no cap)"
-	}
-	if rs.OverCap > 0 {
-		cost += m.st.warn.Render(fmt.Sprintf(" · %d queued over cap", rs.OverCap)) + m.st.dim.Render(" ($ raises it)")
-	}
-	m.addPara(b, cost)
-	jevLine := fmt.Sprintf("  jev %s · %s", plural(rs.JevCalls, "call", "calls"), money(rs.JevCost))
-	if rs.JevCached {
-		jevLine += m.st.dim.Render(" (cached)")
-	}
-	m.addPara(b, jevLine)
-	m.addPara(b, m.st.dim.Render(fmt.Sprintf("  escalations %d · calibration samples %d · findings %d", rs.Escalations, rs.Calibrations, rs.Findings)))
+	out = append(out, paras(w, m.st.dim.Render(fmt.Sprintf("%s · escalations %d · calibration samples %d · findings %d",
+		counts, rs.Escalations, rs.Calibrations, rs.Findings)))...)
 	if rs.Note != "" {
-		m.addPara(b, m.st.note.Render("  note: "+rs.Note))
+		out = append(out, paras(w, m.st.note.Render("note: "+rs.Note))...)
 	}
+	return out
+}
+
+// tierBarStyled is the tier mix bar: letters without colour (tierBar),
+// tier-coloured blocks with colour.
+func (m *Model) tierBarStyled(tiers map[model.Tier]int) string {
+	if !m.st.th.Colour {
+		return tierBar(tiers)
+	}
+	shares := make([]int, len(tierOrder))
+	for i, t := range tierOrder {
+		shares[i] = tiers[t]
+	}
+	var sb strings.Builder
+	for i, n := range cellWidths(shares, tierBarCells) {
+		sb.WriteString(m.st.th.Tier(tierOrder[i], false).Render(strings.Repeat("█", n)))
+	}
+	if sb.Len() == 0 {
+		return "—"
+	}
+	return sb.String()
 }
 
 // tierBar draws the none/fast/deep shares as letters (n/f/d); "—" when no
@@ -107,24 +163,23 @@ func tierLegend(tiers map[model.Tier]int) string {
 	return strings.Join(parts, " · ")
 }
 
-// buildRules adds the rules panel from Detail.Routing.
-func (m *Model) buildRules(b *docBuilder) {
-	b.add(m.st.head.Render("Rules") + m.st.dim.Render("  e edit"))
+// rulesLines is the rules box from Detail.Routing: one "if … → tier" line
+// per rule with its prompts, context and fired rows, then the knobs.
+func (m *Model) rulesLines(w int) []string {
 	ri := m.d.Routing
 	if ri == nil {
-		b.add(m.st.dim.Render("  no routing rules loaded yet"))
-		return
+		return []string{m.st.dim.Render("no routing rules loaded yet")}
 	}
 	fired := map[int]int{}
 	for _, rw := range m.rows {
 		fired[rw.rev.RuleIndex]++
 	}
+	var out []string
 	for _, r := range ri.Rules {
 		words := r.Words
 		if words == "" {
 			words = fmt.Sprintf("if %s → %s", r.When, r.Tier)
 		}
-		line := fmt.Sprintf("  %d %s", r.Index, words)
 		var extra []string
 		if len(r.Prompts) > 0 {
 			extra = append(extra, "+"+strings.Join(r.Prompts, ",+"))
@@ -133,59 +188,63 @@ func (m *Model) buildRules(b *docBuilder) {
 			extra = append(extra, "ctx "+strings.Join(r.Context, ","))
 		}
 		extra = append(extra, plural(fired[r.Index], "row", "rows"))
-		m.addPara(b, line+m.st.dim.Render("  "+strings.Join(extra, " · ")))
+		out = append(out, paras(w, fmt.Sprintf("%d %s", r.Index, words)+m.st.dim.Render("  "+strings.Join(extra, " · ")))...)
 		if r.Err != "" {
-			m.addPara(b, m.st.warn.Render("    ✗ "+r.Err))
+			out = append(out, paras(w, m.st.warn.Render("  ✗ "+r.Err))...)
 		}
 	}
 	if len(ri.Rules) == 0 {
-		b.add(m.st.dim.Render("  no rules"))
+		out = append(out, m.st.dim.Render("no rules"))
 	}
 	if n := fired[0]; n > 0 {
-		m.addPara(b, m.st.dim.Render("  – "+plural(n, "row", "rows")+" decided outside the rules (forced, skipped or labels unknown)"))
+		out = append(out, paras(w, m.st.dim.Render("– "+plural(n, "row", "rows")+" decided outside the rules (forced, skipped or labels unknown)"))...)
 	}
-	m.addPara(b, m.st.dim.Render(fmt.Sprintf("  deep_slots %d · cost_cap_usd %s · escalate_below %s · calibration_sample %s",
-		ri.DeepSlots, money(ri.CostCapUSD), prob(ri.EscalateBelow), prob(ri.CalibrationSample))))
-	src := "  source " + ri.Source
+	out = append(out, paras(w, m.st.dim.Render(fmt.Sprintf("deep_slots %d · cost_cap_usd %s · escalate_below %s · calibration_sample %s",
+		ri.DeepSlots, money(ri.CostCapUSD), prob(ri.EscalateBelow), prob(ri.CalibrationSample))))...)
+	src := "source " + ri.Source
 	if ri.Path != "" && ri.Path != ri.Source {
 		src += " · e edits " + ri.Path
 	}
-	m.addPara(b, m.st.dim.Render(src))
-	for _, w := range ri.Warnings {
-		m.addPara(b, m.st.warn.Render("  warning: "+w))
+	out = append(out, paras(w, m.st.dim.Render(src))...)
+	for _, wn := range ri.Warnings {
+		out = append(out, paras(w, m.st.warn.Render("warning: "+wn))...)
 	}
 	if ri.Err != "" {
-		m.addPara(b, m.st.warn.Render("  reload failed: "+ri.Err+" (previous rules stay active)"))
+		out = append(out, paras(w, m.st.warn.Render("reload failed: "+ri.Err+" (previous rules stay active)"))...)
 	}
+	return out
 }
 
-// buildGrouping adds the grouping panel from Agg.Grouping.
-func (m *Model) buildGrouping(b *docBuilder) {
-	b.add(m.st.head.Render("Grouping"))
+// groupingLines is the grouping box from Agg.Grouping: units → links →
+// groups, as in v3.
+func (m *Model) groupingLines(w int) []string {
 	var g *model.GroupingStats
 	if m.d.Agg != nil {
 		g = m.d.Agg.Grouping
 	}
 	if g == nil {
-		b.add(m.st.dim.Render("  no grouping data yet"))
-		return
+		return []string{m.st.dim.Render("no grouping data yet")}
 	}
 	structural := "none"
 	if s := joinCounts(linkCounts(g.Structural)); s != "" {
 		structural = s
 	}
-	m.addPara(b, fmt.Sprintf("  units %d → structural %s", g.Units, structural))
-	m.addPara(b, fmt.Sprintf("    → embed candidates %d · mechanical candidates %d", g.EmbedCandidates, g.MechanicalCandidates))
 	kept := "none"
 	if s := joinCounts(byCount(g.JevKept)); s != "" {
 		kept = s
 	}
-	m.addPara(b, fmt.Sprintf("    → jev asked %s: kept %s · rejected %d · cut %d", plural(g.PairsAsked, "pair", "pairs"), kept, g.JevRejected, g.CutLinks))
-	m.addPara(b, fmt.Sprintf("    → groups %d · mechanical %d (%d units collapsed) · ejected %d · ungrouped %d · user edits %d",
-		g.Groups, g.Mechanical, g.MechanicalCollapsed, g.Ejected, g.Ungrouped, g.UserEdits))
+	out := paras(w,
+		fmt.Sprintf("%d units → ", g.Units)+m.st.title.Render(plural(g.Groups, "group", "groups"))+fmt.Sprintf(" + %d ungrouped", g.Ungrouped),
+		m.st.dim.Render("structural "+structural),
+		m.st.dim.Render(fmt.Sprintf("embed candidates %d · mechanical candidates %d", g.EmbedCandidates, g.MechanicalCandidates)),
+		m.st.dim.Render(fmt.Sprintf("jev asked %s · rejected %d · cut %d", plural(g.PairsAsked, "pair", "pairs"), g.JevRejected, g.CutLinks)),
+		m.st.dim.Render("kept "+kept),
+		fmt.Sprintf("mechanical %d (%d units collapsed) · ejected %d · user edits %d", g.Mechanical, g.MechanicalCollapsed, g.Ejected, g.UserEdits),
+	)
 	if g.EmbedNote != "" {
-		m.addPara(b, m.st.note.Render("  embed: "+g.EmbedNote))
+		out = append(out, paras(w, m.st.note.Render("embed: "+g.EmbedNote))...)
 	}
+	return out
 }
 
 // linkCounts lists structural link counts in linkOrder, then other kinds
@@ -222,32 +281,31 @@ func lastAt(s string) string {
 	return clock(t)
 }
 
-// buildUrgency adds the urgency weights panel (spec Ranking: "Weights live
-// in prt.toml and are shown on the Pipeline page"): each stored term as
-// words weight×value = contribution, then the stored total and "why". It
-// reads ItemAgg.UrgencyTerms only; the Overview's `w` overlay shows the same
+// urgencyLines is the urgency weights box (spec Ranking: "Weights live in
+// prt.toml and are shown on the Pipeline page"): each stored term as words
+// weight×value = contribution, then the stored total and "why". It reads
+// ItemAgg.UrgencyTerms only; the Overview's `w` overlay shows the same
 // terms as a table.
-func (m *Model) buildUrgency(b *docBuilder) {
-	b.add(m.st.head.Render("Urgency") + m.st.dim.Render("  weights from prt.toml [rank]"))
+func (m *Model) urgencyLines(w int) []string {
 	if m.d.Agg == nil || len(m.d.Agg.UrgencyTerms) == 0 {
-		b.add(m.st.dim.Render("  no urgency terms yet"))
-		return
+		return []string{m.st.dim.Render("no urgency terms yet")}
 	}
 	parts := make([]string, 0, len(m.d.Agg.UrgencyTerms))
 	for _, t := range m.d.Agg.UrgencyTerms {
 		parts = append(parts, fmt.Sprintf("%s %.2f×%.2f=%+.2f", t.Words, t.Weight, t.Value, t.Contrib))
 	}
-	m.addPara(b, "  "+strings.Join(parts, " · "))
-	total := fmt.Sprintf("  total %+.2f", m.d.Agg.Urgency)
+	total := fmt.Sprintf("total %+.2f", m.d.Agg.Urgency)
 	if m.d.Agg.Why != "" {
 		total += " · why: " + m.d.Agg.Why
 	}
-	m.addPara(b, total)
+	return paras(w, strings.Join(parts, " · "), total)
 }
 
-// buildCalibration adds the calibration panel from Agg.Calibration.
-func (m *Model) buildCalibration(b *docBuilder) {
-	b.add(m.st.head.Render("Calibration"))
+// calibrationLines is the calibration box (spec Pipeline page 6, Ranking
+// "Calibration metrics"): the last sample's agreement, the fast-tier miss
+// rate over 30 days, and the override rate per question with questions
+// over FlagAbove flagged as rewording candidates.
+func (m *Model) calibrationLines(w int) []string {
 	var c *model.CalibrationStats
 	if m.d.Agg != nil {
 		c = m.d.Agg.Calibration
@@ -257,27 +315,65 @@ func (m *Model) buildCalibration(b *docBuilder) {
 		if m.d.Routing != nil {
 			sample += " " + prob(m.d.Routing.CalibrationSample)
 		}
-		b.add(m.st.dim.Render("  no sampled double reviews yet (" + sample + ")"))
-	} else {
-		line := fmt.Sprintf("  fast-tier miss rate %s (%d of %s, 30 days)", prob(c.MissRate), c.Misses, plural(c.Samples, "sample", "samples"))
-		if c.LastAgree != nil {
-			last := m.st.good.Render("agree ✓")
-			if !*c.LastAgree {
-				last = m.st.warn.Render("disagree ✗")
-			}
-			line += " · last sample " + last
-			if at := lastAt(c.LastAt); at != "" {
-				line += m.st.dim.Render(" " + at)
-			}
+		out := paras(w, m.st.dim.Render("no sampled double reviews yet ("+sample+")"))
+		if c != nil {
+			out = append(out, m.overrideLines(c, w)...)
 		}
-		m.addPara(b, line)
+		return out
 	}
-	if c == nil {
-		return
+	var out []string
+	if c.LastAgree != nil {
+		group := c.LastGroup
+		if group == "" {
+			group = "a group"
+		}
+		verdict := m.st.good.Render("agrees")
+		if !*c.LastAgree {
+			verdict = m.st.warn.Render("disagrees")
+		}
+		line := "sampled " + group + " to deep too: " + verdict
+		if at := lastAt(c.LastAt); at != "" {
+			line += m.st.dim.Render(" · " + at)
+		}
+		out = append(out, paras(w, line)...)
 	}
-	ov := "none"
-	if s := joinCounts(byCount(c.Overrides)); s != "" {
-		ov = s
-	}
-	m.addPara(b, "  label overrides "+ov)
+	out = append(out, paras(w, m.st.dim.Render(fmt.Sprintf("fast-tier miss rate %s · 30 days (%d of %s)",
+		percent(c.MissRate), c.Misses, plural(c.Samples, "sample", "samples"))))...)
+	return append(out, m.overrideLines(c, w)...)
 }
+
+// overrideLines is the per-question override table (M5 aggregates: a
+// FlagAbove or Questions is set), else the older aggregate's override
+// counts by question.
+func (m *Model) overrideLines(c *model.CalibrationStats, w int) []string {
+	if c.Questions == nil && c.FlagAbove == 0 {
+		ov := "none"
+		if s := joinCounts(byCount(c.Overrides)); s != "" {
+			ov = s
+		}
+		return paras(w, "label overrides "+ov)
+	}
+	if len(c.Questions) == 0 {
+		return []string{m.st.dim.Render("no overrides in 30 days")}
+	}
+	qw := 8
+	for _, q := range c.Questions {
+		qw = max(qw, len([]rune(q.Question)))
+	}
+	qw = min(qw, max(8, w-30))
+	out := []string{m.st.dim.Render(padRight("question", qw) + "  overrides/labels  rate")}
+	for _, q := range c.Questions {
+		line := padRight(q.Question, qw) + "  " + padLeft(fmt.Sprintf("%d/%d", q.Overrides, q.Labels), 16) + "  " + padLeft(percent(q.Rate), 4)
+		if q.Flagged {
+			line += " " + m.st.accent.Render("⚑ reword?")
+		}
+		out = append(out, line)
+	}
+	if c.FlagAbove > 0 {
+		out = append(out, paras(w, m.st.dim.Render("⚑ over "+percent(c.FlagAbove)+" overrides · 30 days"))...)
+	}
+	return out
+}
+
+// percent formats a rate as a whole percentage ("12%").
+func percent(r float64) string { return fmt.Sprintf("%d%%", int(math.Round(r*100))) }
