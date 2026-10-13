@@ -1,30 +1,30 @@
-  Pass request options through getUser    ‹ApiError›  2 units · 2 files                                                 
-    3u 3f · b2 .82 · not routed          ┌ risk 1 · routing: not routed
-▸ ‹ApiError› — 2 units hidden by filters │ placeholder name (code-derived; no description bullet names this group)
-  Invalidate the profile cache on logout 
-    1u 1f · b1 .64 · not routed          why these belong together
-  ‹import fetchJSON from client› — 5 un…   moved  client.ts ApiError → errors.ts ApiError
-── ungrouped (3) ─────────────────────── 
-  ‹f.tsx› — 1 unit hidden by filters     2 units hidden by filters (f)
-  ‹theme.css› — 1 unit hidden by filters 
-  ‹save› — 1 unit hidden by filters      findings: not reviewed (not routed)
-── split suggestion ──────────────────── 
-  split? web/src/styles/theme.css .74    
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
+┌─ Change groups · review order ───────┐ ┌─ ‹ApiError›  2 units · 2 files ────────────────────────────── group 2 of 7 ─┐
+│by: file [change] · interfaces → call…│ │‹ApiError›                                                                   │
+│  1 Pass request options through getU…│ │risk 1 · tests: 2 of 2 units · routing: not routed                           │
+│    3u 3f · b2 .82 · not routed       │ │placeholder name (code-derived; no description bullet names this group)      │
+│▸ 2 ‹ApiError› — 2 units hidden by fi…│ │                                                                             │
+│  3 Invalidate the profile cache on l…│ │┌─ why these belong together ───────────────────────────────────────────────┐│
+│    1u 1f · b1 .64 · not routed       │ ││ moved  client.ts ApiError → errors.ts ApiError                            ││
+│  4 ‹import fetchJSON from client› — …│ │└───────────────────────────────────────────────────────────────────────────┘│
+│── ungrouped (3) ─────────────────────│ │                                                                             │
+│  5 ‹f.tsx› — 1 unit hidden by filters│ │── Units · interface first ──────────────────────────────────────────────────│
+│  6 ‹theme.css› — 1 unit hidden by fi…│ │2 units hidden by filters (f)                                                │
+│  7 ‹save› — 1 unit hidden by filters │ │                                                                             │
+│── split suggestion: group 6 ─────────│ │findings: not reviewed (not routed)                                          │
+│  split? web/src/styles/theme.css .74 │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+└──────────────────────────────────────┘ └─────────────────────────────────────────────────────────────────────────────┘

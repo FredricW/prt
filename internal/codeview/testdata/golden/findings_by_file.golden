@@ -1,30 +1,30 @@
-▸ web/src/api/client.ts               █·  web/src/api/client.ts  +2 −7                                                  
-  web/src/components/UserCard.tsx      █ ┌ modified · feature · behaviour ✓ .90 · breaking .86 · b2 · tests ✗ · auth
-  web/src/hooks/useProfileCache.ts     □ │ error_path · risk 4 · eyes
-  web/src/api/client.test.ts           ▒ │ L10–12 · +2 −2 · export async function getUser(id: string, opts?: RequestIni…
-  web/src/api/errors.ts                ·  ▸10    - export async function getUser(id: string) {
-  web/src/pages/a.tsx                  ·   11    -   return fetchJSON(`/users/${id}`);
-  web/src/pages/b.tsx                  · ·    10 + export async function getUser(id: string, opts?: RequestInit) {
-  web/src/pages/c.tsx                  · ·    11 +   return fetchJSON(`/users/${id}`, opts);
-  web/src/pages/d.tsx                  · ! [high] opts is forwarded unchecked, so a caller passing headers
-  web/src/pages/e.tsx                  ·          silently replaces the auth header set by fetchJSON
-  web/src/pages/f.tsx                  ▒   fix: merge opts over the default headers
-  web/src/styles/theme.css             ▒   12 12   }
-── not yours ─────────────────────────── 
-  web/legacy/util.ts                   █ ┌ deleted · refactor · behaviour ✗ .95 · tests ✓ · risk 1 · skip
-                                         │ old L30–34 · +0 −5 · ApiError
-                                           30    - export class ApiError extends Error {
-                                           31    -   constructor(public status: number) {
-                                           32    -     super(`HTTP ${status}`);
-                                           33    -   }
-                                           34    - }
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
+┌─ Files · by attention ───────────────┐ ┌─ web/src/api/client.ts  +2 −7 ─────────────────────────────── file 1 of 13 ─┐
+│▸ web/src/api/client.ts             █·│ │@@ 10  modified · feature · behaviour ✓ .90 · ⚠ breaking .86 · b2 · tests ✗  │
+│  web/src/components/UserCard.tsx    █│ │       auth · error_path · risk 4 · eyes                                     │
+│  web/src/hooks/useProfileCache.ts   □│ │  L10–12 · +2 −2 · export async function getUser(id: string, opts?: RequestI…│
+│  web/src/api/client.test.ts         ▒│ │ ▸10    - export async function getUser(id: string) {                        │
+│  web/src/api/errors.ts              ·│ │  11    -   return fetchJSON(`/users/${id}`);                                │
+│  web/src/pages/a.tsx                ·│ │·    10 + export async function getUser(id: string, opts?: RequestInit) {    │
+│  web/src/pages/b.tsx                ·│ │·    11 +   return fetchJSON(`/users/${id}`, opts);                          │
+│  web/src/pages/c.tsx                ·│ │! [high] opts is forwarded unchecked, so a caller passing headers            │
+│  web/src/pages/d.tsx                ·│ │         silently replaces the auth header set by fetchJSON                  │
+│  web/src/pages/e.tsx                ·│ │  fix: merge opts over the default headers                                   │
+│  web/src/pages/f.tsx                ▒│ │  12 12   }                                                                  │
+│  web/src/styles/theme.css           ▒│ │                                                                             │
+│── not yours ─────────────────────────│ │@@ 30  deleted · refactor · behaviour ✗ .95 · tests ✓ · risk 1 · skip        │
+│  web/legacy/util.ts                 █│ │  old L30–34 · +0 −5 · ApiError                                              │
+│                                      │ │  30    - export class ApiError extends Error {                              │
+│                                      │ │  31    -   constructor(public status: number) {                             │
+│                                      │ │  32    -     super(`HTTP ${status}`);                                       │
+│                                      │ │  33    -   }                                                                │
+│                                      │ │  34    - }                                                                  │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+└──────────────────────────────────────┘ └─────────────────────────────────────────────────────────────────────────────┘

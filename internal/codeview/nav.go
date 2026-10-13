@@ -8,27 +8,39 @@ import (
 )
 
 const (
-	// narrowBelow is the width under which the file list is hidden.
+	// narrowBelow is the width under which the file list is hidden and the
+	// boxes collapse to a plain title row.
 	narrowBelow = 60
+	// minBoxH is the least body height drawn in titled boxes (top and
+	// bottom borders plus one row).
+	minBoxH = 3
 	// listMax and listMin bound the file list width.
 	listMax, listMin = 40, 16
 	// wheelStep is how many pane rows one mouse wheel notch scrolls.
 	wheelStep = 3
 )
 
-// layout is the geometry of one frame.
+// layout is the geometry of one frame. From narrowBelow columns (and
+// minBoxH body rows) the list and the pane are titled boxes (design v2/Code
+// and v3/Groups); below that the list is hidden and the pane's title is a
+// plain reverse-video row.
 type layout struct {
-	top    int // 1 when the bar line is shown
-	listW  int // 0 when the list is hidden
-	paneX  int // first column of the right pane
-	paneW  int
-	bodyH  int // rows below the bar and above the Comments strip
-	viewH  int // pane rows below the file title
-	stripH int // Comments strip rows at the bottom (0 when hidden)
+	top    int  // 1 when the bar line is shown
+	boxed  bool // list and pane drawn in titled boxes
+	listW  int  // outer width of the list column; 0 when hidden
+	listIn int  // list content width
+	listY  int  // first list content row within the body (1 when boxed)
+	listH  int  // list content rows
+	paneX  int  // first column of the pane content
+	paneW  int  // pane content width
+	bodyH  int  // rows below the bar and above the Comments strip
+	viewH  int  // pane content rows (below the title row or border)
+	stripH int  // Comments strip rows at the bottom (0 when hidden)
+	split  bool // side-by-side in effect
 }
 
 func (m *Model) layout() layout {
-	l := layout{}
+	l := layout{split: m.splitOn()}
 	if m.barVisible() {
 		l.top = 1
 	}
@@ -38,14 +50,19 @@ func (m *Model) layout() layout {
 		l.stripH = s
 		l.bodyH -= s
 	}
-	l.viewH = max(0, l.bodyH-1)
 	if m.w < narrowBelow {
-		l.paneW = m.w
+		l.paneW, l.viewH = m.w, max(0, l.bodyH-1)
 		return l
 	}
 	l.listW = max(listMin, min(listMax, m.w/3))
-	l.paneX = l.listW + 1
-	l.paneW = m.w - l.paneX
+	if l.bodyH >= minBoxH {
+		l.boxed = true
+		l.listIn, l.listY, l.listH = l.listW-2, 1, l.bodyH-2
+		l.paneX, l.paneW, l.viewH = l.listW+2, m.w-l.listW-3, l.bodyH-2
+		return l
+	}
+	l.listIn, l.listH = l.listW, l.bodyH
+	l.paneX, l.paneW, l.viewH = l.listW+1, m.w-l.listW-1, max(0, l.bodyH-1)
 	return l
 }
 
@@ -55,9 +72,13 @@ func (m *Model) barVisible() bool {
 }
 
 // standingNote is the bar line when no one-shot note or filters bar shows:
-// labels unavailable, and by change why grouping ran without embeddings.
+// side-by-side degraded to unified, labels unavailable, and by change why
+// grouping ran without embeddings.
 func (m *Model) standingNote() string {
 	var parts []string
+	if m.splitDegraded() {
+		parts = append(parts, noteSplitNarrow)
+	}
 	if m.c.labelsMissing {
 		parts = append(parts, "labels unavailable — filters off")
 	}
@@ -100,7 +121,7 @@ func (m *Model) ensureListVisible() {
 		m.ensureGroupVisible()
 		return
 	}
-	h := m.layout().bodyH
+	h := m.layout().listH
 	rows := m.listRows()
 	if h <= 0 || len(rows) == 0 {
 		m.listOff = 0
@@ -183,6 +204,13 @@ func (m *Model) handleKey(k tea.KeyMsg) bool {
 	case key.Matches(k, kk.Accept):
 		return m.acceptKey()
 	case m.commentKey(k):
+		return true
+	case key.Matches(k, kk.EditFile):
+		return m.openKey(false)
+	case key.Matches(k, kk.OpenUnit):
+		return m.openKey(true)
+	case key.Matches(k, kk.SideBySide):
+		m.toggleLayout()
 		return true
 	}
 	switch {
@@ -447,7 +475,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	}
 	lay := m.layout()
 	x, y := mm.X-m.ox, mm.Y-m.oy
-	inList := lay.listW > 0 && x < lay.listW && y >= lay.top
+	inList := lay.listW > 0 && x >= 0 && x < lay.listW && y >= lay.top && y < lay.top+lay.bodyH
 	switch mm.Button {
 	case tea.MouseButtonWheelUp:
 		if inList {
@@ -462,8 +490,8 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			m.scrollBy(wheelStep)
 		}
 	case tea.MouseButtonLeft:
-		if inList && mm.Action == tea.MouseActionPress {
-			m.clickList(y - lay.top)
+		if r := y - lay.top - lay.listY; inList && mm.Action == tea.MouseActionPress && r >= 0 && r < lay.listH {
+			m.clickList(r)
 		}
 	}
 	m.keepCursorVisible()

@@ -12,11 +12,13 @@ const (
 	glyphSelected = "┃"
 )
 
-// Row decorations (renderRow cache key bits).
+// Row decorations (renderRow cache key bits). decoCursorOld is the cursor
+// on the old (left) side of a side-by-side pair.
 const (
 	decoNone = iota
 	decoCursor
 	decoSelected
+	decoCursorOld
 	numDecos
 )
 
@@ -69,17 +71,25 @@ func (m *Model) posOf(k curKey) (LinePos, bool) {
 	return LinePos{Path: u.Path, Side: side, Line: n, UnitID: u.ID}, true
 }
 
-// isTarget reports whether pane row i can hold the cursor: a diff line,
-// the first row of a comment block, or a collapsed unit's summary (so
-// n/p can land on it).
+// isTarget reports whether pane row i can hold the cursor: a diff line (a
+// side-by-side pair's first visual row), the first row of a comment block,
+// or a collapsed unit's summary (so n/p can land on it).
 func (p *pane) isTarget(i int) bool {
 	switch r := p.rows[i]; r.kind {
 	case rowLine, rowCollapsed:
 		return true
+	case rowSplit:
+		return r.pair == 0
 	case rowComment:
 		return p.clines[r.line].head
 	}
 	return false
+}
+
+// isLineRow reports whether row i is a diff line's (first) row.
+func (p *pane) isLineRow(i int) bool {
+	r := p.rows[i]
+	return r.kind == rowLine || (r.kind == rowSplit && r.pair == 0)
 }
 
 // keyOfRow returns the cursor key of target row i.
@@ -91,6 +101,8 @@ func (m *Model) keyOfRow(i int) curKey {
 		k.line, k.block = -1, m.c.blocks[m.p.clines[r.line].block].id
 	case rowCollapsed:
 		k.line = -1
+	case rowSplit:
+		k.line = m.splitKeyLine(m.p.splits[r.line])
 	}
 	return k
 }
@@ -108,6 +120,9 @@ func (m *Model) rowOfKey(k curKey) int {
 		r := m.p.rows[i]
 		switch {
 		case r.kind == rowLine && k.block == "" && int(r.line) == k.line:
+			return i
+		case r.kind == rowSplit && r.pair == 0 && k.block == "" && k.line >= 0 &&
+			(m.p.splits[r.line].left == k.line || m.p.splits[r.line].right == k.line):
 			return i
 		case r.kind == rowCollapsed && k.block == "" && k.line < 0:
 			return i
@@ -154,8 +169,14 @@ func (m *Model) resolveCursor() {
 // or -1.
 func (m *Model) firstChanged(lo, hi int) int {
 	for i := max(0, lo); i <= hi && i < len(m.p.rows); i++ {
-		if r := m.p.rows[i]; r.kind == rowLine && m.p.units[r.unit].lines[r.line].Op != diff.Context {
+		r := m.p.rows[i]
+		switch {
+		case r.kind == rowLine && m.p.units[r.unit].lines[r.line].Op != diff.Context:
 			return i
+		case r.kind == rowSplit && r.pair == 0:
+			if s := m.p.splits[r.line]; s.left != s.right {
+				return i // a deletion, an addition or both
+			}
 		}
 	}
 	return -1
@@ -279,10 +300,16 @@ func (m *Model) cursorUnitID() string {
 // rowDeco is the decoration of pane row i: the cursor, a selected line of
 // a V selection, or none.
 func (m Model) rowDeco(i int) int {
+	r := m.p.rows[i]
 	switch {
+	case i == m.curRow && r.kind == rowSplit && m.cur.block == "":
+		if s := m.p.splits[r.line]; s.left >= 0 && s.left != s.right && m.cur.line == s.left {
+			return decoCursorOld
+		}
+		return decoCursor
 	case i == m.curRow:
 		return decoCursor
-	case m.vis != nil && m.p.rows[i].kind == rowLine && m.inSelection(i):
+	case m.vis != nil && m.p.isLineRow(i) && m.inSelection(i):
 		return decoSelected
 	}
 	return decoNone
@@ -291,7 +318,7 @@ func (m Model) rowDeco(i int) int {
 // decoGlyph is the cursor cell of a row with decoration d.
 func decoGlyph(d int) string {
 	switch d {
-	case decoCursor:
+	case decoCursor, decoCursorOld:
 		return glyphCursor
 	case decoSelected:
 		return glyphSelected

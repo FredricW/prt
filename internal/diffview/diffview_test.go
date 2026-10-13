@@ -13,6 +13,9 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/muesli/termenv"
+
+	"github.com/fredricw/prt/internal/highlight"
+	"github.com/fredricw/prt/internal/theme"
 )
 
 var update = flag.Bool("update", false, "rewrite golden files under testdata/golden")
@@ -408,14 +411,16 @@ func TestUpdate(t *testing.T) {
 }
 
 func TestIntraLineHighlight(t *testing.T) {
-	m := newModel(colourRenderer(), loadFixture(t, "modify"), 80, 20)
+	r := trueColourRenderer()
+	th := theme.New(r)
+	addBg, delBg := sgrParam(r, th.P.AddEmphBg), sgrParam(r, th.P.DelEmphBg)
+	m := newModel(r, loadFixture(t, "modify"), 80, 20)
 	view := m.View()
-	added := m.st.addEmph.Render(" + 0")
-	if !strings.Contains(view, added) {
-		t.Errorf("view lacks emphasised addition %q:\n%q", added, view)
+	if got := emphasised(view, addBg); got != " + 0" {
+		t.Errorf("emphasised addition = %q, want %q:\n%q", got, " + 0", view)
 	}
-	if !strings.Contains(view, m.st.add.Render("    return a + b")) {
-		t.Errorf("view lacks unchanged prefix in base style")
+	if got := emphasised(view, delBg); got != "" {
+		t.Errorf("emphasised deletion = %q, want none (pure insertion)", got)
 	}
 	if spans := m.cache.spans[4]; len(spans) != 0 {
 		t.Errorf("deleted line spans = %v, want none (pure insertion)", spans)
@@ -423,11 +428,83 @@ func TestIntraLineHighlight(t *testing.T) {
 	if spans := m.cache.spans[5]; len(spans) != 1 {
 		t.Errorf("added line spans = %v, want one", spans)
 	}
-	r := newModel(colourRenderer(), loadFixture(t, "rename"), 80, 20)
-	rv := r.View()
-	if !strings.Contains(rv, r.st.delEmph.Render("a")) || !strings.Contains(rv, r.st.addEmph.Render("b")) {
-		t.Errorf("rename view lacks emphasised spans:\n%q", rv)
+	rn := newModel(r, loadFixture(t, "rename"), 80, 20)
+	rv := rn.View()
+	if emphasised(rv, delBg) != "a" || emphasised(rv, addBg) != "b" {
+		t.Errorf("rename view emphasis del %q add %q:\n%q", emphasised(rv, delBg), emphasised(rv, addBg), rv)
 	}
+	// Without colour nothing marks the change.
+	p := newModel(plainRenderer(), loadFixture(t, "modify"), 80, 20)
+	if v := p.View(); strings.Contains(v, "\x1b") || !strings.Contains(v, "+     return a + b + 0") {
+		t.Errorf("plain view:\n%q", v)
+	}
+}
+
+func TestSyntaxColour(t *testing.T) {
+	r := trueColourRenderer()
+	th := theme.New(r)
+	kw := sgrParam(r, th.P.SynKeyword)
+	m := newModel(r, loadFixture(t, "modify"), 80, 20)
+	if got := styledWith(m.View(), kw); !strings.Contains(got, "return") || !strings.Contains(got, "func") {
+		t.Errorf("keyword-coloured text = %q, want return and func", got)
+	}
+	// Ascii: byte-identical to the plain rendering.
+	a := newModel(plainRenderer(), loadFixture(t, "modify"), 80, 20)
+	b := New(plainRenderer())
+	b.SetHighlighter(highlight.New(1, 1))
+	b.SetSize(80, 20)
+	b.SetDiff(loadFixture(t, "modify"))
+	if a.View() != b.View() || strings.Contains(a.View(), "\x1b") {
+		t.Error("plain rendering depends on the highlighter")
+	}
+}
+
+func trueColourRenderer() *lipgloss.Renderer {
+	r := lipgloss.NewRenderer(io.Discard, termenv.WithProfile(termenv.TrueColor))
+	r.SetColorProfile(termenv.TrueColor)
+	r.SetHasDarkBackground(true)
+	return r
+}
+
+// sgrParam is the SGR parameter text of c as a background ("48;2;r;g;b")
+// or, for foreground use, as styledWith expects ("38;2;r;g;b"): the
+// colour's own digits, matched inside any SGR sequence.
+func sgrParam(r *lipgloss.Renderer, c lipgloss.TerminalColor) string {
+	s := r.NewStyle().Foreground(c).Render("X")
+	seq := s[strings.Index(s, "[")+1 : strings.Index(s, "m")]
+	return strings.TrimPrefix(seq, "38;") // "2;r;g;b": shared by fg (38;) and bg (48;)
+}
+
+// emphasised returns the text drawn while an SGR sequence sets the
+// background to param.
+func emphasised(s, param string) string { return textUnder(s, "48;"+param) }
+
+// styledWith returns the text drawn while an SGR sequence sets the
+// foreground to param.
+func styledWith(s, param string) string { return textUnder(s, "38;"+param) }
+
+// textUnder collects the text printed while the active SGR sequence
+// contains want.
+func textUnder(s, want string) string {
+	var b strings.Builder
+	on := false
+	for i := 0; i < len(s); {
+		if s[i] == 0x1b && i+1 < len(s) && s[i+1] == '[' {
+			j := strings.IndexByte(s[i:], 'm')
+			if j < 0 {
+				break
+			}
+			seq := s[i+2 : i+j]
+			on = strings.Contains(";"+seq+";", ";"+want+";")
+			i += j + 1
+			continue
+		}
+		if on && s[i] != '\n' {
+			b.WriteByte(s[i])
+		}
+		i++
+	}
+	return b.String()
 }
 
 func TestLongPairSkipsIntraLine(t *testing.T) {

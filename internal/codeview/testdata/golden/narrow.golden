@@ -1,8 +1,8 @@
  web/src/api/client.ts  +8 −3  1/3                
-┌ modified · feature · behaviour ✓ .91
-│ breaking .86 · b2 · tests ✗ · auth · error_path
-│ risk 4 · eyes
-│ L10–15 · +3 −1 · export async function fetchJSO…
+@@ 10  modified · feature · behaviour ✓ .91
+       ⚠ breaking .86 · b2 · tests ✗ · auth
+       error_path · risk 4 · eyes
+  L10–15 · +3 −1 · export async function fetchJSO…
   10 10   export async function fetchJSON(url: st…
  ▸11    -   const res = await fetch(url);
 ~    11 +   const res = await fetch(url, { ...opt…
@@ -13,4 +13,4 @@
 
 ▸ formatting · +2 −2 (z to expand)
 
-┌ added · feature · ?behaviour ✗ .55
+@@ 41  added · feature · ?behaviour ✗ .55

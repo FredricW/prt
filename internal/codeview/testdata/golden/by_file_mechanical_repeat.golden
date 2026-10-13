@@ -1,30 +1,30 @@
-  web/src/api/client.ts               █·  web/src/pages/b.tsx  +1 −1                                                    
-  web/src/components/UserCard.tsx      █ ▶ mechanical repeat of a.tsx (×5) · +1 −1 (z to expand)
-  web/src/hooks/useProfileCache.ts     □ 
-  web/src/api/client.test.ts           ▒ 
-  web/src/api/errors.ts                · 
-  web/src/pages/a.tsx                  · 
-▸ web/src/pages/b.tsx                  · 
-  web/src/pages/c.tsx                  · 
-  web/src/pages/d.tsx                  · 
-  web/src/pages/e.tsx                  · 
-  web/src/pages/f.tsx                  ▒ 
-  web/src/styles/theme.css             ▒ 
-── not yours ─────────────────────────── 
-  web/legacy/util.ts                   █ 
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
+┌─ Files · by attention ───────────────┐ ┌─ web/src/pages/b.tsx  +1 −1 ───────────────────────────────── file 7 of 13 ─┐
+│  web/src/api/client.ts             █·│ │▶ mechanical repeat of a.tsx (×5) · +1 −1 (z to expand)                      │
+│  web/src/components/UserCard.tsx    █│ │                                                                             │
+│  web/src/hooks/useProfileCache.ts   □│ │                                                                             │
+│  web/src/api/client.test.ts         ▒│ │                                                                             │
+│  web/src/api/errors.ts              ·│ │                                                                             │
+│  web/src/pages/a.tsx                ·│ │                                                                             │
+│▸ web/src/pages/b.tsx                ·│ │                                                                             │
+│  web/src/pages/c.tsx                ·│ │                                                                             │
+│  web/src/pages/d.tsx                ·│ │                                                                             │
+│  web/src/pages/e.tsx                ·│ │                                                                             │
+│  web/src/pages/f.tsx                ▒│ │                                                                             │
+│  web/src/styles/theme.css           ▒│ │                                                                             │
+│── not yours ─────────────────────────│ │                                                                             │
+│  web/legacy/util.ts                 █│ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+└──────────────────────────────────────┘ └─────────────────────────────────────────────────────────────────────────────┘

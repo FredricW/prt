@@ -1,30 +1,30 @@
-  Pass request options through getUser    ‹import fetchJSON from client›  ×5 · 5 files                                  
-    3u 3f · b2 .82 · not routed          ┌ mechanical ×5 · risk 1 · routing: not routed
-  ‹ApiError›                             │ placeholder name (code-derived; no description bullet names this group)
-    2u 2f · not routed                   
-  Invalidate the profile cache on logout why these belong together
-    1u 1f · b1 .64 · not routed            same shape ×5 (verified)
-▸ ‹import fetchJSON from client›         
-    ×5 5f · not routed                   ┌ modified · refactor · behaviour ✗ .98 · tests ✓ · risk 1 · skip
-── ungrouped (3) ─────────────────────── │ L1 · +1 −1
-  ‹f.tsx›                                 ▸1   - import { fetchJSON } from "../api/fetch";
-    1u 1f · not routed                   ·   1 + import { fetchJSON } from "../api/client";
-  ‹theme.css›                            
-    1u 1f · not routed                   ×5 verified identical
-  ‹save›                                 members: web/src/pages/b.tsx · web/src/pages/c.tsx +2 more
-    1u 1f · not routed                   promoted out: f.tsx → ‹f.tsx›
-── split suggestion ──────────────────── 
-  split? web/src/styles/theme.css .74    findings: not reviewed (not routed)
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
+┌─ Change groups · review order ───────┐ ┌─ ‹import fetchJSON from client›  ×5 · 5 files ─────────────── group 4 of 7 ─┐
+│by: file [change] · interfaces → call…│ │‹import fetchJSON from client›                                               │
+│  1 Pass request options through getU…│ │mechanical ×5 · risk 1 · tests: 5 of 5 units · routing: not routed           │
+│    3u 3f · b2 .82 · not routed       │ │placeholder name (code-derived; no description bullet names this group)      │
+│  2 ‹ApiError›                        │ │                                                                             │
+│    2u 2f · not routed                │ │┌─ why these belong together ───────────────────────────────────────────────┐│
+│  3 Invalidate the profile cache on l…│ ││ same shape ×5 (verified)                                                  ││
+│    1u 1f · b1 .64 · not routed       │ │└───────────────────────────────────────────────────────────────────────────┘│
+│▸ 4 ‹import fetchJSON from client›    │ │                                                                             │
+│    ×5 5f · not routed                │ │── Units · interface first ──────────────────────────────────────────────────│
+│── ungrouped (3) ─────────────────────│ │1 web/src/pages/a.tsx@1                                         caller · skip│
+│  5 ‹f.tsx›                           │ │@@ 1  modified · refactor · behaviour ✗ .98 · tests ✓ · risk 1 · skip        │
+│    1u 1f · not routed                │ │  L1 · +1 −1                                                                 │
+│  6 ‹theme.css›                       │ │ ▸1   - import { fetchJSON } from "../api/fetch";                            │
+│    1u 1f · not routed                │ │·   1 + import { fetchJSON } from "../api/client";                           │
+│  7 ‹save›                            │ │                                                                             │
+│    1u 1f · not routed                │ │┌─ Group 4 · mechanical preview ────────────────────────────────────────────┐│
+│── split suggestion: group 6 ─────────│ ││ ×5 verified identical                                                     ││
+│  split? web/src/styles/theme.css .74 │ ││ members: web/src/pages/b.tsx · web/src/pages/c.tsx +2 more                ││
+│                                      │ ││ promoted out: f.tsx → ‹f.tsx›                                             ││
+│                                      │ │└───────────────────────────────────────────────────────────────────────────┘│
+│                                      │ │                                                                             │
+│                                      │ │findings: not reviewed (not routed)                                          │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+└──────────────────────────────────────┘ └─────────────────────────────────────────────────────────────────────────────┘

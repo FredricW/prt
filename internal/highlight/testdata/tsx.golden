@@ -1,0 +1,6 @@
+L1 keyword  "export"
+L1 keyword  "function"
+L1 function "Card"
+L1 type     "Props"
+L2 keyword  "return"
+L2 string   "\"card\""

@@ -10,69 +10,76 @@ import (
 	"github.com/fredricw/prt/internal/diff"
 	"github.com/fredricw/prt/internal/diffview"
 	"github.com/fredricw/prt/internal/model"
+	"github.com/fredricw/prt/internal/theme"
 )
 
 const (
 	ellipsis = "…"
+	// sigLead indents a unit's signature and "moved from" rows under its
+	// "@@ N" chip strip.
+	sigLead = "  "
 	// maxCachedRows bounds the rendered-row cache; it is cleared when full.
 	maxCachedRows = 2048
 )
 
-// styles are built once per renderer. With a no-colour renderer every
-// style renders plain text, so snapshots are deterministic.
+// styles are built once per renderer from the shared theme. With a
+// no-colour renderer every style renders plain text, so snapshots are
+// deterministic. Diff line text is styled by the diffview.Painter.
 type styles struct {
-	bar, barOn, barDim, note                lipgloss.Style
-	listSel, listItem, divider              lipgloss.Style
-	title, overlayTitle                     lipgloss.Style
-	header, chipWarn, prob, sig, moved      lipgloss.Style
-	collapsed, hidden                       lipgloss.Style
-	gutter, add, del, ctx, addEmph, delEmph lipgloss.Style
-	noEOL                                   lipgloss.Style
-	markHi, markMid, markLow, markValue     lipgloss.Style
-	markLeft, markNone                      lipgloss.Style
-	cellEyes, cellSkim, cellSkip            lipgloss.Style
-	placeholder                             lipgloss.Style // placeholder group names
+	bar, barOn, barDim, note   lipgloss.Style
+	listSel, listItem, divider lipgloss.Style
+	title, overlayTitle        lipgloss.Style
+	header, chipWarn, prob     lipgloss.Style
+	sig, moved                 lipgloss.Style
+	collapsed, hidden          lipgloss.Style
+	gutter, ctx, noEOL         lipgloss.Style
+	markNone                   lipgloss.Style
+	placeholder                lipgloss.Style // placeholder group names
 	// Comments layer: block headers, dim borders and bars, the ❱ gutter
 	// mark, the strip line and the composer/panel titles.
 	cHead, cDim, threadMark, strip, panelTitle lipgloss.Style
+	// Filter chips with colour: on (filled accent), off (dim).
+	fltOn, fltOff lipgloss.Style
+	// bar is the findings block's left bar (red).
+	findBar lipgloss.Style
 }
 
 func newStyles(r *lipgloss.Renderer) styles {
-	green, red, yellow := lipgloss.Color("2"), lipgloss.Color("1"), lipgloss.Color("3")
+	th := theme.New(r)
 	faint := r.NewStyle().Faint(true)
 	return styles{
-		bar: r.NewStyle(), barOn: r.NewStyle().Bold(true), barDim: faint, note: faint.Italic(true),
-		listSel: r.NewStyle().Bold(true), listItem: r.NewStyle(), divider: faint,
+		bar: r.NewStyle(), barOn: r.NewStyle().Bold(true), barDim: faint, note: th.Dim.Italic(true),
+		listSel: th.Selected, listItem: th.Text, divider: th.Dim,
 		title: r.NewStyle().Bold(true).Reverse(true), overlayTitle: r.NewStyle().Bold(true).Reverse(true),
-		header: r.NewStyle().Bold(true), chipWarn: r.NewStyle().Bold(true).Foreground(red),
-		prob: faint, sig: faint, moved: faint.Italic(true),
-		collapsed: faint, hidden: faint,
-		gutter: faint, add: r.NewStyle().Foreground(green), del: r.NewStyle().Foreground(red), ctx: r.NewStyle(),
-		addEmph: r.NewStyle().Foreground(green).Bold(true).Underline(true),
-		delEmph: r.NewStyle().Foreground(red).Bold(true).Underline(true),
-		noEOL:   faint.Italic(true),
-		markHi:  r.NewStyle().Foreground(red).Bold(true), markMid: r.NewStyle().Foreground(yellow),
-		markLow: faint, markValue: r.NewStyle().Foreground(lipgloss.Color("6")),
-		markLeft: r.NewStyle().Foreground(yellow), markNone: faint,
-		cellEyes: r.NewStyle().Foreground(red), cellSkim: r.NewStyle().Foreground(yellow), cellSkip: faint,
-		placeholder: faint.Italic(true),
+		header: th.Bold, chipWarn: r.NewStyle().Bold(true).Foreground(th.P.WarnFg),
+		prob: th.Dim, sig: th.Dim, moved: th.Dim.Italic(true),
+		collapsed: th.Dim, hidden: th.Dim,
+		gutter: th.Dim, ctx: th.Text, noEOL: th.Dim.Italic(true),
+		markNone:    r.NewStyle().Foreground(th.P.Faint),
+		placeholder: th.Dim.Italic(true),
 		cHead:       r.NewStyle().Bold(true), cDim: faint,
-		threadMark: r.NewStyle().Foreground(lipgloss.Color("6")).Bold(true),
+		threadMark: th.Blue.Bold(true),
 		strip:      r.NewStyle().Bold(true), panelTitle: r.NewStyle().Bold(true).Reverse(true),
+		fltOn:   r.NewStyle().Background(th.P.Accent).Foreground(th.P.Bg),
+		fltOff:  th.Dim,
+		findBar: th.Del,
 	}
 }
 
-// renderCache holds rendered pane rows for one width and intra-line spans;
-// shared by Model copies so View (value receiver) can fill it.
+// renderCache holds rendered pane rows for one width and layout, and the
+// intra-line spans (unified: by row; side-by-side: by pair); shared by
+// Model copies so View (value receiver) can fill it.
 type renderCache struct {
 	width   int
+	split   bool
 	lines   map[int]string
 	spans   map[int][]diff.Span
+	pairs   map[int][2][]diff.Span
 	renders int // rows built; lets tests check laziness
 }
 
 func newRenderCache() *renderCache {
-	return &renderCache{lines: map[int]string{}, spans: map[int][]diff.Span{}}
+	return &renderCache{lines: map[int]string{}, spans: map[int][]diff.Span{}, pairs: map[int][2][]diff.Span{}}
 }
 
 // View renders the component at its size: exactly h lines, none wider
@@ -86,21 +93,7 @@ func (m Model) View() string {
 	if lay.top == 1 {
 		out = append(out, m.topLine())
 	}
-	var list []string
-	if m.byChange() {
-		list = m.groupListLines(lay)
-	} else {
-		list = m.listLines(lay)
-	}
-	pane := m.paneLines(lay)
-	body := make([]string, lay.bodyH)
-	for i := range lay.bodyH {
-		if lay.listW > 0 {
-			body[i] = list[i] + " " + pane[i]
-		} else {
-			body[i] = pane[i]
-		}
-	}
+	body := m.bodyLines(lay)
 	if m.panel != nil {
 		body = m.panelOverlay(body)
 	}
@@ -111,8 +104,49 @@ func (m Model) View() string {
 	return strings.Join(out, "\n")
 }
 
+// bodyLines renders the list and the pane, bodyH lines: in titled boxes
+// (design), or below narrowBelow as the pane alone under a plain title row.
+func (m Model) bodyLines(lay layout) []string {
+	body := make([]string, lay.bodyH)
+	if lay.bodyH == 0 {
+		return body
+	}
+	var list []string
+	if lay.listW > 0 {
+		if m.byChange() {
+			list = m.groupListLines(lay)
+		} else {
+			list = m.listLines(lay)
+		}
+	}
+	title, right, pane := m.paneView(lay)
+	if !lay.boxed {
+		pane = append([]string{m.st.title.Render(pad(fit(" "+title, lay.paneW), lay.paneW))}, pane...)
+		for i := range body {
+			if lay.listW > 0 {
+				body[i] = list[i] + " " + pane[i]
+			} else {
+				body[i] = pane[i]
+			}
+		}
+		return body
+	}
+	listTitle := "Files · by attention"
+	if m.byChange() {
+		listTitle = "Change groups · review order"
+	}
+	lb := strings.Split(m.th.Box(listTitle, strings.Join(list, "\n"), lay.listW, theme.BoxOpt{Height: lay.bodyH, NoPad: true}), "\n")
+	pb := strings.Split(m.th.Box(title, strings.Join(pane, "\n"), m.w-lay.listW-1,
+		theme.BoxOpt{Height: lay.bodyH, NoPad: true, Right: right}), "\n")
+	for i := range body {
+		body[i] = lb[i] + " " + pb[i]
+	}
+	return body
+}
+
 // topLine is the bar line: a one-shot note, the filters bar, or the
-// standing notes (labels unavailable, embeddings skipped).
+// standing notes (side-by-side degraded, labels unavailable, embeddings
+// skipped).
 func (m Model) topLine() string {
 	switch {
 	case m.note != "":
@@ -124,23 +158,34 @@ func (m Model) topLine() string {
 	}
 }
 
-// barText renders the filter chips: "[1 needs eyes ✓] [4 risk ≥ 3] …".
+// barText renders the filter chips: "show: [1 needs eyes ✓] [4 risk ≥ 3]
+// …" without colour; with colour active filters are filled accent chips
+// and the rest dim (design v2/Code).
 func (m Model) barText() string {
-	parts := make([]string, 0, len(AllFilters)+1)
+	parts := make([]string, 0, len(AllFilters)+2)
+	parts = append(parts, m.st.sig.Render("show:"))
 	for i, f := range AllFilters {
-		s := "[" + strconv.Itoa(i+1) + " " + filterLabel(f)
-		st := m.st.bar
+		label := strconv.Itoa(i+1) + " " + filterLabel(f)
+		on, st, s := false, m.st.bar, "["+label
 		switch {
 		case !m.c.hasData(f):
 			st = m.st.barDim
 		case m.filters[i] && !m.filterActive(f):
 			s += " ✓ (no owned files, ignored)"
+			label += " (no owned files, ignored)"
 			st = m.st.barDim
 		case m.filters[i]:
 			s += " ✓"
-			st = m.st.barOn
+			on, st = true, m.st.barOn
 		}
-		parts = append(parts, st.Render(s+"]"))
+		switch {
+		case !m.th.Colour:
+			parts = append(parts, st.Render(s+"]"))
+		case on:
+			parts = append(parts, m.st.fltOn.Render(" "+label+" "))
+		default:
+			parts = append(parts, m.st.fltOff.Render("["+label+"]"))
+		}
 	}
 	if !m.filtersApply() {
 		parts = append(parts, m.st.note.Render("— filters off (labels unavailable)"))
@@ -148,19 +193,16 @@ func (m Model) barText() string {
 	return strings.Join(parts, " ")
 }
 
-// listLines renders the file list, bodyH lines padded to listW.
+// listLines renders the file list, listH lines padded to listIn.
 func (m Model) listLines(lay layout) []string {
-	out := make([]string, lay.bodyH)
-	if lay.listW == 0 {
-		return out
-	}
+	out := make([]string, lay.listH)
 	rows := m.listRows()
 	for i := range out {
 		s := ""
 		if ri := m.listOff + i; ri < len(rows) {
-			s = m.listRow(rows[ri], lay.listW)
+			s = m.listRow(rows[ri], lay.listIn)
 		}
-		out[i] = pad(s, lay.listW)
+		out[i] = pad(s, lay.listIn)
 	}
 	return out
 }
@@ -173,8 +215,11 @@ func (m Model) listRow(fi, w int) string {
 	}
 	f := m.c.files[fi]
 	marker, st := "  ", m.st.listItem
-	if fi == m.sel {
+	switch {
+	case fi == m.sel:
 		marker, st = "▸ ", m.st.listSel
+	case !f.owned:
+		st = m.st.sig
 	}
 	cells, cellsW := m.minimap(f, max(1, (w-2)/3))
 	avail := w - 2
@@ -207,7 +252,11 @@ func (m Model) minimap(f fileEntry, limit int) (string, int) {
 			b.WriteString(" ")
 			continue
 		}
-		b.WriteString(m.cellStyle(a.Attention).Render(AttentionGlyph(a.Attention, a.Unsure)))
+		st := m.th.Attention(a.Attention)
+		if a.Unsure {
+			st = m.th.Blue
+		}
+		b.WriteString(st.Render(AttentionGlyph(a.Attention, a.Unsure)))
 	}
 	if more {
 		b.WriteString("+")
@@ -216,42 +265,28 @@ func (m Model) minimap(f fileEntry, limit int) (string, int) {
 	return b.String(), n
 }
 
-func (m Model) cellStyle(a model.Attention) lipgloss.Style {
-	switch a {
-	case model.AttnEyes:
-		return m.st.cellEyes
-	case model.AttnSkim:
-		return m.st.cellSkim
-	}
-	return m.st.cellSkip
-}
-
-// paneLines renders the right pane: the file title (or overlay title),
-// then the visible rows; bodyH lines.
-func (m Model) paneLines(lay layout) []string {
-	out := make([]string, lay.bodyH)
-	if lay.bodyH == 0 || lay.paneW <= 0 {
-		return out
-	}
+// paneView renders the right pane: its title, the right-hand border text
+// ("file 1 of 3") and the visible rows (viewH lines).
+func (m Model) paneView(lay layout) (string, string, []string) {
+	out := make([]string, lay.viewH)
 	switch {
 	case m.picker != nil:
 		return m.pickerView(lay, out)
 	case m.overlay:
 		return m.overlayView(lay, out)
 	}
-	title := ""
+	var title, right string
 	if m.byChange() {
-		title = m.groupTitle(lay)
+		title, right = m.groupTitle(lay)
 	} else {
-		title = m.fileTitle(lay)
+		title, right = m.fileTitle(lay)
 	}
-	out[0] = m.st.title.Render(pad(fit(title, lay.paneW), lay.paneW))
-	if m.cache.width != lay.paneW {
-		m.cache.width = lay.paneW
+	if m.cache.width != lay.paneW || m.cache.split != lay.split {
+		m.cache.width, m.cache.split = lay.paneW, lay.split
 		m.cache.lines = map[int]string{}
 	}
-	copy(out[1:], m.viewRowLines(lay))
-	return out
+	copy(out, m.viewRowLines(lay))
+	return title, right, out
 }
 
 // viewRowLines renders the pane rows in view (viewH lines at most), with
@@ -276,36 +311,38 @@ func (m Model) viewRowLines(lay layout) []string {
 	return rows[:min(len(rows), lay.viewH)]
 }
 
-// fileTitle is " path  +a −d", plus "(not yours)" and, when the list is
-// hidden, "i/n".
-func (m Model) fileTitle(lay layout) string {
+// fileTitle is "path  +a −d", plus "(not yours)"; right is "file i of n"
+// in a box, and the title ends in "i/n" when the list is hidden.
+func (m Model) fileTitle(lay layout) (string, string) {
 	if len(m.c.files) == 0 {
-		return " no files"
+		return "no files", ""
 	}
 	f := m.c.files[m.sel]
-	s := " " + diffview.Clean(f.path) + "  +" + strconv.Itoa(f.adds) + " −" + strconv.Itoa(f.dels)
+	s := diffview.Clean(f.path) + "  +" + strconv.Itoa(f.adds) + " −" + strconv.Itoa(f.dels)
 	if !f.owned {
 		s += "  (not yours)"
 	}
+	pos := strconv.Itoa(m.sel+1) + "/" + strconv.Itoa(len(m.c.files))
 	if lay.listW == 0 {
-		s += "  " + strconv.Itoa(m.sel+1) + "/" + strconv.Itoa(len(m.c.files))
+		s += "  " + pos
 	}
-	return s
+	if lay.boxed {
+		return s, "file " + strconv.Itoa(m.sel+1) + " of " + strconv.Itoa(len(m.c.files))
+	}
+	return s, ""
 }
 
 // overlayView draws the raw-labels overlay over the pane.
-func (m Model) overlayView(lay layout, out []string) []string {
-	title := " raw labels — esc/L closes"
-	out[0] = m.st.overlayTitle.Render(pad(fit(title, lay.paneW), lay.paneW))
+func (m Model) overlayView(lay layout, out []string) (string, string, []string) {
 	lines := m.overlayLines(lay.paneW)
-	for i := 1; i < lay.bodyH; i++ {
-		li := m.overlayOff + i - 1
+	for i := range out {
+		li := m.overlayOff + i
 		if li >= len(lines) {
 			break
 		}
 		out[i] = fit(diffview.Clean(lines[li]), lay.paneW)
 	}
-	return out
+	return "raw labels — esc/L closes", "", out
 }
 
 // renderRow returns pane row i, from the cache when possible (keyed by row
@@ -333,11 +370,13 @@ func (m Model) buildRow(i, deco, width int) string {
 	case rowHeader:
 		return ansi.Truncate(m.headerText(m.p.units[r.unit], int(r.line)), width, ellipsis)
 	case rowSig:
-		return m.st.sig.Render(fit("│ "+diffview.Clean(sigText(m.p.units[r.unit].u)), width))
+		return m.st.sig.Render(fit(sigLead+diffview.Clean(sigText(m.p.units[r.unit].u)), width))
 	case rowMoved:
-		return m.st.moved.Render(fit("│ "+diffview.Clean(m.movedText(m.p.units[r.unit].u)), width))
+		return m.st.moved.Render(fit(sigLead+diffview.Clean(m.movedText(m.p.units[r.unit].u)), width))
 	case rowLine:
 		return m.lineRow(i, r, deco, width)
+	case rowSplit:
+		return m.splitRow(r, deco, width)
 	case rowComment:
 		return m.commentRow(m.p.clines[r.line], deco, width)
 	case rowNoEOL:
@@ -361,27 +400,38 @@ func (m Model) buildRow(i, deco, width int) string {
 	return ""
 }
 
-// headerText renders row k of the unit's chip strip.
+// headPrefix is the first chip row's lead: "@@ 14  " (the unit's first
+// line, new side; old side for a pure deletion), as in the design's
+// "@@ 14  feature  behaviour ✓ …".
+func headPrefix(u *model.ChangeUnit) string { return "@@ " + strconv.Itoa(unitStart(u)) + "  " }
+
+// unitStart is a unit's first line: new side, or old for a pure deletion.
+func unitStart(u *model.ChangeUnit) int {
+	if u.Range.New.Count == 0 && u.Range.Old.Count > 0 {
+		return u.Range.Old.Start
+	}
+	return u.Range.New.Start
+}
+
+// headerText renders row k of the unit's chip strip: theme chips (filled
+// with colour, " · "-joined without), after "@@ N  " on the first row.
 func (m Model) headerText(pu paneUnit, k int) string {
 	span := pu.chipRows[k]
-	cs := pu.chips[span[0]:span[1]]
-	parts := make([]string, 0, len(cs))
-	for _, c := range cs {
-		st := m.st.header
-		if c.warn {
-			st = m.st.chipWarn
-		}
-		s := st.Render(c.text)
-		if c.prob != "" {
-			s += " " + m.st.prob.Render(c.prob)
-		}
-		parts = append(parts, s)
-	}
-	prefix := "┌ "
+	prefix := headPrefix(pu.u)
+	lead := m.st.sig.Render(prefix)
 	if k > 0 {
-		prefix = "│ "
+		lead = strings.Repeat(" ", ansi.StringWidth(prefix))
 	}
-	return m.st.header.Render(prefix) + strings.Join(parts, m.st.sig.Render(chipSep))
+	return lead + m.chipsText(pu.chips[span[0]:span[1]])
+}
+
+// chipsText renders chips with the theme (labels cleaned).
+func (m Model) chipsText(cs []chip) string {
+	tc := make([]theme.Chip, len(cs))
+	for i, c := range cs {
+		tc[i] = theme.Chip{Kind: c.kind, Text: diffview.Clean(c.label())}
+	}
+	return m.th.Chips(tc...)
 }
 
 // sigText is "L12–30 · +a −d · signature-or-symbol" (the range first so a
@@ -448,46 +498,48 @@ func (m Model) collapsedText(pu paneUnit) string {
 	return strings.Join(parts, " · ") + " (z to expand)"
 }
 
-// lineRow renders "mark cursor old new op text" with intra-line emphasis.
+// lineRow renders "mark cursor old new op text": syntax colour and
+// intra-line emphasis with colour, the line's background to the pane edge
+// on added and deleted lines.
 func (m Model) lineRow(i int, r prow, deco, width int) string {
 	pu := m.p.units[r.unit]
 	l := pu.lines[r.line]
 	g := m.p.gutter
-	base, emph := m.lineStyles(l.Op)
-	text, cut := diffview.Clip(l.Text, 4*width+64)
 	var spans []diff.Span
-	if r.pair >= 0 {
+	if r.pair >= 0 && m.paint.Colour() {
 		spans = m.intraSpans(i, int(r.pair))
 	}
+	t := m.paint.Prepare(pu.lang, l.Op, l.Text, spans, 4*width+64)
+	base := m.paint.Base(l.Op)
 	var b strings.Builder
-	if pu.threads[int(r.line)] {
-		b.WriteString(m.st.threadMark.Render(glyphThread))
-	} else {
-		b.WriteString(m.markCell(pu, l))
-	}
+	b.WriteString(m.gutterCell(pu, int(r.line), l))
 	b.WriteString(decoGlyph(deco))
 	b.WriteString(m.st.gutter.Render(num(l.OldNo, g) + " " + num(l.NewNo, g) + " "))
 	b.WriteString(base.Render(string(rune(l.Op)) + " "))
-	diffview.WriteSegments(&b, text, spans, base, emph)
-	if cut {
+	b.WriteString(t.All())
+	if t.Cut {
 		b.WriteString(base.Render(ellipsis))
 	}
-	return ansi.Truncate(b.String(), width, ellipsis)
+	s := ansi.Truncate(b.String(), width, ellipsis)
+	if m.paint.Colour() && l.Op != diff.Context {
+		s += base.Render(strings.Repeat(" ", max(0, width-ansi.StringWidth(s))))
+	}
+	return s
 }
 
-func (m Model) lineStyles(op diff.Op) (base, emph lipgloss.Style) {
-	switch op {
-	case diff.Add:
-		return m.st.add, m.st.addEmph
-	case diff.Del:
-		return m.st.del, m.st.delEmph
+// gutterCell is the one-cell gutter of line li: ❱ with an open thread,
+// else its mark (markCell).
+func (m Model) gutterCell(pu paneUnit, li int, l diff.Line) string {
+	if pu.threads[li] {
+		return m.st.threadMark.Render(glyphThread)
 	}
-	return m.st.ctx, m.st.ctx
+	return m.markCell(pu, l)
 }
 
 // markCell is the one-cell gutter mark of a line: blank for deleted and
-// context lines and before labels exist; MarkGlyph for added lines, with
-// ◆ shaded by its suspicious score.
+// context lines and before labels exist; MarkGlyph for added lines: ◆
+// shaded by its suspicious score, ~ and ⋯ in the accent, · faint (design
+// gutter).
 func (m Model) markCell(pu paneUnit, l diff.Line) string {
 	if l.Op != diff.Add || !m.c.labelled || pu.a == nil {
 		return " "
@@ -499,18 +551,9 @@ func (m Model) markCell(pu paneUnit, l diff.Line) string {
 	st := m.st.markNone
 	switch lm.Mark {
 	case model.MarkSuspicious:
-		switch {
-		case lm.Score >= 4:
-			st = m.st.markHi
-		case lm.Score >= 2.5:
-			st = m.st.markMid
-		default:
-			st = m.st.markLow
-		}
-	case model.MarkValue:
-		st = m.st.markValue
-	case model.MarkLeftover:
-		st = m.st.markLeft
+		st = m.th.Suspicious(lm.Score)
+	case model.MarkValue, model.MarkLeftover:
+		st = m.th.Accent
 	}
 	return st.Render(MarkGlyph(lm.Mark))
 }

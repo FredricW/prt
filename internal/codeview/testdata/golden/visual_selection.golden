@@ -1,30 +1,30 @@
-▸ web/src/api/client.ts              █·□  web/src/api/client.ts  +8 −3                                                  
-  web/src/api/session.ts              ·█ ┌ modified · feature · behaviour ✓ .91 · breaking .86 · b2 · tests ✗ · auth
-── not yours ─────────────────────────── │ error_path · risk 4 · eyes
-  web/legacy/util.ts                  ▒█ │ L10–15 · +3 −1 · export async function fetchJSON(url: string, opts?: Request…
-                                           10 10   export async function fetchJSON(url: string, opts?: RequestInit) {
-                                         ❱┃11    -   const res = await fetch(url);
-                                           ❱ thread · alice · 1 reply · open
-                                           │ Was the old fetch call wrong?
-                                         ~┃   11 +   const res = await fetch(url, { ...opts, credentials: "include" });
-                                         ◆▸   12 +   if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                                           ✎ draft · you
-                                           │ Why throw here?
-                                           │ 
-                                           │ Prefer a **typed** error:
-                                           │ 
-                                           │ • keeps callers simple
-                                         ⋯    13 +   console.log("debug", res);
-                                           ╭─ ai-draft · medium ───────────────────────────────────────────────────────╮
-                                           │ **medium** console.log leaks the response body                            │
-                                           │                                                                           │
-                                           │ Suggested fix: remove the debug log                                       │
-                                           │ a accept · d dismiss · ! override                                         │
-                                           ╰───────────────────────────────────────────────────────────────────────────╯
-                                           ✎ draft · you · L11–13
-                                           │ These three lines need a test.
-                                           12 14     return res.json();
-                                           13 15   }
-                                         
-                                         ▸ formatting · +2 −2 (z to expand)
+┌─ Files · by attention ───────────────┐ ┌─ web/src/api/client.ts  +8 −3 ──────────────────────────────── file 1 of 3 ─┐
+│▸ web/src/api/client.ts            █·□│ │@@ 10  modified · feature · behaviour ✓ .91 · ⚠ breaking .86 · b2 · tests ✗  │
+│  web/src/api/session.ts            ·█│ │       auth · error_path · risk 4 · eyes                                     │
+│── not yours ─────────────────────────│ │  L10–15 · +3 −1 · export async function fetchJSON(url: string, opts?: Reque…│
+│  web/legacy/util.ts                ▒█│ │  10 10   export async function fetchJSON(url: string, opts?: RequestInit) { │
+│                                      │ │❱┃11    -   const res = await fetch(url);                                    │
+│                                      │ │  ❱ thread · alice · 1 reply · open                                          │
+│                                      │ │  │ Was the old fetch call wrong?                                            │
+│                                      │ │~┃   11 +   const res = await fetch(url, { ...opts, credentials: "include" }…│
+│                                      │ │◆▸   12 +   if (!res.ok) throw new Error(`HTTP ${res.status}`);              │
+│                                      │ │  ✎ draft · you                                                              │
+│                                      │ │  │ Why throw here?                                                          │
+│                                      │ │  │                                                                          │
+│                                      │ │  │ Prefer a **typed** error:                                                │
+│                                      │ │  │                                                                          │
+│                                      │ │  │ • keeps callers simple                                                   │
+│                                      │ │⋯    13 +   console.log("debug", res);                                       │
+│                                      │ │  ╭─ ai-draft · medium ─────────────────────────────────────────────────────╮│
+│                                      │ │  │ **medium** console.log leaks the response body                          ││
+│                                      │ │  │                                                                         ││
+│                                      │ │  │ Suggested fix: remove the debug log                                     ││
+│                                      │ │  │ a accept · d dismiss · ! override                                       ││
+│                                      │ │  ╰─────────────────────────────────────────────────────────────────────────╯│
+│                                      │ │  ✎ draft · you · L11–13                                                     │
+│                                      │ │  │ These three lines need a test.                                           │
+│                                      │ │  12 14     return res.json();                                               │
+│                                      │ │  13 15   }                                                                  │
+│                                      │ │                                                                             │
+└──────────────────────────────────────┘ └─────────────────────────────────────────────────────────────────────────────┘
 Comments 8 · 3 drafts · 1 pending · 1 posted · 1 ai · 2 threads (1 open) (tab focuses)

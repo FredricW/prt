@@ -155,6 +155,12 @@ func (m *Model) startComposer(base model.Comment, k curKey) {
 // row, or the last row of a comment block; -1 when k is not drawn.
 func (m *Model) anchorRow(k curKey) int {
 	r := m.rowOfKey(k)
+	if r >= 0 && m.p.rows[r].kind == rowSplit {
+		for r+1 < len(m.p.rows) && m.p.rows[r+1].kind == rowSplit && m.p.rows[r+1].pair > 0 {
+			r++ // under the pair's last wrapped row
+		}
+		return r
+	}
 	if r < 0 || k.block == "" {
 		return r
 	}
@@ -276,7 +282,7 @@ func (m *Model) visualKey(k tea.KeyMsg) bool {
 func (m *Model) visualMove(d int) {
 	lo, hi := m.p.unitSpan(m.vis.unit)
 	for i := m.curRow + d; i >= lo && i <= hi && i >= 0; i += d {
-		if m.p.rows[i].kind == rowLine {
+		if m.p.isLineRow(i) {
 			m.setCursorRow(i)
 			m.ensureRowVisible(i)
 			return

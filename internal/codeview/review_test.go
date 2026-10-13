@@ -98,17 +98,22 @@ func TestReviewMeta(t *testing.T) {
 func TestFindingsByChange(t *testing.T) {
 	m := byChangeModel(t, withReviews(loadGroups(t)), 160, 60, true)
 	v := m.View()
+	contains(t, v, "routed: fast")
 	contains(t, v, "routing: if breaking → fast · context: callers")
 	contains(t, v, "findings (3)")
 	contains(t, v, "deep check: 1 missed")
-	// Anchored findings in unit order (c1 before k1), the unanchored one last.
-	hi := strings.Index(v, "high   web/src/api/client.ts:11  opts is forwarded")
-	med := strings.Index(v, "medium web/src/components/UserCard.tsx:9  "+claimMed)
-	low := strings.Index(v, "low    web/src/api/client.ts  "+claimDoc)
-	if hi < 0 || med < 0 || low < 0 || hi >= med || med >= low {
-		t.Errorf("finding order hi %d med %d low %d:\n%s", hi, med, low, v)
+	// Anchored findings in unit order (c1 before k1), the unanchored one
+	// last; each behind the "!" bar under a "severity · tier" head.
+	hi := strings.Index(v, "! high · fast")
+	hiClaim := strings.Index(v, "! web/src/api/client.ts:11  opts is forwarded")
+	med := strings.Index(v, "! web/src/components/UserCard.tsx:9  "+claimMed)
+	low := strings.Index(v, "! web/src/api/client.ts  "+claimDoc)
+	if hi < 0 || hiClaim < hi || med < 0 || low < 0 || hiClaim >= med || med >= low {
+		t.Errorf("finding order hi %d/%d med %d low %d:\n%s", hi, hiClaim, med, low, v)
 	}
-	contains(t, v, "    fix: merge opts over the default headers")
+	contains(t, v, "! medium · fast")
+	contains(t, v, "! low · fast")
+	contains(t, v, "! fix: merge opts over the default headers")
 	// By change findings are listed once, not inline.
 	lacks(t, v, "! [high]")
 
@@ -206,7 +211,7 @@ func TestFindingUnderHeaderAndNeverCollapsed(t *testing.T) {
 	sig, note := -1, -1
 	for i, l := range ls {
 		switch {
-		case strings.Contains(l, "│ L1–5"):
+		case strings.Contains(l, "│  L1–5"):
 			sig = i
 		case strings.Contains(l, "unanchored note"):
 			note = i

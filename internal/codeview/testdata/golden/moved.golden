@@ -1,30 +1,30 @@
-  web/src/api/client.ts              █·□  web/src/api/session.ts  +4 −1                                                 
-▸ web/src/api/session.ts              ·█ ▸ moved from web/legacy/util.ts:12 · parseCookie · +3 −0 (z to expand)
-── not yours ─────────────────────────── 
-  web/legacy/util.ts                  ▒█ ┌ modified · bugfix · behaviour ✓ .80 · b1 · tests ✓ · auth · risk 3 · eyes
-                                         │ L23–25 · +1 −1 · getSession
-                                           20 23   export function getSession() {
-                                          ▸21    -   return parseCookie(document.cookie).sid;
-                                         ◆    24 +   return parseCookie(document.cookie).sid ?? null;
-                                           22 25   }
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
+┌─ Files · by attention ───────────────┐ ┌─ web/src/api/session.ts  +4 −1 ─────────────────────────────── file 2 of 3 ─┐
+│  web/src/api/client.ts            █·□│ │▸ moved from web/legacy/util.ts:12 · parseCookie · +3 −0 (z to expand)       │
+│▸ web/src/api/session.ts            ·█│ │                                                                             │
+│── not yours ─────────────────────────│ │@@ 23  modified · bugfix · behaviour ✓ .80 · b1 · tests ✓ · auth · risk 3    │
+│  web/legacy/util.ts                ▒█│ │       eyes                                                                  │
+│                                      │ │  L23–25 · +1 −1 · getSession                                                │
+│                                      │ │  20 23   export function getSession() {                                     │
+│                                      │ │ ▸21    -   return parseCookie(document.cookie).sid;                         │
+│                                      │ │◆    24 +   return parseCookie(document.cookie).sid ?? null;                 │
+│                                      │ │  22 25   }                                                                  │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+└──────────────────────────────────────┘ └─────────────────────────────────────────────────────────────────────────────┘

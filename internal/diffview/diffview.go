@@ -17,6 +17,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/fredricw/prt/internal/diff"
+	"github.com/fredricw/prt/internal/highlight"
 )
 
 // wheelStep is how many rows one mouse wheel notch scrolls.
@@ -36,6 +37,7 @@ type Model struct {
 	height int
 	offset int
 	cache  *renderCache
+	paint  *Painter
 }
 
 // New returns an empty viewer. r may be nil (default renderer); snapshots pass
@@ -44,7 +46,19 @@ func New(r *lipgloss.Renderer) Model {
 	if r == nil {
 		r = lipgloss.DefaultRenderer()
 	}
-	return Model{r: r, st: newStyles(r), width: 80, height: 20, cache: newRenderCache()}
+	return Model{r: r, st: newStyles(r), width: 80, height: 20, cache: newRenderCache(), paint: NewPainter(r, nil)}
+}
+
+// SetHighlighter shares a syntax highlighter (and its cache) with the
+// viewer; nil keeps the current one.
+func (m *Model) SetHighlighter(hl *highlight.Highlighter) {
+	if hl == nil {
+		return
+	}
+	m.paint = NewPainter(m.r, hl)
+	if m.cache != nil {
+		m.cache.resetLines()
+	}
 }
 
 // SetDiff replaces the content with a raw `git diff` text. It indexes the

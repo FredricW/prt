@@ -1,44 +1,44 @@
-▸ Pass request options through getUser    Pass request options through getUser  3 units · 3 files                       
-    3u 3f · b2 .82 · fast · 3 findings   ┌ b2 .82 · risk 4 · auth · error_path · test gap 1 · breaking 1
-  ‹ApiError›                             │ routing: if breaking → fast · context: callers
-    2u 2f · deep←fast .42 · done         
-  Invalidate the profile cache on logout why these belong together
-    1u 1f · b1 .64 · deep (forced) · ru…   calls  UserCard.tsx UserCard → client.ts getUser
-  ‹import fetchJSON from client›           tests  client.test.ts → client.ts getUser
-    ×5 5f · none                           jev caller update .82 · cos .79  UserCard.tsx UserCard → client.test.ts
-── ungrouped (3) ─────────────────────── 
-  ‹f.tsx›                                ┌ modified · feature · behaviour ✓ .90 · breaking .86 · b2 · tests ✗ · auth
-    1u 1f · fast · queued (over cap)     │ error_path · risk 4 · eyes
-  ‹theme.css›                            │ L10–12 · +2 −2 · export async function getUser(id: string, opts?: RequestIni…
-    1u 1f · none (skipped)                ▸10    - export async function getUser(id: string) {
-  ‹save›                                   11    -   return fetchJSON(`/users/${id}`);
-    1u 1f · deep · failed                ·    10 + export async function getUser(id: string, opts?: RequestInit) {
-── split suggestion ──────────────────── ·    11 +   return fetchJSON(`/users/${id}`, opts);
-  split? web/src/styles/theme.css .74      12 12   }
-                                         
-                                         ┌ modified · feature · behaviour ✓ .80 · b2 · tests ✓ · risk 2 · eyes
-                                         │ L8–10 · +1 −1 · export function UserCard({ id }: Props)
-                                            8  8   export function UserCard({ id }: Props) {
-                                            9    -   const user = useUser(() => getUser(id));
-                                         ·     9 +   const user = useUser(() => getUser(id, { cache: "no-store" }));
-                                           10 10     return <Card user={user} />;
-                                         
-                                         ┌ added · test · behaviour ✗ .90 · tests ✓ · risk 1 · skim
-                                         │ L20–23 · +4 −0
-                                         ·    20 + test("getUser passes options", async () => {
-                                         ·    21 +   await getUser("1", { cache: "no-store" });
-                                         ·    22 +   expect(fetchMock).toHaveBeenCalledWith("/users/1", { cache: "no-st…
-                                         ·    23 + });
-                                         
-                                         findings (3)
-                                           high   web/src/api/client.ts:11  opts is forwarded unchecked, so a
-                                                  caller passing headers silently replaces the auth header set by
-                                                  fetchJSON
-                                             fix: merge opts over the default headers
-                                           medium web/src/components/UserCard.tsx:9  no-store disables the
-                                                  profile cache on every render
-                                           low    web/src/api/client.ts  the README does not mention the new
-                                                  opts parameter
-                                         deep check: 1 missed
-                                         
-                                         
+┌─ Change groups · review order ───────┐ ┌─ Pass request options through getUser  3 units · 3 files ──── group 1 of 7 ─┐
+│by: file [change] · interfaces → call…│ │Pass request options through getUser                                         │
+│▸ 1 Pass request options through getU…│ │b2 .82 · risk 4 · auth · error_path · tests: 2 of 3 units · test gap 1       │
+│    3u 3f · b2 .82 · fast · 3 findings│ │⚠ breaking 1 · routed: fast · routing: if breaking → fast · context: callers │
+│  2 ‹ApiError›                        │ │                                                                             │
+│    2u 2f · deep←fast .42 · done      │ │┌─ why these belong together ───────────────────────────────────────────────┐│
+│  3 Invalidate the profile cache on l…│ ││ calls  UserCard.tsx UserCard → client.ts getUser                          ││
+│    1u 1f · b1 .64 · deep (forced) · …│ ││ tests  client.test.ts → client.ts getUser                                 ││
+│  4 ‹import fetchJSON from client›    │ ││ jev caller update .82 · cos .79  UserCard.tsx UserCard → client.test.ts   ││
+│    ×5 5f · none                      │ │└───────────────────────────────────────────────────────────────────────────┘│
+│── ungrouped (3) ─────────────────────│ │                                                                             │
+│  5 ‹f.tsx›                           │ │── Units · interface first ──────────────────────────────────────────────────│
+│    1u 1f · fast · queued (over cap)  │ │1 web/src/api/client.ts@10                                      caller · eyes│
+│  6 ‹theme.css›                       │ │@@ 10  modified · feature · behaviour ✓ .90 · ⚠ breaking .86 · b2 · tests ✗  │
+│    1u 1f · none (skipped)            │ │       auth · error_path · risk 4 · eyes                                     │
+│  7 ‹save›                            │ │  L10–12 · +2 −2 · export async function getUser(id: string, opts?: RequestI…│
+│    1u 1f · deep · failed             │ │ ▸10    - export async function getUser(id: string) {                        │
+│── split suggestion: group 6 ─────────│ │  11    -   return fetchJSON(`/users/${id}`);                                │
+│  split? web/src/styles/theme.css .74 │ │·    10 + export async function getUser(id: string, opts?: RequestInit) {    │
+│                                      │ │·    11 +   return fetchJSON(`/users/${id}`, opts);                          │
+│                                      │ │  12 12   }                                                                  │
+│                                      │ │                                                                             │
+│                                      │ │2 web/src/components/UserCard.tsx@8                             caller · eyes│
+│                                      │ │@@ 8  modified · feature · behaviour ✓ .80 · b2 · tests ✓ · risk 2 · eyes    │
+│                                      │ │  L8–10 · +1 −1 · export function UserCard({ id }: Props)                    │
+│                                      │ │   8  8   export function UserCard({ id }: Props) {                          │
+│                                      │ │   9    -   const user = useUser(() => getUser(id));                         │
+│                                      │ │·     9 +   const user = useUser(() => getUser(id, { cache: "no-store" }));  │
+│                                      │ │  10 10     return <Card user={user} />;                                     │
+│                                      │ │                                                                             │
+│                                      │ │3 web/src/api/client.test.ts@20                                 caller · skim│
+│                                      │ │@@ 20  added · test · behaviour ✗ .90 · tests ✓ · risk 1 · skim              │
+│                                      │ │  L20–23 · +4 −0                                                             │
+│                                      │ │·    20 + test("getUser passes options", async () => {                       │
+│                                      │ │·    21 +   await getUser("1", { cache: "no-store" });                       │
+│                                      │ │·    22 +   expect(fetchMock).toHaveBeenCalledWith("/users/1", { cache: "no-…│
+│                                      │ │·    23 + });                                                                │
+│                                      │ │                                                                             │
+│                                      │ │findings (3)                                                                 │
+│                                      │ │! high · fast                                                                │
+│                                      │ │! web/src/api/client.ts:11  opts is forwarded unchecked, so a caller         │
+│                                      │ │!   passing headers silently replaces the auth header set by fetchJSON       │
+│                                      │ │! fix: merge opts over the default headers                                   │
+└──────────────────────────────────────┘ └─────────────────────────────────────────────────────────────────────────────┘

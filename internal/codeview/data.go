@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/fredricw/prt/internal/diff"
+	"github.com/fredricw/prt/internal/diffview"
 	"github.com/fredricw/prt/internal/model"
 	"github.com/fredricw/prt/internal/proto"
 )
@@ -71,7 +72,15 @@ type content struct {
 	sinceKnown bool
 	// lineCache holds each unit's parsed diff lines (linesOf).
 	lineCache map[string][]diff.Line
+	// langs and roles are Detail.Files' language (syntax colour) and Jev
+	// role (the by-change unit header) by path.
+	langs map[string]string
+	roles map[string]model.FileRole
 }
+
+// langOf is the syntax language of path: its Detail.Files language, else
+// from the extension ("" is plain).
+func (c *content) langOf(path string) string { return diffview.Lang(c.langs[path], path) }
 
 // plain reports whether there are no units to lay out, so the component
 // falls back to the plain diff viewer.
@@ -94,8 +103,11 @@ func buildContent(d proto.Detail) content {
 		return c
 	}
 	stats := make(map[string]model.File, len(d.Files))
+	c.langs = make(map[string]string, len(d.Files))
+	c.roles = make(map[string]model.FileRole, len(d.Files))
 	for _, f := range d.Files {
 		stats[f.Path] = f
+		c.langs[f.Path], c.roles[f.Path] = f.Lang, f.Role
 	}
 	if d.Agg != nil && len(d.Agg.Units) > 0 {
 		c.hasAgg = true

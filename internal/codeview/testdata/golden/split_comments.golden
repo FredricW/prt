@@ -1,0 +1,40 @@
+┌─ Files · by attention ───────────────┐ ┌─ web/src/api/client.ts  +8 −3 ──────────────────────────────────────────────────────────────────────────────────────────── file 1 of 3 ─┐
+│▸ web/src/api/client.ts            █·□│ │@@ 10  modified · feature · behaviour ✓ .91 · ⚠ breaking .86 · b2 · tests ✗ · auth · error_path · risk 4 · eyes                          │
+│  web/src/api/session.ts            ·█│ │  L10–15 · +3 −1 · export async function fetchJSON(url: string, opts?: RequestInit)                                                      │
+│── not yours ─────────────────────────│ │  10   export async function fetchJSON(url: string, opts?: RequestIn│  10   export async function fetchJSON(url: string, opts?: RequestIn│
+│  web/legacy/util.ts                ▒█│ │       it) {                                                        │       it) {                                                        │
+│                                      │ │  11 -   const res = await fetch(url);                              │❱ 11 +   const res = await fetch(url, { ...opts, credentials: "inclu│
+│                                      │ │                                                                    │       de" });                                                      │
+│                                      │ │  ❱ thread · alice · 1 reply · open                                                                                                      │
+│                                      │ │  │ Was the old fetch call wrong?                                                                                                        │
+│                                      │ │                                                                    │◆▸12 +   if (!res.ok) throw new Error(`HTTP ${res.status}`);        │
+│                                      │ │  ✎ edit draft · web/src/api/client.ts:L12 · ctrl+s save · esc discard                                                                   │
+│                                      │ │  ┃ Why throw here?                                                                                                                      │
+│                                      │ │  ┃                                                                                                                                      │
+│                                      │ │  ┃ Prefer a **typed** error:                                                                                                            │
+│                                      │ │  ┃                                                                                                                                      │
+│                                      │ │  ✎ draft · you                                                                                                                          │
+│                                      │ │  │ Why throw here?                                                                                                                      │
+│                                      │ │  │                                                                                                                                      │
+│                                      │ │  │ Prefer a **typed** error:                                                                                                            │
+│                                      │ │  │                                                                                                                                      │
+│                                      │ │  │ • keeps callers simple                                                                                                               │
+│                                      │ │                                                                    │⋯ 13 +   console.log("debug", res);                                 │
+│                                      │ │  ╭─ ai-draft · medium ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮│
+│                                      │ │  │ **medium** console.log leaks the response body                                                                                      ││
+│                                      │ │  │                                                                                                                                     ││
+│                                      │ │  │ Suggested fix: remove the debug log                                                                                                 ││
+│                                      │ │  │ a accept · d dismiss · ! override                                                                                                   ││
+│                                      │ │  ╰─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯│
+│                                      │ │  ✎ draft · you · L11–13                                                                                                                 │
+│                                      │ │  │ These three lines need a test.                                                                                                       │
+│                                      │ │  12     return res.json();                                         │  14     return res.json();                                         │
+│                                      │ │  13   }                                                            │  15   }                                                            │
+│                                      │ │                                                                                                                                         │
+│                                      │ │▸ formatting · +2 −2 (z to expand)                                                                                                       │
+│                                      │ │                                                                                                                                         │
+│                                      │ │@@ 41  added · feature · ?behaviour ✗ .55 · undocumented · tests ✓ · risk 2 · skim · ?                                                   │
+│                                      │ │  L41–43 · +3 −0 · export function retryDelay(n: number): number                                                                         │
+│                                      │ │  ✎ draft · you · outdated (L40)                                                                                                         │
+└──────────────────────────────────────┘ └─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+Comments 8 · 3 drafts · 1 pending · 1 posted · 1 ai · 2 threads (1 open) (tab focuses)

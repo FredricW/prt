@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -18,6 +19,7 @@ import (
 	"github.com/fredricw/prt/internal/diffview"
 	"github.com/fredricw/prt/internal/model"
 	"github.com/fredricw/prt/internal/proto"
+	"github.com/fredricw/prt/internal/theme"
 )
 
 var update = flag.Bool("update", false, "rewrite golden files under testdata/golden")
@@ -97,9 +99,12 @@ func press(t *testing.T, m *Model, keys ...string) {
 
 func lines(m Model) []string { return strings.Split(m.View(), "\n") }
 
-// paneOf returns the right-pane part of a view line at width 120 (list 40
-// cells, gap 1).
-func paneOf(line string) string { return ansi.Cut(line, 41, 1000) }
+// paneOf returns the pane content of a view line at width 120 (list box 40
+// cells, gap 1, the pane box's border, 77 content cells, border).
+func paneOf(line string) string { return ansi.Cut(line, 42, 119) }
+
+// listOf returns the list box content of a view line at width 120.
+func listOf(line string) string { return ansi.Cut(line, 1, 39) }
 
 func contains(t *testing.T, view, want string) {
 	t.Helper()
@@ -194,6 +199,9 @@ func TestGolden(t *testing.T) {
 func TestFileList(t *testing.T) {
 	m := newModel(t, loadDetail(t), 120, 30)
 	ls := lines(m)
+	if !strings.HasPrefix(ls[0], "┌─ Files · by attention ─") || !strings.HasPrefix(ls[29], "└───") {
+		t.Errorf("list box borders: %q … %q", ls[0], ls[29])
+	}
 	want := []struct{ prefix, cells string }{
 		{"▸ web/src/api/client.ts", "█·□"},
 		{"  web/src/api/session.ts", "·█"},
@@ -201,7 +209,7 @@ func TestFileList(t *testing.T) {
 		{"  web/legacy/util.ts", "▒█"},
 	}
 	for i, w := range want {
-		list := ansi.Cut(ls[i], 0, 40)
+		list := listOf(ls[i+1])
 		if !strings.HasPrefix(list, w.prefix) {
 			t.Errorf("list row %d = %q, want prefix %q", i, list, w.prefix)
 		}
@@ -235,9 +243,9 @@ func TestChipsAndMarks(t *testing.T) {
 	m := newModel(t, loadDetail(t), 160, 40)
 	allOff(&m)
 	v := m.View()
-	contains(t, v, "┌ modified · feature · behaviour ✓ .91 · breaking .86 · b2 · tests ✗ · auth · error_path · risk 4 · eyes")
-	contains(t, v, "│ L10–15 · +3 −1 · export async function fetchJSON(url: string, opts?: RequestInit)\n")
-	contains(t, v, "┌ added · feature · ?behaviour ✗ .55 · undocumented · tests ✓ · risk 2 · skim · ?")
+	contains(t, v, "@@ 10  modified · feature · behaviour ✓ .91 · ⚠ breaking .86 · b2 · tests ✗ · auth · error_path · risk 4 · eyes")
+	contains(t, v, "  L10–15 · +3 −1 · export async function fetchJSON(url: string, opts?: RequestInit) ")
+	contains(t, v, "@@ 41  added · feature · ?behaviour ✗ .55 · undocumented · tests ✓ · risk 2 · skim · ?")
 	contains(t, v, "~    11 +   const res")
 	contains(t, v, "◆    12 +   if (!res.ok)")
 	contains(t, v, "⋯    13 +   console.log")
@@ -258,7 +266,7 @@ func TestUnknownBooleans(t *testing.T) {
 	}
 	m := newModel(t, d, 160, 40) // default filters: needs eyes, behaviour, mine
 	v := m.View()
-	contains(t, v, "┌ modified · feature · behaviour ? · breaking .86 · b2 · tests ? · auth")
+	contains(t, v, "@@ 10  modified · feature · behaviour ? · ⚠ breaking .86 · b2 · tests ? · auth")
 	lacks(t, v, "behaviour ✗")
 }
 
@@ -279,7 +287,7 @@ func TestMineIgnoredWithoutOwnedFiles(t *testing.T) {
 	if !m.FilterOn(FilterMine) {
 		t.Fatal("mine should stay on (it is a default)")
 	}
-	contains(t, m.View(), "┌ modified · feature · behaviour ✓") // u1: eyes, behaviour
+	contains(t, m.View(), "@@ 10  modified · feature · behaviour ✓") // u1: eyes, behaviour
 	press(t, &m, "f")
 	contains(t, lines(m)[0], "[3 mine ✓ (no owned files, ignored)]")
 }
@@ -296,7 +304,7 @@ func TestNoiseCollapseAndExpand(t *testing.T) {
 	v = m.View()
 	lacks(t, v, "(z to expand)")
 	contains(t, v, "const TIMEOUT = 5000")
-	contains(t, v, "┌ modified · formatting · behaviour ✗ 1.0 · tests ✓ · risk 1 · skip")
+	contains(t, v, "@@ 32  modified · formatting · behaviour ✗ 1.0 · tests ✓ · risk 1 · skip")
 	press(t, &m, "z")
 	contains(t, m.View(), "▸ formatting · +2 −2 (z to expand)")
 }
@@ -308,8 +316,8 @@ func TestMovedOrigin(t *testing.T) {
 	contains(t, m.View(), "▸ moved from web/legacy/util.ts:12 · parseCookie · +3 −0 (z to expand)")
 	press(t, &m, "z")
 	v := m.View()
-	contains(t, v, "┌ moved · refactor")
-	contains(t, v, "│ moved from web/legacy/util.ts:12")
+	contains(t, v, "  moved · refactor")
+	contains(t, v, "  moved from web/legacy/util.ts:12")
 }
 
 func TestDefaultFiltersAndToggle(t *testing.T) {
@@ -320,7 +328,7 @@ func TestDefaultFiltersAndToggle(t *testing.T) {
 		}
 	}
 	v := m.View()
-	contains(t, v, "┌ modified · feature · behaviour ✓")
+	contains(t, v, "@@ 10  modified · feature · behaviour ✓")
 	contains(t, v, "2 units hidden by filters (f)")
 	lacks(t, v, "formatting")
 	press(t, &m, "J", "J")
@@ -329,7 +337,7 @@ func TestDefaultFiltersAndToggle(t *testing.T) {
 	}
 	v = m.View()
 	contains(t, v, "2 units hidden by filters (f)")
-	lacks(t, v, "┌")
+	lacks(t, v, "@@ ")
 
 	// f, 3: mine off; u7 (eyes, behaviour, not owned) now passes; u6 is
 	// skim and still hidden (AND).
@@ -337,18 +345,18 @@ func TestDefaultFiltersAndToggle(t *testing.T) {
 	if !m.Capturing() {
 		t.Fatal("bar open but not capturing")
 	}
-	contains(t, lines(m)[0], "[1 needs eyes ✓] [2 behaviour ✓] [3 mine ✓] [4 risk ≥ 3] [5 untested]")
+	contains(t, lines(m)[0], "show: [1 needs eyes ✓] [2 behaviour ✓] [3 mine ✓] [4 risk ≥ 3] [5 untested]")
 	press(t, &m, "3")
 	if m.FilterOn(FilterMine) {
 		t.Fatal("mine still on")
 	}
 	v = m.View()
 	contains(t, lines(m)[0], "[3 mine]")
-	contains(t, v, "┌ modified · bugfix · behaviour ✓ .95")
+	contains(t, v, "  modified · bugfix · behaviour ✓ .95")
 	contains(t, v, "1 unit hidden by filters (f)")
 	// Adding untested (5) keeps u7 (untested); adding unsure (7) hides it.
 	press(t, &m, "5")
-	contains(t, m.View(), "┌ modified · bugfix")
+	contains(t, m.View(), "  modified · bugfix")
 	press(t, &m, "7")
 	contains(t, m.View(), "2 units hidden by filters (f)")
 	// has comments (8) has data from M4: no unit of the fixture has a
@@ -372,10 +380,17 @@ func TestCapturing(t *testing.T) {
 	if m.Capturing() {
 		t.Fatal("capturing at start")
 	}
-	for _, k := range []string{"1", "2", "q", "?", "r", "o", "c", "esc"} {
+	for _, k := range []string{"1", "2", "q", "?", "r", "c", "esc"} {
 		if m.HandleKey(keyMsg(k)) {
 			t.Errorf("key %q consumed with the bar closed", k)
 		}
+	}
+	// o opens the cursor's unit on GitHub (the root's o is for the item).
+	if !m.HandleKey(keyMsg("o")) {
+		t.Error("o not consumed on a unit line")
+	}
+	if _, ok := m.PendingOpen(); !ok {
+		t.Error("o queued no open request")
 	}
 	press(t, &m, "f", "1")
 	if m.FilterOn(FilterNeedsEyes) {
@@ -467,7 +482,7 @@ func TestFocusUnit(t *testing.T) {
 	if u, ok := m.CurrentUnit(); !ok || u.ID != "u7" || m.SelectedFile() != "web/legacy/util.ts" {
 		t.Fatalf("after FocusUnit(u7): %q %v %q", u.ID, ok, m.SelectedFile())
 	}
-	contains(t, m.View(), "┌ modified · bugfix")
+	contains(t, m.View(), "  modified · bugfix")
 	allOff(&m)
 	if !m.FocusUnit("u2") {
 		t.Fatal("FocusUnit(u2) failed")
@@ -477,7 +492,7 @@ func TestFocusUnit(t *testing.T) {
 	}
 	v := m.View()
 	contains(t, v, "const TIMEOUT = 5000")
-	if !strings.HasPrefix(paneOf(lines(m)[1]), "┌ modified · formatting") {
+	if !strings.HasPrefix(paneOf(lines(m)[1]), "@@ 32  modified · formatting") {
 		t.Errorf("u2 header not at top: %q", lines(m)[1])
 	}
 }
@@ -523,7 +538,17 @@ func TestLabelsMissing(t *testing.T) {
 	lacks(t, v, "behaviour")
 	lacks(t, v, "units hidden")
 	press(t, &m, "J", "J")
-	contains(t, m.View(), "┌ modified\n")
+	chipsOnly(t, m.View(), "modified")
+}
+
+// chipsOnly checks that some unit's chip strip is exactly "@@ N  chips"
+// (nothing after the chips but the box's padding).
+func chipsOnly(t *testing.T, view, chips string) {
+	t.Helper()
+	re := regexp.MustCompile(`@@ \d+  ` + regexp.QuoteMeta(chips) + ` *│`)
+	if !re.MatchString(view) {
+		t.Errorf("no chip strip of just %q:\n%s", chips, view)
+	}
 }
 
 func TestPending(t *testing.T) {
@@ -532,13 +557,13 @@ func TestPending(t *testing.T) {
 	m := newModel(t, d, 120, 30)
 	ls := lines(m)
 	for i, p := range []string{"▸ web/src/api/client.ts ", "  web/src/api/session.ts ", "── not yours", "  web/legacy/util.ts "} {
-		if !strings.HasPrefix(ls[i], p) {
-			t.Errorf("row %d = %q, want prefix %q", i, ls[i], p)
+		if !strings.HasPrefix(listOf(ls[i+1]), p) {
+			t.Errorf("row %d = %q, want prefix %q", i, ls[i+1], p)
 		}
 	}
 	v := m.View()
 	contains(t, v, "const TIMEOUT = 5000")
-	contains(t, v, "┌ modified\n")
+	chipsOnly(t, v, "modified")
 	lacks(t, v, "█")
 	lacks(t, v, "(z to expand)")
 	if m.FilterOn(FilterMine) != true {
@@ -615,13 +640,24 @@ func TestMouse(t *testing.T) {
 	if m.SelectedFile() != "web/src/api/session.ts" {
 		t.Errorf("list wheel: %q", m.SelectedFile())
 	}
-	wheel(5, 2+3, tea.MouseButtonLeft) // list row 3: util.ts (after divider)
+	// The list box's top border is row 0; its content starts on row 1.
+	wheel(5, 2+4, tea.MouseButtonLeft) // list row 3: util.ts (after divider)
 	if m.SelectedFile() != "web/legacy/util.ts" {
 		t.Errorf("click: %q", m.SelectedFile())
 	}
-	wheel(5, 2+2, tea.MouseButtonLeft) // divider: no change
+	wheel(5, 2+3, tea.MouseButtonLeft) // divider: no change
 	if m.SelectedFile() != "web/legacy/util.ts" {
 		t.Errorf("click on divider: %q", m.SelectedFile())
+	}
+	wheel(5, 2, tea.MouseButtonLeft) // the border: no change
+	wheel(5, 2+1, tea.MouseButtonLeft)
+	if m.SelectedFile() != "web/src/api/client.ts" {
+		t.Errorf("click on the first row: %q", m.SelectedFile())
+	}
+	wheel(5, 2+9, tea.MouseButtonLeft)  // the bottom border
+	wheel(60, 2+4, tea.MouseButtonLeft) // the pane: clicks select nothing
+	if m.SelectedFile() != "web/src/api/client.ts" {
+		t.Errorf("click outside the list rows: %q", m.SelectedFile())
 	}
 }
 
@@ -701,40 +737,71 @@ func bigDetail() proto.Detail {
 }
 
 func TestLazyRendering(t *testing.T) {
-	m := newModel(t, bigDetail(), 120, 40)
-	_ = m.View()
-	if m.cache.renders != 39 {
-		t.Errorf("first View rendered %d rows, want 39", m.cache.renders)
-	}
-	_ = m.View()
-	if m.cache.renders != 39 {
-		t.Errorf("second View rendered %d rows, want cached", m.cache.renders)
-	}
-	// j moves the line cursor: the row it left and the row it is on now.
-	press(t, &m, "j")
-	_ = m.View()
-	if m.cache.renders != 41 {
-		t.Errorf("cursor down: %d rows, want 41", m.cache.renders)
-	}
-	// ctrl+d scrolls half a page (19 rows): 19 new rows, and the cursor,
-	// scrolled out of view, moves onto the first visible line.
-	press(t, &m, "ctrl+d")
-	_ = m.View()
-	if m.cache.renders != 41+19+1 {
-		t.Errorf("half page: %d rows, want %d", m.cache.renders, 41+19+1)
-	}
-	if len(m.cache.spans) > 2*80 {
-		t.Errorf("intra-line spans for %d rows, want only visible pairs", len(m.cache.spans))
+	for _, tc := range []struct {
+		name   string
+		r      *lipgloss.Renderer
+		layout Layout
+	}{
+		{"plain unified", plainRenderer(), LayoutUnified},
+		{"colour unified", trueColourRenderer(), LayoutUnified},
+		{"colour split", trueColourRenderer(), LayoutSplit},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := New(tc.r)
+			m.SetSize(160, 40)
+			m.SetDiffLayout(tc.layout)
+			m.SetDetail(bigDetail())
+			view := m.layout().viewH // 38: the pane box's borders take two rows
+			_ = m.View()
+			if m.cache.renders != view {
+				t.Errorf("first View rendered %d rows, want %d", m.cache.renders, view)
+			}
+			_ = m.View()
+			if m.cache.renders != view {
+				t.Errorf("second View rendered %d rows, want cached", m.cache.renders)
+			}
+			// j moves the line cursor: the row it left and the row it is on now.
+			press(t, &m, "j")
+			_ = m.View()
+			if m.cache.renders != view+2 {
+				t.Errorf("cursor down: %d rows, want %d", m.cache.renders, view+2)
+			}
+			// ctrl+d scrolls half a page: half a page of new rows, and the
+			// cursor, scrolled out of view, moves onto the first visible line.
+			press(t, &m, "ctrl+d")
+			_ = m.View()
+			if want := view + 2 + view/2 + 1; m.cache.renders != want {
+				t.Errorf("half page: %d rows, want %d", m.cache.renders, want)
+			}
+			if len(m.cache.spans) > 2*80 || len(m.cache.pairs) > 80 {
+				t.Errorf("intra-line spans for %d rows / %d pairs, want only visible ones", len(m.cache.spans), len(m.cache.pairs))
+			}
+		})
 	}
 }
 
 func TestIntraLineHighlight(t *testing.T) {
-	m := New(colourRenderer())
-	m.SetSize(120, 30)
-	m.SetDetail(loadDetail(t))
-	v := m.View()
-	if !strings.Contains(v, m.st.addEmph.Render(`, { ...opts, credentials: "include" }`)) {
-		t.Errorf("view lacks emphasised addition:\n%q", v)
+	for _, layout := range []Layout{LayoutUnified, LayoutSplit} {
+		r := trueColourRenderer()
+		m := New(r)
+		m.SetSize(160, 30)
+		m.SetDiffLayout(layout)
+		m.SetDetail(loadDetail(t))
+		th := theme.New(r)
+		// client.ts has one -/+ pair (line 11); in split its new side wraps
+		// onto a second row, so the emphasis is read over the whole view.
+		v := m.View()
+		if got := emphasised(v, sgrColour(r, th.P.AddEmphBg)); got != `, { ...opts, credentials: "include" }` {
+			t.Errorf("%s: emphasised addition = %q in\n%q", layout, got, v)
+		}
+		if got := emphasised(v, sgrColour(r, th.P.DelEmphBg)); got != "" {
+			t.Errorf("%s: the deletion has no changed run here, got %q", layout, got)
+		}
+	}
+	// Without colour no marker of any kind.
+	m := newModel(t, loadDetail(t), 160, 30)
+	if strings.Contains(m.View(), "\x1b") {
+		t.Error("plain view has escape codes")
 	}
 }
 

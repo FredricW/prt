@@ -284,7 +284,7 @@ func TestByChangeExpandNoise(t *testing.T) {
 	press(t, &m, "z")
 	v := m.View()
 	lacks(t, v, "(z to expand)")
-	contains(t, v, "│ moved from web/src/api/client.ts:30")
+	contains(t, v, "  moved from web/src/api/client.ts:30")
 	press(t, &m, "g") // by file: the group's expansion does not apply
 	if !m.collapsed("e1") {
 		t.Error("z on a group expanded the unit by file too")
@@ -297,8 +297,8 @@ func TestMergeGroups(t *testing.T) {
 	if m.Note() != noteMergeStart {
 		t.Errorf("note %q", m.Note())
 	}
-	if ls := lines(m); !strings.HasPrefix(ls[1], "▸*Pass request options") || !strings.Contains(ls[1], "marked for merge") {
-		t.Errorf("mark not drawn: %q", ls[1])
+	if ls := lines(m); !strings.HasPrefix(listPart(ls[3]), "▸*1 Pass request options") || !strings.Contains(ls[1], "marked for me") {
+		t.Errorf("mark not drawn: %q / %q", ls[3], ls[1])
 	}
 	press(t, &m, "M")
 	if m.mergeMark != "" || m.Note() != noteMergeCancel {
@@ -390,20 +390,26 @@ func TestByChangeMouse(t *testing.T) {
 	click := func(row int) {
 		m, _ = m.Update(tea.MouseMsg{X: 5, Y: 2 + row, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
 	}
-	click(3) // g-apierror's second line
+	// Body row 0 is the box border, 1 the "by:" line, then two lines per group.
+	click(1) // the "by:" line: no change
+	if groupID(m) != "g-user" {
+		t.Errorf("click on by: %q", groupID(m))
+	}
+	click(5) // g-apierror's second line
 	if groupID(m) != "g-apierror" {
 		t.Errorf("click: %q", groupID(m))
 	}
-	click(8) // ungrouped divider: no change
+	click(10) // ungrouped divider: no change
 	if groupID(m) != "g-apierror" {
 		t.Errorf("click on the divider: %q", groupID(m))
 	}
 	ls := lines(m)
-	if !strings.HasPrefix(ls[8], "── ungrouped (3)") || !strings.HasPrefix(ls[15], "── split suggestion") ||
-		!strings.HasPrefix(ls[16], "  split? web/src/styles/theme.css .74") {
+	if !strings.HasPrefix(listPart(ls[1]), "by: file [change] · interfaces → call") ||
+		!strings.HasPrefix(listPart(ls[10]), "── ungrouped (3)") || !strings.HasPrefix(listPart(ls[17]), "── split suggestion: group 6") ||
+		!strings.HasPrefix(listPart(ls[18]), "  split? web/src/styles/theme.css .74") {
 		t.Fatalf("list layout:\n%s", m.View())
 	}
-	click(16) // split suggestion row → the file's group
+	click(18) // split suggestion row → the file's group
 	if groupID(m) != "g-theme" || curID(m) != "s1" {
 		t.Errorf("split row: %q %q", groupID(m), curID(m))
 	}
@@ -464,18 +470,22 @@ func TestByChangeHints(t *testing.T) {
 func TestByChangeContent(t *testing.T) {
 	m := byChangeModel(t, loadGroups(t), 160, 40, true)
 	v := m.View()
-	contains(t, v, "┌ b2 .82 · risk 4 · auth · error_path · test gap 1 · breaking 1 · routing: not routed")
-	contains(t, v, "  calls  UserCard.tsx UserCard → client.ts getUser")
-	contains(t, v, "  tests  client.test.ts → client.ts getUser")
-	contains(t, v, "  jev caller update .82 · cos .79  UserCard.tsx UserCard → client.test.ts")
+	contains(t, v, "│b2 .82 · risk 4 · auth · error_path · tests: 2 of 3 units · test gap 1 · ⚠ breaking 1 · routing: not routed")
+	contains(t, v, "┌─ why these belong together ─")
+	contains(t, v, "│ calls  UserCard.tsx UserCard → client.ts getUser")
+	contains(t, v, "│ tests  client.test.ts → client.ts getUser")
+	contains(t, v, "│ jev caller update .82 · cos .79  UserCard.tsx UserCard → client.test.ts")
+	contains(t, v, "── Units · interface first ──")
+	contains(t, v, "│1 web/src/api/client.ts@10")
+	contains(t, v, "caller · eyes│")
 	contains(t, v, "findings: not reviewed (not routed)")
 	contains(t, v, "    3u 3f · b2 .82 · not routed")
 	contains(t, v, "‹ApiError›")
 	press(t, &m, "J")
-	contains(t, m.View(), "  moved  client.ts ApiError → errors.ts ApiError")
+	contains(t, m.View(), "│ moved  client.ts ApiError → errors.ts ApiError")
 	press(t, &m, "J")
 	v = m.View()
-	contains(t, v, "┌ b1 .64 · edited by you · risk 3 · test gap 1 · ? 2 unsure · routing: not routed")
+	contains(t, v, "│b1 .64 · edited by you · risk 3 · tests: 0 of 1 unit · test gap 1 · ? 2 unsure · routing: not routed")
 	contains(t, v, "grouped by you (merge or split)")
 	press(t, &m, "J")
 	v = m.View()
@@ -484,7 +494,7 @@ func TestByChangeContent(t *testing.T) {
 	contains(t, v, "promoted out: f.tsx → ‹f.tsx›")
 	contains(t, v, "same shape ×5 (verified)")
 	press(t, &m, "J")
-	contains(t, m.View(), "┌ ungrouped · routing: not routed") // no GroupAgg row for g-f
+	contains(t, m.View(), "│ungrouped · routing: not routed ") // no GroupAgg row for g-f
 }
 
 func TestMemberLine(t *testing.T) {
@@ -535,13 +545,13 @@ func TestByChangeViewDimensions(t *testing.T) {
 	}
 }
 
-// listPart returns the list column of a view line at width 120.
-func listPart(line string) string { return ansi.Cut(line, 0, 40) }
+// listPart returns the list box content of a view line at width 120.
+func listPart(line string) string { return listOf(line) }
 
 func TestByChangeHiddenGroupOneLiner(t *testing.T) {
 	m := byChangeModel(t, loadGroups(t), 120, 30, false)
 	ls := lines(m)
-	if got := listPart(ls[2]); !strings.HasPrefix(got, "  ‹ApiError› — 2 units hidden by filters") {
+	if got := listPart(ls[4]); !strings.HasPrefix(got, "  2 ‹ApiError› — 2 units hidden by fi") {
 		t.Errorf("hidden one-liner = %q", got)
 	}
 	press(t, &m, "J")

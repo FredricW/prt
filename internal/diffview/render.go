@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/fredricw/prt/internal/diff"
+	"github.com/fredricw/prt/internal/theme"
 )
 
 const (
@@ -23,27 +24,21 @@ const (
 	ellipsis = "…"
 )
 
-// styles are built once per renderer.
+// styles are built once per renderer (diff line text is styled by the
+// Painter).
 type styles struct {
-	file, hunk, gutter, noEOL, empty lipgloss.Style
-	add, del, ctx, raw               lipgloss.Style
-	addEmph, delEmph                 lipgloss.Style
+	file, hunk, gutter, noEOL, empty, raw lipgloss.Style
 }
 
 func newStyles(r *lipgloss.Renderer) styles {
-	green, red := lipgloss.Color("2"), lipgloss.Color("1")
+	th := theme.New(r)
 	return styles{
-		file:    r.NewStyle().Bold(true).Reverse(true),
-		hunk:    r.NewStyle().Foreground(lipgloss.Color("6")),
-		gutter:  r.NewStyle().Faint(true),
-		noEOL:   r.NewStyle().Faint(true).Italic(true),
-		empty:   r.NewStyle().Faint(true),
-		add:     r.NewStyle().Foreground(green),
-		del:     r.NewStyle().Foreground(red),
-		ctx:     r.NewStyle(),
-		raw:     r.NewStyle(),
-		addEmph: r.NewStyle().Foreground(green).Bold(true).Underline(true),
-		delEmph: r.NewStyle().Foreground(red).Bold(true).Underline(true),
+		file:   r.NewStyle().Bold(true).Reverse(true),
+		hunk:   th.Blue,
+		gutter: th.Dim,
+		noEOL:  th.Dim.Italic(true),
+		empty:  th.Dim,
+		raw:    r.NewStyle(),
 	}
 }
 
@@ -138,35 +133,30 @@ func fileTitle(f diff.File, fm fileMeta) string {
 	return b.String()
 }
 
-// lineRow renders "old new op text" with intra-line emphasis on paired lines.
+// lineRow renders "old new op text" with syntax colour and intra-line
+// emphasis on paired lines (colour only; plain text otherwise).
 func (m Model) lineRow(i int, rw row) string {
-	l := m.files[rw.file].Hunks[rw.hunk].Lines[rw.line]
+	f := m.files[rw.file]
+	l := f.Hunks[rw.hunk].Lines[rw.line]
 	gutter := num(l.OldNo, m.gutter) + " " + num(l.NewNo, m.gutter) + " "
-	base, emph := m.lineStyles(l.Op)
-	text, cut := clip(l.Text, 4*m.width+64)
 	var spans []diff.Span
 	if rw.pair >= 0 {
 		spans = m.intraSpans(i, int(rw.pair))
 	}
+	t := m.paint.Prepare(Lang("", f.Path()), l.Op, l.Text, spans, 4*m.width+64)
+	base := m.paint.Base(l.Op)
 	var b strings.Builder
 	b.WriteString(m.st.gutter.Render(gutter))
 	b.WriteString(base.Render(string(rune(l.Op)) + " "))
-	writeSegments(&b, text, spans, base, emph)
-	if cut {
+	b.WriteString(t.All())
+	if t.Cut {
 		b.WriteString(base.Render(ellipsis))
 	}
-	return ansi.Truncate(b.String(), m.width, ellipsis)
-}
-
-func (m Model) lineStyles(op diff.Op) (base, emph lipgloss.Style) {
-	switch op {
-	case diff.Add:
-		return m.st.add, m.st.addEmph
-	case diff.Del:
-		return m.st.del, m.st.delEmph
-	default:
-		return m.st.ctx, m.st.ctx
+	s := ansi.Truncate(b.String(), m.width, ellipsis)
+	if m.paint.Colour() && l.Op != diff.Context {
+		s += base.Render(strings.Repeat(" ", max(0, m.width-ansi.StringWidth(s))))
 	}
+	return s
 }
 
 // intraSpans returns the changed byte spans of row i, whose paired row is p,

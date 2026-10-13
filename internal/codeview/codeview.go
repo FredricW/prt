@@ -48,12 +48,24 @@
 //     units in line order, no chips, everything expanded.
 //   - No units: the plain diff viewer (diffview) over Detail.Diff.
 //
-// Layout: an optional one-line bar (filters, notes), then the file list
-// (min(40, w/3) cells, at least 16), a one-cell gap and the right pane,
-// whose first line is the selected file's title. Below 60 columns the list
-// is hidden and the right pane takes the full width (J/K still move
-// between files; the title shows "i/n"). Rendering is lazy: the selected
-// file's rows are indexed once and only visible rows are styled.
+// Layout (M5, design v2/Code and v3/Groups through internal/theme): an
+// optional one-line bar (filters as "show:" chips, notes), then the list
+// box ("Files · by attention" or "Change groups · review order"; min(40,
+// w/3) cells, at least 16), a one-cell gap and the pane box titled with the
+// file (or group) and "file i of n". Below 60 columns (or three body rows)
+// the boxes collapse: the list is hidden, the pane takes the full width
+// under a plain title row (J/K still move between files; the title shows
+// "i/n"). Rendering is lazy: the selected file's rows are indexed once and
+// only visible rows are styled.
+//
+// Diff rendering (M5; m5_api.go, split.go): `u` toggles unified and
+// side-by-side (old | new columns aligned by hunk, long lines wrapped,
+// gutter marks on the new side); below SplitMinWidth columns side-by-side
+// degrades to unified with a standing note. With colour, line text gets
+// syntax classes (internal/highlight, one diff line at a time) and the
+// changed characters of paired lines an emphasis background; without
+// colour the text is unchanged. `e` and `o` hand an OpenRequest to the root
+// through PendingOpen.
 package codeview
 
 import (
@@ -63,8 +75,10 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/fredricw/prt/internal/diffview"
+	"github.com/fredricw/prt/internal/highlight"
 	"github.com/fredricw/prt/internal/model"
 	"github.com/fredricw/prt/internal/proto"
+	"github.com/fredricw/prt/internal/theme"
 )
 
 // Filter is one toggle of the filters bar.
@@ -145,6 +159,12 @@ type Keys struct {
 	Comment, Visual, SaveDraft     key.Binding
 	Accept, Dismiss, OverrideLabel key.Binding
 	Thread, Resolve, StripJump     key.Binding
+
+	// M5 (see m5_api.go). SideBySide (u) toggles unified / side-by-side;
+	// EditFile (e) asks to open the cursor's file at its line in $EDITOR
+	// and OpenUnit (o) to open the cursor's unit on GitHub, both through
+	// PendingOpen.
+	SideBySide, EditFile, OpenUnit key.Binding
 }
 
 // DefaultKeys returns the spec's bindings: j/k, pgdown/pgup/space,
@@ -169,6 +189,7 @@ func DefaultKeys() Keys {
 		Accept: b("accept AI finding", "a"), Dismiss: b("dismiss AI finding", "d"),
 		OverrideLabel: b("dismiss + override label", "!"),
 		Thread:        b("thread panel", "t"), Resolve: b("resolve thread", "ctrl+r"), StripJump: b("jump to comment", "enter"),
+		SideBySide: b("unified / side-by-side", "u"), EditFile: b("open in $EDITOR", "e"), OpenUnit: b("open unit on GitHub", "o"),
 	}
 	for i := range k.Toggle {
 		s := strconv.Itoa((i + 1) % 10)
@@ -182,8 +203,13 @@ type Model struct {
 	keys Keys
 	r    *lipgloss.Renderer
 	st   styles
-	dv   diffview.Model
-	w, h int
+	th   theme.Theme
+	// paint styles diff line text (line colour, syntax, intra-line
+	// emphasis); hl is the syntax highlighter it shares with dv.
+	paint *diffview.Painter
+	hl    *highlight.Highlighter
+	dv    diffview.Model
+	w, h  int
 	// ox, oy are where the root model draws the component (SetOrigin), so
 	// mouse coordinates can be mapped onto the list and the pane.
 	ox, oy int
@@ -236,15 +262,25 @@ type Model struct {
 	stripOff       int
 	pendingComment *CommentOp
 	md             *markdown
+
+	// M5: diffLayout is the requested layout (`u`); it survives reloads,
+	// other items and the mode switch. pendingOpen is the request of the
+	// last `e`/`o` (PendingOpen).
+	diffLayout  Layout
+	pendingOpen *OpenRequest
 }
 
-// New builds an empty component. r may not be nil.
+// New builds an empty component. r may be nil (lipgloss's default
+// renderer).
 func New(r *lipgloss.Renderer) Model {
 	if r == nil {
 		r = lipgloss.DefaultRenderer()
 	}
-	m := Model{keys: DefaultKeys(), r: r, st: newStyles(r), dv: diffview.New(r), w: 80, h: 20, filters: defaultFilters(),
-		curRow: -1, visRow: -1, md: newMarkdown(r)}
+	hl := highlight.New(0, 0)
+	dv := diffview.New(r)
+	dv.SetHighlighter(hl)
+	m := Model{keys: DefaultKeys(), r: r, st: newStyles(r), th: theme.New(r), paint: diffview.NewPainter(r, hl), hl: hl,
+		dv: dv, w: 80, h: 20, filters: defaultFilters(), curRow: -1, visRow: -1, md: newMarkdown(r)}
 	m.resetView()
 	m.rebuild()
 	return m
@@ -255,11 +291,11 @@ func (m *Model) SetKeys(k Keys) { m.keys = k }
 
 // SetSize sets the component's width and height in cells.
 func (m *Model) SetSize(w, h int) {
-	oldPaneW := m.layout().paneW
+	old := m.layout()
 	m.w, m.h = max(1, w), max(1, h)
 	m.dv.SetSize(m.w, m.h)
-	if m.layout().paneW != oldPaneW {
-		m.rebuildKeep() // header chips and comment bodies wrap to the pane width
+	if now := m.layout(); now.paneW != old.paneW || now.split != old.split {
+		m.rebuildKeep() // header chips, comment bodies and split columns follow the pane width
 	} else {
 		m.clamp()
 	}
@@ -372,6 +408,7 @@ func (m *Model) resetView() {
 	m.comp, m.panel, m.picker = nil, nil, nil
 	m.stripFocus, m.stripSel, m.stripOff = false, 0, 0
 	m.pendingComment = nil
+	m.pendingOpen = nil
 }
 
 // Clear empties the component (selection changed, detail loading). Filter
@@ -555,6 +592,7 @@ func (m Model) HelpBindings() [][]key.Binding {
 		{k.Filters, k.Expand, k.RawLabels},
 		{k.Mode, k.MergeGroups, k.SplitGroup, k.ReReview},
 		{k.Comment, k.Visual, k.Thread, k.Accept, k.Dismiss, k.OverrideLabel},
+		{k.SideBySide, k.EditFile, k.OpenUnit},
 	}
 	if open := m.modalBindings(); open != nil {
 		rows = append([][]key.Binding{open}, rows...)
@@ -570,7 +608,8 @@ func (m Model) ShortBindings() []key.Binding {
 		return open
 	}
 	k := m.entryKeys()
-	comments := []key.Binding{k.Comment, k.Visual, k.Thread, k.Accept, k.Dismiss, k.OverrideLabel}
+	comments := []key.Binding{k.Comment, k.Visual, k.Thread, k.Accept, k.Dismiss, k.OverrideLabel,
+		k.SideBySide, k.EditFile, k.OpenUnit}
 	if m.byChange() {
 		return append([]key.Binding{k.NextUnit, k.PrevUnit, k.NextFile, k.PrevFile, k.MergeGroups, k.SplitGroup,
 			k.ReReview, k.Filters, k.Expand, k.RawLabels, k.Mode}, comments...)

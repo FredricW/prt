@@ -213,24 +213,29 @@ func (m *Model) pick() {
 	l := pk.labels[pk.chosen]
 	ov := &model.Override{UnitID: pk.unit, Question: l.Question, Value: pk.values[pk.sel]}
 	m.picker = nil
+	what := " (" + l.Question + " → " + ov.Value + ")"
 	if pk.aiID != "" {
 		m.pendingComment = &CommentOp{Kind: CommentOpDismiss, CommentID: pk.aiID, Override: ov}
-		m.note = "AI finding dismissed; " + l.Question + " marked " + ov.Value
+		m.note = "AI finding dismissed; " + noteOverrideFiled + what
 		return
 	}
 	m.pendingComment = &CommentOp{Kind: CommentOpOverride, Override: ov}
-	m.note = l.Question + " marked " + ov.Value
+	m.note = noteOverrideFiled + what
 }
 
-// pickerView draws the picker over the pane.
-func (m Model) pickerView(lay layout, out []string) []string {
+// noteOverrideFiled is the note after `!` queued a label override (the
+// daemon re-runs aggregation on it; spec M5 "`!` overrides feeding
+// re-aggregation").
+const noteOverrideFiled = "override filed — re-aggregating"
+
+// pickerView draws the picker over the pane: its title and rows.
+func (m Model) pickerView(lay layout, out []string) (string, string, []string) {
 	pk := m.picker
-	title := " mark a label wrong — " + m.c.unitLabel(pk.unit)
+	title := "mark a label wrong — " + m.c.unitLabel(pk.unit)
 	if pk.aiID != "" {
-		title = " dismiss AI finding + mark a label wrong — " + m.c.unitLabel(pk.unit)
+		title = "dismiss AI finding + mark a label wrong — " + m.c.unitLabel(pk.unit)
 	}
 	title += " · " + m.keys.StripJump.Help().Key + " picks · " + m.keys.Close.Help().Key + " cancels"
-	out[0] = m.st.overlayTitle.Render(pad(fit(diffview.Clean(title), lay.paneW), lay.paneW))
 	var rows []string
 	if pk.chosen < 0 {
 		rows = append(rows, "which label is wrong?")
@@ -254,8 +259,8 @@ func (m Model) pickerView(lay layout, out []string) []string {
 	if off > 0 {
 		rows = append(rows[:1], rows[1+off:]...)
 	}
-	for i := 1; i < lay.bodyH && i-1 < len(rows); i++ {
-		out[i] = fit(diffview.Clean(rows[i-1]), lay.paneW)
+	for i := 0; i < len(out) && i < len(rows); i++ {
+		out[i] = fit(diffview.Clean(rows[i]), lay.paneW)
 	}
-	return out
+	return diffview.Clean(title), "", out
 }

@@ -1,20 +1,20 @@
-▸ web/src/api/client.ts              █·□  mark a label wrong — client.ts fetchJSON · enter picks · esc cancels          
-  web/src/api/session.ts              ·█ kind: feature → corrected value?
-── not yours ─────────────────────────── ▸ bugfix
-  web/legacy/util.ts                  ▒█   refactor
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
+┌─ Files · by attention ───────────────┐ ┌─ mark a label wrong — client.ts fetchJSON · enter picks · esc cancels ──────┐
+│▸ web/src/api/client.ts            █·□│ │kind: feature → corrected value?                                             │
+│  web/src/api/session.ts            ·█│ │▸ bugfix                                                                     │
+│── not yours ─────────────────────────│ │  refactor                                                                   │
+│  web/legacy/util.ts                ▒█│ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+└──────────────────────────────────────┘ └─────────────────────────────────────────────────────────────────────────────┘
 Comments 8 · 3 drafts · 1 pending · 1 posted · 1 ai · 2 threads (1 open) (tab focuses)

@@ -1,30 +1,30 @@
-  Pass request options through getUser    ‹ApiError›  2 units · 2 files                                                 
-    3u 3f · b2 .82 · fast · 3 findings   ┌ risk 1 · routing: if true → fast
-▸ ‹ApiError›                             │ placeholder name (code-derived; no description bullet names this group)
-    2u 2f · deep←fast .42 · done         
-  Invalidate the profile cache on logout why these belong together
-    1u 1f · b1 .64 · deep (forced) · ru…   moved  client.ts ApiError → errors.ts ApiError
-  ‹import fetchJSON from client›         
-    ×5 5f · none                         ┌ deleted · refactor · behaviour ✗ .95 · tests ✓ · risk 1 · skip
-── ungrouped (3) ─────────────────────── │ old L30–34 · +0 −5 · ApiError
-  ‹f.tsx›                                 ▸30    - export class ApiError extends Error {
-    1u 1f · fast · queued (over cap)       31    -   constructor(public status: number) {
-  ‹theme.css›                              32    -     super(`HTTP ${status}`);
-    1u 1f · none (skipped)                 33    -   }
-  ‹save›                                   34    - }
-    1u 1f · deep · failed                
-── split suggestion ──────────────────── ▸ moved from web/src/api/client.ts:30 · ApiError · +5 −0 (z to expand)
-  split? web/src/styles/theme.css .74    
-                                         findings: none
-                                         deep check: agree
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
+┌─ Change groups · review order ───────┐ ┌─ ‹ApiError›  2 units · 2 files ────────────────────────────── group 2 of 7 ─┐
+│by: file [change] · interfaces → call…│ │‹ApiError›                                                                   │
+│  1 Pass request options through getU…│ │risk 1 · tests: 2 of 2 units · routed: deep←fast .42                         │
+│    3u 3f · b2 .82 · fast · 3 findings│ │routing: if true → fast                                                      │
+│▸ 2 ‹ApiError›                        │ │placeholder name (code-derived; no description bullet names this group)      │
+│    2u 2f · deep←fast .42 · done      │ │                                                                             │
+│  3 Invalidate the profile cache on l…│ │┌─ why these belong together ───────────────────────────────────────────────┐│
+│    1u 1f · b1 .64 · deep (forced) · …│ ││ moved  client.ts ApiError → errors.ts ApiError                            ││
+│  4 ‹import fetchJSON from client›    │ │└───────────────────────────────────────────────────────────────────────────┘│
+│    ×5 5f · none                      │ │                                                                             │
+│── ungrouped (3) ─────────────────────│ │── Units · interface first ──────────────────────────────────────────────────│
+│  5 ‹f.tsx›                           │ │1 web/src/api/client.ts@30                                      caller · skip│
+│    1u 1f · fast · queued (over cap)  │ │@@ 30  deleted · refactor · behaviour ✗ .95 · tests ✓ · risk 1 · skip        │
+│  6 ‹theme.css›                       │ │  old L30–34 · +0 −5 · ApiError                                              │
+│    1u 1f · none (skipped)            │ │ ▸30    - export class ApiError extends Error {                              │
+│  7 ‹save›                            │ │  31    -   constructor(public status: number) {                             │
+│    1u 1f · deep · failed             │ │  32    -     super(`HTTP ${status}`);                                       │
+│── split suggestion: group 6 ─────────│ │  33    -   }                                                                │
+│  split? web/src/styles/theme.css .74 │ │  34    - }                                                                  │
+│                                      │ │                                                                             │
+│                                      │ │▸ moved from web/src/api/client.ts:30 · ApiError · +5 −0 (z to expand)       │
+│                                      │ │                                                                             │
+│                                      │ │findings: none                                                               │
+│                                      │ │deep check: agree                                                            │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+└──────────────────────────────────────┘ └─────────────────────────────────────────────────────────────────────────────┘

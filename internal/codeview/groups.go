@@ -9,6 +9,7 @@ import (
 
 	"github.com/fredricw/prt/internal/model"
 	"github.com/fredricw/prt/internal/proto"
+	"github.com/fredricw/prt/internal/theme"
 )
 
 // groupEntry is one group of the by-change list (mode B).
@@ -306,9 +307,9 @@ func kindWord(k model.LinkKind) string { return strings.ReplaceAll(string(k), "-
 
 // groupChips builds a group header's label chips: bullet with P
 // (bullet-named groups), mechanical/ungrouped/edited markers, then — only
-// with labels — GroupAgg facts (risk max, tags, test gap, breaking,
-// unsure). The routing chips (routingChips) follow them.
-func groupChips(ge *groupEntry, labelled bool) []chip {
+// with labels — GroupAgg facts (risk max, tags, tests, breaking, unsure).
+// The routing chips (routingChips) follow them.
+func (c *content) groupChips(ge *groupEntry) []chip {
 	var cs []chip
 	if ge.bulletNamed() {
 		cs = append(cs, chip{text: ge.bullet, prob: ProbText(ge.g.NameP)})
@@ -322,33 +323,66 @@ func groupChips(ge *groupEntry, labelled bool) []chip {
 	if ge.g.UserEdited {
 		cs = append(cs, chip{text: "edited by you"})
 	}
-	if labelled && ge.agg != nil {
-		cs = append(cs, aggChips(ge.agg)...)
+	if c.labelled && ge.agg != nil {
+		cs = append(cs, aggChips(ge.agg, c.testsChip(ge))...)
 	}
 	return cs
 }
 
-// aggChips renders GroupAgg facts; zero values are left out.
-func aggChips(a *model.GroupAgg) []chip {
+// testsChip is "tests: k of n units": of the group's units with a known
+// coverage label, how many are covered (red when not all are); nil when
+// none is known.
+func (c *content) testsChip(ge *groupEntry) *chip {
+	k, n := 0, 0
+	for _, id := range ge.units {
+		a := c.aggs[id]
+		if a == nil || a.CoveredUnknown {
+			continue
+		}
+		n++
+		if a.Covered {
+			k++
+		}
+	}
+	if n == 0 {
+		return nil
+	}
+	ch := chip{text: "tests: " + strconv.Itoa(k) + " of " + plural(n, "unit")}
+	if k < n {
+		ch.kind = theme.ChipBad
+	}
+	return &ch
+}
+
+// aggChips renders GroupAgg facts and the tests chip; zero values are left
+// out. Risk tags and risk ≥ 4 are warm, breaking too.
+func aggChips(a *model.GroupAgg, tests *chip) []chip {
 	var cs []chip
 	if a.RiskMax > 0 {
-		cs = append(cs, chip{text: "risk " + strconv.FormatFloat(a.RiskMax, 'f', -1, 64), warn: a.RiskMax >= 4})
+		k := theme.ChipPlain
+		if a.RiskMax >= 4 {
+			k = theme.ChipWarn
+		}
+		cs = append(cs, chip{text: "risk " + strconv.FormatFloat(a.RiskMax, 'f', -1, 64), kind: k})
 	}
 	for _, t := range riskTagOrder(a.RiskTags) {
 		s := t
 		if n := a.RiskTags[t]; n > 1 {
 			s += " ×" + strconv.Itoa(n)
 		}
-		cs = append(cs, chip{text: s})
+		cs = append(cs, chip{text: s, kind: theme.ChipWarn})
+	}
+	if tests != nil {
+		cs = append(cs, *tests)
 	}
 	if a.TestGap > 0 {
-		cs = append(cs, chip{text: "test gap " + strconv.Itoa(a.TestGap), warn: true})
+		cs = append(cs, chip{text: "test gap " + strconv.Itoa(a.TestGap), kind: theme.ChipBad})
 	}
 	if n := len(a.Breaking); n > 0 {
-		cs = append(cs, chip{text: "breaking " + strconv.Itoa(n), warn: true})
+		cs = append(cs, chip{text: "⚠ breaking " + strconv.Itoa(n), kind: theme.ChipWarn})
 	}
 	if a.Unsure > 0 {
-		cs = append(cs, chip{text: "? " + strconv.Itoa(a.Unsure) + " unsure"})
+		cs = append(cs, chip{text: "? " + strconv.Itoa(a.Unsure) + " unsure", kind: theme.ChipUnsure})
 	}
 	return cs
 }

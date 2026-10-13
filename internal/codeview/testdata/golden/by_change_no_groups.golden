@@ -1,30 +1,30 @@
 no groups yet
-▸ web/src/api/client.ts               █·  web/src/api/client.ts  +2 −7                                                  
-  web/src/components/UserCard.tsx      █ ┌ modified · feature · behaviour ✓ .90 · breaking .86 · b2 · tests ✗ · auth
-  web/src/hooks/useProfileCache.ts     □ │ error_path · risk 4 · eyes
-  web/src/api/client.test.ts           ▒ │ L10–12 · +2 −2 · export async function getUser(id: string, opts?: RequestIni…
-  web/src/api/errors.ts                ·  ▸10    - export async function getUser(id: string) {
-  web/src/pages/a.tsx                  ·   11    -   return fetchJSON(`/users/${id}`);
-  web/src/pages/b.tsx                  · ·    10 + export async function getUser(id: string, opts?: RequestInit) {
-  web/src/pages/c.tsx                  · ·    11 +   return fetchJSON(`/users/${id}`, opts);
-  web/src/pages/d.tsx                  ·   12 12   }
-  web/src/pages/e.tsx                  · 
-  web/src/pages/f.tsx                  ▒ 1 unit hidden by filters (f)
-  web/src/styles/theme.css             ▒ 
-── not yours ─────────────────────────── 
-  web/legacy/util.ts                   █ 
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
+┌─ Files · by attention ───────────────┐ ┌─ web/src/api/client.ts  +2 −7 ─────────────────────────────── file 1 of 13 ─┐
+│▸ web/src/api/client.ts             █·│ │@@ 10  modified · feature · behaviour ✓ .90 · ⚠ breaking .86 · b2 · tests ✗  │
+│  web/src/components/UserCard.tsx    █│ │       auth · error_path · risk 4 · eyes                                     │
+│  web/src/hooks/useProfileCache.ts   □│ │  L10–12 · +2 −2 · export async function getUser(id: string, opts?: RequestI…│
+│  web/src/api/client.test.ts         ▒│ │ ▸10    - export async function getUser(id: string) {                        │
+│  web/src/api/errors.ts              ·│ │  11    -   return fetchJSON(`/users/${id}`);                                │
+│  web/src/pages/a.tsx                ·│ │·    10 + export async function getUser(id: string, opts?: RequestInit) {    │
+│  web/src/pages/b.tsx                ·│ │·    11 +   return fetchJSON(`/users/${id}`, opts);                          │
+│  web/src/pages/c.tsx                ·│ │  12 12   }                                                                  │
+│  web/src/pages/d.tsx                ·│ │                                                                             │
+│  web/src/pages/e.tsx                ·│ │1 unit hidden by filters (f)                                                 │
+│  web/src/pages/f.tsx                ▒│ │                                                                             │
+│  web/src/styles/theme.css           ▒│ │                                                                             │
+│── not yours ─────────────────────────│ │                                                                             │
+│  web/legacy/util.ts                 █│ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+└──────────────────────────────────────┘ └─────────────────────────────────────────────────────────────────────────────┘

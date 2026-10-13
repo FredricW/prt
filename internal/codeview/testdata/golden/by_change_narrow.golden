@@ -1,16 +1,16 @@
  1/7 Pass request options through getUser  3 unit…
-┌ b2 .82 · risk 4 · auth · error_path · test gap 1
-│ breaking 1 · routing: not routed
+Pass request options through getUser
+b2 .82 · risk 4 · auth · error_path
+tests: 2 of 3 units · test gap 1 · ⚠ breaking 1
+routing: not routed
 
 why these belong together
   calls  UserCard.tsx UserCard → client.ts getUser
   tests  client.test.ts → client.ts getUser
   jev caller update .82 · cos .79  UserCard.tsx U…
 
-┌ modified · feature · behaviour ✓ .90
-│ breaking .86 · b2 · tests ✗ · auth · error_path
-│ risk 4 · eyes
-│ L10–12 · +2 −2 · export async function getUser(…
- ▸10    - export async function getUser(id: strin…
-  11    -   return fetchJSON(`/users/${id}`);
-·    10 + export async function getUser(id: strin…
+── Units · interface first ───────────────────────
+1 web/src/api/client.ts@10           caller · eyes
+@@ 10  modified · feature · behaviour ✓ .90
+       ⚠ breaking .86 · b2 · tests ✗ · auth
+       error_path · risk 4 · eyes

@@ -8,7 +8,9 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/fredricw/prt/internal/comments"
+	"github.com/fredricw/prt/internal/diffview"
 	"github.com/fredricw/prt/internal/model"
+	"github.com/fredricw/prt/internal/theme"
 )
 
 // Review texts (M3: routing table rows and findings).
@@ -16,13 +18,16 @@ const (
 	textNotRouted  = "not routed"
 	textNoFindings = "findings: none"
 	findingGlyph   = "!"
+	// glyphStale marks a review whose labels were overridden since it ran
+	// (status stale-labels; M5).
+	glyphStale = "⚑"
+	// barFinding is the by-change findings block's left bar with colour
+	// (findingGlyph without).
+	barFinding     = "▌"
 	noteReReviewOK = "re-review on deep requested"
 	reReviewPrefix = "re-review: "
 	sevWidth       = len("medium")
-	findingIndent  = 2 // inline findings: glyph + space
-	// findingContWrap is the continuation indent of a wrapped finding by
-	// change: under the location, after "  <sev> ".
-	findingContWrap = 2 + sevWidth + 1
+	findingIndent  = 2 // inline findings: glyph + space; by change: continuation indent
 )
 
 // indexReviews fills c.reviews and c.unitFindings from the routing table.
@@ -128,7 +133,7 @@ func statusText(r *model.Review) string {
 		}
 		return "queued"
 	case model.ReviewStaleLabels:
-		return "stale labels"
+		return glyphStale + " stale labels"
 	case "":
 		return "pending"
 	}
@@ -149,17 +154,24 @@ func reviewMeta(r *model.Review) string {
 	return tierText(r) + " · " + statusText(r)
 }
 
-// routingChips are the group header's routing chips: the rule that fired
-// in words and the context kinds attached.
+// routingChips are the group header's routing chips: "routed: <tier> ·
+// <specialist prompts>" (blue; "· ⚑ stale labels" after an override), the
+// rule that fired in words and the context kinds attached.
 func routingChips(r *model.Review) []chip {
 	if r == nil {
 		return []chip{{text: "routing: " + textNotRouted}}
 	}
-	words := r.RuleWords
-	if words == "" {
-		words = "→ " + tierText(r)
+	routed := "routed: " + tierText(r)
+	for _, p := range r.Prompts {
+		routed += " · " + p
 	}
-	cs := []chip{{text: "routing: " + words}}
+	if r.Status == model.ReviewStaleLabels {
+		routed += " · " + statusText(r)
+	}
+	cs := []chip{{text: routed, kind: theme.ChipRoute}}
+	if r.RuleWords != "" {
+		cs = append(cs, chip{text: "routing: " + r.RuleWords})
+	}
 	if len(r.Context) > 0 {
 		cs = append(cs, chip{text: "context: " + strings.Join(r.Context, ", ")})
 	}
@@ -267,8 +279,10 @@ func (m *Model) addGroupFindings(p *pane, ge *groupEntry, width int) {
 		}
 		p.addText(head, textBold)
 		for _, f := range fs {
-			m.addFindingText(p, f, width)
+			m.addFindingText(p, r, f, width)
 		}
+	case r != nil && r.Status == model.ReviewStaleLabels:
+		p.addText(textNoFindings+" · "+statusText(r), textDim)
 	case r != nil && r.Status == model.ReviewDone && r.Tier != model.TierNone:
 		p.addText(textNoFindings, textDim)
 	default:
@@ -296,21 +310,43 @@ func calibrationText(c *model.Calibration) string {
 	return "deep check: " + strconv.Itoa(c.Missed) + " missed"
 }
 
-// addFindingText appends one finding of the by-change block.
-func (m *Model) addFindingText(p *pane, f model.Finding, width int) {
-	st := textPlain
-	if f.Severity == model.SevHigh {
-		st = textWarn
+// addFindingText appends one finding of the by-change block behind a left
+// bar (red "▌" with colour, "!" without; design "rv" block): a head
+// "<severity> · <tier> · <specialist prompts> · <seconds>" (severity red,
+// the rest dim), the location and claim (wrapped), then "fix: …" dim.
+func (m *Model) addFindingText(p *pane, r *model.Review, f model.Finding, width int) {
+	bar := findingGlyph
+	if m.th.Colour {
+		bar = barFinding
 	}
-	lead := "  " + sevText(f.Severity) + " " + findingLoc(f) + "  " + f.Claim
-	for _, l := range wrapIndent(lead, width, findingContWrap) {
-		p.addText(l, st)
+	bar = m.st.findBar.Render(bar) + " "
+	w := max(8, width-2)
+	claimSt := m.st.ctx
+	if f.Severity == model.SevHigh {
+		claimSt = m.st.chipWarn
+	}
+	head := m.st.findBar.Bold(true).Render(sevWord(f.Severity)) + m.st.sig.Render(" · "+reviewHead(r))
+	p.addRaw(fit(bar+head, width))
+	for _, l := range wrapIndent(findingLoc(f)+"  "+f.Claim, w, findingIndent) {
+		p.addRaw(bar + claimSt.Render(diffview.Clean(l)))
 	}
 	if f.Fix != "" {
-		for _, l := range wrapIndent("    fix: "+f.Fix, width, findingContWrap) {
-			p.addText(l, textDim)
+		for _, l := range wrapIndent("fix: "+f.Fix, w, len("fix: ")) {
+			p.addRaw(bar + m.st.hidden.Render(diffview.Clean(l)))
 		}
 	}
+}
+
+// reviewHead is the review part of a finding's head, after its severity:
+// "deep · security · 7.2s" (tier, specialist prompts, wall time when
+// known).
+func reviewHead(r *model.Review) string {
+	parts := []string{tierText(r)}
+	parts = append(parts, r.Prompts...)
+	if r.Ms > 0 {
+		parts = append(parts, strconv.FormatFloat(float64(r.Ms)/1000, 'f', 1, 64)+"s")
+	}
+	return strings.Join(parts, " · ")
 }
 
 // fline is one row of an inline finding (by file).
@@ -353,9 +389,9 @@ func (p *pane) addFline(ui int32, f fline) {
 func (m Model) findingRow(f fline, width int) string {
 	glyph := " "
 	if f.lead {
-		st := m.st.markMid
+		st := m.th.Accent
 		if f.high {
-			st = m.st.markHi
+			st = m.th.Del.Bold(true)
 		}
 		glyph = st.Render(findingGlyph)
 	}

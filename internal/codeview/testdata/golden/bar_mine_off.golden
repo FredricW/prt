@@ -1,30 +1,30 @@
-[1 needs eyes ✓] [2 behaviour ✓] [3 mine] [4 risk ≥ 3] [5 untested] [6 undocumented] [7 unsure] [8 has comments] [9 has…
-  web/src/api/client.ts              █·□  web/legacy/util.ts  +1 −4  (not yours)                                        
-  web/src/api/session.ts              ·█ ┌ modified · bugfix · behaviour ✓ .95 · tests ✗ · data_write · risk 5 · eyes
-── not yours ─────────────────────────── │ L27–29 · +1 −1 · save
-▸ web/legacy/util.ts                  ▒█   30 27   export function save(db: DB, row: Row) {
-                                          ▸31    -   db.insert(row);
-                                         ◆    28 +   db.upsert(row, { onConflict: "id" });
-                                           32 29   }
-                                         
-                                         1 unit hidden by filters (f)
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
-                                         
+show: [1 needs eyes ✓] [2 behaviour ✓] [3 mine] [4 risk ≥ 3] [5 untested] [6 undocumented] [7 unsure] [8 has comments] …
+┌─ Files · by attention ───────────────┐ ┌─ web/legacy/util.ts  +1 −4  (not yours) ────────────────────── file 3 of 3 ─┐
+│  web/src/api/client.ts            █·□│ │@@ 27  modified · bugfix · behaviour ✓ .95 · tests ✗ · data_write · risk 5   │
+│  web/src/api/session.ts            ·█│ │       eyes                                                                  │
+│── not yours ─────────────────────────│ │  L27–29 · +1 −1 · save                                                      │
+│▸ web/legacy/util.ts                ▒█│ │  30 27   export function save(db: DB, row: Row) {                           │
+│                                      │ │ ▸31    -   db.insert(row);                                                  │
+│                                      │ │◆    28 +   db.upsert(row, { onConflict: "id" });                            │
+│                                      │ │  32 29   }                                                                  │
+│                                      │ │                                                                             │
+│                                      │ │1 unit hidden by filters (f)                                                 │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+│                                      │ │                                                                             │
+└──────────────────────────────────────┘ └─────────────────────────────────────────────────────────────────────────────┘

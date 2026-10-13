@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/fredricw/prt/internal/model"
+	"github.com/fredricw/prt/internal/theme"
 )
 
 // UnsureBelow is the default threshold under which a claim is prefixed "?"
@@ -124,12 +125,14 @@ func RawLabelsText(u model.ChangeUnit, labels []model.Label, width int) string {
 	return b.String()
 }
 
-// chip is one label chip of a unit header: text readable without colour,
-// an optional dim probability, and warn for chips drawn in the alert style.
+// chip is one label chip of a unit or group header: text readable without
+// colour, an optional probability, and its theme kind (warm for risk and
+// breaking, red for missing tests, outlined blue for unsure, blue for
+// routing).
 type chip struct {
 	text string
 	prob string
-	warn bool
+	kind theme.ChipKind
 }
 
 // label is the chip's plain text: text, then the probability.
@@ -168,7 +171,8 @@ func unitChips(u *model.ChangeUnit, a *model.UnitAgg, labelled bool) []chip {
 		cs = append(cs, boolChip("behaviour", a.Behaviour, a.BehaviourP))
 	}
 	if a.Breaking { // an unknown breaking label makes no claim: no chip
-		cs = append(cs, chip{text: UnsurePrefix(a.BreakingP) + "breaking", prob: ProbText(a.BreakingP), warn: true})
+		cs = append(cs, chip{text: "⚠ " + UnsurePrefix(a.BreakingP) + "breaking", prob: ProbText(a.BreakingP),
+			kind: unsureKind(a.BreakingP, theme.ChipWarn)})
 	}
 	switch {
 	case a.DescBullet > 0:
@@ -179,35 +183,47 @@ func unitChips(u *model.ChangeUnit, a *model.UnitAgg, labelled bool) []chip {
 	tests := chip{text: "tests ✓"}
 	switch {
 	case a.CoveredUnknown:
-		tests = chip{text: "tests ?"}
+		tests = chip{text: "tests ?", kind: theme.ChipUnsure}
 	case !a.Covered:
-		tests = chip{text: "tests ✗", warn: a.Untested}
+		tests = chip{text: "tests ✗", kind: theme.ChipBad}
 	}
 	cs = append(cs, tests)
 	for _, t := range a.RiskTags {
-		cs = append(cs, chip{text: t})
+		cs = append(cs, chip{text: t, kind: theme.ChipWarn})
 	}
 	if a.RiskLevel > 0 {
-		cs = append(cs, chip{text: "risk " + strconv.Itoa(a.RiskLevel), warn: a.RiskLevel >= 4})
+		k := theme.ChipPlain
+		if a.RiskLevel >= 4 {
+			k = theme.ChipWarn
+		}
+		cs = append(cs, chip{text: "risk " + strconv.Itoa(a.RiskLevel), kind: k})
 	}
 	if a.Attention != "" {
 		cs = append(cs, chip{text: string(a.Attention)})
 	}
 	if a.Unsure {
-		cs = append(cs, chip{text: "?"})
+		cs = append(cs, chip{text: "?", kind: theme.ChipUnsure})
 	}
 	return cs
 }
 
+// unsureKind is ChipUnsure for a claim below UnsureBelow, else k.
+func unsureKind(p float64, k theme.ChipKind) theme.ChipKind {
+	if p < UnsureBelow {
+		return theme.ChipUnsure
+	}
+	return k
+}
+
 // boolChip renders a boolean claim "name ✓" / "name ✗" with the
 // probability of the claim shown (P for ✓, 1−P for ✗) and "?" below
-// UnsureBelow.
+// UnsureBelow (an outlined unsure chip with colour).
 func boolChip(name string, yes bool, pYes float64) chip {
 	p, mark := pYes, " ✓"
 	if !yes {
 		p, mark = 1-pYes, " ✗"
 	}
-	return chip{text: UnsurePrefix(p) + name + mark, prob: ProbText(p)}
+	return chip{text: UnsurePrefix(p) + name + mark, prob: ProbText(p), kind: unsureKind(p, theme.ChipPlain)}
 }
 
 func clipText(s string, width int) string {

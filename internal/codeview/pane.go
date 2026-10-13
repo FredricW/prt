@@ -25,6 +25,7 @@ const (
 	rowText                     // a styled text line (by change: why block, counts)
 	rowFinding                  // one row of an inline review finding (by file)
 	rowComment                  // one row of an inline comment block
+	rowSplit                    // one visual row of a side-by-side line pair
 )
 
 // textStyle picks the style of a rowText line.
@@ -35,6 +36,7 @@ const (
 	textBold
 	textDim
 	textWarn // alert style (high-severity findings)
+	textRaw  // already styled and fitted to the pane width when built
 )
 
 // ptext is the content of one rowText line.
@@ -47,14 +49,48 @@ type ptext struct {
 type prow struct {
 	kind rowKind
 	unit int32 // index into pane.units
-	line int32 // index into paneUnit.lines; note index for rowNote
-	pair int32 // row index of the paired -/+ line, -1 when unpaired
+	line int32 // index into paneUnit.lines; note index for rowNote; pane.splits index for rowSplit
+	// pair is the row index of the paired -/+ line (-1 when unpaired); for
+	// rowSplit it is the visual row within the pair (0 first, then the
+	// wrapped continuation rows).
+	pair int32
+}
+
+// srow is one side-by-side line pair: indices into the unit's lines of the
+// old (left) and new (right) line, -1 for a blank side; a context line has
+// left == right. parts is its number of visual rows (wrapped).
+type srow struct {
+	left, right int
+	parts       int
+}
+
+// paired reports whether the pair is a deletion and an addition (intra-line
+// highlighting applies).
+func (s srow) paired() bool { return s.left >= 0 && s.right >= 0 && s.left != s.right }
+
+// splitGeom is the side-by-side column layout of a pane: column widths
+// (left, a one-cell separator, right) and their text widths.
+type splitGeom struct {
+	lw, rw, lt, rt int
+}
+
+// splitGutter is the gutter of a side-by-side column: mark (new side
+// only), cursor, line number, space, op, space.
+func splitGutter(digits int) int { return 2 + digits + 3 }
+
+// newSplitGeom lays out two columns in width w for line numbers of digits.
+func newSplitGeom(w, digits int) splitGeom {
+	lw := (w - 1) / 2
+	rw := w - 1 - lw
+	g := splitGutter(digits)
+	return splitGeom{lw: lw, rw: rw, lt: max(4, lw-g), rt: max(4, rw-g)}
 }
 
 // paneUnit is one visible unit of the selected file.
 type paneUnit struct {
 	u     *model.ChangeUnit
 	a     *model.UnitAgg // nil without an aggregate
+	lang  string         // syntax language ("" plain)
 	lines []diff.Line    // nil when collapsed
 	marks map[int]model.LineMark
 	// threads marks the line indices with an unresolved GitHub thread (❱).
@@ -65,23 +101,26 @@ type paneUnit struct {
 	chipRows [][2]int
 }
 
-// chipSep separates chips in a header row.
-const chipSep = " · "
-
 // wrapChips splits chips greedily into rows of at most width cells, each
-// row starting with a two-cell prefix ("┌ " then "│ "). A chip wider than
-// a row gets a row of its own (and is truncated on render).
-func wrapChips(cs []chip, width int) [][2]int {
+// row starting with a prefix of prefix cells. Chips are measured as
+// theme.Chips draws them: joined by " · " without colour, padded by a cell
+// on each side and one space apart with colour. A chip wider than a row
+// gets a row of its own (and is truncated on render).
+func wrapChips(cs []chip, width, prefix int, colour bool) [][2]int {
+	sep, padW := 3, 0
+	if colour {
+		sep, padW = 1, 2
+	}
 	var rows [][2]int
-	start, used := 0, 2
+	start, used := 0, prefix
 	for i, c := range cs {
-		w := ansi.StringWidth(c.label())
-		if i > start && used+len([]rune(chipSep))+w > width {
+		w := ansi.StringWidth(c.label()) + padW
+		if i > start && used+sep+w > width {
 			rows = append(rows, [2]int{start, i})
-			start, used = i, 2
+			start, used = i, prefix
 		}
 		if i > start {
-			used += len([]rune(chipSep))
+			used += sep
 		}
 		used += w
 	}
@@ -105,6 +144,13 @@ type pane struct {
 	flines []fline
 	// clines are the inline comment rows.
 	clines []cline
+
+	// Side-by-side (split): the line pairs, the column layout, and the
+	// line-number digits fixed before the units are laid out (wrapping
+	// depends on them).
+	split  bool
+	geom   splitGeom
+	splits []srow
 }
 
 func (p *pane) addText(s string, st textStyle) {
@@ -112,15 +158,50 @@ func (p *pane) addText(s string, st textStyle) {
 	p.texts = append(p.texts, ptext{s: s, st: st})
 }
 
+// addRaw appends already styled lines (each fitted to the pane width).
+func (p *pane) addRaw(lines ...string) {
+	for _, s := range lines {
+		p.addText(s, textRaw)
+	}
+}
+
 func (p *pane) addBlank() { p.rows = append(p.rows, prow{kind: rowBlank, pair: -1}) }
+
+// newPane starts the pane of the units ids; side-by-side it fixes the
+// line-number digits and the column layout first.
+func (m *Model) newPane(ids []string) *pane {
+	p := &pane{split: m.splitOn()}
+	if p.split {
+		maxNo := 0
+		for _, id := range ids {
+			if !m.visible(id) || m.collapsed(id) {
+				continue
+			}
+			for _, l := range m.c.linesOf(id) {
+				maxNo = max(maxNo, l.OldNo, l.NewNo)
+			}
+		}
+		p.gutter = len(strconv.Itoa(maxNo))
+		p.geom = newSplitGeom(m.layout().paneW, p.gutter)
+	}
+	return p
+}
+
+// setGutter records the widest line number once the units are laid out
+// (side-by-side fixed it up front).
+func (p *pane) setGutter(maxNo int) {
+	if !p.split {
+		p.gutter = len(strconv.Itoa(maxNo))
+	}
+}
 
 // buildPane lays out file fi's visible units in line order.
 func (m *Model) buildPane(fi int) *pane {
-	p := &pane{}
 	if fi < 0 || fi >= len(m.c.files) {
-		return p
+		return &pane{}
 	}
 	f := m.c.files[fi]
+	p := m.newPane(f.units)
 	hidden, maxNo := 0, 0
 	for _, id := range f.units {
 		if !m.visible(id) {
@@ -135,7 +216,7 @@ func (m *Model) buildPane(fi int) *pane {
 	case hidden > 0: // after the visible units, or alone when all are hidden
 		p.addNote(hiddenText(hidden))
 	}
-	p.gutter = len(strconv.Itoa(maxNo))
+	p.setGutter(maxNo)
 	return p
 }
 
@@ -163,16 +244,21 @@ func (m *Model) addUnit(p *pane, id string) int {
 		return 0
 	}
 	pu.lines = m.c.linesOf(id)
+	pu.lang = m.c.langOf(u.Path)
 	if m.c.labelled && pu.a != nil && len(pu.a.Lines) > 0 {
 		pu.marks = make(map[int]model.LineMark, len(pu.a.Lines))
 		for _, lm := range pu.a.Lines {
 			pu.marks[lm.Line] = lm
 		}
 	}
+	w := m.layout().paneW
 	pu.threads = m.c.threadLines(id)
 	pu.chips = unitChips(u, pu.a, m.c.labelled)
-	pu.chipRows = wrapChips(pu.chips, m.layout().paneW)
+	pu.chipRows = wrapChips(pu.chips, w, ansi.StringWidth(headPrefix(u)), m.th.Colour)
 	p.units = append(p.units, pu)
+	if m.byChange() {
+		p.addRaw(m.unitTitle(id, w))
+	}
 	for k := range pu.chipRows {
 		p.rows = append(p.rows, prow{kind: rowHeader, unit: ui, line: int32(k), pair: -1})
 	}
@@ -180,10 +266,14 @@ func (m *Model) addUnit(p *pane, id string) int {
 	if u.MovedFrom != "" {
 		p.rows = append(p.rows, prow{kind: rowMoved, unit: ui, pair: -1})
 	}
-	w := m.layout().paneW
 	atLine, rest := m.inlineFindings(id, pu.lines)
 	m.addFindingRows(p, ui, rest, w)
 	m.addBlockRows(p, ui, m.c.blocksAt(id, -1), w)
+	if p.split {
+		maxNo := m.addSplitLines(p, ui, atLine, w)
+		p.rows = append(p.rows, prow{kind: rowBlank, pair: -1})
+		return maxNo
+	}
 	lineRow := make([]int32, len(pu.lines))
 	maxNo := 0
 	for li, l := range pu.lines {
