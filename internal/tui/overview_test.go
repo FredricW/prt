@@ -117,6 +117,18 @@ func TestOverviewProbabilities(t *testing.T) {
 	}
 }
 
+// A headline whose unit has no symbol (Text = path) does not repeat the path.
+func TestOverviewHeadlineWithoutSymbol(t *testing.T) {
+	d := loadDetail(t, "detail_full.json")
+	d.Agg = &model.ItemAgg{Headlines: []model.Headline{
+		{UnitID: "u", Path: "web/src/api/index.ts", Line: 2, Kind: "breaking", Text: "web/src/api/index.ts", P: 0.83},
+	}}
+	got, _ := renderOverviewText(d)
+	if !strings.Contains(got, "breaking  (top level)  web/src/api/index.ts:2  .83") {
+		t.Errorf("headline row not as expected:\n%s", got)
+	}
+}
+
 func TestCompositionBar(t *testing.T) {
 	a := &model.ItemAgg{Composition: map[string]float64{"refactor": 0.5, "feature": 0.5, "fix": 0.0},
 		EffectiveLines: 90, NoiseLines: 10}

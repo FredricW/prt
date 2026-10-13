@@ -372,7 +372,13 @@ func headlinesBlock(p *page, a *model.ItemAgg) {
 		kw = max(kw, len([]rune(h.Kind)))
 	}
 	for _, h := range a.Headlines {
-		p.addFit(gutter(h.P)+padRight(h.Kind, kw)+"  ", h.Text, fmt.Sprintf("  %s:%d  %s", h.Path, h.Line, p.prob(h.P)), h.UnitID)
+		// Units without a symbol or signature get Text = path, which the
+		// location column already shows.
+		text := h.Text
+		if text == h.Path {
+			text = "(top level)"
+		}
+		p.addFit(gutter(h.P)+padRight(h.Kind, kw)+"  ", text, fmt.Sprintf("  %s:%d  %s", h.Path, h.Line, p.prob(h.P)), h.UnitID)
 	}
 }
 
