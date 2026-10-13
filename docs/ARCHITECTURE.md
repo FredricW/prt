@@ -28,8 +28,10 @@ Nothing outside those five packages makes a network call or runs `git`.
 - `internal/model` imports nothing from prt. Everything may import it.
 - Boundary packages (`gitx`, `gh`, `jev`, `embed`, `review`, `store`) import
   only `model` (and `config` types where noted). They never import each other.
-- Pure stage packages (`diff`, `parse`, `link`, `cluster`, `route`,
+- Pure stage packages (`diff`, `parse`, `labels`, `link`, `cluster`, `route`,
   `aggregate`, `questions`) do no I/O except through an interface passed in.
+- Label encoding (values, P, scores, sub-questions, subjects) is the shared
+  contract in `internal/model/labels.go`.
 - `pipeline` is the only package that wires stages to boundaries.
 - `daemon` wraps `pipeline` + `store` behind `daemon.Client`; `tui` talks only
   to `daemon.Client` and `proto` types, never to `store` or a boundary.
@@ -55,7 +57,10 @@ Nothing outside those five packages makes a network call or runs `git`.
 | `internal/pipeline` | M0→M3 | stage orchestration, caching, RunLog events, degradation | fetch (local or `PRDiff` fallback)/parse/aggregate wired; others skipped |
 | `internal/parse` | M1 | tree-sitter split at function boundaries, symbol/signature, shape hash, format detection, `Lang` | hunk fallback only |
 | `internal/questions` | M1 | catalogue types, validation, `Wire()` to `jev.Question`, embedded `default.toml` | types done; catalogue partial |
-| `internal/jev` | M1 | `Client`, `HTTP` (AI Gateway `/v1/evaluate`), `Fake`, `Replay`, `Recorder`, `RequestKey` | done (batching lives in pipeline) |
+| `internal/jev` | M1 | `Client`, `HTTP` (AI Gateway `/v1/evaluate`), `Fake`, `Replay`, `Recorder`, `RequestKey` | done (batching lives in `labels`) |
+| `internal/labels` | M1 | stage 4 labels: per-unit and per-line-batch Jev requests from the catalogue, token-limit splitting, answer → `model.Label` mapping, unknown on `ErrUnavailable` | M1 |
+| `internal/codeview` | M1/M2 | Code page component: mode A by file (file list, chips, gutter marks, noise collapse, filters, `L` overlay); mode B in M2 | M1 |
+| `tools/recordjev` | M1 | runs the pipeline over fixture PRs with a recording, budget-guarded Jev client; writes `testdata/recordings/jev/` and `SPEND.md`; shares `pipelinetest.FixtureRun`, `Problems` and `Expectations` with the replay test | M1 |
 | `internal/aggregate` | M1/M3 | spec "Ranking and aggregation" arithmetic, urgency + "why" | M0 urgency placeholder (no label terms) |
 | `internal/link` | M2 | structural links, embed kNN candidates, mechanical candidates | TODO |
 | `internal/embed` | M2 | `Embedder`, `Ollama` (`/api/embed`), `ONNX` stub, `Fake`, `Cosine`, `FromSpec` | done (ONNX TODO) |

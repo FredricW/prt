@@ -107,6 +107,56 @@ TUI offline against `testdata/fixture-repo` with `testdata/fixtures/prs.json`.
 
 ### M1 — units and labels
 
+`make check` and `make snapshot` are green. The Jev recordings were made
+once against the real endpoint (218 calls, $0.0197, see
+`testdata/recordings/SPEND.md`), and `TestRecordedReplay` replays them
+offline over fixture PRs #101–#104.
+
+#### Added
+
+- tree-sitter parse (Go, TS, TSX, JS, Python): each hunk is split at
+  function boundaries into change units. Each unit gets a qualified symbol,
+  a signature, a git kind, a shape hash with identifier normalisation and
+  pure-formatting detection. Moved code is paired across files. Files that
+  can't be parsed fall back to one unit per hunk.
+- Question catalogue: every row of the spec table is built in, with
+  criteria, dynamic description-bullet options and `deferred` markers.
+  Loading validates strictly (unknown keys and inputs, `feeds = []`, bad
+  ids). Only questions with an M1 consumer are sent.
+- Stage-4 labels (`internal/labels`): one Jev request per unit, plus line
+  batches of 20 added lines. Requests respect token limits (the diff is cut,
+  then questions are split). Answers map to labels with P/confidence; when
+  Jev is unreachable, labels are `unknown`.
+- Pipeline: labels are cached by unit id in SQLite. An outage never
+  overwrites known answers. Ownership comes from `user.owns` or CODEOWNERS,
+  overrides reach the aggregate, and the picker shows "labels unavailable"
+  plus breaking / needs-eyes counts. The daemon streams patch events as
+  stages land.
+- Aggregate arithmetic: noise, effective lines, attention, minutes,
+  composition, risk_max, risk_any, test gap, hot spots, fidelity,
+  undocumented, unsure, gutter line marks, the file list and Your slice.
+- Overview page: title, composition bar, lines/minutes/needs-eyes summary,
+  headlines, check before approving, risk with tag chips and test gap,
+  description fidelity, minimap, Your slice and the confidence footer.
+  Probabilities show as `.86`, with a `?` below .60. `enter`, `L` and a
+  click jump into Code.
+- Code page mode A (`internal/codeview`): file list (owned first, a "not
+  yours" divider, minimap cells), unit chips, gutter marks `◆ ~ ⋯ ·`, noise
+  collapsed with `z`, a filters bar (`f`, 1–9), `n/p`, `J/K` and a `L`
+  raw-labels overlay.
+- `tools/recordjev` with `make record-jev` (live, capped at $1.00, with a
+  spend ledger) and `make record-jev-dry` (a free count of requests).
+
+#### Known limitations
+
+- With real answers the Headlines block lists every breaking or contract
+  unit (about 85 rows on #101), and nearly every unit is "unsure". Both
+  follow the spec; see DECISIONS "Spec consequences seen with real labels".
+- Checking whether the #101 logout bullet is really implemented needs
+  caller links (M2).
+- `make snapshot` / `--offline` run without Jev, so they show "labels
+  unavailable" and git facts only.
+
 ### M2 — groups
 
 ### M3 — review pipeline
