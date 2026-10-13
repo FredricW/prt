@@ -1,0 +1,504 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Fredric <fredric@acme.example>
+Date: Thu, 8 Oct 2026 08:30:00 +0000
+Subject: [PATCH] refactor(web): rename fetchJSON to requestJSON
+
+The helper sends every method, not just GETs, and the old name kept leading
+people to call fetch() directly for writes. Pure rename, no behaviour change.
+---
+ web/src/__tests__/client.test.ts        | 10 +++++-----
+ web/src/__tests__/users.test.ts         |  6 +++---
+ web/src/api/billing.ts                  |  6 +++---
+ web/src/api/client.ts                   | 10 +++++-----
+ web/src/api/health.ts                   |  4 ++--
+ web/src/api/index.ts                    |  2 +-
+ web/src/api/notifications.ts            |  6 +++---
+ web/src/api/orgs.ts                     |  6 +++---
+ web/src/api/search.ts                   |  4 ++--
+ web/src/api/settings.ts                 |  6 +++---
+ web/src/api/teams.ts                    |  8 ++++----
+ web/src/api/users.ts                    |  6 +++---
+ web/src/components/AuditLog.tsx         |  4 ++--
+ web/src/components/InvoiceTable.tsx     |  4 ++--
+ web/src/components/NotificationBell.tsx |  4 ++--
+ web/src/components/SettingsForm.tsx     |  6 +++---
+ web/src/components/StatusFooter.tsx     |  4 ++--
+ web/src/components/TeamPanel.tsx        |  6 +++---
+ web/src/hooks/useFetch.ts               |  6 +++---
+ web/src/hooks/usePolling.ts             |  4 ++--
+ 20 files changed, 56 insertions(+), 56 deletions(-)
+
+diff --git a/web/src/__tests__/client.test.ts b/web/src/__tests__/client.test.ts
+index 8517441..b5047a6 100644
+--- a/web/src/__tests__/client.test.ts
++++ b/web/src/__tests__/client.test.ts
+@@ -1,6 +1,6 @@
+ import { afterEach, describe, expect, it, vi } from "vitest";
+ 
+-import { ApiError, fetchJSON, getUser } from "../api/client";
++import { ApiError, requestJSON, getUser } from "../api/client";
+ 
+ function mockFetch(status: number, body: unknown) {
+   const res = new Response(body === undefined ? null : JSON.stringify(body), { status });
+@@ -11,21 +11,21 @@ afterEach(() => {
+   vi.restoreAllMocks();
+ });
+ 
+-describe("fetchJSON", () => {
++describe("requestJSON", () => {
+   it("prefixes the API base and encodes the query", async () => {
+     const spy = mockFetch(200, { ok: true });
+-    await fetchJSON("/things", { query: { b: 2, a: "x y" } });
++    await requestJSON("/things", { query: { b: 2, a: "x y" } });
+     expect(spy.mock.calls[0]![0]).toBe("/api/v1/things?a=x%20y&b=2");
+   });
+ 
+   it("maps error payloads to ApiError", async () => {
+     mockFetch(404, { code: "not_found", message: "no such user" });
+-    await expect(fetchJSON("/users/nope")).rejects.toEqual(new ApiError(404, "not_found", "no such user"));
++    await expect(requestJSON("/users/nope")).rejects.toEqual(new ApiError(404, "not_found", "no such user"));
+   });
+ 
+   it("returns undefined for 204", async () => {
+     mockFetch(204, undefined);
+-    await expect(fetchJSON("/noop", { method: "POST" })).resolves.toBeUndefined();
++    await expect(requestJSON("/noop", { method: "POST" })).resolves.toBeUndefined();
+   });
+ });
+ 
+diff --git a/web/src/__tests__/users.test.ts b/web/src/__tests__/users.test.ts
+index 2393bd1..bfe3ff0 100644
+--- a/web/src/__tests__/users.test.ts
++++ b/web/src/__tests__/users.test.ts
+@@ -8,8 +8,8 @@ afterEach(() => {
+ });
+ 
+ describe("users api", () => {
+-  it("passes cursor and limit to fetchJSON", async () => {
+-    const spy = vi.spyOn(client, "fetchJSON").mockResolvedValue({ users: [], nextCursor: null });
++  it("passes cursor and limit to requestJSON", async () => {
++    const spy = vi.spyOn(client, "requestJSON").mockResolvedValue({ users: [], nextCursor: null });
+     await listUsers("c1", 10);
+     expect(spy).toHaveBeenCalledWith("/users", { query: { cursor: "c1", limit: 10 } });
+   });
+@@ -21,7 +21,7 @@ describe("users api", () => {
+   });
+ 
+   it("deactivates with POST", async () => {
+-    const spy = vi.spyOn(client, "fetchJSON").mockResolvedValue(undefined);
++    const spy = vi.spyOn(client, "requestJSON").mockResolvedValue(undefined);
+     await deactivateUser("u1");
+     expect(spy).toHaveBeenCalledWith("/users/u1/deactivate", { method: "POST" });
+   });
+diff --git a/web/src/api/billing.ts b/web/src/api/billing.ts
+index 55c0923..d877123 100644
+--- a/web/src/api/billing.ts
++++ b/web/src/api/billing.ts
+@@ -1,4 +1,4 @@
+-import { fetchJSON } from "./client";
++import { requestJSON } from "./client";
+ 
+ export interface Invoice {
+   id: string;
+@@ -10,10 +10,10 @@ export interface Invoice {
+ }
+ 
+ export async function listInvoices(status?: Invoice["status"]): Promise<Invoice[]> {
+-  return fetchJSON<Invoice[]>("/billing/invoices", { query: { status } });
++  return requestJSON<Invoice[]>("/billing/invoices", { query: { status } });
+ }
+ 
+ export async function downloadInvoiceUrl(id: string): Promise<string> {
+-  const { url } = await fetchJSON<{ url: string }>(`/billing/invoices/${encodeURIComponent(id)}/pdf`);
++  const { url } = await requestJSON<{ url: string }>(`/billing/invoices/${encodeURIComponent(id)}/pdf`);
+   return url;
+ }
+diff --git a/web/src/api/client.ts b/web/src/api/client.ts
+index 19b1f9b..e71dc56 100644
+--- a/web/src/api/client.ts
++++ b/web/src/api/client.ts
+@@ -1,4 +1,4 @@
+-// Thin HTTP client for the portal API. Every request goes through fetchJSON so
++// Thin HTTP client for the portal API. Every request goes through requestJSON so
+ // auth headers, base URL and error mapping live in one place.
+ 
+ import { formatQuery } from "../utils/format";
+@@ -36,7 +36,7 @@ function authHeader(): Record<string, string> {
+   return token ? { Authorization: `Bearer ${token}` } : {};
+ }
+ 
+-export async function fetchJSON<T>(path: string, opts: RequestOptions = {}): Promise<T> {
++export async function requestJSON<T>(path: string, opts: RequestOptions = {}): Promise<T> {
+   const url = API_BASE + path + formatQuery(opts.query ?? {});
+   const res = await fetch(url, {
+     method: opts.method ?? "GET",
+@@ -67,13 +67,13 @@ export async function fetchJSON<T>(path: string, opts: RequestOptions = {}): Pro
+ }
+ 
+ export async function getUser(id: string): Promise<User> {
+-  return fetchJSON<User>(`/users/${encodeURIComponent(id)}`);
++  return requestJSON<User>(`/users/${encodeURIComponent(id)}`);
+ }
+ 
+ export async function getCurrentUser(): Promise<User> {
+-  return fetchJSON<User>("/users/me");
++  return requestJSON<User>("/users/me");
+ }
+ 
+ export async function updateUser(id: string, patch: Partial<Pick<User, "displayName" | "teamId">>): Promise<User> {
+-  return fetchJSON<User>(`/users/${encodeURIComponent(id)}`, { method: "PATCH", body: patch });
++  return requestJSON<User>(`/users/${encodeURIComponent(id)}`, { method: "PATCH", body: patch });
+ }
+diff --git a/web/src/api/health.ts b/web/src/api/health.ts
+index fbda530..7b6922f 100644
+--- a/web/src/api/health.ts
++++ b/web/src/api/health.ts
+@@ -1,4 +1,4 @@
+-import { fetchJSON } from "./client";
++import { requestJSON } from "./client";
+ 
+ export interface Health {
+   status: "ok" | "degraded";
+@@ -8,7 +8,7 @@ export interface Health {
+ // ping is used by the status footer; it never throws.
+ export async function ping(): Promise<Health | null> {
+   try {
+-    return await fetchJSON<Health>("/health");
++    return await requestJSON<Health>("/health");
+   } catch {
+     return null;
+   }
+diff --git a/web/src/api/index.ts b/web/src/api/index.ts
+index f5d5289..b84f021 100644
+--- a/web/src/api/index.ts
++++ b/web/src/api/index.ts
+@@ -1,4 +1,4 @@
+-export { API_BASE, ApiError, fetchJSON, getCurrentUser, getUser, updateUser } from "./client";
++export { API_BASE, ApiError, requestJSON, getCurrentUser, getUser, updateUser } from "./client";
+ export type { RequestOptions, User } from "./client";
+ export * from "./users";
+ export * from "./teams";
+diff --git a/web/src/api/notifications.ts b/web/src/api/notifications.ts
+index ba42c3b..978b7a4 100644
+--- a/web/src/api/notifications.ts
++++ b/web/src/api/notifications.ts
+@@ -1,4 +1,4 @@
+-import { fetchJSON } from "./client";
++import { requestJSON } from "./client";
+ 
+ export interface Notification {
+   id: string;
+@@ -8,9 +8,9 @@ export interface Notification {
+ }
+ 
+ export async function listNotifications(unreadOnly = false): Promise<Notification[]> {
+-  return fetchJSON<Notification[]>("/notifications", { query: { unread: unreadOnly || undefined } });
++  return requestJSON<Notification[]>("/notifications", { query: { unread: unreadOnly || undefined } });
+ }
+ 
+ export async function markRead(id: string): Promise<void> {
+-  await fetchJSON<void>(`/notifications/${encodeURIComponent(id)}/read`, { method: "POST" });
++  await requestJSON<void>(`/notifications/${encodeURIComponent(id)}/read`, { method: "POST" });
+ }
+diff --git a/web/src/api/orgs.ts b/web/src/api/orgs.ts
+index 379abc0..5e56bda 100644
+--- a/web/src/api/orgs.ts
++++ b/web/src/api/orgs.ts
+@@ -1,4 +1,4 @@
+-import { fetchJSON } from "./client";
++import { requestJSON } from "./client";
+ 
+ export interface Org {
+   id: string;
+@@ -8,9 +8,9 @@ export interface Org {
+ }
+ 
+ export async function currentOrg(): Promise<Org> {
+-  return fetchJSON<Org>("/orgs/current");
++  return requestJSON<Org>("/orgs/current");
+ }
+ 
+ export async function renameOrg(name: string): Promise<Org> {
+-  return fetchJSON<Org>("/orgs/current", { method: "PATCH", body: { name } });
++  return requestJSON<Org>("/orgs/current", { method: "PATCH", body: { name } });
+ }
+diff --git a/web/src/api/search.ts b/web/src/api/search.ts
+index e151a07..cba9559 100644
+--- a/web/src/api/search.ts
++++ b/web/src/api/search.ts
+@@ -1,4 +1,4 @@
+-import { fetchJSON } from "./client";
++import { requestJSON } from "./client";
+ 
+ export interface SearchHit {
+   kind: "user" | "team" | "invoice";
+@@ -10,5 +10,5 @@ export async function search(q: string, signal?: AbortSignal): Promise<SearchHit
+   if (q.trim() === "") {
+     return [];
+   }
+-  return fetchJSON<SearchHit[]>("/search", { query: { q }, signal });
++  return requestJSON<SearchHit[]>("/search", { query: { q }, signal });
+ }
+diff --git a/web/src/api/settings.ts b/web/src/api/settings.ts
+index 82e07c6..bbf4cf7 100644
+--- a/web/src/api/settings.ts
++++ b/web/src/api/settings.ts
+@@ -1,4 +1,4 @@
+-import { fetchJSON } from "./client";
++import { requestJSON } from "./client";
+ 
+ export interface Settings {
+   locale: string;
+@@ -7,9 +7,9 @@ export interface Settings {
+ }
+ 
+ export async function getSettings(): Promise<Settings> {
+-  return fetchJSON<Settings>("/settings");
++  return requestJSON<Settings>("/settings");
+ }
+ 
+ export async function saveSettings(s: Settings): Promise<Settings> {
+-  return fetchJSON<Settings>("/settings", { method: "PUT", body: s });
++  return requestJSON<Settings>("/settings", { method: "PUT", body: s });
+ }
+diff --git a/web/src/api/teams.ts b/web/src/api/teams.ts
+index da881af..743829d 100644
+--- a/web/src/api/teams.ts
++++ b/web/src/api/teams.ts
+@@ -1,4 +1,4 @@
+-import { fetchJSON, type User } from "./client";
++import { requestJSON, type User } from "./client";
+ 
+ export interface Team {
+   id: string;
+@@ -7,15 +7,15 @@ export interface Team {
+ }
+ 
+ export async function listTeams(): Promise<Team[]> {
+-  return fetchJSON<Team[]>("/teams");
++  return requestJSON<Team[]>("/teams");
+ }
+ 
+ export async function teamMembers(teamId: string): Promise<User[]> {
+-  return fetchJSON<User[]>(`/teams/${encodeURIComponent(teamId)}/members`);
++  return requestJSON<User[]>(`/teams/${encodeURIComponent(teamId)}/members`);
+ }
+ 
+ export async function addMember(teamId: string, userId: string): Promise<void> {
+-  await fetchJSON<void>(`/teams/${encodeURIComponent(teamId)}/members`, {
++  await requestJSON<void>(`/teams/${encodeURIComponent(teamId)}/members`, {
+     method: "POST",
+     body: { userId },
+   });
+diff --git a/web/src/api/users.ts b/web/src/api/users.ts
+index 7ef09b1..260e3cd 100644
+--- a/web/src/api/users.ts
++++ b/web/src/api/users.ts
+@@ -1,4 +1,4 @@
+-import { fetchJSON, getUser, type User } from "./client";
++import { requestJSON, getUser, type User } from "./client";
+ 
+ export interface UserPage {
+   users: User[];
+@@ -6,7 +6,7 @@ export interface UserPage {
+ }
+ 
+ export async function listUsers(cursor?: string, limit = 50): Promise<UserPage> {
+-  return fetchJSON<UserPage>("/users", { query: { cursor, limit } });
++  return requestJSON<UserPage>("/users", { query: { cursor, limit } });
+ }
+ 
+ export async function getUsers(ids: string[]): Promise<User[]> {
+@@ -14,5 +14,5 @@ export async function getUsers(ids: string[]): Promise<User[]> {
+ }
+ 
+ export async function deactivateUser(id: string): Promise<void> {
+-  await fetchJSON<void>(`/users/${encodeURIComponent(id)}/deactivate`, { method: "POST" });
++  await requestJSON<void>(`/users/${encodeURIComponent(id)}/deactivate`, { method: "POST" });
+ }
+diff --git a/web/src/components/AuditLog.tsx b/web/src/components/AuditLog.tsx
+index b2de6e3..36d04ee 100644
+--- a/web/src/components/AuditLog.tsx
++++ b/web/src/components/AuditLog.tsx
+@@ -1,6 +1,6 @@
+ import { useEffect, useState } from "react";
+ 
+-import { fetchJSON } from "../api/client";
++import { requestJSON } from "../api/client";
+ import { formatDate } from "../utils/format";
+ 
+ interface AuditEntry {
+@@ -14,7 +14,7 @@ export function AuditLog({ limit = 25 }: { limit?: number }) {
+   const [entries, setEntries] = useState<AuditEntry[]>([]);
+ 
+   useEffect(() => {
+-    fetchJSON<AuditEntry[]>("/audit", { query: { limit } }).then(setEntries);
++    requestJSON<AuditEntry[]>("/audit", { query: { limit } }).then(setEntries);
+   }, [limit]);
+ 
+   return (
+diff --git a/web/src/components/InvoiceTable.tsx b/web/src/components/InvoiceTable.tsx
+index c1357d3..78bca06 100644
+--- a/web/src/components/InvoiceTable.tsx
++++ b/web/src/components/InvoiceTable.tsx
+@@ -1,6 +1,6 @@
+ import { useEffect, useState } from "react";
+ 
+-import { fetchJSON } from "../api/client";
++import { requestJSON } from "../api/client";
+ import { type Invoice } from "../api/billing";
+ import { formatDate, formatMoney } from "../utils/format";
+ 
+@@ -8,7 +8,7 @@ export function InvoiceTable() {
+   const [invoices, setInvoices] = useState<Invoice[]>([]);
+ 
+   useEffect(() => {
+-    fetchJSON<Invoice[]>("/billing/invoices").then(setInvoices);
++    requestJSON<Invoice[]>("/billing/invoices").then(setInvoices);
+   }, []);
+ 
+   return (
+diff --git a/web/src/components/NotificationBell.tsx b/web/src/components/NotificationBell.tsx
+index 7a81db0..8d1c337 100644
+--- a/web/src/components/NotificationBell.tsx
++++ b/web/src/components/NotificationBell.tsx
+@@ -1,6 +1,6 @@
+ import { useState } from "react";
+ 
+-import { fetchJSON } from "../api/client";
++import { requestJSON } from "../api/client";
+ import { type Notification } from "../api/notifications";
+ import { usePolling } from "../hooks/usePolling";
+ 
+@@ -9,7 +9,7 @@ export function NotificationBell() {
+   const [open, setOpen] = useState(false);
+ 
+   const dismiss = async (id: string) => {
+-    await fetchJSON<void>(`/notifications/${id}/read`, { method: "POST" });
++    await requestJSON<void>(`/notifications/${id}/read`, { method: "POST" });
+   };
+ 
+   return (
+diff --git a/web/src/components/SettingsForm.tsx b/web/src/components/SettingsForm.tsx
+index 12ed260..7d005db 100644
+--- a/web/src/components/SettingsForm.tsx
++++ b/web/src/components/SettingsForm.tsx
+@@ -1,6 +1,6 @@
+ import { useEffect, useState } from "react";
+ 
+-import { fetchJSON } from "../api/client";
++import { requestJSON } from "../api/client";
+ import { type Settings } from "../api/settings";
+ 
+ export function SettingsForm() {
+@@ -8,14 +8,14 @@ export function SettingsForm() {
+   const [saved, setSaved] = useState(false);
+ 
+   useEffect(() => {
+-    fetchJSON<Settings>("/settings").then(setSettings);
++    requestJSON<Settings>("/settings").then(setSettings);
+   }, []);
+ 
+   if (!settings) return null;
+ 
+   const submit = async (e: React.FormEvent) => {
+     e.preventDefault();
+-    const next = await fetchJSON<Settings>("/settings", { method: "PUT", body: settings });
++    const next = await requestJSON<Settings>("/settings", { method: "PUT", body: settings });
+     setSettings(next);
+     setSaved(true);
+   };
+diff --git a/web/src/components/StatusFooter.tsx b/web/src/components/StatusFooter.tsx
+index 8a2515d..c59b9b4 100644
+--- a/web/src/components/StatusFooter.tsx
++++ b/web/src/components/StatusFooter.tsx
+@@ -1,13 +1,13 @@
+ import { useEffect, useState } from "react";
+ 
+-import { fetchJSON } from "../api/client";
++import { requestJSON } from "../api/client";
+ import { type Health } from "../api/health";
+ 
+ export function StatusFooter() {
+   const [health, setHealth] = useState<Health | null>(null);
+ 
+   useEffect(() => {
+-    fetchJSON<Health>("/health")
++    requestJSON<Health>("/health")
+       .then(setHealth)
+       .catch(() => setHealth({ status: "degraded", version: "?" }));
+   }, []);
+diff --git a/web/src/components/TeamPanel.tsx b/web/src/components/TeamPanel.tsx
+index a3c6120..9e6324a 100644
+--- a/web/src/components/TeamPanel.tsx
++++ b/web/src/components/TeamPanel.tsx
+@@ -1,6 +1,6 @@
+ import { useEffect, useState } from "react";
+ 
+-import { fetchJSON, type User } from "../api/client";
++import { requestJSON, type User } from "../api/client";
+ import { type Team } from "../api/teams";
+ import { UserCard } from "./UserCard";
+ 
+@@ -13,8 +13,8 @@ export function TeamPanel({ teamId }: Props) {
+   const [members, setMembers] = useState<User[]>([]);
+ 
+   useEffect(() => {
+-    fetchJSON<Team>(`/teams/${teamId}`).then(setTeam);
+-    fetchJSON<User[]>(`/teams/${teamId}/members`).then(setMembers);
++    requestJSON<Team>(`/teams/${teamId}`).then(setTeam);
++    requestJSON<User[]>(`/teams/${teamId}/members`).then(setMembers);
+   }, [teamId]);
+ 
+   if (!team) return null;
+diff --git a/web/src/hooks/useFetch.ts b/web/src/hooks/useFetch.ts
+index 64aed12..24c2d47 100644
+--- a/web/src/hooks/useFetch.ts
++++ b/web/src/hooks/useFetch.ts
+@@ -1,6 +1,6 @@
+ import { useEffect, useState } from "react";
+ 
+-import { fetchJSON, type RequestOptions } from "../api/client";
++import { requestJSON, type RequestOptions } from "../api/client";
+ 
+ export interface FetchState<T> {
+   data: T | null;
+@@ -8,7 +8,7 @@ export interface FetchState<T> {
+   loading: boolean;
+ }
+ 
+-// useFetch loads `path` with fetchJSON and aborts the request on unmount or
++// useFetch loads `path` with requestJSON and aborts the request on unmount or
+ // when the path changes.
+ export function useFetch<T>(path: string | null, opts: Omit<RequestOptions, "signal"> = {}): FetchState<T> {
+   const [state, setState] = useState<FetchState<T>>({ data: null, error: null, loading: path !== null });
+@@ -21,7 +21,7 @@ export function useFetch<T>(path: string | null, opts: Omit<RequestOptions, "sig
+     }
+     const ctrl = new AbortController();
+     setState((s) => ({ ...s, loading: true }));
+-    fetchJSON<T>(path, { ...opts, signal: ctrl.signal })
++    requestJSON<T>(path, { ...opts, signal: ctrl.signal })
+       .then((data) => setState({ data, error: null, loading: false }))
+       .catch((error: Error) => {
+         if (error.name !== "AbortError") {
+diff --git a/web/src/hooks/usePolling.ts b/web/src/hooks/usePolling.ts
+index cfccfa6..f72e4d6 100644
+--- a/web/src/hooks/usePolling.ts
++++ b/web/src/hooks/usePolling.ts
+@@ -1,6 +1,6 @@
+ import { useEffect, useRef, useState } from "react";
+ 
+-import { fetchJSON } from "../api/client";
++import { requestJSON } from "../api/client";
+ 
+ // usePolling re-fetches `path` every `intervalMs` while the tab is visible.
+ export function usePolling<T>(path: string, intervalMs = 30_000): T | null {
+@@ -12,7 +12,7 @@ export function usePolling<T>(path: string, intervalMs = 30_000): T | null {
+     const tick = async () => {
+       if (document.visibilityState === "visible") {
+         try {
+-          const next = await fetchJSON<T>(path);
++          const next = await requestJSON<T>(path);
+           if (!cancelled) {
+             setData(next);
+           }

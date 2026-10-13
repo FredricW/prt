@@ -1,0 +1,146 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: "dependabot[bot]" <49699333+dependabot[bot]@users.noreply.github.com>
+Date: Mon, 12 Oct 2026 05:03:00 +0000
+Subject: [PATCH] build(deps): bump the production group with 4 updates
+
+Bumps the production group with 4 updates: react, react-dom, zod and
+github.com/go-chi/chi/v5.
+
+Updates `react` from 18.2.0 to 18.3.1
+Updates `react-dom` from 18.2.0 to 18.3.1
+Updates `zod` from 3.22.4 to 3.23.8
+Updates `github.com/go-chi/chi/v5` from 5.0.10 to 5.0.12
+
+updated-dependencies:
+- dependency-name: react
+  dependency-type: direct:production
+  update-type: version-update:semver-minor
+- dependency-name: react-dom
+  dependency-type: direct:production
+  update-type: version-update:semver-minor
+- dependency-name: zod
+  dependency-type: direct:production
+  update-type: version-update:semver-minor
+- dependency-name: github.com/go-chi/chi/v5
+  dependency-type: direct:production
+  update-type: version-update:semver-patch
+
+Signed-off-by: dependabot[bot] <support@github.com>
+---
+ server/go.mod         |  2 +-
+ server/go.sum         |  4 ++--
+ web/package-lock.json | 34 +++++++++++++++++-----------------
+ web/package.json      |  6 +++---
+ 4 files changed, 23 insertions(+), 23 deletions(-)
+
+diff --git a/server/go.mod b/server/go.mod
+index 971c758..e98d3d6 100644
+--- a/server/go.mod
++++ b/server/go.mod
+@@ -3,6 +3,6 @@ module example.com/portal/server
+ go 1.22
+ 
+ require (
+-	github.com/go-chi/chi/v5 v5.0.10
++	github.com/go-chi/chi/v5 v5.0.12
+ 	golang.org/x/sync v0.7.0
+ )
+diff --git a/server/go.sum b/server/go.sum
+index 91f412c..0ef25a5 100644
+--- a/server/go.sum
++++ b/server/go.sum
+@@ -1,4 +1,4 @@
+-github.com/go-chi/chi/v5 v5.0.10 h1:rLz5avzKpjqxrYwXNfmjkrYYXOyLJd37pz53UFHC6vk=
+-github.com/go-chi/chi/v5 v5.0.10/go.mod h1:DslCQbL2OYiznFReuXYUmQ2hGd1aDpCnlMNITLSKoi8=
++github.com/go-chi/chi/v5 v5.0.12 h1:9euLV5sTrTNTRUU9POmDUvfxyj6LAABLUcEWO+JJb4s=
++github.com/go-chi/chi/v5 v5.0.12/go.mod h1:DslCQbL2OYiznFReuXYUmQ2hGd1aDpCnlMNITLSKoi8=
+ golang.org/x/sync v0.7.0 h1:YsImfSBoP9QPYL0xyKJPq0gcaJdG3rInoqxTWbfQu9M=
+ golang.org/x/sync v0.7.0/go.mod h1:Czt+wKu1gCyEFDUtn0jG5QVvpJ6rzVqr5aXyt9drQfk=
+diff --git a/web/package-lock.json b/web/package-lock.json
+index faffe1f..1174b50 100644
+--- a/web/package-lock.json
++++ b/web/package-lock.json
+@@ -8,9 +8,9 @@
+       "name": "@acme/portal-web",
+       "version": "0.14.2",
+       "dependencies": {
+-        "react": "18.2.0",
+-        "react-dom": "18.2.0",
+-        "zod": "^3.22.4"
++        "react": "18.3.1",
++        "react-dom": "18.3.1",
++        "zod": "^3.23.8"
+       },
+       "devDependencies": {
+         "typescript": "^5.4.5",
+@@ -35,9 +35,9 @@
+       }
+     },
+     "node_modules/react": {
+-      "version": "18.2.0",
+-      "resolved": "https://registry.npmjs.org/react/-/react-18.2.0.tgz",
+-      "integrity": "sha512-/3IjMdb2L9QbBdWiW5e3P2/npwMBaU9mHCSCUzNln0ZCYbcfTsGbTJrU/kGemdH2IWmB2ioZ+zkxtmq6g09fGQ==",
++      "version": "18.3.1",
++      "resolved": "https://registry.npmjs.org/react/-/react-18.3.1.tgz",
++      "integrity": "sha512-wS+hAgJShR0KhEvPJArfuPVN1+Hz1t0Y6n5jLrGQbkb4urgPE/0Rve+1kMB1v/oWgHgm4WIcV+i7F2pTVj+2iQ==",
+       "dependencies": {
+         "loose-envify": "^1.1.0"
+       },
+@@ -46,29 +46,29 @@
+       }
+     },
+     "node_modules/react-dom": {
+-      "version": "18.2.0",
+-      "resolved": "https://registry.npmjs.org/react-dom/-/react-dom-18.2.0.tgz",
+-      "integrity": "sha512-6IMTriUmvsjHUjNtEDudZfuDQUoWXVxKHhlEGSk81n4YFS+r/Kl99wXiwlVXtPBtJenozv2P+hxDsw9eA7Xo6g==",
++      "version": "18.3.1",
++      "resolved": "https://registry.npmjs.org/react-dom/-/react-dom-18.3.1.tgz",
++      "integrity": "sha512-5m4nQKp+rZRb09LNH59GM4BxTh9251/ylbKIbpe7TpGxfJ+9kv6BLkLBXIjjspbgbnIBNqlI23tRnTWT0snUIw==",
+       "dependencies": {
+         "loose-envify": "^1.1.0",
+-        "scheduler": "^0.23.0"
++        "scheduler": "^0.23.2"
+       },
+       "peerDependencies": {
+-        "react": "^18.2.0"
++        "react": "^18.3.1"
+       }
+     },
+     "node_modules/scheduler": {
+-      "version": "0.23.0",
+-      "resolved": "https://registry.npmjs.org/scheduler/-/scheduler-0.23.0.tgz",
+-      "integrity": "sha512-CtuThmgHNg7zIZWAXi3AsyIzA3n4xx7aNyjwC2VJldO2LMVDhFK+63xGqq6CsJH4rTAt6/M+N4GhZiDYPx9eUw==",
++      "version": "0.23.2",
++      "resolved": "https://registry.npmjs.org/scheduler/-/scheduler-0.23.2.tgz",
++      "integrity": "sha512-UOShsPwz7NrMUqhR6t0hWjFduvOzbtv7toDH1/hIrfRNIDBnnBWd0CwJTGvTpngVlmwGCdP9/Zl/tVrDqcuYzQ==",
+       "dependencies": {
+         "loose-envify": "^1.1.0"
+       }
+     },
+     "node_modules/zod": {
+-      "version": "3.22.4",
+-      "resolved": "https://registry.npmjs.org/zod/-/zod-3.22.4.tgz",
+-      "integrity": "sha512-iC+8Io04lddc+mVqQ9AZ7OQ2MrUKGN+oIQyq1vemgt46jwCwLfhq7/pwnBnNXXXZb8VTVLKwp9EDkx+ryxIWmg==",
++      "version": "3.23.8",
++      "resolved": "https://registry.npmjs.org/zod/-/zod-3.23.8.tgz",
++      "integrity": "sha512-XBx9AXhXktjUqnepgTiE5flcKIYWi/rme0Eaj+5Y0lftuGBq+jyRu/md4WnuxqgP1ubdpNCsYEYPxrzVHD8d6g==",
+       "funding": {
+         "url": "https://github.com/sponsors/colinhacks"
+       }
+diff --git a/web/package.json b/web/package.json
+index 390b46e..8e259cd 100644
+--- a/web/package.json
++++ b/web/package.json
+@@ -10,9 +10,9 @@
+     "lint": "eslint src"
+   },
+   "dependencies": {
+-    "react": "18.2.0",
+-    "react-dom": "18.2.0",
+-    "zod": "^3.22.4"
++    "react": "18.3.1",
++    "react-dom": "18.3.1",
++    "zod": "^3.23.8"
+   },
+   "devDependencies": {
+     "typescript": "^5.4.5",

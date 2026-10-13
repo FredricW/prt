@@ -1,0 +1,8 @@
+# Repo-local prt config for the fixture repo; fixturegen copies it to
+# <fixture-repo>/.git/prt/prt.toml.
+[user]
+role = "frontend"
+owns = ["web/**"]
+
+[github]
+repo = "acme/portal"

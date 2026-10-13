@@ -1,0 +1,4 @@
+# Default reviewers per area.
+web/**      @fredric
+server/**   @backend-team
+scripts/**  @data-team

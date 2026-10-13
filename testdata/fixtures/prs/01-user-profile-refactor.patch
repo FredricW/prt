@@ -1,0 +1,708 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Alice <alice@acme.example>
+Date: Tue, 6 Oct 2026 14:12:00 +0000
+Subject: [PATCH] feat(web): cached user profiles with team and avatar
+
+getUser now takes a required GetUserOptions argument so callers say which
+related data they need (include: team, avatar) and whether to bypass HTTP
+caches. All callers are updated.
+
+- Move ApiError, auth headers and error-body parsing out of client.ts into
+  api/errors.ts (no behaviour change) and add isNotFound.
+- Add useProfileCache: stale-while-revalidate profile cache with a 5 minute
+  TTL and request de-duplication; ProfilePage uses it.
+- Add Avatar and ProfileHeader components.
+- server: return avatarUrl when include=avatar is requested.
+
+BREAKING CHANGE: getUser(id) is now getUser(id, opts).
+---
+ server/internal/users/users.go            | 12 +++-
+ web/src/__tests__/client.test.ts          | 27 +++++++-
+ web/src/__tests__/useProfileCache.test.ts | 56 ++++++++++++++++
+ web/src/api/client.ts                     | 54 +++++++--------
+ web/src/api/errors.ts                     | 36 ++++++++++
+ web/src/api/index.ts                      |  3 +-
+ web/src/api/users.ts                      |  6 +-
+ web/src/components/Avatar.tsx             | 25 +++++++
+ web/src/components/ProfileHeader.tsx      | 31 +++++++++
+ web/src/components/ProfilePage.tsx        | 29 ++++----
+ web/src/components/UserCard.tsx           |  7 +-
+ web/src/components/UserList.tsx           |  6 +-
+ web/src/hooks/useProfileCache.ts          | 81 +++++++++++++++++++++++
+ web/src/hooks/useUser.ts                  | 25 ++++---
+ 14 files changed, 334 insertions(+), 64 deletions(-)
+ create mode 100644 web/src/__tests__/useProfileCache.test.ts
+ create mode 100644 web/src/api/errors.ts
+ create mode 100644 web/src/components/Avatar.tsx
+ create mode 100644 web/src/components/ProfileHeader.tsx
+ create mode 100644 web/src/hooks/useProfileCache.ts
+
+diff --git a/server/internal/users/users.go b/server/internal/users/users.go
+index 635bec6..2ecdad4 100644
+--- a/server/internal/users/users.go
++++ b/server/internal/users/users.go
+@@ -5,6 +5,7 @@ import (
+ 	"encoding/json"
+ 	"errors"
+ 	"net/http"
++	"strings"
+ 	"sync"
+ 	"time"
+ 
+@@ -20,6 +21,7 @@ type User struct {
+ 	Email       string
+ 	DisplayName string
+ 	TeamID      string
++	AvatarURL   string
+ 	CreatedAt   time.Time
+ }
+ 
+@@ -64,10 +66,11 @@ type userResponse struct {
+ 	Email       string  `json:"email"`
+ 	DisplayName string  `json:"displayName"`
+ 	TeamID      *string `json:"teamId"`
++	AvatarURL   *string `json:"avatarUrl,omitempty"`
+ 	CreatedAt   string  `json:"createdAt"`
+ }
+ 
+-func toResponse(u User) userResponse {
++func toResponse(u User, includeAvatar bool) userResponse {
+ 	r := userResponse{
+ 		ID:          u.ID,
+ 		Email:       u.Email,
+@@ -78,6 +81,10 @@ func toResponse(u User) userResponse {
+ 		team := u.TeamID
+ 		r.TeamID = &team
+ 	}
++	if includeAvatar && u.AvatarURL != "" {
++		avatar := u.AvatarURL
++		r.AvatarURL = &avatar
++	}
+ 	return r
+ }
+ 
+@@ -94,7 +101,8 @@ func Routes(store Store) http.Handler {
+ 			writeError(w, http.StatusInternalServerError, "internal", err.Error())
+ 			return
+ 		}
+-		writeJSON(w, http.StatusOK, toResponse(u))
++		includeAvatar := strings.Contains(req.URL.Query().Get("include"), "avatar")
++		writeJSON(w, http.StatusOK, toResponse(u, includeAvatar))
+ 	})
+ 	return r
+ }
+diff --git a/web/src/__tests__/client.test.ts b/web/src/__tests__/client.test.ts
+index 8517441..ee20b75 100644
+--- a/web/src/__tests__/client.test.ts
++++ b/web/src/__tests__/client.test.ts
+@@ -1,6 +1,7 @@
+ import { afterEach, describe, expect, it, vi } from "vitest";
+ 
+ import { ApiError, fetchJSON, getUser } from "../api/client";
++import { isNotFound } from "../api/errors";
+ 
+ function mockFetch(status: number, body: unknown) {
+   const res = new Response(body === undefined ? null : JSON.stringify(body), { status });
+@@ -20,19 +21,41 @@ describe("fetchJSON", () => {
+ 
+   it("maps error payloads to ApiError", async () => {
+     mockFetch(404, { code: "not_found", message: "no such user" });
+-    await expect(fetchJSON("/users/nope")).rejects.toEqual(new ApiError(404, "not_found", "no such user"));
++    const err = await fetchJSON("/users/nope").catch((e: unknown) => e);
++    expect(err).toEqual(new ApiError(404, "not_found", "no such user"));
++    expect(isNotFound(err)).toBe(true);
+   });
+ 
+   it("returns undefined for 204", async () => {
+     mockFetch(204, undefined);
+     await expect(fetchJSON("/noop", { method: "POST" })).resolves.toBeUndefined();
+   });
++
++  it("merges extra headers", async () => {
++    const spy = mockFetch(200, {});
++    await fetchJSON("/x", { headers: { "X-Trace": "1" } });
++    const init = spy.mock.calls[0]![1] as RequestInit;
++    expect((init.headers as Record<string, string>)["X-Trace"]).toBe("1");
++  });
+ });
+ 
+ describe("getUser", () => {
+   it("escapes the id", async () => {
+     const spy = mockFetch(200, { id: "a/b" });
+-    await getUser("a/b");
++    await getUser("a/b", {});
+     expect(spy.mock.calls[0]![0]).toBe("/api/v1/users/a%2Fb");
+   });
++
++  it("sends a sorted include list", async () => {
++    const spy = mockFetch(200, { id: "u1" });
++    await getUser("u1", { include: ["team", "avatar"] });
++    expect(spy.mock.calls[0]![0]).toBe("/api/v1/users/u1?include=avatar%2Cteam");
++  });
++
++  it("bypasses caches when fresh", async () => {
++    const spy = mockFetch(200, { id: "u1" });
++    await getUser("u1", { fresh: true });
++    const init = spy.mock.calls[0]![1] as RequestInit;
++    expect((init.headers as Record<string, string>)["Cache-Control"]).toBe("no-cache");
++  });
+ });
+diff --git a/web/src/__tests__/useProfileCache.test.ts b/web/src/__tests__/useProfileCache.test.ts
+new file mode 100644
+index 0000000..1857603
+--- /dev/null
++++ b/web/src/__tests__/useProfileCache.test.ts
+@@ -0,0 +1,56 @@
++import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
++
++import * as client from "../api/client";
++import { clearProfileCache, loadProfile, primeProfile, PROFILE_TTL_MS } from "../hooks/useProfileCache";
++
++const ada = {
++  id: "u1",
++  email: "ada@example.com",
++  displayName: "Ada",
++  teamId: null,
++  createdAt: "2025-03-01T12:00:00Z",
++} satisfies client.User;
++
++beforeEach(() => {
++  clearProfileCache();
++});
++
++afterEach(() => {
++  vi.useRealTimers();
++  vi.restoreAllMocks();
++});
++
++describe("loadProfile", () => {
++  it("fetches once and serves later calls from cache", async () => {
++    const spy = vi.spyOn(client, "getUser").mockResolvedValue(ada);
++    await loadProfile("u1");
++    await loadProfile("u1");
++    expect(spy).toHaveBeenCalledTimes(1);
++    expect(spy).toHaveBeenCalledWith("u1", { include: ["team", "avatar"], fresh: false });
++  });
++
++  it("shares one request between concurrent callers", async () => {
++    const spy = vi.spyOn(client, "getUser").mockResolvedValue(ada);
++    const [a, b] = await Promise.all([loadProfile("u1"), loadProfile("u1")]);
++    expect(a).toBe(b);
++    expect(spy).toHaveBeenCalledTimes(1);
++  });
++
++  it("refetches after the TTL", async () => {
++    vi.useFakeTimers();
++    vi.setSystemTime(0);
++    primeProfile(ada, 0);
++    const spy = vi.spyOn(client, "getUser").mockResolvedValue({ ...ada, displayName: "Ada L." });
++    vi.setSystemTime(PROFILE_TTL_MS + 1);
++    const user = await loadProfile("u1");
++    expect(user.displayName).toBe("Ada L.");
++    expect(spy).toHaveBeenCalledTimes(1);
++  });
++
++  it("bypasses the cache when fresh is set", async () => {
++    primeProfile(ada);
++    const spy = vi.spyOn(client, "getUser").mockResolvedValue(ada);
++    await loadProfile("u1", true);
++    expect(spy).toHaveBeenCalledWith("u1", { include: ["team", "avatar"], fresh: true });
++  });
++});
+diff --git a/web/src/api/client.ts b/web/src/api/client.ts
+index 19b1f9b..c11f1ee 100644
+--- a/web/src/api/client.ts
++++ b/web/src/api/client.ts
+@@ -2,18 +2,15 @@
+ // auth headers, base URL and error mapping live in one place.
+ 
+ import { formatQuery } from "../utils/format";
++import { ApiError, authHeader, readError } from "./errors";
++
++export { ApiError };
+ 
+ export const API_BASE = "/api/v1";
+ 
+-export class ApiError extends Error {
+-  constructor(
+-    public readonly status: number,
+-    public readonly code: string,
+-    message: string,
+-  ) {
+-    super(message);
+-    this.name = "ApiError";
+-  }
++export interface TeamSummary {
++  id: string;
++  name: string;
+ }
+ 
+ export interface User {
+@@ -22,6 +19,18 @@ export interface User {
+   displayName: string;
+   teamId: string | null;
+   createdAt: string;
++  avatarUrl?: string | null;
++  team?: TeamSummary | null;
++}
++
++export type UserInclude = "team" | "avatar";
++
++export interface GetUserOptions {
++  // Related data to embed in the response.
++  include?: UserInclude[];
++  // Bypass HTTP caches (sends Cache-Control: no-cache).
++  fresh?: boolean;
++  signal?: AbortSignal;
+ }
+ 
+ export interface RequestOptions {
+@@ -29,11 +38,7 @@ export interface RequestOptions {
+   query?: Record<string, string | number | boolean | undefined>;
+   body?: unknown;
+   signal?: AbortSignal;
+-}
+-
+-function authHeader(): Record<string, string> {
+-  const token = window.localStorage.getItem("portal.token");
+-  return token ? { Authorization: `Bearer ${token}` } : {};
++  headers?: Record<string, string>;
+ }
+ 
+ export async function fetchJSON<T>(path: string, opts: RequestOptions = {}): Promise<T> {
+@@ -44,21 +49,13 @@ export async function fetchJSON<T>(path: string, opts: RequestOptions = {}): Pro
+       "Content-Type": "application/json",
+       Accept: "application/json",
+       ...authHeader(),
++      ...opts.headers,
+     },
+     body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
+     signal: opts.signal,
+   });
+   if (!res.ok) {
+-    let code = "unknown";
+-    let message = res.statusText;
+-    try {
+-      const payload = (await res.json()) as { code?: string; message?: string };
+-      code = payload.code ?? code;
+-      message = payload.message ?? message;
+-    } catch {
+-      // body was not JSON; keep the status text
+-    }
+-    throw new ApiError(res.status, code, message);
++    throw await readError(res);
+   }
+   if (res.status === 204) {
+     return undefined as T;
+@@ -66,8 +63,13 @@ export async function fetchJSON<T>(path: string, opts: RequestOptions = {}): Pro
+   return (await res.json()) as T;
+ }
+ 
+-export async function getUser(id: string): Promise<User> {
+-  return fetchJSON<User>(`/users/${encodeURIComponent(id)}`);
++export async function getUser(id: string, opts: GetUserOptions): Promise<User> {
++  const include = opts.include && opts.include.length > 0 ? [...opts.include].sort().join(",") : undefined;
++  return fetchJSON<User>(`/users/${encodeURIComponent(id)}`, {
++    query: { include },
++    headers: opts.fresh ? { "Cache-Control": "no-cache" } : undefined,
++    signal: opts.signal,
++  });
+ }
+ 
+ export async function getCurrentUser(): Promise<User> {
+diff --git a/web/src/api/errors.ts b/web/src/api/errors.ts
+new file mode 100644
+index 0000000..059f33e
+--- /dev/null
++++ b/web/src/api/errors.ts
+@@ -0,0 +1,36 @@
++// Error mapping and auth headers shared by every API call.
++
++export class ApiError extends Error {
++  constructor(
++    public readonly status: number,
++    public readonly code: string,
++    message: string,
++  ) {
++    super(message);
++    this.name = "ApiError";
++  }
++}
++
++export function authHeader(): Record<string, string> {
++  const token = window.localStorage.getItem("portal.token");
++  return token ? { Authorization: `Bearer ${token}` } : {};
++}
++
++// readError turns a non-2xx response into an ApiError, using the JSON error
++// payload when the server sent one.
++export async function readError(res: Response): Promise<ApiError> {
++  let code = "unknown";
++  let message = res.statusText;
++  try {
++    const payload = (await res.json()) as { code?: string; message?: string };
++    code = payload.code ?? code;
++    message = payload.message ?? message;
++  } catch {
++    // body was not JSON; keep the status text
++  }
++  return new ApiError(res.status, code, message);
++}
++
++export function isNotFound(err: unknown): boolean {
++  return err instanceof ApiError && err.status === 404;
++}
+diff --git a/web/src/api/index.ts b/web/src/api/index.ts
+index f5d5289..45ef456 100644
+--- a/web/src/api/index.ts
++++ b/web/src/api/index.ts
+@@ -1,5 +1,6 @@
+ export { API_BASE, ApiError, fetchJSON, getCurrentUser, getUser, updateUser } from "./client";
+-export type { RequestOptions, User } from "./client";
++export type { GetUserOptions, RequestOptions, TeamSummary, User, UserInclude } from "./client";
++export { isNotFound } from "./errors";
+ export * from "./users";
+ export * from "./teams";
+ export * from "./billing";
+diff --git a/web/src/api/users.ts b/web/src/api/users.ts
+index 7ef09b1..f0aad55 100644
+--- a/web/src/api/users.ts
++++ b/web/src/api/users.ts
+@@ -1,4 +1,4 @@
+-import { fetchJSON, getUser, type User } from "./client";
++import { fetchJSON, getUser, type GetUserOptions, type User } from "./client";
+ 
+ export interface UserPage {
+   users: User[];
+@@ -9,8 +9,8 @@ export async function listUsers(cursor?: string, limit = 50): Promise<UserPage>
+   return fetchJSON<UserPage>("/users", { query: { cursor, limit } });
+ }
+ 
+-export async function getUsers(ids: string[]): Promise<User[]> {
+-  return Promise.all(ids.map((id) => getUser(id)));
++export async function getUsers(ids: string[], opts: GetUserOptions = {}): Promise<User[]> {
++  return Promise.all(ids.map((id) => getUser(id, opts)));
+ }
+ 
+ export async function deactivateUser(id: string): Promise<void> {
+diff --git a/web/src/components/Avatar.tsx b/web/src/components/Avatar.tsx
+new file mode 100644
+index 0000000..77ca2d3
+--- /dev/null
++++ b/web/src/components/Avatar.tsx
+@@ -0,0 +1,25 @@
++import { useState } from "react";
++
++import { initials } from "../utils/format";
++
++interface Props {
++  name: string;
++  url?: string | null;
++  size?: number;
++}
++
++// Avatar shows the user's picture, falling back to initials when there is
++// none or it fails to load.
++export function Avatar({ name, url, size = 32 }: Props) {
++  const [broken, setBroken] = useState(false);
++  const style = { width: size, height: size };
++
++  if (!url || broken) {
++    return (
++      <span className="avatar" style={style} aria-label={name}>
++        {initials(name)}
++      </span>
++    );
++  }
++  return <img className="avatar" style={style} src={url} alt={name} onError={() => setBroken(true)} />;
++}
+diff --git a/web/src/components/ProfileHeader.tsx b/web/src/components/ProfileHeader.tsx
+new file mode 100644
+index 0000000..dadd726
+--- /dev/null
++++ b/web/src/components/ProfileHeader.tsx
+@@ -0,0 +1,31 @@
++import { type User } from "../api/client";
++import { formatDate } from "../utils/format";
++import { Avatar } from "./Avatar";
++
++interface Props {
++  user: User;
++  stale: boolean;
++  onRefresh: () => void;
++}
++
++export function ProfileHeader({ user, stale, onRefresh }: Props) {
++  return (
++    <header className="profile__header">
++      <Avatar name={user.displayName} url={user.avatarUrl} size={64} />
++      <div>
++        <h1>{user.displayName}</h1>
++        <p className="muted">
++          {user.email} · member since {formatDate(user.createdAt)}
++        </p>
++        {user.team && (
++          <p>
++            Team <a href={`/teams/${user.team.id}`}>{user.team.name}</a>
++          </p>
++        )}
++      </div>
++      <button className="link" onClick={onRefresh} title={stale ? "Profile may be out of date" : "Reload profile"}>
++        {stale ? "Out of date — refresh" : "Refresh"}
++      </button>
++    </header>
++  );
++}
+diff --git a/web/src/components/ProfilePage.tsx b/web/src/components/ProfilePage.tsx
+index 808360e..f27888e 100644
+--- a/web/src/components/ProfilePage.tsx
++++ b/web/src/components/ProfilePage.tsx
+@@ -1,29 +1,32 @@
+ import { useState } from "react";
+ 
+ import { updateUser } from "../api/client";
+-import { useUser } from "../hooks/useUser";
+-import { formatDate } from "../utils/format";
++import { primeProfile, useProfileCache } from "../hooks/useProfileCache";
++import { ProfileHeader } from "./ProfileHeader";
+ 
+ interface Props {
+   userId: string;
+ }
+ 
+ export function ProfilePage({ userId }: Props) {
+-  const { user, error } = useUser(userId);
++  const { profile, loading, stale, refresh } = useProfileCache(userId);
+   const [name, setName] = useState("");
+   const [saving, setSaving] = useState(false);
++  const [saveError, setSaveError] = useState<string | null>(null);
+ 
+-  if (error) {
+-    return <p role="alert">Could not load profile: {error.message}</p>;
+-  }
+-  if (!user) {
+-    return <p>Loading…</p>;
++  if (!profile) {
++    return <p aria-busy={loading}>Loading…</p>;
+   }
+ 
+   const save = async () => {
+     setSaving(true);
++    setSaveError(null);
+     try {
+-      await updateUser(user.id, { displayName: name || user.displayName });
++      const updated = await updateUser(profile.id, { displayName: name || profile.displayName });
++      primeProfile({ ...profile, ...updated });
++      refresh();
++    } catch (err) {
++      setSaveError(err instanceof Error ? err.message : String(err));
+     } finally {
+       setSaving(false);
+     }
+@@ -31,17 +34,15 @@ export function ProfilePage({ userId }: Props) {
+ 
+   return (
+     <main className="profile">
+-      <h1>{user.displayName}</h1>
+-      <p className="muted">
+-        {user.email} · member since {formatDate(user.createdAt)}
+-      </p>
++      <ProfileHeader user={profile} stale={stale} onRefresh={refresh} />
+       <label>
+         Display name
+-        <input value={name} placeholder={user.displayName} onChange={(e) => setName(e.target.value)} />
++        <input value={name} placeholder={profile.displayName} onChange={(e) => setName(e.target.value)} />
+       </label>
+       <button disabled={saving} onClick={save}>
+         {saving ? "Saving…" : "Save"}
+       </button>
++      {saveError && <p role="alert">Could not save: {saveError}</p>}
+     </main>
+   );
+ }
+diff --git a/web/src/components/UserCard.tsx b/web/src/components/UserCard.tsx
+index 883cb0a..b504bc8 100644
+--- a/web/src/components/UserCard.tsx
++++ b/web/src/components/UserCard.tsx
+@@ -1,7 +1,8 @@
+ import { useEffect, useState } from "react";
+ 
+ import { getUser, type User } from "../api/client";
+-import { formatDate, initials } from "../utils/format";
++import { formatDate } from "../utils/format";
++import { Avatar } from "./Avatar";
+ 
+ interface Props {
+   userId: string;
+@@ -13,7 +14,7 @@ export function UserCard({ userId, compact = false }: Props) {
+ 
+   useEffect(() => {
+     let live = true;
+-    getUser(userId).then((u) => {
++    getUser(userId, { include: ["avatar"] }).then((u) => {
+       if (live) setUser(u);
+     });
+     return () => {
+@@ -26,7 +27,7 @@ export function UserCard({ userId, compact = false }: Props) {
+   }
+   return (
+     <div className={compact ? "user-card user-card--compact" : "user-card"}>
+-      <span className="avatar">{initials(user.displayName)}</span>
++      <Avatar name={user.displayName} url={user.avatarUrl} size={compact ? 24 : 32} />
+       <div>
+         <strong>{user.displayName}</strong>
+         {!compact && <div className="muted">{user.email}</div>}
+diff --git a/web/src/components/UserList.tsx b/web/src/components/UserList.tsx
+index d83cd1c..ff67f5a 100644
+--- a/web/src/components/UserList.tsx
++++ b/web/src/components/UserList.tsx
+@@ -1,7 +1,7 @@
+ import { useEffect, useState } from "react";
+ 
+-import { getUser, type User } from "../api/client";
+-import { listUsers } from "../api/users";
++import { type User } from "../api/client";
++import { getUsers, listUsers } from "../api/users";
+ import { UserCard } from "./UserCard";
+ 
+ interface Props {
+@@ -21,7 +21,7 @@ export function UserList({ pinnedIds = [] }: Props) {
+   }, []);
+ 
+   useEffect(() => {
+-    Promise.all(pinnedIds.map((id) => getUser(id))).then(setPinned);
++    getUsers(pinnedIds, { include: ["avatar"] }).then(setPinned);
+   }, [pinnedIds]);
+ 
+   const loadMore = async () => {
+diff --git a/web/src/hooks/useProfileCache.ts b/web/src/hooks/useProfileCache.ts
+new file mode 100644
+index 0000000..7ed02b3
+--- /dev/null
++++ b/web/src/hooks/useProfileCache.ts
+@@ -0,0 +1,81 @@
++import { useCallback, useEffect, useState } from "react";
++
++import { getUser, type User } from "../api/client";
++
++// How long a cached profile is served without revalidating.
++export const PROFILE_TTL_MS = 5 * 60 * 1000;
++
++interface Entry {
++  user: User;
++  fetchedAt: number;
++}
++
++const cache = new Map<string, Entry>();
++const inflight = new Map<string, Promise<User>>();
++
++export function clearProfileCache(): void {
++  cache.clear();
++  inflight.clear();
++}
++
++export function primeProfile(user: User, now = Date.now()): void {
++  cache.set(user.id, { user, fetchedAt: now });
++}
++
++function isFresh(entry: Entry | undefined, now: number): entry is Entry {
++  return entry !== undefined && now - entry.fetchedAt < PROFILE_TTL_MS;
++}
++
++// loadProfile returns the cached profile when fresh, otherwise fetches it,
++// sharing one request between concurrent callers for the same id.
++export async function loadProfile(id: string, fresh = false): Promise<User> {
++  const now = Date.now();
++  const hit = cache.get(id);
++  if (!fresh && isFresh(hit, now)) {
++    return hit.user;
++  }
++  const pending = inflight.get(id);
++  if (pending) {
++    return pending;
++  }
++  const req = getUser(id, { include: ["team", "avatar"], fresh })
++    .then((user) => {
++      cache.set(id, { user, fetchedAt: Date.now() });
++      return user;
++    })
++    .finally(() => inflight.delete(id));
++  inflight.set(id, req);
++  return req;
++}
++
++export interface ProfileCacheState {
++  profile: User | null;
++  loading: boolean;
++  stale: boolean;
++  refresh: () => void;
++}
++
++// useProfileCache serves the cached profile immediately (stale-while-
++// revalidate) and refreshes it in the background when it is older than the TTL.
++export function useProfileCache(id: string): ProfileCacheState {
++  const cached = cache.get(id);
++  const [profile, setProfile] = useState<User | null>(cached?.user ?? null);
++  const [loading, setLoading] = useState(!cached);
++  const [stale, setStale] = useState(cached !== undefined && !isFresh(cached, Date.now()));
++  const [nonce, setNonce] = useState(0);
++
++  useEffect(() => {
++    setLoading(true);
++    loadProfile(id, nonce > 0)
++      .then((user) => {
++        setProfile(user);
++        setStale(false);
++        setLoading(false);
++      })
++      .catch(() => {});
++  }, [id, nonce]);
++
++  const refresh = useCallback(() => setNonce((n) => n + 1), []);
++
++  return { profile, loading, stale, refresh };
++}
+diff --git a/web/src/hooks/useUser.ts b/web/src/hooks/useUser.ts
+index aaf3a3b..661a418 100644
+--- a/web/src/hooks/useUser.ts
++++ b/web/src/hooks/useUser.ts
+@@ -1,24 +1,29 @@
+ import { useEffect, useState } from "react";
+ 
+-import { getUser, type User } from "../api/client";
++import { getUser, type User, type UserInclude } from "../api/client";
+ 
+-export function useUser(id: string | undefined): { user: User | null; error: Error | null } {
++export function useUser(
++  id: string | undefined,
++  include: UserInclude[] = [],
++): { user: User | null; error: Error | null } {
+   const [user, setUser] = useState<User | null>(null);
+   const [error, setError] = useState<Error | null>(null);
++  const includeKey = include.join(",");
+ 
+   useEffect(() => {
+     if (!id) {
+       setUser(null);
+       return;
+     }
+-    let live = true;
+-    getUser(id)
+-      .then((u) => live && setUser(u))
+-      .catch((e: Error) => live && setError(e));
+-    return () => {
+-      live = false;
+-    };
+-  }, [id]);
++    const ctrl = new AbortController();
++    getUser(id, { include, signal: ctrl.signal })
++      .then(setUser)
++      .catch((e: Error) => {
++        if (e.name !== "AbortError") setError(e);
++      });
++    return () => ctrl.abort();
++    // eslint-disable-next-line react-hooks/exhaustive-deps
++  }, [id, includeKey]);
+ 
+   return { user, error };
+ }

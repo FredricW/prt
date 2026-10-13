@@ -1,13 +1,19 @@
 // Command fixturegen builds testdata/fixture-repo deterministically from the
 // committed sources in testdata/fixtures:
 //
-//	testdata/fixtures/base/**        tree of the initial commit on main
+//	testdata/fixtures/base/**             tree of the initial commit on main
 //	testdata/fixtures/prs/NN-name.patch   one branch per patch, off main
+//	testdata/fixtures/prt.toml            copied to <out>/.git/prt/prt.toml
 //
 // A patch in `git format-patch` mbox form (starts with "From ") is applied
-// with `git am` (keeps its message and author); a plain diff is applied with
-// `git apply --index` and committed with the file name as message. Authors,
-// committers and dates are fixed so SHAs are stable across machines.
+// with `git am` (keeps its messages, authors and Date headers; the committer
+// date is set to the author date). A plain diff is applied with
+// `git apply --index` and committed with the file name as message. Committer
+// identity, base commit and plain-diff dates are fixed, so SHAs are stable
+// across machines and runs.
+//
+// The generated repo gets an `origin` remote pointing at the fictional
+// GitHub repo acme/portal so remote parsing works; nothing ever contacts it.
 //
 // Usage: go run ./tools/fixturegen -src testdata/fixtures -out testdata/fixture-repo
 package main
@@ -15,6 +21,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io/fs"
@@ -25,79 +32,153 @@ import (
 	"strings"
 )
 
-const fixedDate = "2026-01-01T00:00:00Z"
+const (
+	// fixedDate is the author and committer date of the base commit and of
+	// commits made from plain diffs.
+	fixedDate = "2026-10-01T09:00:00Z"
+	// originURL is the fictional remote of the fixture repo.
+	originURL = "https://github.com/acme/portal.git"
+	// baseMessage is the commit message of the base commit on main.
+	baseMessage = "chore: import portal monorepo"
+)
 
 func main() {
 	src := flag.String("src", "testdata/fixtures", "fixture sources")
 	out := flag.String("out", "testdata/fixture-repo", "repository to (re)create")
 	flag.Parse()
-	if err := run(*src, *out); err != nil {
+	if err := run(context.Background(), *src, *out); err != nil {
 		fmt.Fprintln(os.Stderr, "fixturegen:", err)
 		os.Exit(1)
 	}
 }
 
-func run(src, out string) error {
-	absOut, err := filepath.Abs(out)
+// run recreates the repository at out from the fixture sources in src.
+func run(ctx context.Context, src, out string) error {
+	absOut, err := outputDir(out)
 	if err != nil {
 		return err
 	}
-	if !strings.Contains(filepath.ToSlash(absOut), "/testdata/") {
-		return fmt.Errorf("refusing to recreate %s: output must be under a testdata directory", absOut)
-	}
-	if err := os.RemoveAll(absOut); err != nil {
+	if err := resetDir(absOut); err != nil {
 		return err
 	}
-	if err := os.MkdirAll(absOut, 0o755); err != nil {
+	r := repo{dir: absOut}
+	if err := r.git(ctx, "init", "-q", "-b", "main"); err != nil {
 		return err
 	}
-	g := func(args ...string) error { return git(absOut, args...) }
-	if err := g("init", "-q", "-b", "main"); err != nil {
+	if err := commitBase(ctx, r, filepath.Join(src, "base")); err != nil {
 		return err
 	}
-	base := filepath.Join(src, "base")
+	if err := applyPatches(ctx, r, filepath.Join(src, "prs")); err != nil {
+		return err
+	}
+	if err := r.git(ctx, "checkout", "-q", "main"); err != nil {
+		return err
+	}
+	if err := r.git(ctx, "remote", "add", "origin", originURL); err != nil {
+		return err
+	}
+	return installConfig(filepath.Join(src, "prt.toml"), absOut)
+}
+
+// outputDir resolves out and refuses anything not under a testdata directory,
+// because the directory is deleted before generation.
+func outputDir(out string) (string, error) {
+	abs, err := filepath.Abs(out)
+	if err != nil {
+		return "", fmt.Errorf("resolve output %s: %w", out, err)
+	}
+	if !strings.Contains(filepath.ToSlash(abs)+"/", "/testdata/") || filepath.Base(abs) == "testdata" {
+		return "", fmt.Errorf("refusing to recreate %s: output must be inside a testdata directory", abs)
+	}
+	return abs, nil
+}
+
+func resetDir(dir string) error {
+	if err := os.RemoveAll(dir); err != nil {
+		return fmt.Errorf("remove %s: %w", dir, err)
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("create %s: %w", dir, err)
+	}
+	return nil
+}
+
+// commitBase copies the base tree (or a stub README when absent) and commits it on main.
+func commitBase(ctx context.Context, r repo, base string) error {
 	if _, err := os.Stat(base); err == nil {
-		if err := copyTree(base, absOut); err != nil {
-			return err
+		if err := copyTree(base, r.dir); err != nil {
+			return fmt.Errorf("copy base: %w", err)
 		}
-	} else if err := os.WriteFile(filepath.Join(absOut, "README.md"), []byte("# fixture repo\n"), 0o644); err != nil {
+	} else if err := os.WriteFile(filepath.Join(r.dir, "README.md"), []byte("# fixture repo\n"), 0o644); err != nil {
+		return fmt.Errorf("write stub README: %w", err)
+	}
+	if err := r.git(ctx, "add", "-A"); err != nil {
 		return err
 	}
-	if err := g("add", "-A"); err != nil {
-		return err
+	return r.git(ctx, "commit", "-q", "-m", baseMessage)
+}
+
+// applyPatches creates one branch off main per patch file, in file-name order.
+func applyPatches(ctx context.Context, r repo, dir string) error {
+	patches, err := filepath.Glob(filepath.Join(dir, "*.patch"))
+	if err != nil {
+		return fmt.Errorf("list patches: %w", err)
 	}
-	if err := g("commit", "-q", "-m", "base"); err != nil {
-		return err
-	}
-	patches, _ := filepath.Glob(filepath.Join(src, "prs", "*.patch"))
 	sort.Strings(patches)
 	for _, p := range patches {
 		name := strings.TrimSuffix(filepath.Base(p), ".patch")
-		absP, err := filepath.Abs(p)
-		if err != nil {
-			return err
-		}
-		if err := g("checkout", "-q", "-b", name, "main"); err != nil {
-			return err
-		}
-		body, err := os.ReadFile(absP)
-		if err != nil {
-			return err
-		}
-		if bytes.HasPrefix(body, []byte("From ")) {
-			err = g("am", "-q", "--committer-date-is-author-date", absP)
-		} else if err = g("apply", "--index", absP); err == nil {
-			err = g("commit", "-q", "-m", name)
-		}
-		if err != nil {
+		if err := applyPatch(ctx, r, name, p); err != nil {
 			return fmt.Errorf("%s: %w", name, err)
 		}
 	}
-	return g("checkout", "-q", "main")
+	return nil
 }
 
-func git(dir string, args ...string) error {
-	cmd := exec.CommandContext(context.Background(), "git", append([]string{"-C", dir}, args...)...)
+func applyPatch(ctx context.Context, r repo, branch, path string) error {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return fmt.Errorf("resolve patch: %w", err)
+	}
+	body, err := os.ReadFile(abs)
+	if err != nil {
+		return fmt.Errorf("read patch: %w", err)
+	}
+	if err := r.git(ctx, "checkout", "-q", "-b", branch, "main"); err != nil {
+		return err
+	}
+	if bytes.HasPrefix(body, []byte("From ")) {
+		return r.git(ctx, "am", "-q", "--committer-date-is-author-date", abs)
+	}
+	if err := r.git(ctx, "apply", "--index", abs); err != nil {
+		return err
+	}
+	return r.git(ctx, "commit", "-q", "-m", branch)
+}
+
+// installConfig copies the fixture prt.toml into <repo>/.git/prt/ if it exists.
+func installConfig(src, repoDir string) error {
+	b, err := os.ReadFile(src)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("read %s: %w", src, err)
+	}
+	dir := filepath.Join(repoDir, ".git", "prt")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("create %s: %w", dir, err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "prt.toml"), b, 0o644); err != nil {
+		return fmt.Errorf("write prt.toml: %w", err)
+	}
+	return nil
+}
+
+// repo runs git in a fixed directory with an isolated, deterministic environment.
+type repo struct{ dir string }
+
+func (r repo) git(ctx context.Context, args ...string) error {
+	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", r.dir}, args...)...)
 	cmd.Env = append(os.Environ(),
 		"GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1",
 		"GIT_AUTHOR_NAME=Fixture Author", "GIT_AUTHOR_EMAIL=fixture@example.com",
