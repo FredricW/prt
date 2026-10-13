@@ -10,7 +10,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/fredricw/prt/internal/embed"
 	"github.com/fredricw/prt/internal/gh"
+	"github.com/fredricw/prt/internal/jev"
 	"github.com/fredricw/prt/internal/testutil"
 )
 
@@ -146,6 +148,53 @@ func TestSetupDegradesWithoutKeys(t *testing.T) {
 	}
 	if !strings.Contains(off.ghNote, "offline") {
 		t.Errorf("offline GitHub note = %q", off.ghNote)
+	}
+}
+
+// --jev-replay / --embed-replay wire recorded clients even offline, note the
+// source, and read config only from the repo (a broken XDG config is unseen).
+func TestReplayFlags(t *testing.T) {
+	isolate(t)
+	xdg := os.Getenv("XDG_CONFIG_HOME")
+	if err := os.MkdirAll(filepath.Join(xdg, "prt"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(xdg, "prt", "prt.toml"), []byte("[rank\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	repo := gitRepo(t, "")
+	env, err := setup(context.Background(), options{repo: repo, offline: true, jevReplay: "rec/jev", embedReplay: "rec/embed"})
+	if err != nil {
+		t.Fatalf("replay must ignore the XDG config: %v", err)
+	}
+	defer env.close()
+	if r, ok := env.deps.Jev.(*jev.Replay); !ok || r.Dir != "rec/jev" || !r.MissUnavailable {
+		t.Errorf("Jev = %#v, want a MissUnavailable replay of rec/jev", env.deps.Jev)
+	}
+	if r, ok := env.deps.Embedder.(*embed.Replay); !ok || r.Dir != "rec/embed" {
+		t.Errorf("Embedder = %#v, want a replay of rec/embed", env.deps.Embedder)
+	}
+	if want := "Jev: replay of rec/jev · embeddings: replay of rec/embed (offline)"; env.srcNote != want {
+		t.Errorf("note = %q, want %q", env.srcNote, want)
+	}
+	if _, err := setup(context.Background(), options{repo: repo, offline: true}); err == nil {
+		t.Error("without replay the (broken) XDG config must still be read")
+	}
+}
+
+// The fixture snapshot with recorded answers renders the by-change screen.
+func TestSnapshotReplay(t *testing.T) {
+	isolate(t)
+	repo := testutil.FixtureRepo(t)
+	rec := filepath.Join("..", "..", "testdata", "recordings")
+	code, out, errOut := runPrt("--offline", "--snapshot", "--now", "2026-10-13T12:00:00Z",
+		"--jev-replay", filepath.Join(rec, "jev"), "--embed-replay", filepath.Join(rec, "embed"),
+		"--repo", repo, "--fixtures", testutil.FixturePRs(t), "--max-items", "1")
+	if code != 0 {
+		t.Fatalf("code %d err %q", code, errOut)
+	}
+	if !strings.Contains(out, "code-by-change") {
+		t.Errorf("snapshot lacks the by-change screen:\n%s", out)
 	}
 }
 

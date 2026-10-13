@@ -2,8 +2,8 @@
 //
 // Usage:
 //
-//	prt [--repo DIR] [--no-daemon] [--offline] [--fixtures FILE] [--snapshot [--width N --height N --now TIME]]
-//	prt daemon [--repo DIR] [--offline] [--fixtures FILE]
+//	prt [--repo DIR] [--no-daemon] [--offline] [--fixtures FILE] [--jev-replay DIR] [--embed-replay DIR] [--snapshot [--width N --height N --now TIME]]
+//	prt daemon [--repo DIR] [--offline] [--fixtures FILE] [--jev-replay DIR] [--embed-replay DIR]
 package main
 
 import (
@@ -17,6 +17,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"syscall"
 	"time"
 
@@ -53,6 +54,10 @@ type options struct {
 	width    int
 	height   int
 	maxItems int
+	// jevReplay / embedReplay replace Jev and the embedder with recorded
+	// answers (make demo / make snapshot); see replayDeps.
+	jevReplay   string
+	embedReplay string
 	// nowFn is the parsed --now clock (nil: wall clock). setup hands it to
 	// the pipeline too, so urgency (age term), quartiles and order use the
 	// same clock as the TUI and snapshots do not drift.
@@ -77,6 +82,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 	fs.IntVar(&o.maxItems, "max-items", 4, "snapshot: number of items to render")
 	fs.StringVar(&o.fixtures, "fixtures", "", "use a fake GitHub client loaded from this JSON fixture (works with --offline)")
 	fs.StringVar(&o.now, "now", "", "snapshot: fixed current time (RFC 3339) so ages are stable")
+	fs.StringVar(&o.jevReplay, "jev-replay", "", "answer Jev from recordings in this directory (works with --offline; a miss means labels unavailable)")
+	fs.StringVar(&o.embedReplay, "embed-replay", "", "embed from recordings in this directory (works with --offline; a miss skips embeddings)")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
@@ -111,6 +118,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	newInProcess := func() *daemon.InProcess {
 		c := daemon.NewInProcess(env.deps)
 		c.SetGitHubNote(env.ghNote)
+		c.SetSourceNote(env.srcNote)
 		return c
 	}
 
@@ -168,7 +176,9 @@ type environment struct {
 	cfg    config.Config
 	gitDir string
 	// ghNote says why GitHub is disabled ("" when a client is wired).
-	ghNote  string
+	ghNote string
+	// srcNote names replayed sources ("" when none), shown in the status bar.
+	srcNote string
 	closers []func()
 }
 
@@ -209,6 +219,11 @@ func setup(ctx context.Context, o options) (*environment, error) {
 	env.closers = append(env.closers, func() { _ = st.Close() })
 
 	dirs := config.Dirs(gitDir)
+	if o.jevReplay != "" || o.embedReplay != "" {
+		// Recorded request keys depend on config and questions: read only
+		// the repo's own .git/prt (as the recorder does), never XDG.
+		dirs = []string{prtDir}
+	}
 	cfg, err := config.Load(dirs)
 	if err != nil {
 		env.close()
@@ -280,9 +295,34 @@ func setup(ctx context.Context, o options) (*environment, error) {
 			logger.Warn("deep review tier disabled", "spec", cfg.Models.Deep, "err", err)
 		}
 	}
+	env.srcNote = replayDeps(&d, o)
 	env.deps = d
 	env.cfg = cfg
 	return env, nil
+}
+
+// replayDeps swaps in recorded Jev answers and embeddings when asked (they
+// win over live clients) and returns the status note naming them. A Jev
+// replay miss is reported as unavailable, so a request that was never
+// recorded degrades to "labels unavailable" instead of failing the item.
+func replayDeps(d *pipeline.Deps, o options) string {
+	var notes []string
+	if o.jevReplay != "" {
+		d.Jev = &jev.Replay{Dir: o.jevReplay, MissUnavailable: true}
+		notes = append(notes, "Jev: replay of "+o.jevReplay)
+	}
+	if o.embedReplay != "" {
+		d.Embedder = &embed.Replay{Dir: o.embedReplay}
+		notes = append(notes, "embeddings: replay of "+o.embedReplay)
+	}
+	if len(notes) == 0 {
+		return ""
+	}
+	note := strings.Join(notes, " · ")
+	if o.offline {
+		note += " (offline)"
+	}
+	return note
 }
 
 // daemonWork is what the daemon loop drives: discovery, then analysis of
