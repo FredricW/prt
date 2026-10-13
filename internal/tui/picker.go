@@ -25,14 +25,38 @@ func sectionRank(s model.Section) int {
 	return len(sections)
 }
 
+// sortMode is the picker's order within a section (spec Picker: `s`
+// cycles urgency → age → size → relevance).
+type sortMode int
+
+const (
+	sortUrgency   sortMode = iota // urgency desc
+	sortAge                       // oldest first (created, else updated)
+	sortSize                      // smallest first (lines changed)
+	sortRelevance                 // relevance term desc
+	sortModes
+)
+
+func (s sortMode) String() string {
+	return [...]string{"urgency", "age", "size", "relevance"}[s]
+}
+
 // picker is the sidebar: items grouped by section, a cursor over items
 // (headers are never selectable) and a line offset for scrolling.
 type picker struct {
-	items  []model.Item // section order, then urgency desc
+	items  []model.Item // section order, then the sort mode's key
+	sort   sortMode
 	cursor int
 	offset int // first visible line
 	width  int
 	height int
+}
+
+// cycleSort moves to the next sort mode and re-sorts, keeping the cursor
+// on the selected item.
+func (p *picker) cycleSort() {
+	p.sort = (p.sort + 1) % sortModes
+	p.setItems(p.items)
 }
 
 // rowCtx is what rendering a row needs besides the item.
@@ -47,15 +71,30 @@ type rowCtx struct {
 	strip   func(rls []model.RunLog, width int) string
 }
 
-// sortItems orders items by section, then urgency descending, then most
-// recently updated. The sort is stable, so an order the daemon already
-// established within equal keys is kept.
-func sortItems(items []model.Item) []model.Item {
+// sortItems orders items by section, then the mode's key (urgency
+// descending; oldest first; smallest first; most relevant first), then
+// urgency descending, then most recently updated. The sort is stable, so
+// an order the daemon already established within equal keys is kept.
+func sortItems(items []model.Item, mode sortMode) []model.Item {
 	out := append([]model.Item(nil), items...)
 	sort.SliceStable(out, func(i, j int) bool {
 		a, b := out[i], out[j]
 		if ra, rb := sectionRank(a.Section), sectionRank(b.Section); ra != rb {
 			return ra < rb
+		}
+		switch mode {
+		case sortAge:
+			if ca, cb := createdAt(a), createdAt(b); !ca.Equal(cb) {
+				return ca.Before(cb)
+			}
+		case sortSize:
+			if sa, sb := a.Additions+a.Deletions, b.Additions+b.Deletions; sa != sb {
+				return sa < sb
+			}
+		case sortRelevance:
+			if a.Relevance != b.Relevance {
+				return a.Relevance > b.Relevance
+			}
 		}
 		if a.Urgency != b.Urgency {
 			return a.Urgency > b.Urgency
@@ -65,11 +104,20 @@ func sortItems(items []model.Item) []model.Item {
 	return out
 }
 
+// createdAt is when an item was opened (CreatedAt, else UpdatedAt for a
+// branch without one).
+func createdAt(it model.Item) time.Time {
+	if !it.CreatedAt.IsZero() {
+		return it.CreatedAt
+	}
+	return it.UpdatedAt
+}
+
 // setItems replaces the items, keeping the cursor on the same item id when
 // it still exists. It reports whether the selected id changed.
 func (p *picker) setItems(items []model.Item) bool {
 	prev, hadPrev := p.selected()
-	p.items = sortItems(items)
+	p.items = sortItems(items, p.sort)
 	if hadPrev {
 		for i, it := range p.items {
 			if it.ID == prev.ID {
@@ -172,11 +220,17 @@ func (p picker) lines(st styles, rc rowCtx) []pickerLine {
 	return out
 }
 
+// header is the picker title; a sort other than the default urgency is
+// named ("prt · 5 items · by age").
 func (p picker) header() string {
 	if len(p.items) == 0 {
 		return "prt · no items yet"
 	}
-	return "prt · " + plural(len(p.items), "item")
+	h := "prt · " + plural(len(p.items), "item")
+	if p.sort != sortUrgency {
+		h += " · by " + p.sort.String()
+	}
+	return h
 }
 
 // plural formats n with noun, adding "s" unless n is 1.

@@ -764,6 +764,9 @@ func (m Model) handlePickerKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		moved = m.picker.moveTo(0)
 	case key.Matches(k, km.Bottom):
 		moved = m.picker.moveTo(len(m.picker.items) - 1)
+	case key.Matches(k, km.Sort):
+		m.picker.cycleSort()
+		m.note = "sort: " + m.picker.sort.String()
 	case key.Matches(k, km.Focus):
 		if _, ok := m.picker.selected(); ok {
 			m.focus = FocusMain

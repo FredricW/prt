@@ -132,6 +132,10 @@ type Item struct {
 	// picker's Needs-you secondary line.
 	Breaking  int `json:"breaking,omitempty"`
 	NeedsEyes int `json:"needsEyes,omitempty"`
+	// Relevance is the urgency relevance term's value (max interpolated
+	// relevance over non-noise units, 0 unknown), copied by the pipeline for
+	// the picker's relevance sort.
+	Relevance float64 `json:"relevance,omitempty"`
 
 	// CapUSD is this item's review cost cap set with `$` on the Pipeline
 	// page (or `:cap`); 0 means prt.routing.toml cost_cap_usd.

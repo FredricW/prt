@@ -15,8 +15,9 @@ import (
 // are exported so callers can tweak them; KeyMapFromConfig applies the
 // `[keys]` table of prt.toml.
 type KeyMap struct {
-	// Picker.
-	Up, Down, Top, Bottom key.Binding
+	// Picker. Sort cycles the order within sections (urgency → age → size
+	// → relevance); it shares s with the Pipeline page's SkipReview.
+	Up, Down, Top, Bottom, Sort key.Binding
 	// Focus.
 	Focus, Back, NextFocus, PrevFocus key.Binding
 	// Item actions (any focus).
@@ -55,6 +56,7 @@ func DefaultKeyMap() KeyMap {
 		Down:         b("down", "j", "down"),
 		Top:          b("top", "g", "home"),
 		Bottom:       b("bottom", "G", "end"),
+		Sort:         b("cycle sort", "s"),
 		Focus:        b("focus main pane", "enter"),
 		Back:         b("back to picker", "esc"),
 		NextFocus:    b("next pane", "tab"),
@@ -104,7 +106,7 @@ func helpKey(keys []string) string {
 // actions maps the config action names (prt.toml `[keys]`) to bindings.
 func (k *KeyMap) actions() map[string]*key.Binding {
 	return map[string]*key.Binding{
-		"up": &k.Up, "down": &k.Down, "top": &k.Top, "bottom": &k.Bottom,
+		"up": &k.Up, "down": &k.Down, "top": &k.Top, "bottom": &k.Bottom, "sort": &k.Sort,
 		"focus": &k.Focus, "back": &k.Back, "next_focus": &k.NextFocus, "prev_focus": &k.PrevFocus,
 		"refresh": &k.Refresh, "overview": &k.Overview, "code": &k.Code, "open": &k.Open,
 		"checkout": &k.Checkout, "page_down": &k.PageDown, "page_up": &k.PageUp,
@@ -228,7 +230,7 @@ func splitKeys(s string) []string {
 // pickerHelp is the help shown when the picker has focus.
 func (k KeyMap) pickerHelp() [][]key.Binding {
 	return [][]key.Binding{
-		{k.Down, k.Up, k.Top, k.Bottom},
+		{k.Down, k.Up, k.Top, k.Bottom, k.Sort},
 		{k.Focus, k.NextFocus, k.Overview, k.Code, k.Pipeline},
 		{k.Refresh, k.Open, k.Checkout},
 		{k.Help, k.Quit},

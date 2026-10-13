@@ -105,11 +105,56 @@ func TestPickerSortsBySectionThenUrgency(t *testing.T) {
 		{ID: "y2", Section: model.SectionYours, UpdatedAt: ago(time.Minute)},
 	}
 	var got []string
-	for _, it := range sortItems(items) {
+	for _, it := range sortItems(items, sortUrgency) {
 		got = append(got, it.ID)
 	}
 	if want := "n2 n1 y2 y1 b1 a1"; strings.Join(got, " ") != want {
 		t.Errorf("order = %v, want %s", got, want)
+	}
+}
+
+// s cycles urgency → age → size → relevance within sections; the cursor
+// stays on the selected item and the header names a non-default sort.
+func TestPickerSortCycle(t *testing.T) {
+	items := []model.Item{
+		{ID: "u", Section: model.SectionNeedsYou, Urgency: 9, CreatedAt: ago(time.Hour), Additions: 500, Relevance: 1},
+		{ID: "o", Section: model.SectionNeedsYou, Urgency: 1, CreatedAt: ago(48 * time.Hour), Additions: 300, Relevance: 2},
+		{ID: "s", Section: model.SectionNeedsYou, Urgency: 2, CreatedAt: ago(2 * time.Hour), Additions: 5, Relevance: 3},
+		{ID: "r", Section: model.SectionNeedsYou, Urgency: 3, CreatedAt: ago(3 * time.Hour), Additions: 50, Relevance: 5},
+		{ID: "y", Section: model.SectionYours, Urgency: 0, CreatedAt: ago(1000 * time.Hour)},
+	}
+	var p picker
+	p.setSize(40, 20)
+	p.setItems(items)
+	order := func() string {
+		var ids []string
+		for _, it := range p.items {
+			ids = append(ids, it.ID)
+		}
+		return strings.Join(ids, " ")
+	}
+	p.moveTo(2) // "s"
+	sel, _ := p.selected()
+	for _, want := range []struct {
+		mode  sortMode
+		order string
+	}{
+		{sortUrgency, "u r s o y"},
+		{sortAge, "o r s u y"},
+		{sortSize, "s r o u y"},
+		{sortRelevance, "r s o u y"},
+		{sortUrgency, "u r s o y"},
+	} {
+		if p.sort != want.mode || order() != want.order {
+			t.Errorf("sort %v: order %q, want %v %q", p.sort, order(), want.mode, want.order)
+		}
+		if cur, _ := p.selected(); cur.ID != sel.ID {
+			t.Errorf("sort %v: cursor on %s, want %s", p.sort, cur.ID, sel.ID)
+		}
+		if h := p.header(); (p.sort == sortUrgency) == strings.Contains(h, " · by ") {
+			t.Errorf("sort %v: header %q", p.sort, h)
+		}
+		p.cycleSort()
 	}
 }
 

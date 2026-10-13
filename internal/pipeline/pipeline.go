@@ -470,6 +470,12 @@ func (p *Pipeline) applyAgg(ctx context.Context, it model.Item, f model.Fetch, a
 	cur.Urgency, cur.Why, cur.Minutes = agg.Urgency, agg.Why, agg.Minutes
 	cur.Additions, cur.Deletions = agg.Added, agg.Removed
 	cur.LabelsUnavailable, cur.NeedsEyes = agg.LabelsMissing, agg.UnitsEyes
+	cur.Relevance = 0
+	for _, t := range agg.UrgencyTerms {
+		if t.Name == "w_relevance" {
+			cur.Relevance = t.Value
+		}
+	}
 	cur.Breaking = 0
 	for _, h := range agg.Headlines {
 		if h.Kind == HeadlineBreaking {
