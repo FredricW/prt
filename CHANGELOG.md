@@ -251,7 +251,72 @@ both strictly and asserts the grouping outcomes over #101–#104.
 - The snapshot's status bar does not show the replay source note (the
   interactive TUI does).
 
-### M3 — review pipeline
+### M3 — review pipeline (integrated 2026-10-13; not tagged yet)
+
+Gate: `make check` (vet, live-tag vet, tests, lint with 0 issues) and
+`make snapshot` green on `main`; `make demo` runs the TUI offline replaying
+`testdata/recordings/{jev,embed,review}`. Reviews recorded once against the
+real Anthropic API (16 calls, $0.2365 for the kept recordings, $0.4682 of the
+$3.00 Anthropic cap including an earlier run whose TL;DRs came back empty;
+all services $0.4975 of $5.00). `TestRecordedReviewReplay` replays them
+strictly and `ReviewExpectations` hold.
+
+- **Shipped:** stage 6 routing (`prt.routing.toml`, the `when` language,
+  first match, context decisions, hot-spot queueing under `deep_slots` and
+  the cost cap), stage 7 reviews (fast/deep Anthropic adapter, specialist
+  prompts, escalation, calibration, retry once, review cache, call log),
+  stage 8 aggregate (urgency label terms, TL;DR, AI group titles, review
+  totals), the Pipeline page, findings on the Code page, the Overview TL;DR
+  line and `w` weights overlay.
+- **Deferred:** the calibration panel's per-question override-rate flag
+  (needs per-question counts in `CalibrationStats`); `:cap` (no command line
+  yet; `$` on the Pipeline page covers it); confirmed model prices.
+- **Blocked:** price confirmation — the claude-api skill was denied in this
+  run, so prices stay assumed ($1/$5 fast, $15/$75 deep per MTok).
+
+#### Added
+
+- `internal/route`: hand-written lexer/parser and three-valued evaluator for
+  `when` (label ids, `tag.<name>`, `kind`, numbers, `&& || !`, comparisons,
+  `in [...]`), `Compile` with rule-indexed errors and unknown-identifier
+  warnings, `Route` (labels unknown → deep), `Gather` (24 KiB context
+  blocks), `Plan`/`Budget`.
+- `internal/review`: Anthropic Messages adapter (`PRT_ANTHROPIC_API_KEY`
+  only; 30 s / 120 s timeouts), review/TL;DR/title prompts, tolerant findings
+  parsing and anchoring, price table and estimates, replay and recorder.
+- Pipeline stages 6–8 with user overrides (D/R/s), `FromStage` re-runs, live
+  "k/n reviewed" progress, escalation (`escalate_below`) and deterministic
+  calibration sampling (`calibration_sample`), cost cap and per-item `$`.
+- Daemon methods `review_action`, `routing` (ensure/reload), `call_log`,
+  `set_cap`; discovery keeps label-based urgency terms.
+- `internal/pipeview`: the Pipeline page (`P`): stage strip and per-stage
+  log, routing table with escalations and notes, totals, rules (`e` opens
+  `$EDITOR`, save re-routes), grouping and calibration panels, call log
+  (`c`), cap prompt (`$`).
+- Code page: routing tier/status per group, findings by change and inline by
+  file, "has findings" filter, `R` re-review on deep; AI titles as `ai·Name`.
+- Overview TL;DR line (`ai·from labels`) and `w` urgency weights overlay;
+  the picker shows a stage strip while an item is analysing.
+- `prt --review-replay DIR`; `make demo`/`make snapshot` replay reviews;
+  `make record-review` / `record-review-dry`.
+
+#### Fixed (integration)
+
+- The adapter no longer sends `temperature` (the API rejects it for the
+  configured models); TL;DR and title calls get output headroom because the
+  models reason before answering.
+- The recorder exits non-zero when any live call fails.
+- The cost cap counts cached reviews at their estimate and cached titles at
+  their cost, so a refresh no longer reviews groups the cap had queued and
+  replays do not depend on the store's history.
+
+#### Known limitations
+
+- With the assumed deep price and the spec's default `cost_cap_usd = 0.40`,
+  most of #101's and #102's deep groups stay queued "over cost cap" until
+  `$` raises the cap; the demo shows that state.
+- Group titles are only as good as three words allow ("Switch to
+  requestJSON").
 
 ### M4 — comments
 

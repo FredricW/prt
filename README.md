@@ -7,8 +7,9 @@ embedding model, reviews from the cheapest LLM tier that can do the job, and
 every number on screen traces back to a label, a rule or a git fact.
 
 > Status: early development. M0 (a fast PR browser) and M1 (change units and
-> Jev labels: Overview page, labelled Code page) and M2 (grouped change
-> units, Code page by change) are done; the review pipeline comes in M3. See
+> Jev labels: Overview page, labelled Code page), M2 (grouped change units,
+> Code page by change) and M3 (routed fast/deep LLM reviews, TL;DR, urgency
+> ranking, Pipeline page) are done; GitHub comments come in M4. See
 > [`docs/spec.md`](docs/spec.md) for the design and
 > [`CHANGELOG.md`](CHANGELOG.md) for what works today.
 
@@ -65,6 +66,16 @@ prt                 # picker on the left, the selected PR/branch on the right
 - Labels need `JEV_API_KEY`. Without it (or when Jev is unreachable) items
   show `labels unavailable`: the Overview shows git facts only and the Code
   page shows every unit with its diff, filters off.
+- Each group is routed by the rules in `prt.routing.toml` to no review, the
+  fast model or the deep model (needs `PRT_ANTHROPIC_API_KEY`; without it
+  reviews are skipped with a note). Findings appear on the Code page under
+  the line they are about; `R` re-reviews a group on the deep model.
+- `P` opens the Pipeline page: stage timings, the routing table (why each
+  group got its tier, cost, findings, escalations), totals against the
+  per-item cost cap, and the rules. There `D` forces a group deep, `s` skips
+  it, `r` re-runs, `e` edits the rules in `$EDITOR`, `c` shows the raw LLM
+  calls and `$` raises the cost cap for this item. `w` on the Overview shows
+  how the urgency score was computed.
 - `r` re-runs analysis for the selected item; `?` shows every key; `q` quits.
 - `prt daemon` keeps analysis warm in the background (one per repo); `prt`
   connects to it automatically, or runs everything in-process with `--no-daemon`.
@@ -79,9 +90,11 @@ make snapshot   # non-interactive
 ```
 
 Both run with `--offline` and replay the answers recorded in
-`testdata/recordings` (`--jev-replay`, `--embed-replay`), so Jev is never
-called but the fixture PRs show real labels and groups. Anything not recorded
-(the local branch) shows the `labels unavailable` mode.
+`testdata/recordings` (`--jev-replay`, `--embed-replay`, `--review-replay`),
+so no model is called but the fixture PRs show real labels, groups, reviews
+and TL;DRs. Anything not recorded (the local branch) shows the `labels
+unavailable` mode; most deep groups of the larger PRs stay queued over the
+default $0.40 per-item cost cap.
 
 Configuration is optional: `prt.toml`, `prt.routing.toml` and
 `prt.questions.toml` are looked up in `.git/prt/`, then `$XDG_CONFIG_HOME/prt/`.
@@ -97,6 +110,8 @@ make check      # vet + test + lint; must pass before every commit
 make fixtures   # regenerate testdata/fixture-repo
 make record-jev-dry  # count the Jev requests a recording would send (free)
 make record-jev      # record Jev answers for the fixtures (JEV_API_KEY, $1 cap)
+make record-review-dry  # count the review requests and their upper-bound cost (free)
+make record-review      # record reviews for the fixtures (PRT_ANTHROPIC_API_KEY, $3 cap)
 make record-embed    # record Ollama embeddings for the fixtures (local)
 ```
 
