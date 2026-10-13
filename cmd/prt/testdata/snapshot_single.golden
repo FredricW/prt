@@ -1,0 +1,1471 @@
+=== screen: picker + overview · pr:101 ===
+prt · acme/portal · 5 PRs · 1 branch · role: frontend                                                           2 drafts
+┏━ Queue · ranked ━━━━━━━━━━━━━━━━━━┓   [1 Overview]  2 Code   3 Architecture   @alice · 6d · main ← 01-user-profile-re…
+┃ ── NEEDS YOU (3) ──────────────── ┃ #101 feat(web): cached user profiles with team and avatar · alice · 6d · main ← 0…
+┃ ▸ ▮▮▮▮ #101 feat(web): cached us… ┃ Adds a profile cache, Avatar components and a required getUser options argument,  
+┃        ⚠5 breaking · 26 eyes · ~… ┃ but 9 of 41 risky units lack tests and logout cache invalidation is missing.      
+┃        why: breaking · untested … ┃ ai·from labels                                                                    
+┃   ▮▮▮▯ #104 build(deps): bump th… ┃ fffffffffffffffffffffffffffttttttttrrr░░                                          
+┃        ~5m · CI ✗                 ┃ f feature 69% · t test 21% · r refactor 7% · ░ noise 4%                           
+┃   ▮▮▯▯ #103 chore(billing): remo… ┃ +334 −64 → ~382 lines that matter · ~127 min · 26 of 48 chunks need eyes          
+┃        ⚠1 breaking · 1 eyes · ~1… ┃                                                                                   
+┃ ── YOURS (1) ──────────────────── ┃ ┌─ Headlines · contract surface ─────────────────────────────────────────────────┐
+┃   ▮▮▮▯ #102 refactor(web): renam… ┃ │   ⚠ breaking  getUser  web/src/api/client.ts:66  .97                           │
+┃        CI … · 5d                  ┃ │   ⚠ breaking  (top level)  web/src/api/index.ts:2  .90                         │
+┃ ── BRANCHES (1) ───────────────── ┃ │   ⚠ breaking  (top level)  web/src/api/client.ts:32  .76                       │
+┃   ▮▮▯▯ 05-spike-dark-mode         ┃ │   ⚠ breaking  authHeader  web/src/api/client.ts:34  .75                        │
+┃        spike .69 · 2 unpushed · … ┃ │   +2 more                                                                      │
+┃ ── INVOLVED (1) ───────────────── ┃ │   +3 below .60 (unsure)                                                        │
+┃   ▮▮▮▮ #106 feat(server): user p… ┃ └────────────────────────────────────────────────────────────────────────────────┘
+┃        ⚠4 breaking · 10 eyes · ~… ┃ ┌─ Check before approving · hot spots ───────────────────────────────────────────┐
+┃ ── ADDED (0) ──────────────────── ┃ │ 1 web/src/components/UserCard.tsx:30  The new `Avatar` rendering is  5.3       │
+┃                                   ┃ │ 2 web/src/api/errors.ts:14  auth, crash, untested  5.1                         │
+┃                                   ┃ │ 3 web/src/components/Avatar.tsx:11  `broken` is never reset when  5.1          │
+┃                                   ┃ └────────────────────────────────────────────────────────────────────────────────┘
+┃                                   ┃ ┌─ API endpoints ────────────────────────────────────────────────────────────────┐
+┃                                   ┃ │   ~ contract change: Routes  server/internal/users/users.go:104  .92           │
+┃                                   ┃ │   ~ contract change: toResponse  server/internal/users/users.go:84  .73        │
+┃                                   ┃ │   + response field userResponse.avatarUrl  …er/internal/users/users.go:69  .90 │
+┃ / search  s sort: urgency ▾       ┃ └────────────────────────────────────────────────────────────────────────────────┘
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ ┌─ Database ─────────────────────────────────────────────────────────────────────┐
+j/k move  space select  / search and add  enter focus main pane  1 2 3 tabs  ctrl+x stop  P pipeline page …
+
+=== screen: picker + code · pr:101 ===
+prt · acme/portal · 5 PRs · 1 branch · role: frontend                                                           2 drafts
+┏━ Queue · ranked ━━━━━━━━━━━━━━━━━━┓    1 Overview  [2 Code]  3 Architecture                           #101 · 48 chunks
+┃ ── NEEDS YOU (3) ──────────────── ┃ ┌─ Files · by attention ──┐ ┌─ web/src/hooks/useProfileCache.ts  +81 −0 ─────────┐
+┃ ▸ ▮▮▮▮ #101 feat(web): cached us… ┃ │▸ …rofileCache.ts □□██□██│ │@@ 1  added · feature · behaviour ✓ .95 · b3        │
+┃        ⚠5 breaking · 26 eyes · ~… ┃ │  …/api/client.ts □□□□□█+│ │      tests ✓ · auth · async · error_path · pii     │
+┃        why: breaking · untested … ┃ │  …/api/errors.ts  □□□□□□│ │      risk 4 · eyes · ?                             │
+┃   ▮▮▮▯ #104 build(deps): bump th… ┃ │  …/ProfilePage.tsx   □█□│ │  L1–15 · +15 −0                                    │
+┃        ~5m · CI ✗                 ┃ │  web/src/api/index.ts  █│ │·▸    1 + import { useCallback, useEffect, useState…│
+┃   ▮▮▯▯ #103 chore(billing): remo… ┃ │  web/src/api/users.ts □□│ │·     2 +                                           │
+┃        ⚠1 breaking · 1 eyes · ~1… ┃ │  …/Avatar.tsx         □□│ │·     3 + import { getUser, type User } from "../ap…│
+┃ ── YOURS (1) ──────────────────── ┃ │  …/UserCard.tsx      □□□│ │·     4 +                                           │
+┃   ▮▮▮▯ #102 refactor(web): renam… ┃ │  …/hooks/useUser.ts   □□│ │·     5 + // How long a cached profile is served wi…│
+┃        CI … · 5d                  ┃ │  …/client.test.ts     ▒□│ │❱     6 + export const PROFILE_TTL_MS = 5 * 60 * 10…│
+┃ ── BRANCHES (1) ───────────────── ┃ │  …ProfileCache.test.ts □│ │  ❱ thread · fredric · 1 reply · open               │
+┃   ▮▮▯▯ 05-spike-dark-mode         ┃ │  …/ProfileHeader.tsx  ▒□│ │  │ An hour is far longer than the 5 minute TTL the │
+┃        spike .69 · 2 unpushed · … ┃ │  …/UserList.tsx       □□│ │  │ description promises. Please use 5 minutes here │
+┃ ── INVOLVED (1) ───────────────── ┃ │── not yours ────────────│ │  │ (or make it configurable).                      │
+┃   ▮▮▮▮ #106 feat(server): user p… ┃ │  …/users/users.go □□□□█□│ │·     7 +                                           │
+┃        ⚠4 breaking · 10 eyes · ~… ┃ │                         │ │·     8 + interface Entry {                         │
+┃ ── ADDED (0) ──────────────────── ┃ │                         │ │·     9 +   user: User;                             │
+┃                                   ┃ │                         │ │·    10 +   fetchedAt: number;                      │
+┃                                   ┃ │                         │ │·    11 + }                                         │
+┃                                   ┃ │                         │ │·    12 +                                           │
+┃                                   ┃ │                         │ │·    13 + const cache = new Map<string, Entry>();   │
+┃                                   ┃ │                         │ │·    14 + const inflight = new Map<string, Promise<…│
+┃                                   ┃ │                         │ │  ╭─ ai-draft · medium ────────────────────────────╮│
+┃                                   ┃ │                         │ │  │ **medium** loadProfile keys de-duplication on  ││
+┃ / search  s sort: urgency ▾       ┃ └─────────────────────────┘ └────────────────────────────────────────────────────┘
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ Comments 31 · 2 drafts · 0 pending · 0 posted · 26 ai · 3 threads (2 open) (tab f…
+j/k move  space select  / search and add  enter focus main pane  1 2 3 tabs  ctrl+x stop  P pipeline page …
+
+=== screen: picker + code-by-change · pr:101 ===
+prt · acme/portal · 5 PRs · 1 branch · role: frontend                                                           2 drafts
+┏━ Queue · ranked ━━━━━━━━━━━━━━━━━━┓    1 Overview  [2 Code]  3 Architecture                           #101 · 48 chunks
+┃ ── NEEDS YOU (3) ──────────────── ┃ ┌─ Change groups · revi… ─┐ ┌─ `getUser` takes a required `GetUserOptions` arg… ─┐
+┃ ▸ ▮▮▮▮ #101 feat(web): cached us… ┃ │by: file [change] · inte…│ │6 web/src/hooks/useProfileCache.ts@1   caller · eyes│
+┃        ⚠5 breaking · 26 eyes · ~… ┃ │  1 server: return `avat…│ │@@ 1  added · feature · behaviour ✓ .95 · b3        │
+┃        why: breaking · untested … ┃ │  2 Move `ApiError`, aut…│ │      tests ✓ · auth · async · error_path · pii     │
+┃   ▮▮▮▯ #104 build(deps): bump th… ┃ │    7u 3f · b2 .83 · dee…│ │      risk 4 · eyes · ?                             │
+┃        ~5m · CI ✗                 ┃ │  3 Add `useProfileCache…│ │  L1–15 · +15 −0                                    │
+┃   ▮▮▯▯ #103 chore(billing): remo… ┃ │    8u 3f · b3 .90 · dee…│ │·▸    1 + import { useCallback, useEffect, useState…│
+┃        ⚠1 breaking · 1 eyes · ~1… ┃ │▸ 4 `getUser` takes a re…│ │·     2 +                                           │
+┃ ── YOURS (1) ──────────────────── ┃ │    7u 5f · b1 .56 · dee…│ │·     3 + import { getUser, type User } from "../ap…│
+┃   ▮▮▮▯ #102 refactor(web): renam… ┃ │  5 Move `ApiError`, aut…│ │·     4 +                                           │
+┃        CI … · 5d                  ┃ │    2u 2f · b2 .87 · dee…│ │·     5 + // How long a cached profile is served wi…│
+┃ ── BRANCHES (1) ───────────────── ┃ │  6 Add `Avatar` and `Pr…│ │❱     6 + export const PROFILE_TTL_MS = 5 * 60 * 10…│
+┃   ▮▮▯▯ 05-spike-dark-mode         ┃ │    3u 3f · b4 .97 · dee…│ │  ❱ thread · fredric · 1 reply · open               │
+┃        spike .69 · 2 unpushed · … ┃ │  7 Add `Avatar` and `Pr…│ │  │ An hour is far longer than the 5 minute TTL the │
+┃ ── INVOLVED (1) ───────────────── ┃ │    3u 3f · b4 .89 · dee…│ │  │ description promises. Please use 5 minutes here │
+┃   ▮▮▮▮ #106 feat(server): user p… ┃ │  8 Move `ApiError`, aut…│ │  │ (or make it configurable).                      │
+┃        ⚠4 breaking · 10 eyes · ~… ┃ │    2u 2f · b2 .96 · dee…│ │·     7 +                                           │
+┃ ── ADDED (0) ──────────────────── ┃ │  9 ai·Add request heade…│ │·     8 + interface Entry {                         │
+┃                                   ┃ │    2u 1f · deep · done  │ │·     9 +   user: User;                             │
+┃                                   ┃ │  10 Move `ApiError`, au…│ │·    10 +   fetchedAt: number;                      │
+┃                                   ┃ │    2u 2f · b2 .94 · dee…│ │·    11 + }                                         │
+┃                                   ┃ │  11 ai·Show user avatars│ │·    12 +                                           │
+┃                                   ┃ │    2u 1f · deep · 4 fin…│ │·    13 + const cache = new Map<string, Entry>();   │
+┃                                   ┃ │── ungrouped (4) ────────│ │·    14 + const inflight = new Map<string, Promise<…│
+┃                                   ┃ │  12 ‹client.ts› — 1 uni…│ │  ╭─ ai-draft · medium ────────────────────────────╮│
+┃ / search  s sort: urgency ▾       ┃ └─────────────────────────┘ └────────────────────────────────────────────────────┘
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ Comments 31 · 2 drafts · 0 pending · 0 posted · 26 ai · 3 threads (2 open) (tab f…
+j/k move  space select  / search and add  enter focus main pane  1 2 3 tabs  ctrl+x stop  P pipeline page …
+
+=== screen: picker + code-split · pr:101 ===
+prt · acme/portal · 5 PRs · 1 branch · role: frontend                                                           2 drafts
+┏━ Queue · ranked ━━━━━━━━━━━━━━━━━━┓    1 Overview  [2 Code]  3 Architecture                           #101 · 48 chunks
+┃ ── NEEDS YOU (3) ──────────────── ┃ side-by-side needs a ≥140-column terminal — showing unified                       
+┃ ▸ ▮▮▮▮ #101 feat(web): cached us… ┃ ┌─ Files · by attention ──┐ ┌─ web/src/hooks/useProfileCache.ts  +81 −0 ─────────┐
+┃        ⚠5 breaking · 26 eyes · ~… ┃ │▸ …rofileCache.ts □□██□██│ │@@ 1  added · feature · behaviour ✓ .95 · b3        │
+┃        why: breaking · untested … ┃ │  …/api/client.ts □□□□□█+│ │      tests ✓ · auth · async · error_path · pii     │
+┃   ▮▮▮▯ #104 build(deps): bump th… ┃ │  …/api/errors.ts  □□□□□□│ │      risk 4 · eyes · ?                             │
+┃        ~5m · CI ✗                 ┃ │  …/ProfilePage.tsx   □█□│ │  L1–15 · +15 −0                                    │
+┃   ▮▮▯▯ #103 chore(billing): remo… ┃ │  web/src/api/index.ts  █│ │·▸    1 + import { useCallback, useEffect, useState…│
+┃        ⚠1 breaking · 1 eyes · ~1… ┃ │  web/src/api/users.ts □□│ │·     2 +                                           │
+┃ ── YOURS (1) ──────────────────── ┃ │  …/Avatar.tsx         □□│ │·     3 + import { getUser, type User } from "../ap…│
+┃   ▮▮▮▯ #102 refactor(web): renam… ┃ │  …/UserCard.tsx      □□□│ │·     4 +                                           │
+┃        CI … · 5d                  ┃ │  …/hooks/useUser.ts   □□│ │·     5 + // How long a cached profile is served wi…│
+┃ ── BRANCHES (1) ───────────────── ┃ │  …/client.test.ts     ▒□│ │❱     6 + export const PROFILE_TTL_MS = 5 * 60 * 10…│
+┃   ▮▮▯▯ 05-spike-dark-mode         ┃ │  …ProfileCache.test.ts □│ │  ❱ thread · fredric · 1 reply · open               │
+┃        spike .69 · 2 unpushed · … ┃ │  …/ProfileHeader.tsx  ▒□│ │  │ An hour is far longer than the 5 minute TTL the │
+┃ ── INVOLVED (1) ───────────────── ┃ │  …/UserList.tsx       □□│ │  │ description promises. Please use 5 minutes here │
+┃   ▮▮▮▮ #106 feat(server): user p… ┃ │── not yours ────────────│ │  │ (or make it configurable).                      │
+┃        ⚠4 breaking · 10 eyes · ~… ┃ │  …/users/users.go □□□□█□│ │·     7 +                                           │
+┃ ── ADDED (0) ──────────────────── ┃ │                         │ │·     8 + interface Entry {                         │
+┃                                   ┃ │                         │ │·     9 +   user: User;                             │
+┃                                   ┃ │                         │ │·    10 +   fetchedAt: number;                      │
+┃                                   ┃ │                         │ │·    11 + }                                         │
+┃                                   ┃ │                         │ │·    12 +                                           │
+┃                                   ┃ │                         │ │·    13 + const cache = new Map<string, Entry>();   │
+┃                                   ┃ │                         │ │·    14 + const inflight = new Map<string, Promise<…│
+┃                                   ┃ │                         │ │  ╭─ ai-draft · medium ────────────────────────────╮│
+┃ / search  s sort: urgency ▾       ┃ └─────────────────────────┘ └────────────────────────────────────────────────────┘
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ Comments 31 · 2 drafts · 0 pending · 0 posted · 26 ai · 3 threads (2 open) (tab f…
+side-by-side needs a 140-column terminal (pane has 82) — showing unified
+
+=== screen: picker + pipeline · pr:101 ===
+prt · acme/portal · 5 PRs · 1 branch · role: frontend                                                           2 drafts
+┏━ Queue · ranked ━━━━━━━━━━━━━━━━━━┓    1 Overview   2 Code   3 Architecture  [P Pipeline]                         #101
+┃ ── NEEDS YOU (3) ──────────────── ┃ prt · #101 feat(web): cached user profiles with team and avatar · pipeline        
+┃ ▸ ▮▮▮▮ #101 feat(web): cached us… ┃ ✓ done · ready                                                                    
+┃        ⚠5 breaking · 26 eyes · ~… ┃ Stages  run 10-13 12:00:00 · fetch ✓ 0 ms                                         
+┃        why: breaking · untested … ┃ ┌────────────────┐   ┌────────────────┐   ┌────────────────┐   ┌────────────────┐ 
+┃   ▮▮▮▯ #104 build(deps): bump th… ┃ │✓ parse         │   │✓ link          │   │✓ embed         │   │✓ jev           │ 
+┃        ~5m · CI ✗                 ┃ │14→48 · 0 ms    │ → │48→72 · 0 ms    │ → │48→98 · 0 ms    │ → │48→3085 · 0 ms  │ 
+┃   ▮▮▯▯ #103 chore(billing): remo… ┃ └────────────────┘   └────────────────┘   └────────────────┘   └────────────────┘ 
+┃        ⚠1 breaking · 1 eyes · ~1… ┃ ┌────────────────┐   ┌────────────────┐   ┌────────────────┐   ┌────────────────┐ 
+┃ ── YOURS (1) ──────────────────── ┃ │✓ cluster       │   │✓ route         │   │✓ review        │   │✓ agg           │ 
+┃   ▮▮▮▯ #102 refactor(web): renam… ┃ │48→15 · 0 ms    │ → │15→15 · 0 ms    │ → │15→15 · 0 ms    │ → │48→3012 · 0 ms  │ 
+┃        CI … · 5d                  ┃ └────────────────┘   └────────────────┘   └────────────────┘   └────────────────┘ 
+┃ ── BRANCHES (1) ───────────────── ┃                                                                                   
+┃   ▮▮▯▯ 05-spike-dark-mode         ┃ ┏━ Routing · one call per group ━━━━━━━━━━━━━━━━━━ D deep · s skip · c call log ━┓
+┃        spike .69 · 2 unpushed · … ┃ ┃    # group                  tier            status           time find    cost ┃
+┃ ── INVOLVED (1) ───────────────── ┃ ┃ ▸  1 server: return `avata… deep            ✓ done          7.8 s    2 $0.0220 ┃
+┃   ▮▮▮▮ #106 feat(server): user p… ┃ ┃        if risk >= 4 || tag.auth || tag.money || tag.async → deep · ctx caller… ┃
+┃        ⚠4 breaking · 10 eyes · ~… ┃ ┃    2 Move `ApiError`, auth… deep            ✓ done         10.9 s    2 $0.0362 ┃
+┃ ── ADDED (0) ──────────────────── ┃ ┃        if risk >= 4 || tag.auth || tag.money || tag.async → deep · ctx caller… ┃
+┃                                   ┃ ┃    3 Add `useProfileCache`… deep            ✓ done         12.0 s    5 $0.0444 ┃
+┃                                   ┃ ┃        if risk >= 4 || tag.auth || tag.money || tag.async → deep · ctx caller… ┃
+┃                                   ┃ ┃    4 `getUser` takes a req… deep            ✓ done         15.1 s    4 $0.0536 ┃
+┃                                   ┃ ┃        if risk >= 4 || tag.auth || tag.money || tag.async → deep · ctx caller… ┃
+┃                                   ┃ ┃    5 Move `ApiError`, auth… deep            ✓ done          5.4 s    1 $0.0195 ┃
+┃                                   ┃ ┃        if risk >= 4 || tag.auth || tag.money || tag.async → deep · ctx caller… ┃
+┃                                   ┃ ┃    6 Add `Avatar` and `Pro… deep            ✓ done          6.6 s    2 $0.0180 ┃
+┃ / search  s sort: urgency ▾       ┃ ┃        if risk >= 4 || tag.auth || tag.money || tag.async → deep · ctx caller… ┃
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ ┃    7 Add `Avatar` and `Pro… deep            ✓ done         13.4 s    4 $0.0373 ┃
+j/k move  space select  / search and add  enter focus main pane  1 2 3 tabs  ctrl+x stop  P pipeline page …
+
+=== screen: picker + architecture · pr:101 ===
+prt · acme/portal · 5 PRs · 1 branch · role: frontend                                                           2 drafts
+┏━ Queue · ranked ━━━━━━━━━━━━━━━━━━┓    1 Overview   2 Code  [3 Architecture]                    10 modules · 5 touched
+┃ ── NEEDS YOU (3) ──────────────── ┃ 8 modules · 9 edges                                 #101 · modules touched + 1 hop
+┃ ▸ ▮▮▮▮ #101 feat(web): cached us… ┃ ┌─ Module graph · depth 1 ─────────────────────┐ ┌─ Per module ──────────────────┐
+┃        ⚠5 breaking · 26 eyes · ~… ┃ │ ── hop 0 ─────────────────────────────────── │ │ module   units risk tests you │
+┃        why: breaking · untested … ┃ │ ▸ ● server/internal/users                    │ │ s/users      6    3     ✗     │
+┃   ▮▮▮▯ #104 build(deps): bump th… ┃ │     3 eyes · r3 · ✗ · ? · ⚠1                 │ │ w/api       18    4     ✗   ★ │
+┃        ~5m · CI ✗                 ┃ │   ● ★ web/src/api                            │ │ w/compo…    12    4     ✗   ★ │
+┃   ▮▮▯▯ #103 chore(billing): remo… ┃ │     11 eyes · r4 · ✗ · ? · ⚠5                │ │ w/hooks      9    4     ✗   ★ │
+┃        ⚠1 breaking · 1 eyes · ~1… ┃ │   ● ★ web/src/components                     │ │ w/__tes…     3    3     ?   ★ │
+┃ ── YOURS (1) ──────────────────── ┃ │     5 eyes · r4 · ✗ · ?                      │ └───────────────────────────────┘
+┃   ▮▮▮▯ #102 refactor(web): renam… ┃ │   ● ★ web/src/hooks                          │ ┌─ Contracts crossing edges ────┐
+┃        CI … · 5d                  ┃ │     7 eyes · r4 · ✗ · ?                      │ │ ⚠ s/users → s/api             │
+┃ ── BRANCHES (1) ───────────────── ┃ │   ● ★ web/src/__tests__                      │ │   Routes · api shape          │
+┃   ▮▮▯▯ 05-spike-dark-mode         ┃ │     skim · r3 · ? · ⚠1                       │ │ ⚠ w/api → w/__tests__, w/com… │
+┃        spike .69 · 2 unpushed · … ┃ │ ── hop 1 ─────────────────────────────────── │ │   getUser · breaking          │
+┃ ── INVOLVED (1) ───────────────── ┃ │   server/cmd/api                             │ │   web/src/api/index.ts · bre… │
+┃   ▮▮▮▮ #106 feat(server): user p… ┃ │     1 file                                   │ │   web/src/api/client.ts · br… │
+┃        ⚠4 breaking · 10 eyes · ~… ┃ │   web/src                                    │ │   authHeader · breaking       │
+┃ ── ADDED (0) ──────────────────── ┃ │     1 file                                   │ └───────────────────────────────┘
+┃                                   ┃ │   web/src/utils                              │ ┌─ Net effect ──────────────────┐
+┃                                   ┃ │     1 file                                   │ │ web/src/__tests__ now imports │
+┃                                   ┃ │ ── edges ─────────────────────────────────── │ │ web/src/hooks                 │
+┃                                   ┃ │   server/cmd/api → server/internal/users · … │ └───────────────────────────────┘
+┃                                   ┃ │   web/src → web/src/components · 7 imports   │ ┌─ Legend ──────────────────────┐
+┃                                   ┃ │   web/src/__tests__ → web/src/api · 5 impor… │ │ ● changed  ★ yours  ? unsure  │
+┃                                   ┃ │   web/src/__tests__ → web/src/hooks (new) ·… │ │ + new module / edge           │
+┃ / search  s sort: urgency ▾       ┃ │   web/src/api → web/src/utils · 1 import     │ │ ✕ ╌ removed  ── unchanged     │
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ │   web/src/components → web/src/api · 16 imp… │ │ □ eyes  □ skim  □ skip (box)  │
+j/k move  space select  / search and add  enter focus main pane  1 2 3 tabs  ctrl+x stop  P pipeline page …
+
+=== screen: picker + overview-since · pr:101 ===
+prt · acme/portal · 5 PRs · 1 branch · role: frontend                                                           2 drafts
+┏━ Queue · ranked ━━━━━━━━━━━━━━━━━━┓   [1 Overview]  2 Code   3 Architecture   @alice · 6d · main ← 01-user-profile-re…
+┃ ── NEEDS YOU (3) ──────────────── ┃ ┌─ Since you looked ─────────────────────────────────────────────────────────────┐
+┃ ▸ ▮▮▮▮ #101 feat(web): cached us… ┃ │ since e661461 (your last review) · 2 units changed · 1 of 2 addressed          │
+┃        ⚠5 breaking · 26 eyes · ~… ┃ │   ✗ not addressed .03  web/src/hooks/useProfileCache.ts:75  This swallows loa… │
+┃        why: breaking · untested … ┃ │   web/src/hooks/useProfileCache.ts:1                                           │
+┃   ▮▮▮▯ #104 build(deps): bump th… ┃ │   web/src/hooks/useProfileCache.ts:16                                          │
+┃        ~5m · CI ✗                 ┃ │   ✓ addressed .95  web/src/hooks/useProfileCache.ts:6  An hour is far longer … │
+┃   ▮▮▯▯ #103 chore(billing): remo… ┃ └────────────────────────────────────────────────────────────────────────────────┘
+┃        ⚠1 breaking · 1 eyes · ~1… ┃ Confidence: □ 52 low-confidence labels; those units stay expanded in Code         
+┃ ── YOURS (1) ──────────────────── ┃ ┌─ Description ──────────────────────────────────────────────────────────────────┐
+┃   ▮▮▮▯ #102 refactor(web): renam… ┃ │   Profiles now load instantly on revisit and show the user's team and          │
+┃        CI … · 5d                  ┃ │   avatar.                                                                      │
+┃ ── BRANCHES (1) ───────────────── ┃ │                                                                                │
+┃   ▮▮▯▯ 05-spike-dark-mode         ┃ │   ## Changes                                                                   │
+┃        spike .69 · 2 unpushed · … ┃ │                                                                                │
+┃ ── INVOLVED (1) ───────────────── ┃ │   • getUser takes a required GetUserOptions argument (include, fresh,          │
+┃   ▮▮▮▮ #106 feat(server): user p… ┃ │   signal); all callers updated                                                 │
+┃        ⚠4 breaking · 10 eyes · ~… ┃ │   • Move ApiError, auth headers and error parsing into api/errors.ts and add   │
+┃ ── ADDED (0) ──────────────────── ┃ │   isNotFound                                                                   │
+┃                                   ┃ │   • Add useProfileCache: stale-while-revalidate cache with a 5 minute TTL      │
+┃                                   ┃ │   and request de-duplication                                                   │
+┃                                   ┃ │   • Add Avatar and ProfileHeader components; ProfilePage uses the cache and    │
+┃                                   ┃ │   shows save errors                                                            │
+┃                                   ┃ │   • Invalidate the profile cache on logout                                     │
+┃                                   ┃ │   • server: return avatarUrl when include=avatar is requested                  │
+┃                                   ┃ │                                                                                │
+┃ / search  s sort: urgency ▾       ┃ │   ## Breaking                                                                  │
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ │                                                                                │
+j/k move  space select  / search and add  enter focus main pane  1 2 3 tabs  ctrl+x stop  P pipeline page …
+
+=== screen: picker + code-draft · pr:101 ===
+prt · acme/portal · 5 PRs · 1 branch · role: frontend                                                           2 drafts
+┏━ Queue · ranked ━━━━━━━━━━━━━━━━━━┓    1 Overview  [2 Code]  3 Architecture                           #101 · 48 chunks
+┃ ── NEEDS YOU (3) ──────────────── ┃ jumped to web/src/components/ProfilePage.tsx:L17                                  
+┃ ▸ ▮▮▮▮ #101 feat(web): cached us… ┃ ┌─ Files · by attention ──┐ ┌─ web/src/components/ProfilePage.tsx  +15 −14 ──────┐
+┃        ⚠5 breaking · 26 eyes · ~… ┃ │  …rofileCache.ts □□██□██│ │@@ 11  modified · feature · behaviour ✓ .98 · b4    │
+┃        why: breaking · untested … ┃ │  …/api/client.ts □□□□□█+│ │       tests ✓ · async · error_path · data_write    │
+┃   ▮▮▮▯ #104 build(deps): bump th… ┃ │  …/api/errors.ts  □□□□□□│ │       pii · risk 4 · eyes                          │
+┃        ~5m · CI ✗                 ┃ │▸ …/ProfilePage.tsx   □█□│ │  L11–32 · +10 −7 · export function ProfilePage({ u…│
+┃   ▮▮▯▯ #103 chore(billing): remo… ┃ │  web/src/api/index.ts  █│ │  11 11   export function ProfilePage({ userId }: P…│
+┃        ⚠1 breaking · 1 eyes · ~1… ┃ │  web/src/api/users.ts □□│ │  12    -   const { user, error } = useUser(userId);│
+┃ ── YOURS (1) ──────────────────── ┃ │  …/Avatar.tsx         □□│ │·    12 +   const { profile, loading, stale, refres…│
+┃   ▮▮▮▯ #102 refactor(web): renam… ┃ │  …/UserCard.tsx      □□□│ │  13 13     const [name, setName] = useState("");   │
+┃        CI … · 5d                  ┃ │  …/hooks/useUser.ts   □□│ │  14 14     const [saving, setSaving] = useState(fa…│
+┃ ── BRANCHES (1) ───────────────── ┃ │  …/client.test.ts     ▒□│ │·    15 +   const [saveError, setSaveError] = useSt…│
+┃   ▮▮▯▯ 05-spike-dark-mode         ┃ │  …ProfileCache.test.ts □│ │  15 16                                             │
+┃        spike .69 · 2 unpushed · … ┃ │  …/ProfileHeader.tsx  ▒□│ │  16    -   if (error) {                            │
+┃ ── INVOLVED (1) ───────────────── ┃ │  …/UserList.tsx       □□│ │  17    -     return <p role="alert">Could not load…│
+┃   ▮▮▮▮ #106 feat(server): user p… ┃ │── not yours ────────────│ │  18    -   }                                       │
+┃        ⚠4 breaking · 10 eyes · ~… ┃ │  …/users/users.go □□□□█□│ │  19    -   if (!user) {                            │
+┃ ── ADDED (0) ──────────────────── ┃ │                         │ │  20    -     return <p>Loading…</p>;               │
+┃                                   ┃ │                         │ │·▸   17 +   if (!profile) {                         │
+┃                                   ┃ │                         │ │  ✎ draft · you                                     │
+┃                                   ┃ │                         │ │  │ The load error from useUser used to be shown    │
+┃                                   ┃ │                         │ │  │ here. With the cache a failed load now shows    │
+┃                                   ┃ │                         │ │  │ **Loading…** forever; please keep an error      │
+┃                                   ┃ │                         │ │  │ state.                                          │
+┃                                   ┃ │                         │ │◆    18 +     return <p aria-busy={loading}>Loading…│
+┃ / search  s sort: urgency ▾       ┃ └─────────────────────────┘ └────────────────────────────────────────────────────┘
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ Comments 31 · 2 drafts · 0 pending · 0 posted · 26 ai · 3 threads (2 open) (tab f…
+j/k move  space select  / search and add  enter focus main pane  1 2 3 tabs  ctrl+x stop  P pipeline page …
+
+=== screen: picker + code-ai-draft · pr:101 ===
+prt · acme/portal · 5 PRs · 1 branch · role: frontend                                                           2 drafts
+┏━ Queue · ranked ━━━━━━━━━━━━━━━━━━┓    1 Overview  [2 Code]  3 Architecture                           #101 · 48 chunks
+┃ ── NEEDS YOU (3) ──────────────── ┃ jumped to server/internal/users/users.go:L84                                      
+┃ ▸ ▮▮▮▮ #101 feat(web): cached us… ┃ ┌─ Files · by attention ──┐ ┌─ server/internal/users/users.go  +10 −2  (not yo… ─┐
+┃        ⚠5 breaking · 26 eyes · ~… ┃ │  …rofileCache.ts □□██□██│ │@@ 81  added · feature · behaviour ✓ .91 · b6       │
+┃        why: breaking · untested … ┃ │  …/api/client.ts □□□□□█+│ │       tests ✗ · pii · risk 3 · eyes                │
+┃   ▮▮▮▯ #104 build(deps): bump th… ┃ │  …/api/errors.ts  □□□□□□│ │  L81–90 · +4 −0 · func toResponse(u User, includeA…│
+┃        ~5m · CI ✗                 ┃ │  …/ProfilePage.tsx   □█□│ │  78 81           team := u.TeamID                  │
+┃   ▮▮▯▯ #103 chore(billing): remo… ┃ │  web/src/api/index.ts  █│ │  79 82           r.TeamID = &team                  │
+┃        ⚠1 breaking · 1 eyes · ~1… ┃ │  web/src/api/users.ts □□│ │  80 83       }                                     │
+┃ ── YOURS (1) ──────────────────── ┃ │  …/Avatar.tsx         □□│ │·▸   84 +     if includeAvatar && u.AvatarURL != ""…│
+┃   ▮▮▮▯ #102 refactor(web): renam… ┃ │  …/UserCard.tsx      □□□│ │  ╭─ ai-draft · low ───────────────────────────────╮│
+┃        CI … · 5d                  ┃ │  …/hooks/useUser.ts   □□│ │  │ **low** The new include=avatar response path   ││
+┃ ── BRANCHES (1) ───────────────── ┃ │  …/client.test.ts     ▒□│ │  │ has no tests, and the field is personal data,  ││
+┃   ▮▮▯▯ 05-spike-dark-mode         ┃ │  …ProfileCache.test.ts □│ │  │ so a regression could expose it by default or  ││
+┃        spike .69 · 2 unpushed · … ┃ │  …/ProfileHeader.tsx  ▒□│ │  │ drop it unnoticed.                             ││
+┃ ── INVOLVED (1) ───────────────── ┃ │  …/UserList.tsx       □□│ │  │                                                ││
+┃   ▮▮▮▮ #106 feat(server): user p… ┃ │── not yours ────────────│ │  │ Suggested fix: Add handler tests that check    ││
+┃        ⚠4 breaking · 10 eyes · ~… ┃ │▸ …/users/users.go □□□□█□│ │  │ avatarUrl is omitted without include=avatar,   ││
+┃ ── ADDED (0) ──────────────────── ┃ │                         │ │  │ present with it, and omitted when the stored   ││
+┃                                   ┃ │                         │ │  │ URL is empty.                                  ││
+┃                                   ┃ │                         │ │  │ a accept · d dismiss · ! override              ││
+┃                                   ┃ │                         │ │  ╰────────────────────────────────────────────────╯│
+┃                                   ┃ │                         │ │·    85 +         avatar := u.AvatarURL             │
+┃                                   ┃ │                         │ │·    86 +         r.AvatarURL = &avatar             │
+┃                                   ┃ │                         │ │·    87 +     }                                     │
+┃                                   ┃ │                         │ │  81 88       return r                              │
+┃ / search  s sort: urgency ▾       ┃ └─────────────────────────┘ └────────────────────────────────────────────────────┘
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ Comments 31 · 2 drafts · 0 pending · 0 posted · 26 ai · 3 threads (2 open) (tab f…
+j/k move  space select  / search and add  enter focus main pane  1 2 3 tabs  ctrl+x stop  P pipeline page …
+
+=== screen: picker + code-thread · pr:101 ===
+prt · acme/portal · 5 PRs · 1 branch · role: frontend                                                           2 drafts
+┏━ Queue · ranked ━━━━━━━━━━━━━━━━━━┓    1 Overview  [2 Code]  3 Architecture                           #101 · 48 chunks
+┃ ── NEEDS YOU (3) ──────────────── ┃ jumped to web/src/hooks/useProfileCache.ts:L6                                     
+┃ ▸ ▮▮▮▮ #101 feat(web): cached us… ┃ ┌─ Files · by attention ──┐ ┌─ web/src/hooks/useProfileCache.ts  +81 −0 ─────────┐
+┃        ⚠5 breaking · 26 eyes · ~… ┃ │▸ …rofileCache.ts □□██□██│ │@@ 1  added · feature · behaviour ✓ .95 · b3        │
+┃        why: breaking · untested … ┃ │  …/api/client.ts □□□□□█+│ │      tests ✓ · auth · async · error_path · pii     │
+┃   ▮▮▮▯ #104 build(deps): bump th… ┃ │  …/api/errors.ts  □□□□□□│ │      risk 4 · eyes · ?                             │
+┃        ~5m · CI ✗                 ┃ │  …/ProfilePage.tsx   □█□│ │  L1–15 · +15 −0                                    │
+┃   ▮▮▯▯ #103 chore(billing): remo… ┃ │  web/src/api/index.ts  █│ │·     1 + import { useCallback, useEffect, useState…│
+┃        ⚠1 breaking · 1 eyes · ~1… ┃ │  web/src/api/users.ts □□│ │·     2 +                                           │
+┃ ── YOURS (1) ──────────────────── ┃ │  …/Avatar.tsx         □□│ │·     3 + import { getUser, type User } from "../ap…│
+┃   ▮▮▮▯ #102 refactor(web): renam… ┃ │  …/UserCard.tsx      □□□│ │·     4 +                                           │
+┃        CI … · 5d                  ┃ │  …/hooks/useUser.ts   □□│ │·     5 + // How long a cached profile is served wi…│
+┃ ── BRANCHES (1) ───────────────── ┃ │  …/client.test.ts     ▒□│ │❱▸    6 + export const PROFILE_TTL_MS = 5 * 60 * 10…│
+┃   ▮▮▯▯ 05-spike-dark-mode         ┃ │  …ProfileCache.test.ts □│ │  ❱ thread · fredric · 1 reply · open               │
+┃        spike .69 · 2 unpushed · … ┃ │  …/ProfileHeader.tsx  ▒□│ │  │ An hour is far longer than the 5 minute TTL the │
+┃ ── INVOLVED (1) ───────────────── ┃ │  …/UserList.tsx       □□│ │  │ description promises. Please use 5 minutes here │
+┃   ▮▮▮▮ #106 feat(server): user p… ┃ │── not yours ────────────│ │  │ (or make it configurable).                      │
+┃        ⚠4 breaking · 10 eyes · ~… ┃ │  …/users/users.go □□□□█□│ │·     7 +                                           │
+┃ ── ADDED (0) ──────────────────── ┃ │                         │ │·     8 + interface Entry {                         │
+┃                                   ┃ │                         │ │·     9 +   user: User;                             │
+┃                                   ┃ │                         │ │·    10 +   fetchedAt: number;                      │
+┃                                   ┃ │                         │ │·    11 + }                                         │
+┃                                   ┃ │                         │ │·    12 +                                           │
+┃                                   ┃ │                         │ │·    13 + const cache = new Map<string, Entry>();   │
+┃                                   ┃ │                         │ │·    14 + const inflight = new Map<string, Promise<…│
+┃                                   ┃ │                         │ │  ╭─ ai-draft · medium ────────────────────────────╮│
+┃ / search  s sort: urgency ▾       ┃ └─────────────────────────┘ └────────────────────────────────────────────────────┘
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ Comments 31 · 2 drafts · 0 pending · 0 posted · 26 ai · 3 threads (2 open) (tab f…
+j/k move  space select  / search and add  enter focus main pane  1 2 3 tabs  ctrl+x stop  P pipeline page …
+
+=== screen: picker + overview · pr:104 ===
+prt · acme/portal · 5 PRs · 1 branch · role: frontend
+┏━ Queue · ranked ━━━━━━━━━━━━━━━━━━┓   [1 Overview]  2 Code   3 Architecture   @dependabot[bot] · 1d · main ← 04-bump-…
+┃ ── NEEDS YOU (3) ──────────────── ┃ #104 build(deps): bump the production group with 4 updates · dependabot[bot] · 1d…
+┃   ▮▮▮▮ #101 feat(web): cached us… ┃ Bumps react, react-dom and chi/v5, but the zod bump is missing and all three      
+┃        ⚠5 breaking · 26 eyes · ~… ┃ flagged package file changes are untested.  ai·from labels                        
+┃ ▸ ▮▮▮▯ #104 build(deps): bump th… ┃ dddddddddddddddddddddddddddddddddddddddd                                          
+┃        ~5m · CI ✗                 ┃ d dependency 100%                                                                 
+┃        why: CI red after approva… ┃ +23 −23 → ~46 lines that matter · ~5 min · 0 of 6 chunks need eyes                
+┃   ▮▮▯▯ #103 chore(billing): remo… ┃                                                                                   
+┃        ⚠1 breaking · 1 eyes · ~1… ┃ ┌─ Headlines · contract surface ─────────────────────────────────────────────────┐
+┃ ── YOURS (1) ──────────────────── ┃ │ no contract changes                                                            │
+┃   ▮▮▮▯ #102 refactor(web): renam… ┃ └────────────────────────────────────────────────────────────────────────────────┘
+┃        CI … · 5d                  ┃ ┌─ Check before approving · hot spots ───────────────────────────────────────────┐
+┃ ── BRANCHES (1) ───────────────── ┃ │ 1 web/package-lock.json:11  crash, untested  9.0                               │
+┃   ▮▮▯▯ 05-spike-dark-mode         ┃ │ 2 web/package.json:13  crash, untested  8.7                                    │
+┃        spike .69 · 2 unpushed · … ┃ │ 3 web/package-lock.json:49  crash, untested  8.6                               │
+┃ ── INVOLVED (1) ───────────────── ┃ └────────────────────────────────────────────────────────────────────────────────┘
+┃   ▮▮▮▮ #106 feat(server): user p… ┃ ┌─ API endpoints ────────────────────────────────────────────────────────────────┐
+┃        ⚠4 breaking · 10 eyes · ~… ┃ │ no endpoint changes                                                            │
+┃ ── ADDED (0) ──────────────────── ┃ └────────────────────────────────────────────────────────────────────────────────┘
+┃                                   ┃ ┌─ Database ─────────────────────────────────────────────────────────────────────┐
+┃                                   ┃ │ no schema or migration changes                                                 │
+┃                                   ┃ └────────────────────────────────────────────────────────────────────────────────┘
+┃                                   ┃ ┌─ Feature flags & config ───────────────────────────────────────────────────────┐
+┃                                   ┃ │ no flag, env or config changes                                                 │
+┃                                   ┃ └────────────────────────────────────────────────────────────────────────────────┘
+┃                                   ┃ ┌─ Risk ─────────────────────────────────────────────────────────────────────────┐
+┃ / search  s sort: urgency ▾       ┃ │ Risk MED (3)                                                                   │
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ │   test gap: 3 of 3 risky chunks untested                                       │
+j/k move  space select  / search and add  enter focus main pane  1 2 3 tabs  ctrl+x stop  P pipeline page …
+
+=== screen: picker + code · pr:104 ===
+prt · acme/portal · 5 PRs · 1 branch · role: frontend
+┏━ Queue · ranked ━━━━━━━━━━━━━━━━━━┓    1 Overview  [2 Code]  3 Architecture                            #104 · 6 chunks
+┃ ── NEEDS YOU (3) ──────────────── ┃ ┌─ Files · by attention ──┐ ┌─ web/package-lock.json  +17 −17 ───── file 1 of 4 ─┐
+┃   ▮▮▮▮ #101 feat(web): cached us… ┃ │▸ …/package-lock.json ▒□▒│ │3 units hidden by filters (f)                       │
+┃        ⚠5 breaking · 26 eyes · ~… ┃ │  web/package.json      ▒│ │                                                    │
+┃ ▸ ▮▮▮▯ #104 build(deps): bump th… ┃ │── not yours ────────────│ │                                                    │
+┃        ~5m · CI ✗                 ┃ │  server/go.mod         □│ │                                                    │
+┃        why: CI red after approva… ┃ │  server/go.sum         □│ │                                                    │
+┃   ▮▮▯▯ #103 chore(billing): remo… ┃ │                         │ │                                                    │
+┃        ⚠1 breaking · 1 eyes · ~1… ┃ │                         │ │                                                    │
+┃ ── YOURS (1) ──────────────────── ┃ │                         │ │                                                    │
+┃   ▮▮▮▯ #102 refactor(web): renam… ┃ │                         │ │                                                    │
+┃        CI … · 5d                  ┃ │                         │ │                                                    │
+┃ ── BRANCHES (1) ───────────────── ┃ │                         │ │                                                    │
+┃   ▮▮▯▯ 05-spike-dark-mode         ┃ │                         │ │                                                    │
+┃        spike .69 · 2 unpushed · … ┃ │                         │ │                                                    │
+┃ ── INVOLVED (1) ───────────────── ┃ │                         │ │                                                    │
+┃   ▮▮▮▮ #106 feat(server): user p… ┃ │                         │ │                                                    │
+┃        ⚠4 breaking · 10 eyes · ~… ┃ │                         │ │                                                    │
+┃ ── ADDED (0) ──────────────────── ┃ │                         │ │                                                    │
+┃                                   ┃ │                         │ │                                                    │
+┃                                   ┃ │                         │ │                                                    │
+┃                                   ┃ │                         │ │                                                    │
+┃                                   ┃ │                         │ │                                                    │
+┃                                   ┃ │                         │ │                                                    │
+┃                                   ┃ │                         │ │                                                    │
+┃                                   ┃ │                         │ │                                                    │
+┃ / search  s sort: urgency ▾       ┃ │                         │ │                                                    │
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ └─────────────────────────┘ └────────────────────────────────────────────────────┘
+j/k move  space select  / search and add  enter focus main pane  1 2 3 tabs  ctrl+x stop  P pipeline page …
+
+=== screen: picker + code-by-change · pr:104 ===
+prt · acme/portal · 5 PRs · 1 branch · role: frontend
+┏━ Queue · ranked ━━━━━━━━━━━━━━━━━━┓    1 Overview  [2 Code]  3 Architecture                            #104 · 6 chunks
+┃ ── NEEDS YOU (3) ──────────────── ┃ ┌─ Change groups · revi… ─┐ ┌─ Bump `github.com/go-chi/chi/v5` from 5.0.10 to … ─┐
+┃   ▮▮▮▮ #101 feat(web): cached us… ┃ │by: file [change] · inte…│ │Bump `github.com/go-chi/chi/v5` from 5.0.10 to 5.0.…│
+┃        ⚠5 breaking · 26 eyes · ~… ┃ │▸ 1 Bump `github.com/go-…│ │b4 1.0 · risk 2 · tests: 0 of 2 units · ? 2 unsure  │
+┃ ▸ ▮▮▮▯ #104 build(deps): bump th… ┃ │  2 Bump `react` from 18…│ │routed: none                                        │
+┃        ~5m · CI ✗                 ┃ │── split suggestion: grou│ │routing: if mechanical || kind in [formatting, move…│
+┃        why: CI red after approva… ┃ │  split? …/go.mod .55    │ │                                                    │
+┃   ▮▮▯▯ #103 chore(billing): remo… ┃ │                         │ │why these belong together                           │
+┃        ⚠1 breaking · 1 eyes · ~1… ┃ │                         │ │  jev same intent .95 · cos .95  go.mod → go.sum    │
+┃ ── YOURS (1) ──────────────────── ┃ │                         │ │                                                    │
+┃   ▮▮▮▯ #102 refactor(web): renam… ┃ │                         │ │── Units · interface first ─────────────────────────│
+┃        CI … · 5d                  ┃ │                         │ │2 units hidden by filters (f)                       │
+┃ ── BRANCHES (1) ───────────────── ┃ │                         │ │                                                    │
+┃   ▮▮▯▯ 05-spike-dark-mode         ┃ │                         │ │findings: not reviewed (tier none)                  │
+┃        spike .69 · 2 unpushed · … ┃ │                         │ │                                                    │
+┃ ── INVOLVED (1) ───────────────── ┃ │                         │ │                                                    │
+┃   ▮▮▮▮ #106 feat(server): user p… ┃ │                         │ │                                                    │
+┃        ⚠4 breaking · 10 eyes · ~… ┃ │                         │ │                                                    │
+┃ ── ADDED (0) ──────────────────── ┃ │                         │ │                                                    │
+┃                                   ┃ │                         │ │                                                    │
+┃                                   ┃ │                         │ │                                                    │
+┃                                   ┃ │                         │ │                                                    │
+┃                                   ┃ │                         │ │                                                    │
+┃                                   ┃ │                         │ │                                                    │
+┃                                   ┃ │                         │ │                                                    │
+┃                                   ┃ │                         │ │                                                    │
+┃ / search  s sort: urgency ▾       ┃ │                         │ │                                                    │
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ └─────────────────────────┘ └────────────────────────────────────────────────────┘
+j/k move  space select  / search and add  enter focus main pane  1 2 3 tabs  ctrl+x stop  P pipeline page …
+
+=== screen: picker + code-split · pr:104 ===
+prt · acme/portal · 5 PRs · 1 branch · role: frontend
+┏━ Queue · ranked ━━━━━━━━━━━━━━━━━━┓    1 Overview  [2 Code]  3 Architecture                            #104 · 6 chunks
+┃ ── NEEDS YOU (3) ──────────────── ┃ side-by-side needs a ≥140-column terminal — showing unified                       
+┃   ▮▮▮▮ #101 feat(web): cached us… ┃ ┌─ Files · by attention ──┐ ┌─ web/package-lock.json  +17 −17 ───── file 1 of 4 ─┐
+┃        ⚠5 breaking · 26 eyes · ~… ┃ │▸ …/package-lock.json ▒□▒│ │3 units hidden by filters (f)                       │
+┃ ▸ ▮▮▮▯ #104 build(deps): bump th… ┃ │  web/package.json      ▒│ │                                                    │
+┃        ~5m · CI ✗                 ┃ │── not yours ────────────│ │                                                    │
+┃        why: CI red after approva… ┃ │  server/go.mod         □│ │                                                    │
+┃   ▮▮▯▯ #103 chore(billing): remo… ┃ │  server/go.sum         □│ │                                                    │
+┃        ⚠1 breaking · 1 eyes · ~1… ┃ │                         │ │                                                    │
+┃ ── YOURS (1) ──────────────────── ┃ │                         │ │                                                    │
+┃   ▮▮▮▯ #102 refactor(web): renam… ┃ │                         │ │                                                    │
+┃        CI … · 5d                  ┃ │                         │ │                                                    │
+┃ ── BRANCHES (1) ───────────────── ┃ │                         │ │                                                    │
+┃   ▮▮▯▯ 05-spike-dark-mode         ┃ │                         │ │                                                    │
+┃        spike .69 · 2 unpushed · … ┃ │                         │ │                                                    │
+┃ ── INVOLVED (1) ───────────────── ┃ │                         │ │                                                    │
+┃   ▮▮▮▮ #106 feat(server): user p… ┃ │                         │ │                                                    │
+┃        ⚠4 breaking · 10 eyes · ~… ┃ │                         │ │                                                    │
+┃ ── ADDED (0) ──────────────────── ┃ │                         │ │                                                    │
+┃                                   ┃ │                         │ │                                                    │
+┃                                   ┃ │                         │ │                                                    │
+┃                                   ┃ │                         │ │                                                    │
+┃                                   ┃ │                         │ │                                                    │
+┃                                   ┃ │                         │ │                                                    │
+┃                                   ┃ │                         │ │                                                    │
+┃                                   ┃ │                         │ │                                                    │
+┃ / search  s sort: urgency ▾       ┃ │                         │ │                                                    │
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ └─────────────────────────┘ └────────────────────────────────────────────────────┘
+side-by-side needs a 140-column terminal (pane has 82) — showing unified
+
+=== screen: picker + pipeline · pr:104 ===
+prt · acme/portal · 5 PRs · 1 branch · role: frontend
+┏━ Queue · ranked ━━━━━━━━━━━━━━━━━━┓    1 Overview   2 Code   3 Architecture  [P Pipeline]                         #104
+┃ ── NEEDS YOU (3) ──────────────── ┃ prt · #104 build(deps): bump the production group with 4 updates · pipeline       
+┃   ▮▮▮▮ #101 feat(web): cached us… ┃ ✓ done · ready                                                                    
+┃        ⚠5 breaking · 26 eyes · ~… ┃ Stages  run 10-13 12:00:00 · fetch ✓ 0 ms                                         
+┃ ▸ ▮▮▮▯ #104 build(deps): bump th… ┃ ┌────────────────┐   ┌────────────────┐   ┌────────────────┐   ┌────────────────┐ 
+┃        ~5m · CI ✗                 ┃ │✓ parse         │   │✓ link          │   │✓ embed         │   │✓ jev           │ 
+┃        why: CI red after approva… ┃ │4→6 · 0 ms      │ → │6→0 · 0 ms      │ → │6→12 · 0 ms     │ → │6→276 · 0 ms    │ 
+┃   ▮▮▯▯ #103 chore(billing): remo… ┃ └────────────────┘   └────────────────┘   └────────────────┘   └────────────────┘ 
+┃        ⚠1 breaking · 1 eyes · ~1… ┃ ┌────────────────┐   ┌────────────────┐   ┌────────────────┐   ┌────────────────┐ 
+┃ ── YOURS (1) ──────────────────── ┃ │✓ cluster       │   │✓ route         │   │✓ review        │   │✓ agg           │ 
+┃   ▮▮▮▯ #102 refactor(web): renam… ┃ │6→2 · 0 ms      │ → │2→0 · 0 ms      │ → │0 ms            │ → │6→264 · 0 ms    │ 
+┃        CI … · 5d                  ┃ └────────────────┘   └────────────────┘   └────────────────┘   └────────────────┘ 
+┃ ── BRANCHES (1) ───────────────── ┃                                                                                   
+┃   ▮▮▯▯ 05-spike-dark-mode         ┃ ┏━ Routing · one call per group ━━━━━━━━━━━━━━━━━━ D deep · s skip · c call log ━┓
+┃        spike .69 · 2 unpushed · … ┃ ┃    # group                  tier            status           time find    cost ┃
+┃ ── INVOLVED (1) ───────────────── ┃ ┃ ▸  1 Bump `github.com/go-c… none            – skipped           —    —       — ┃
+┃   ▮▮▮▮ #106 feat(server): user p… ┃ ┃        if mechanical || kind in [formatting, moved, generated, dependency] → … ┃
+┃        ⚠4 breaking · 10 eyes · ~… ┃ ┃    2 Bump `react` from 18.… none            – skipped           —    —       — ┃
+┃ ── ADDED (0) ──────────────────── ┃ ┃        if mechanical || kind in [formatting, moved, generated, dependency] → … ┃
+┃                                   ┃ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+┃                                   ┃                                                                                   
+┃                                   ┃ tier mix nnnnnnnnnnnnnnnnnnnnnnnn n none 2 · f fast 0 · d deep 0                  
+┃                                   ┃ time — parallel vs ~0.0 s all-deep sequential  ·  cost $0.0002 of $0.40 cap       
+┃                                   ┃ jev 24 calls · $0.0019                                                            
+┃                                   ┃ 2 groups: skipped 2 · escalations 0 · calibration samples 0 · findings 0          
+┃                                   ┃                                                                                   
+┃ / search  s sort: urgency ▾       ┃ ┌─ Rules · prt.routing.toml ──────────────────────────────────────────── e edit ─┐
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ │ 1 if mechanical || kind in [formatting, moved, generated, dependency] → none   │
+j/k move  space select  / search and add  enter focus main pane  1 2 3 tabs  ctrl+x stop  P pipeline page …
+
+=== screen: picker + architecture · pr:104 ===
+prt · acme/portal · 5 PRs · 1 branch · role: frontend
+┏━ Queue · ranked ━━━━━━━━━━━━━━━━━━┓    1 Overview   2 Code  [3 Architecture]                     0 modules · 0 touched
+┃ ── NEEDS YOU (3) ──────────────── ┃ module graph: no source modules touched                                           
+┃   ▮▮▮▮ #101 feat(web): cached us… ┃                                                                                   
+┃        ⚠5 breaking · 26 eyes · ~… ┃                                                                                   
+┃ ▸ ▮▮▮▯ #104 build(deps): bump th… ┃                                                                                   
+┃        ~5m · CI ✗                 ┃                                                                                   
+┃        why: CI red after approva… ┃                                                                                   
+┃   ▮▮▯▯ #103 chore(billing): remo… ┃                                                                                   
+┃        ⚠1 breaking · 1 eyes · ~1… ┃                                                                                   
+┃ ── YOURS (1) ──────────────────── ┃                                                                                   
+┃   ▮▮▮▯ #102 refactor(web): renam… ┃                                                                                   
+┃        CI … · 5d                  ┃                                                                                   
+┃ ── BRANCHES (1) ───────────────── ┃                                                                                   
+┃   ▮▮▯▯ 05-spike-dark-mode         ┃                                                                                   
+┃        spike .69 · 2 unpushed · … ┃                                                                                   
+┃ ── INVOLVED (1) ───────────────── ┃                                                                                   
+┃   ▮▮▮▮ #106 feat(server): user p… ┃                                                                                   
+┃        ⚠4 breaking · 10 eyes · ~… ┃                                                                                   
+┃ ── ADDED (0) ──────────────────── ┃                                                                                   
+┃                                   ┃                                                                                   
+┃                                   ┃                                                                                   
+┃                                   ┃                                                                                   
+┃                                   ┃                                                                                   
+┃                                   ┃                                                                                   
+┃                                   ┃                                                                                   
+┃                                   ┃                                                                                   
+┃ / search  s sort: urgency ▾       ┃                                                                                   
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛                                                                                   
+j/k move  space select  / search and add  enter focus main pane  1 2 3 tabs  ctrl+x stop  P pipeline page …
+
+=== screen: picker + overview · pr:103 ===
+prt · acme/portal · 5 PRs · 1 branch · role: frontend
+┏━ Queue · ranked ━━━━━━━━━━━━━━━━━━┓   [1 Overview]  2 Code   3 Architecture   @bob · 3d · main ← 03-remove-legacy-bil…
+┃ ── NEEDS YOU (3) ──────────────── ┃ #103 chore(billing): remove legacy finance export and dead helpers · bob · 3d · m…
+┃   ▮▮▮▮ #101 feat(web): cached us… ┃ Deletes the legacy billing CSV export and its helpers; removing the exported      
+┃        ⚠5 breaking · 26 eyes · ~… ┃ WriteLegacyCSV may break callers, and the one risky unit has no test coverage.    
+┃   ▮▮▮▯ #104 build(deps): bump th… ┃ ai·from labels                                                                    
+┃        ~5m · CI ✗                 ┃ rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr                                          
+┃ ▸ ▮▮▯▯ #103 chore(billing): remo… ┃ r refactor 100%                                                                   
+┃        ⚠1 breaking · 1 eyes · ~1… ┃ +0 −78 → ~78 lines that matter · ~16 min · 1 of 7 chunks need eyes                
+┃        why: asked you · risk · b… ┃                                                                                   
+┃ ── YOURS (1) ──────────────────── ┃ ┌─ Headlines · contract surface ─────────────────────────────────────────────────┐
+┃   ▮▮▮▯ #102 refactor(web): renam… ┃ │   ⚠ breaking  WriteLegacyCSV  server/internal/billing/legacy.go:34  .75        │
+┃        CI … · 5d                  ┃ └────────────────────────────────────────────────────────────────────────────────┘
+┃ ── BRANCHES (1) ───────────────── ┃ ┌─ Check before approving · hot spots ───────────────────────────────────────────┐
+┃   ▮▮▯▯ 05-spike-dark-mode         ┃ │ 1 server/internal/billing/legacy.go:34  `WriteLegacyCSV` is exported, so…  2.1 │
+┃        spike .69 · 2 unpushed · … ┃ │ 2 server/internal/billing/tax.go:4  money, crash  1.6                          │
+┃ ── INVOLVED (1) ───────────────── ┃ │ 3 server/internal/billing/tax.go:26  money, crash  1.6                         │
+┃   ▮▮▮▮ #106 feat(server): user p… ┃ └────────────────────────────────────────────────────────────────────────────────┘
+┃        ⚠4 breaking · 10 eyes · ~… ┃ ┌─ API endpoints ────────────────────────────────────────────────────────────────┐
+┃ ── ADDED (0) ──────────────────── ┃ │ no endpoint changes                                                            │
+┃                                   ┃ └────────────────────────────────────────────────────────────────────────────────┘
+┃                                   ┃ ┌─ Database ─────────────────────────────────────────────────────────────────────┐
+┃                                   ┃ │ no schema or migration changes                                                 │
+┃                                   ┃ └────────────────────────────────────────────────────────────────────────────────┘
+┃                                   ┃ ┌─ Feature flags & config ───────────────────────────────────────────────────────┐
+┃                                   ┃ │ no flag, env or config changes                                                 │
+┃                                   ┃ └────────────────────────────────────────────────────────────────────────────────┘
+┃ / search  s sort: urgency ▾       ┃ ┌─ Risk ─────────────────────────────────────────────────────────────────────────┐
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ │ Risk MED (3)                                                                   │
+j/k move  space select  / search and add  enter focus main pane  1 2 3 tabs  ctrl+x stop  P pipeline page …
+
+=== screen: picker + code · pr:103 ===
+prt · acme/portal · 5 PRs · 1 branch · role: frontend
+┏━ Queue · ranked ━━━━━━━━━━━━━━━━━━┓    1 Overview  [2 Code]  3 Architecture                            #103 · 7 chunks
+┃ ── NEEDS YOU (3) ──────────────── ┃ ┌─ Files · by attention ──┐ ┌─ server/internal/billing/legacy.go  +0 −57  (not… ─┐
+┃   ▮▮▮▮ #101 feat(web): cached us… ┃ │── not yours ────────────│ │@@ 34  deleted · refactor · behaviour ✓ .71         │
+┃        ⚠5 breaking · 26 eyes · ~… ┃ │▸ …/legacy.go        ▒□█□│ │       ⚠ breaking .75 · b1 · tests ✗ · money        │
+┃   ▮▮▮▯ #104 build(deps): bump th… ┃ │  …/billing/invoice.go  ▒│ │       risk 3 · eyes                                │
+┃        ~5m · CI ✗                 ┃ │  …/billing/tax.go     ▒▒│ │  old L34–53 · +0 −20 · func WriteLegacyCSV(w io.Wr…│
+┃ ▸ ▮▮▯▯ #103 chore(billing): remo… ┃ │                         │ │ ▸34    - // WriteLegacyCSV writes invoices in the …│
+┃        ⚠1 breaking · 1 eyes · ~1… ┃ │                         │ │  35    - //                                        │
+┃        why: asked you · risk · b… ┃ │                         │ │  36    - // Deprecated: see LegacyExport.          │
+┃ ── YOURS (1) ──────────────────── ┃ │                         │ │  37    - func WriteLegacyCSV(w io.Writer, invs []I…│
+┃   ▮▮▮▯ #102 refactor(web): renam… ┃ │                         │ │  ╭─ ai-draft · low ───────────────────────────────╮│
+┃        CI … · 5d                  ┃ │                         │ │  │ **low** WriteLegacyCSV is exported, so any     ││
+┃ ── BRANCHES (1) ───────────────── ┃ │                         │ │  │ package under server/ (for example a CLI or    ││
+┃   ▮▮▯▯ 05-spike-dark-mode         ┃ │                         │ │  │ cron job, not only HTTP routes) could still    ││
+┃        spike .69 · 2 unpushed · … ┃ │                         │ │  │ import it; the deprecation note only says no   ││
+┃ ── INVOLVED (1) ───────────────── ┃ │                         │ │  │ route serves it.                               ││
+┃   ▮▮▮▮ #106 feat(server): user p… ┃ │                         │ │  │                                                ││
+┃        ⚠4 breaking · 10 eyes · ~… ┃ │                         │ │  │ Suggested fix: Confirm with a repo-wide search ││
+┃ ── ADDED (0) ──────────────────── ┃ │                         │ │  │ (e.g. grep -r WriteLegacyCSV server/) and a    ││
+┃                                   ┃ │                         │ │  │ full go build ./... that nothing outside       ││
+┃                                   ┃ │                         │ │  │ billing references it.                         ││
+┃                                   ┃ │                         │ │  │ a accept · d dismiss · ! override              ││
+┃                                   ┃ │                         │ │  ╰────────────────────────────────────────────────╯│
+┃                                   ┃ │                         │ │  38    -     cw := csv.NewWriter(w)                │
+┃                                   ┃ │                         │ │  39    -     cw.Comma = ';'                        │
+┃                                   ┃ │                         │ │  40    -     if err := cw.Write([]string{"nr", "or…│
+┃ / search  s sort: urgency ▾       ┃ └─────────────────────────┘ └────────────────────────────────────────────────────┘
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ Comments 1 · 0 drafts · 0 pending · 0 posted · 1 ai · 0 threads (0 open) (tab foc…
+j/k move  space select  / search and add  enter focus main pane  1 2 3 tabs  ctrl+x stop  P pipeline page …
+
+=== screen: picker + code-by-change · pr:103 ===
+prt · acme/portal · 5 PRs · 1 branch · role: frontend
+┏━ Queue · ranked ━━━━━━━━━━━━━━━━━━┓    1 Overview  [2 Code]  3 Architecture                            #103 · 7 chunks
+┃ ── NEEDS YOU (3) ──────────────── ┃ ┌─ Change groups · revi… ─┐ ┌─ Delete `server/internal/billing/legacy.go` (`Le… ─┐
+┃   ▮▮▮▮ #101 feat(web): cached us… ┃ │by: file [change] · inte…│ │Delete `server/internal/billing/legacy.go` (`Legacy…│
+┃        ⚠5 breaking · 26 eyes · ~… ┃ │▸ 1 Delete `server/inter…│ │b1 .69 · risk 3 · money ×7 · date_tz ×2             │
+┃   ▮▮▮▯ #104 build(deps): bump th… ┃ │    7u 3f · b1 .69 · dee…│ │tests: 0 of 7 units · test gap 1 · ⚠ breaking 1     │
+┃        ~5m · CI ✗                 ┃ │                         │ │? 2 unsure · routed: deep · security                │
+┃ ▸ ▮▮▯▯ #103 chore(billing): remo… ┃ │                         │ │routing: if risk >= 4 || tag.auth || tag.money || t…│
+┃        ⚠1 breaking · 1 eyes · ~1… ┃ │                         │ │no context found: callers, types, tests             │
+┃        why: asked you · risk · b… ┃ │                         │ │                                                    │
+┃ ── YOURS (1) ──────────────────── ┃ │                         │ │why these belong together                           │
+┃   ▮▮▮▯ #102 refactor(web): renam… ┃ │                         │ │  jev same intent .97 · cos .84  invoice.go renumbe…│
+┃        CI … · 5d                  ┃ │                         │ │  jev same intent .91 · cos .91  invoice.go renumbe…│
+┃ ── BRANCHES (1) ───────────────── ┃ │                         │ │  jev same intent .88 · cos .90  invoice.go renumbe…│
+┃   ▮▮▯▯ 05-spike-dark-mode         ┃ │                         │ │  jev same intent .87 · cos .85  invoice.go renumbe…│
+┃        spike .69 · 2 unpushed · … ┃ │                         │ │  jev same intent .69 · cos .86  invoice.go renumbe…│
+┃ ── INVOLVED (1) ───────────────── ┃ │                         │ │  jev same intent .82 · cos .90  legacy.go → legacy…│
+┃   ▮▮▮▮ #106 feat(server): user p… ┃ │                         │ │  jev same intent .99 · cos .88  legacy.go → legacy…│
+┃        ⚠4 breaking · 10 eyes · ~… ┃ │                         │ │  jev same intent .85 · cos .76  legacy.go → tax.go │
+┃ ── ADDED (0) ──────────────────── ┃ │                         │ │  jev same intent .96 · cos .84  legacy.go toLegacy…│
+┃                                   ┃ │                         │ │  jev same intent .84 · cos .85  legacy.go toLegacy…│
+┃                                   ┃ │                         │ │  calls  legacy.go WriteLegacyCSV → legacy.go toLeg…│
+┃                                   ┃ │                         │ │  jev same intent .94 · cos .83  legacy.go WriteLeg…│
+┃                                   ┃ │                         │ │  jev same intent .74 · cos .75  legacy.go WriteLeg…│
+┃                                   ┃ │                         │ │  jev same intent .94 · cos .84  legacy.go WriteLeg…│
+┃                                   ┃ │                         │ │  jev same intent .93 · cos .78  tax.go → tax.go le…│
+┃                                   ┃ │                         │ │                                                    │
+┃ / search  s sort: urgency ▾       ┃ └─────────────────────────┘ └────────────────────────────────────────────────────┘
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ Comments 1 · 0 drafts · 0 pending · 0 posted · 1 ai · 0 threads (0 open) (tab foc…
+j/k move  space select  / search and add  enter focus main pane  1 2 3 tabs  ctrl+x stop  P pipeline page …
+
+=== screen: picker + code-split · pr:103 ===
+prt · acme/portal · 5 PRs · 1 branch · role: frontend
+┏━ Queue · ranked ━━━━━━━━━━━━━━━━━━┓    1 Overview  [2 Code]  3 Architecture                            #103 · 7 chunks
+┃ ── NEEDS YOU (3) ──────────────── ┃ side-by-side needs a ≥140-column terminal — showing unified                       
+┃   ▮▮▮▮ #101 feat(web): cached us… ┃ ┌─ Files · by attention ──┐ ┌─ server/internal/billing/legacy.go  +0 −57  (not… ─┐
+┃        ⚠5 breaking · 26 eyes · ~… ┃ │── not yours ────────────│ │@@ 34  deleted · refactor · behaviour ✓ .71         │
+┃   ▮▮▮▯ #104 build(deps): bump th… ┃ │▸ …/legacy.go        ▒□█□│ │       ⚠ breaking .75 · b1 · tests ✗ · money        │
+┃        ~5m · CI ✗                 ┃ │  …/billing/invoice.go  ▒│ │       risk 3 · eyes                                │
+┃ ▸ ▮▮▯▯ #103 chore(billing): remo… ┃ │  …/billing/tax.go     ▒▒│ │  old L34–53 · +0 −20 · func WriteLegacyCSV(w io.Wr…│
+┃        ⚠1 breaking · 1 eyes · ~1… ┃ │                         │ │ ▸34    - // WriteLegacyCSV writes invoices in the …│
+┃        why: asked you · risk · b… ┃ │                         │ │  35    - //                                        │
+┃ ── YOURS (1) ──────────────────── ┃ │                         │ │  36    - // Deprecated: see LegacyExport.          │
+┃   ▮▮▮▯ #102 refactor(web): renam… ┃ │                         │ │  37    - func WriteLegacyCSV(w io.Writer, invs []I…│
+┃        CI … · 5d                  ┃ │                         │ │  ╭─ ai-draft · low ───────────────────────────────╮│
+┃ ── BRANCHES (1) ───────────────── ┃ │                         │ │  │ **low** WriteLegacyCSV is exported, so any     ││
+┃   ▮▮▯▯ 05-spike-dark-mode         ┃ │                         │ │  │ package under server/ (for example a CLI or    ││
+┃        spike .69 · 2 unpushed · … ┃ │                         │ │  │ cron job, not only HTTP routes) could still    ││
+┃ ── INVOLVED (1) ───────────────── ┃ │                         │ │  │ import it; the deprecation note only says no   ││
+┃   ▮▮▮▮ #106 feat(server): user p… ┃ │                         │ │  │ route serves it.                               ││
+┃        ⚠4 breaking · 10 eyes · ~… ┃ │                         │ │  │                                                ││
+┃ ── ADDED (0) ──────────────────── ┃ │                         │ │  │ Suggested fix: Confirm with a repo-wide search ││
+┃                                   ┃ │                         │ │  │ (e.g. grep -r WriteLegacyCSV server/) and a    ││
+┃                                   ┃ │                         │ │  │ full go build ./... that nothing outside       ││
+┃                                   ┃ │                         │ │  │ billing references it.                         ││
+┃                                   ┃ │                         │ │  │ a accept · d dismiss · ! override              ││
+┃                                   ┃ │                         │ │  ╰────────────────────────────────────────────────╯│
+┃                                   ┃ │                         │ │  38    -     cw := csv.NewWriter(w)                │
+┃                                   ┃ │                         │ │  39    -     cw.Comma = ';'                        │
+┃ / search  s sort: urgency ▾       ┃ └─────────────────────────┘ └────────────────────────────────────────────────────┘
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ Comments 1 · 0 drafts · 0 pending · 0 posted · 1 ai · 0 threads (0 open) (tab foc…
+side-by-side needs a 140-column terminal (pane has 82) — showing unified
+
+=== screen: picker + pipeline · pr:103 ===
+prt · acme/portal · 5 PRs · 1 branch · role: frontend
+┏━ Queue · ranked ━━━━━━━━━━━━━━━━━━┓    1 Overview   2 Code   3 Architecture  [P Pipeline]                         #103
+┃ ── NEEDS YOU (3) ──────────────── ┃ prt · #103 chore(billing): remove legacy finance export and dead helpers · pipeli…
+┃   ▮▮▮▮ #101 feat(web): cached us… ┃ ✓ done · ready                                                                    
+┃        ⚠5 breaking · 26 eyes · ~… ┃ Stages  run 10-13 12:00:00 · fetch ✓ 0 ms                                         
+┃   ▮▮▮▯ #104 build(deps): bump th… ┃ ┌────────────────┐   ┌────────────────┐   ┌────────────────┐   ┌────────────────┐ 
+┃        ~5m · CI ✗                 ┃ │✓ parse         │   │✓ link          │   │✓ embed         │   │✓ jev           │ 
+┃ ▸ ▮▮▯▯ #103 chore(billing): remo… ┃ │3→7 · 0 ms      │ → │7→1 · 0 ms      │ → │7→15 · 0 ms     │ → │7→161 · 0 ms    │ 
+┃        ⚠1 breaking · 1 eyes · ~1… ┃ └────────────────┘   └────────────────┘   └────────────────┘   └────────────────┘ 
+┃        why: asked you · risk · b… ┃ ┌────────────────┐   ┌────────────────┐   ┌────────────────┐   ┌────────────────┐ 
+┃ ── YOURS (1) ──────────────────── ┃ │✓ cluster       │   │✓ route         │   │✓ review        │   │✓ agg           │ 
+┃   ▮▮▮▯ #102 refactor(web): renam… ┃ │7→1 · 0 ms      │ → │1→1 · 0 ms      │ → │1→1 · 0 ms      │ → │7→147 · 0 ms    │ 
+┃        CI … · 5d                  ┃ └────────────────┘   └────────────────┘   └────────────────┘   └────────────────┘ 
+┃ ── BRANCHES (1) ───────────────── ┃                                                                                   
+┃   ▮▮▯▯ 05-spike-dark-mode         ┃ ┏━ Routing · one call per group ━━━━━━━━━━━━━━━━━━ D deep · s skip · c call log ━┓
+┃        spike .69 · 2 unpushed · … ┃ ┃    # group                  tier            status           time find    cost ┃
+┃ ── INVOLVED (1) ───────────────── ┃ ┃ ▸  1 Delete `server/intern… deep            ✓ done          7.1 s    1 $0.0243 ┃
+┃   ▮▮▮▮ #106 feat(server): user p… ┃ ┃        if risk >= 4 || tag.auth || tag.money || tag.async → deep · ctx caller… ┃
+┃        ⚠4 breaking · 10 eyes · ~… ┃ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+┃ ── ADDED (0) ──────────────────── ┃                                                                                   
+┃                                   ┃ tier mix dddddddddddddddddddddddd n none 0 · f fast 0 · d deep 1                  
+┃                                   ┃ time — parallel vs ~7.1 s all-deep sequential  ·  cost $0.0246 of $0.40 cap       
+┃                                   ┃ jev 21 calls · $0.0011                                                            
+┃                                   ┃ 1 group: done 1 · escalations 0 · calibration samples 0 · findings 1              
+┃                                   ┃                                                                                   
+┃                                   ┃ ┌─ Rules · prt.routing.toml ──────────────────────────────────────────── e edit ─┐
+┃                                   ┃ │ 1 if mechanical || kind in [formatting, moved, generated, dependency] → none   │
+┃ / search  s sort: urgency ▾       ┃ │   0 rows                                                                       │
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ │ 2 if risk >= 4 || tag.auth || tag.money || tag.async → deep  +security · ctx   │
+j/k move  space select  / search and add  enter focus main pane  1 2 3 tabs  ctrl+x stop  P pipeline page …
+
+=== screen: picker + architecture · pr:103 ===
+prt · acme/portal · 5 PRs · 1 branch · role: frontend
+┏━ Queue · ranked ━━━━━━━━━━━━━━━━━━┓    1 Overview   2 Code  [3 Architecture]                     4 modules · 1 touched
+┃ ── NEEDS YOU (3) ──────────────── ┃ 2 modules · 1 edge                                  #103 · modules touched + 1 hop
+┃   ▮▮▮▮ #101 feat(web): cached us… ┃ ┌─ Module graph · depth 1 ─────────────────────┐ ┌─ Per module ──────────────────┐
+┃        ⚠5 breaking · 26 eyes · ~… ┃ │                                              │ │ module   units risk tests you │
+┃   ▮▮▮▯ #104 build(deps): bump th… ┃ │            ┌────────────────────┐            │ │ s/billi…     7    3     ✗     │
+┃        ~5m · CI ✗                 ┃ │            │ server/cmd/api     │            │ └───────────────────────────────┘
+┃ ▸ ▮▮▯▯ #103 chore(billing): remo… ┃ │            │ 1 file             │            │ ┌─ Contracts crossing edges ────┐
+┃        ⚠1 breaking · 1 eyes · ~1… ┃ │            └──────────┬─────────┘            │ │ ⚠ s/billing → s/api           │
+┃        why: asked you · risk · b… ┃ │                       │                      │ │   WriteLegacyCSV · breaking   │
+┃ ── YOURS (1) ──────────────────── ┃ │                       ▼ ⚠ WriteLegacyCSV ·…  │ └───────────────────────────────┘
+┃   ▮▮▮▯ #102 refactor(web): renam… ┃ │            ┏━━━━━━━━━━━━━━━━━━━━┓            │ ┌─ Net effect ──────────────────┐
+┃        CI … · 5d                  ┃ │            ┃ ● …nternal/billing ┃            │ │ no import changes             │
+┃ ── BRANCHES (1) ───────────────── ┃ │            ┃ 1 eyes · r3 · ✗    ┃            │ └───────────────────────────────┘
+┃   ▮▮▯▯ 05-spike-dark-mode         ┃ │            ┗━━━━━━━━━━━━━━━━━━━━┛            │ ┌─ Legend ──────────────────────┐
+┃        spike .69 · 2 unpushed · … ┃ │                                              │ │ ● changed  ★ yours  ? unsure  │
+┃ ── INVOLVED (1) ───────────────── ┃ │                                              │ │ + new module / edge           │
+┃   ▮▮▮▮ #106 feat(server): user p… ┃ │                                              │ │ ✕ ╌ removed  ── unchanged     │
+┃        ⚠4 breaking · 10 eyes · ~… ┃ │                                              │ │ □ eyes  □ skim  □ skip (box)  │
+┃ ── ADDED (0) ──────────────────── ┃ │                                              │ │ r = max risk  ✗ untested      │
+┃                                   ┃ │                                              │ └───────────────────────────────┘
+┃                                   ┃ │                                              │  Graph from import analysis.     
+┃                                   ┃ │                                              │                                  
+┃                                   ┃ │                                              │                                  
+┃                                   ┃ │                                              │                                  
+┃                                   ┃ │                                              │                                  
+┃                                   ┃ │                                              │                                  
+┃ / search  s sort: urgency ▾       ┃ │                                              │                                  
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ └──────────────────────────────────────────────┘                                  
+j/k move  space select  / search and add  enter focus main pane  1 2 3 tabs  ctrl+x stop  P pipeline page …
+
+=== screen: picker + code-ai-draft · pr:103 ===
+prt · acme/portal · 5 PRs · 1 branch · role: frontend
+┏━ Queue · ranked ━━━━━━━━━━━━━━━━━━┓    1 Overview  [2 Code]  3 Architecture                            #103 · 7 chunks
+┃ ── NEEDS YOU (3) ──────────────── ┃ jumped to server/internal/billing/legacy.go:old L37                               
+┃   ▮▮▮▮ #101 feat(web): cached us… ┃ ┌─ Files · by attention ──┐ ┌─ server/internal/billing/legacy.go  +0 −57  (not… ─┐
+┃        ⚠5 breaking · 26 eyes · ~… ┃ │── not yours ────────────│ │@@ 34  deleted · refactor · behaviour ✓ .71         │
+┃   ▮▮▮▯ #104 build(deps): bump th… ┃ │▸ …/legacy.go        ▒□█□│ │       ⚠ breaking .75 · b1 · tests ✗ · money        │
+┃        ~5m · CI ✗                 ┃ │  …/billing/invoice.go  ▒│ │       risk 3 · eyes                                │
+┃ ▸ ▮▮▯▯ #103 chore(billing): remo… ┃ │  …/billing/tax.go     ▒▒│ │  old L34–53 · +0 −20 · func WriteLegacyCSV(w io.Wr…│
+┃        ⚠1 breaking · 1 eyes · ~1… ┃ │                         │ │  34    - // WriteLegacyCSV writes invoices in the …│
+┃        why: asked you · risk · b… ┃ │                         │ │  35    - //                                        │
+┃ ── YOURS (1) ──────────────────── ┃ │                         │ │  36    - // Deprecated: see LegacyExport.          │
+┃   ▮▮▮▯ #102 refactor(web): renam… ┃ │                         │ │ ▸37    - func WriteLegacyCSV(w io.Writer, invs []I…│
+┃        CI … · 5d                  ┃ │                         │ │  ╭─ ai-draft · low ───────────────────────────────╮│
+┃ ── BRANCHES (1) ───────────────── ┃ │                         │ │  │ **low** WriteLegacyCSV is exported, so any     ││
+┃   ▮▮▯▯ 05-spike-dark-mode         ┃ │                         │ │  │ package under server/ (for example a CLI or    ││
+┃        spike .69 · 2 unpushed · … ┃ │                         │ │  │ cron job, not only HTTP routes) could still    ││
+┃ ── INVOLVED (1) ───────────────── ┃ │                         │ │  │ import it; the deprecation note only says no   ││
+┃   ▮▮▮▮ #106 feat(server): user p… ┃ │                         │ │  │ route serves it.                               ││
+┃        ⚠4 breaking · 10 eyes · ~… ┃ │                         │ │  │                                                ││
+┃ ── ADDED (0) ──────────────────── ┃ │                         │ │  │ Suggested fix: Confirm with a repo-wide search ││
+┃                                   ┃ │                         │ │  │ (e.g. grep -r WriteLegacyCSV server/) and a    ││
+┃                                   ┃ │                         │ │  │ full go build ./... that nothing outside       ││
+┃                                   ┃ │                         │ │  │ billing references it.                         ││
+┃                                   ┃ │                         │ │  │ a accept · d dismiss · ! override              ││
+┃                                   ┃ │                         │ │  ╰────────────────────────────────────────────────╯│
+┃                                   ┃ │                         │ │  38    -     cw := csv.NewWriter(w)                │
+┃                                   ┃ │                         │ │  39    -     cw.Comma = ';'                        │
+┃ / search  s sort: urgency ▾       ┃ └─────────────────────────┘ └────────────────────────────────────────────────────┘
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ Comments 1 · 0 drafts · 0 pending · 0 posted · 1 ai · 0 threads (0 open) (tab foc…
+j/k move  space select  / search and add  enter focus main pane  1 2 3 tabs  ctrl+x stop  P pipeline page …
+
+=== screen: picker + overview · pr:102 ===
+prt · acme/portal · 5 PRs · 1 branch · role: frontend
+┏━ Queue · ranked ━━━━━━━━━━━━━━━━━━┓   [1 Overview]  2 Code   3 Architecture   @fredric · 5d · main ← 02-rename-fetchj…
+┃ ── NEEDS YOU (3) ──────────────── ┃ #102 refactor(web): rename fetchJSON to requestJSON · fredric · 5d · main ← 02-re…
+┃   ▮▮▮▮ #101 feat(web): cached us… ┃ Renames fetchJSON to requestJSON across 19 files; flagged as breaking in          
+┃        ⚠5 breaking · 26 eyes · ~… ┃ api/client.ts, so check billing.ts and notifications.ts before approving.         
+┃   ▮▮▮▯ #104 build(deps): bump th… ┃ ai·from labels                                                                    
+┃        ~5m · CI ✗                 ┃ rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrt                                          
+┃   ▮▮▯▯ #103 chore(billing): remo… ┃ r refactor 97% · t test 3%                                                        
+┃        ⚠1 breaking · 1 eyes · ~1… ┃ +56 −56 → ~76 lines that matter · ~10 min · 3 of 50 chunks need eyes              
+┃ ── YOURS (1) ──────────────────── ┃                                                                                   
+┃ ▸ ▮▮▮▯ #102 refactor(web): renam… ┃ ┌─ Headlines · contract surface ─────────────────────────────────────────────────┐
+┃        CI … · 5d                  ┃ │   ⚠ breaking  (top level)  web/src/api/index.ts:1  .92                         │
+┃ ── BRANCHES (1) ───────────────── ┃ │   ⚠ breaking  requestJSON  web/src/api/client.ts:39  .88                       │
+┃   ▮▮▯▯ 05-spike-dark-mode         ┃ │   ⚠ breaking  (top level)  web/src/api/client.ts:1  .75                        │
+┃        spike .69 · 2 unpushed · … ┃ └────────────────────────────────────────────────────────────────────────────────┘
+┃ ── INVOLVED (1) ───────────────── ┃ ┌─ Check before approving · hot spots ───────────────────────────────────────────┐
+┃   ▮▮▮▮ #106 feat(server): user p… ┃ │ 1 web/src/api/billing.ts:17  money, crash  3.5                                 │
+┃        ⚠4 breaking · 10 eyes · ~… ┃ │ 2 web/src/api/notifications.ts:15  data-write, crash  3.3                      │
+┃ ── ADDED (0) ──────────────────── ┃ │ 3 web/src/components/NotificationBell.tsx:12  data-write, crash  2.8           │
+┃                                   ┃ └────────────────────────────────────────────────────────────────────────────────┘
+┃                                   ┃ ┌─ API endpoints ────────────────────────────────────────────────────────────────┐
+┃                                   ┃ │ no endpoint changes                                                            │
+┃                                   ┃ └────────────────────────────────────────────────────────────────────────────────┘
+┃                                   ┃ ┌─ Database ─────────────────────────────────────────────────────────────────────┐
+┃                                   ┃ │ no schema or migration changes                                                 │
+┃                                   ┃ └────────────────────────────────────────────────────────────────────────────────┘
+┃                                   ┃ ┌─ Feature flags & config ───────────────────────────────────────────────────────┐
+┃ / search  s sort: urgency ▾       ┃ │ no flag, env or config changes                                                 │
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ └────────────────────────────────────────────────────────────────────────────────┘
+j/k move  space select  / search and add  enter focus main pane  1 2 3 tabs  ctrl+x stop  P pipeline page …
+
+=== screen: picker + code · pr:102 ===
+prt · acme/portal · 5 PRs · 1 branch · role: frontend
+┏━ Queue · ranked ━━━━━━━━━━━━━━━━━━┓    1 Overview  [2 Code]  3 Architecture                           #102 · 50 chunks
+┃ ── NEEDS YOU (3) ──────────────── ┃ ┌─ Files · by attention ──┐ ┌─ web/src/api/client.ts  +5 −5 ────── file 1 of 20 ─┐
+┃   ▮▮▮▮ #101 feat(web): cached us… ┃ │▸ …/api/client.ts   □□□□□│ │5 units hidden by filters (f)                       │
+┃        ⚠5 breaking · 26 eyes · ~… ┃ │  web/src/api/index.ts  □│ │                                                    │
+┃   ▮▮▮▯ #104 build(deps): bump th… ┃ │  …/client.test.ts     □▒│ │                                                    │
+┃        ~5m · CI ✗                 ┃ │  …/users.test.ts      □□│ │                                                    │
+┃   ▮▮▯▯ #103 chore(billing): remo… ┃ │  …/api/billing.ts    □□□│ │                                                    │
+┃        ⚠1 breaking · 1 eyes · ~1… ┃ │  …/src/api/health.ts  □□│ │                                                    │
+┃ ── YOURS (1) ──────────────────── ┃ │  …/notifications.ts  □□▒│ │                                                    │
+┃ ▸ ▮▮▮▯ #102 refactor(web): renam… ┃ │  web/src/api/orgs.ts □□□│ │                                                    │
+┃        CI … · 5d                  ┃ │  …/src/api/search.ts  □□│ │                                                    │
+┃ ── BRANCHES (1) ───────────────── ┃ │  …/api/settings.ts   □▒□│ │                                                    │
+┃   ▮▮▯▯ 05-spike-dark-mode         ┃ │  …/src/api/teams.ts □□□□│ │                                                    │
+┃        spike .69 · 2 unpushed · … ┃ │  …/src/api/users.ts  □□▒│ │                                                    │
+┃ ── INVOLVED (1) ───────────────── ┃ │  …/AuditLog.tsx       □□│ │                                                    │
+┃   ▮▮▮▮ #106 feat(server): user p… ┃ │  …/InvoiceTable.tsx   □□│ │                                                    │
+┃        ⚠4 breaking · 10 eyes · ~… ┃ │  …otificationBell.tsx □□│ │                                                    │
+┃ ── ADDED (0) ──────────────────── ┃ │  …/SettingsForm.tsx   □□│ │                                                    │
+┃                                   ┃ │  …/StatusFooter.tsx   □□│ │                                                    │
+┃                                   ┃ │  …/TeamPanel.tsx      □□│ │                                                    │
+┃                                   ┃ │  …/hooks/useFetch.ts □▒□│ │                                                    │
+┃                                   ┃ │  …/usePolling.ts      □□│ │                                                    │
+┃                                   ┃ │                         │ │                                                    │
+┃                                   ┃ │                         │ │                                                    │
+┃                                   ┃ │                         │ │                                                    │
+┃                                   ┃ │                         │ │                                                    │
+┃ / search  s sort: urgency ▾       ┃ └─────────────────────────┘ └────────────────────────────────────────────────────┘
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ Comments 1 · 0 drafts · 0 pending · 0 posted · 1 ai · 0 threads (0 open) (tab foc…
+j/k move  space select  / search and add  enter focus main pane  1 2 3 tabs  ctrl+x stop  P pipeline page …
+
+=== screen: picker + code-by-change · pr:102 ===
+prt · acme/portal · 5 PRs · 1 branch · role: frontend
+┏━ Queue · ranked ━━━━━━━━━━━━━━━━━━┓    1 Overview  [2 Code]  3 Architecture                           #102 · 50 chunks
+┃ ── NEEDS YOU (3) ──────────────── ┃ ┌─ Change groups · revi… ─┐ ┌─ Update every import and call site (19 files)  1… ─┐
+┃   ▮▮▮▮ #101 feat(web): cached us… ┃ │by: file [change] · inte…│ │Update every import and call site (19 files)        │
+┃        ⚠5 breaking · 26 eyes · ~… ┃ │▸ 1 Update every import …│ │b2 .52 · risk 4 · error_path ×2 · data_write ×3     │
+┃   ▮▮▮▯ #104 build(deps): bump th… ┃ │  2 ai·Rename fetchJSON …│ │money · tests: 17 of 17 units · ⚠ breaking 3        │
+┃        ~5m · CI ✗                 ┃ │  3 Rename `fetchJSON` t…│ │? 16 unsure · routed: deep · security · tests       │
+┃   ▮▮▯▯ #103 chore(billing): remo… ┃ │  4 ai·Switch to request…│ │routing: if risk >= 4 || tag.auth || tag.money || t…│
+┃        ⚠1 breaking · 1 eyes · ~1… ┃ │  5 Update every import …│ │context: callers, tests · no context found: types   │
+┃ ── YOURS (1) ──────────────────── ┃ │  6 Rename `fetchJSON` t…│ │                                                    │
+┃ ▸ ▮▮▮▯ #102 refactor(web): renam… ┃ │  7 ‹markRead ×3› — 3 un…│ │why these belong together                           │
+┃        CI … · 5d                  ┃ │  8 ‹teams.ts ×3› — 3 un…│ │  imports client.test.ts → client.ts requestJSON    │
+┃ ── BRANCHES (1) ───────────────── ┃ │── ungrouped (5) ────────│ │  tests  client.test.ts → client.ts requestJSON     │
+┃   ▮▮▯▯ 05-spike-dark-mode         ┃ │  9 ‹downloadInvoiceUrl›…│ │  calls  client.test.ts → client.ts requestJSON     │
+┃        spike .69 · 2 unpushed · … ┃ │  10 ‹client.ts› — 1 uni…│ │  tests  client.test.ts → client.ts requestJSON     │
+┃ ── INVOLVED (1) ───────────────── ┃ │  11 ‹ping› — 1 unit hid…│ │  tests  users.test.ts → client.ts requestJSON      │
+┃   ▮▮▮▮ #106 feat(server): user p… ┃ │  12 ‹addMember› — 1 uni…│ │  calls  billing.ts listInvoices → client.ts reques…│
+┃        ⚠4 breaking · 10 eyes · ~… ┃ │  13 ‹usePolling› — 1 un…│ │  calls  notifications.ts listNotifications → clien…│
+┃ ── ADDED (0) ──────────────────── ┃ │                         │ │  calls  orgs.ts renameOrg → client.ts requestJSON  │
+┃                                   ┃ │                         │ │  calls  search.ts search → client.ts requestJSON   │
+┃                                   ┃ │                         │ │  calls  settings.ts saveSettings → client.ts reque…│
+┃                                   ┃ │                         │ │  calls  teams.ts listTeams → client.ts requestJSON │
+┃                                   ┃ │                         │ │  calls  teams.ts teamMembers → client.ts requestJS…│
+┃                                   ┃ │                         │ │  imports users.ts → client.ts requestJSON          │
+┃                                   ┃ │                         │ │  calls  AuditLog.tsx AuditLog → client.ts requestJ…│
+┃                                   ┃ │                         │ │  calls  InvoiceTable.tsx InvoiceTable → client.ts …│
+┃                                   ┃ │                         │ │  calls  SettingsForm.tsx SettingsForm → client.ts …│
+┃ / search  s sort: urgency ▾       ┃ └─────────────────────────┘ └────────────────────────────────────────────────────┘
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ Comments 1 · 0 drafts · 0 pending · 0 posted · 1 ai · 0 threads (0 open) (tab foc…
+j/k move  space select  / search and add  enter focus main pane  1 2 3 tabs  ctrl+x stop  P pipeline page …
+
+=== screen: picker + code-split · pr:102 ===
+prt · acme/portal · 5 PRs · 1 branch · role: frontend
+┏━ Queue · ranked ━━━━━━━━━━━━━━━━━━┓    1 Overview  [2 Code]  3 Architecture                           #102 · 50 chunks
+┃ ── NEEDS YOU (3) ──────────────── ┃ side-by-side needs a ≥140-column terminal — showing unified                       
+┃   ▮▮▮▮ #101 feat(web): cached us… ┃ ┌─ Files · by attention ──┐ ┌─ web/src/api/client.ts  +5 −5 ────── file 1 of 20 ─┐
+┃        ⚠5 breaking · 26 eyes · ~… ┃ │▸ …/api/client.ts   □□□□□│ │5 units hidden by filters (f)                       │
+┃   ▮▮▮▯ #104 build(deps): bump th… ┃ │  web/src/api/index.ts  □│ │                                                    │
+┃        ~5m · CI ✗                 ┃ │  …/client.test.ts     □▒│ │                                                    │
+┃   ▮▮▯▯ #103 chore(billing): remo… ┃ │  …/users.test.ts      □□│ │                                                    │
+┃        ⚠1 breaking · 1 eyes · ~1… ┃ │  …/api/billing.ts    □□□│ │                                                    │
+┃ ── YOURS (1) ──────────────────── ┃ │  …/src/api/health.ts  □□│ │                                                    │
+┃ ▸ ▮▮▮▯ #102 refactor(web): renam… ┃ │  …/notifications.ts  □□▒│ │                                                    │
+┃        CI … · 5d                  ┃ │  web/src/api/orgs.ts □□□│ │                                                    │
+┃ ── BRANCHES (1) ───────────────── ┃ │  …/src/api/search.ts  □□│ │                                                    │
+┃   ▮▮▯▯ 05-spike-dark-mode         ┃ │  …/api/settings.ts   □▒□│ │                                                    │
+┃        spike .69 · 2 unpushed · … ┃ │  …/src/api/teams.ts □□□□│ │                                                    │
+┃ ── INVOLVED (1) ───────────────── ┃ │  …/src/api/users.ts  □□▒│ │                                                    │
+┃   ▮▮▮▮ #106 feat(server): user p… ┃ │  …/AuditLog.tsx       □□│ │                                                    │
+┃        ⚠4 breaking · 10 eyes · ~… ┃ │  …/InvoiceTable.tsx   □□│ │                                                    │
+┃ ── ADDED (0) ──────────────────── ┃ │  …otificationBell.tsx □□│ │                                                    │
+┃                                   ┃ │  …/SettingsForm.tsx   □□│ │                                                    │
+┃                                   ┃ │  …/StatusFooter.tsx   □□│ │                                                    │
+┃                                   ┃ │  …/TeamPanel.tsx      □□│ │                                                    │
+┃                                   ┃ │  …/hooks/useFetch.ts □▒□│ │                                                    │
+┃                                   ┃ │  …/usePolling.ts      □□│ │                                                    │
+┃                                   ┃ │                         │ │                                                    │
+┃                                   ┃ │                         │ │                                                    │
+┃                                   ┃ │                         │ │                                                    │
+┃ / search  s sort: urgency ▾       ┃ └─────────────────────────┘ └────────────────────────────────────────────────────┘
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ Comments 1 · 0 drafts · 0 pending · 0 posted · 1 ai · 0 threads (0 open) (tab foc…
+side-by-side needs a 140-column terminal (pane has 82) — showing unified
+
+=== screen: picker + pipeline · pr:102 ===
+prt · acme/portal · 5 PRs · 1 branch · role: frontend
+┏━ Queue · ranked ━━━━━━━━━━━━━━━━━━┓    1 Overview   2 Code   3 Architecture  [P Pipeline]                         #102
+┃ ── NEEDS YOU (3) ──────────────── ┃ prt · #102 refactor(web): rename fetchJSON to requestJSON · pipeline              
+┃   ▮▮▮▮ #101 feat(web): cached us… ┃ ✓ done · ready                                                                    
+┃        ⚠5 breaking · 26 eyes · ~… ┃ Stages  run 10-13 12:00:00 · fetch ✓ 0 ms                                         
+┃   ▮▮▮▯ #104 build(deps): bump th… ┃ ┌────────────────┐   ┌────────────────┐   ┌────────────────┐   ┌────────────────┐ 
+┃        ~5m · CI ✗                 ┃ │✓ parse         │   │✓ link          │   │✓ embed         │   │✓ jev           │ 
+┃   ▮▮▯▯ #103 chore(billing): remo… ┃ │20→50 · 0 ms    │ → │50→53 · 0 ms    │ → │50→139 · 0 ms   │ → │50→1503 · 0 ms  │ 
+┃        ⚠1 breaking · 1 eyes · ~1… ┃ └────────────────┘   └────────────────┘   └────────────────┘   └────────────────┘ 
+┃ ── YOURS (1) ──────────────────── ┃ ┌────────────────┐   ┌────────────────┐   ┌────────────────┐   ┌────────────────┐ 
+┃ ▸ ▮▮▮▯ #102 refactor(web): renam… ┃ │✓ cluster       │   │✓ route         │   │✓ review        │   │✓ agg           │ 
+┃        CI … · 5d                  ┃ │50→13 · 0 ms    │ → │13→9 · 0 ms     │ → │9→9 · 0 ms      │ → │50→1386 · 0 ms  │ 
+┃ ── BRANCHES (1) ───────────────── ┃ └────────────────┘   └────────────────┘   └────────────────┘   └────────────────┘ 
+┃   ▮▮▯▯ 05-spike-dark-mode         ┃                                                                                   
+┃        spike .69 · 2 unpushed · … ┃ ┏━ Routing · one call per group ━━━━━━━━━━━━━━━━━━ D deep · s skip · c call log ━┓
+┃ ── INVOLVED (1) ───────────────── ┃ ┃    # group                  tier            status           time find    cost ┃
+┃   ▮▮▮▮ #106 feat(server): user p… ┃ ┃ ▸  1 Update every import a… deep            ✓ done          4.9 s    0 $0.0418 ┃
+┃        ⚠4 breaking · 10 eyes · ~… ┃ ┃        if risk >= 4 || tag.auth || tag.money || tag.async → deep · ctx caller… ┃
+┃ ── ADDED (0) ──────────────────── ┃ ┃    2 ai·Rename fetchJSON to deep            ✓ done          5.0 s    0 $0.0064 ┃
+┃                                   ┃ ┃        if risk >= 4 || tag.auth || tag.money || tag.async → deep · ctx caller… ┃
+┃                                   ┃ ┃    3 Rename `fetchJSON` to… deep            ✓ done          4.6 s    1 $0.0143 ┃
+┃                                   ┃ ┃        if risk >= 4 || tag.auth || tag.money || tag.async → deep · ctx types,… ┃
+┃                                   ┃ ┃    4 ai·Switch to requestJ… deep            ✓ done          1.7 s    0 $0.0067 ┃
+┃                                   ┃ ┃        if risk >= 4 || tag.auth || tag.money || tag.async → deep · ctx caller… ┃
+┃                                   ┃ ┃    5 Update every import a… none            – skipped           —    —       — ┃
+┃                                   ┃ ┃        if mechanical || kind in [formatting, moved, generated, dependency] → … ┃
+┃                                   ┃ ┃    6 Rename `fetchJSON` to… none            – skipped           —    —       — ┃
+┃ / search  s sort: urgency ▾       ┃ ┃        if mechanical || kind in [formatting, moved, generated, dependency] → … ┃
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ ┃    7 ‹markRead ×3›          none            – skipped           —    —       — ┃
+j/k move  space select  / search and add  enter focus main pane  1 2 3 tabs  ctrl+x stop  P pipeline page …
+
+=== screen: picker + architecture · pr:102 ===
+prt · acme/portal · 5 PRs · 1 branch · role: frontend
+┏━ Queue · ranked ━━━━━━━━━━━━━━━━━━┓    1 Overview   2 Code  [3 Architecture]                     6 modules · 4 touched
+┃ ── NEEDS YOU (3) ──────────────── ┃ 6 modules · 7 edges                                 #102 · modules touched + 1 hop
+┃   ▮▮▮▮ #101 feat(web): cached us… ┃ ┌─ Module graph · depth 1 ─────────────────────┐ ┌─ Per module ──────────────────┐
+┃        ⚠5 breaking · 26 eyes · ~… ┃ │ ── hop 0 ─────────────────────────────────── │ │ module   units risk tests you │
+┃   ▮▮▮▯ #104 build(deps): bump th… ┃ │ ▸ ● ★ web/src/api                            │ │ w/api       29    4     ?   ★ │
+┃        ~5m · CI ✗                 ┃ │     3 eyes · r4 · ? · ⚠3                     │ │ w/__tes…     4    2     ?   ★ │
+┃   ▮▮▯▯ #103 chore(billing): remo… ┃ │   ● ★ web/src/__tests__                      │ │ w/compo…    12    4     ?   ★ │
+┃        ⚠1 breaking · 1 eyes · ~1… ┃ │     skim · r2 · ? · ⚠2                       │ │ w/hooks      5    4     ?   ★ │
+┃ ── YOURS (1) ──────────────────── ┃ │   ● ★ web/src/components                     │ └───────────────────────────────┘
+┃ ▸ ▮▮▮▯ #102 refactor(web): renam… ┃ │     skim · r4 · ?                            │ ┌─ Contracts crossing edges ────┐
+┃        CI … · 5d                  ┃ │   ● ★ web/src/hooks                          │ │ ⚠ w/api → w/__tests__, w/com… │
+┃ ── BRANCHES (1) ───────────────── ┃ │     skim · r4 · ?                            │ │   web/src/api/index.ts · bre… │
+┃   ▮▮▯▯ 05-spike-dark-mode         ┃ │ ── hop 1 ─────────────────────────────────── │ │   requestJSON · breaking      │
+┃        spike .69 · 2 unpushed · … ┃ │   web/src                                    │ │   web/src/api/client.ts · br… │
+┃ ── INVOLVED (1) ───────────────── ┃ │     1 file                                   │ └───────────────────────────────┘
+┃   ▮▮▮▮ #106 feat(server): user p… ┃ │   web/src/utils                              │ ┌─ Net effect ──────────────────┐
+┃        ⚠4 breaking · 10 eyes · ~… ┃ │     1 file                                   │ │ no import changes             │
+┃ ── ADDED (0) ──────────────────── ┃ │ ── edges ─────────────────────────────────── │ └───────────────────────────────┘
+┃                                   ┃ │   web/src → web/src/components · 7 imports   │ ┌─ Legend ──────────────────────┐
+┃                                   ┃ │   web/src/__tests__ → web/src/api · 3 impor… │ │ ● changed  ★ yours  ? unsure  │
+┃                                   ┃ │   web/src/api → web/src/utils · 1 import     │ │ + new module / edge           │
+┃                                   ┃ │   web/src/components → web/src/api · 15 imp… │ │ ✕ ╌ removed  ── unchanged     │
+┃                                   ┃ │   web/src/components → web/src/hooks · 3 im… │ │ □ eyes  □ skim  □ skip (box)  │
+┃                                   ┃ │   web/src/components → web/src/utils · 4 im… │ │ r = max risk  ✗ untested      │
+┃                                   ┃ │   web/src/hooks → web/src/api · 4 imports ·… │ └───────────────────────────────┘
+┃                                   ┃ │                                              │  Graph from import analysis.     
+┃ / search  s sort: urgency ▾       ┃ │                                              │                                  
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ └──────────────────────────────────────────────┘                                  
+j/k move  space select  / search and add  enter focus main pane  1 2 3 tabs  ctrl+x stop  P pipeline page …
+
+=== screen: picker + code-ai-draft · pr:102 ===
+prt · acme/portal · 5 PRs · 1 branch · role: frontend
+┏━ Queue · ranked ━━━━━━━━━━━━━━━━━━┓    1 Overview  [2 Code]  3 Architecture                           #102 · 50 chunks
+┃ ── NEEDS YOU (3) ──────────────── ┃ jumped to web/src/api/index.ts:L1                                                 
+┃   ▮▮▮▮ #101 feat(web): cached us… ┃ ┌─ Files · by attention ──┐ ┌─ web/src/api/index.ts  +1 −1 ─────── file 2 of 20 ─┐
+┃        ⚠5 breaking · 26 eyes · ~… ┃ │  …/api/client.ts   □□□□□│ │@@ 1  modified · refactor · behaviour ✗ .88         │
+┃   ▮▮▮▯ #104 build(deps): bump th… ┃ │▸ web/src/api/index.ts  □│ │      ⚠ breaking .92 · b2 · tests ✓ · risk 4 · eyes │
+┃        ~5m · CI ✗                 ┃ │  …/client.test.ts     □▒│ │      ?                                             │
+┃   ▮▮▯▯ #103 chore(billing): remo… ┃ │  …/users.test.ts      □□│ │  L1–4 · +1 −1                                      │
+┃        ⚠1 breaking · 1 eyes · ~1… ┃ │  …/api/billing.ts    □□□│ │  1   - export { API_BASE, ApiError, fetchJSON, get…│
+┃ ── YOURS (1) ──────────────────── ┃ │  …/src/api/health.ts  □□│ │◆▸  1 + export { API_BASE, ApiError, requestJSON, g…│
+┃ ▸ ▮▮▮▯ #102 refactor(web): renam… ┃ │  …/notifications.ts  □□▒│ │  ╭─ ai-draft · low ───────────────────────────────╮│
+┃        CI … · 5d                  ┃ │  web/src/api/orgs.ts □□□│ │  │ **low** The barrel no longer exports           ││
+┃ ── BRANCHES (1) ───────────────── ┃ │  …/src/api/search.ts  □□│ │  │ fetchJSON, so any consumer outside the 19      ││
+┃   ▮▮▯▯ 05-spike-dark-mode         ┃ │  …/api/settings.ts   □▒□│ │  │ updated files (another package, an open        ││
+┃        spike .69 · 2 unpushed · … ┃ │  …/src/api/teams.ts □□□□│ │  │ branch, a test helper) will fail to compile,   ││
+┃ ── INVOLVED (1) ───────────────── ┃ │  …/src/api/users.ts  □□▒│ │  │ and there is no transition path.               ││
+┃   ▮▮▮▮ #106 feat(server): user p… ┃ │  …/AuditLog.tsx       □□│ │  │                                                ││
+┃        ⚠4 breaking · 10 eyes · ~… ┃ │  …/InvoiceTable.tsx   □□│ │  │ Suggested fix: Keep a temporary deprecated     ││
+┃ ── ADDED (0) ──────────────────── ┃ │  …otificationBell.tsx □□│ │  │ alias, e.g. /** @deprecated use requestJSON */ ││
+┃                                   ┃ │  …/SettingsForm.tsx   □□│ │  │ export const fetchJSON = requestJSON; in       ││
+┃                                   ┃ │  …/StatusFooter.tsx   □□│ │  │ client.ts, re-export it from the barrel, and   ││
+┃                                   ┃ │  …/TeamPanel.tsx      □□│ │  │ remove it in a later release.                  ││
+┃                                   ┃ │  …/hooks/useFetch.ts □▒□│ │  │ a accept · d dismiss · ! override              ││
+┃                                   ┃ │  …/usePolling.ts      □□│ │  ╰────────────────────────────────────────────────╯│
+┃                                   ┃ │                         │ │  2 2   export type { RequestOptions, User } from "…│
+┃                                   ┃ │                         │ │  3 3   export * from "./users";                    │
+┃                                   ┃ │                         │ │  4 4   export * from "./teams";                    │
+┃ / search  s sort: urgency ▾       ┃ └─────────────────────────┘ └────────────────────────────────────────────────────┘
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ Comments 1 · 0 drafts · 0 pending · 0 posted · 1 ai · 0 threads (0 open) (tab foc…
+j/k move  space select  / search and add  enter focus main pane  1 2 3 tabs  ctrl+x stop  P pipeline page …
+
+=== screen: picker + overview · branch:05-spike-dark-mode ===
+prt · acme/portal · 5 PRs · 1 branch · role: frontend
+┏━ Queue · ranked ━━━━━━━━━━━━━━━━━━┓   [1 Overview]  2 Code   3 Architecture   @Fredric · 2d · main ← 05-spike-dark-mo…
+┃ ── NEEDS YOU (3) ──────────────── ┃ 05-spike-dark-mode — wip: theme toggle in header · Fredric · 2d · main ← 05-spike…
+┃   ▮▮▮▮ #101 feat(web): cached us… ┃ Feature PR adding +30 lines across 5 units; check ThemeToggle's unguarded         
+┃        ⚠5 breaking · 26 eyes · ~… ┃ localStorage.getItem and an App.tsx crash risk, as 3 units lack descriptions.     
+┃   ▮▮▮▯ #104 build(deps): bump th… ┃ ai·from labels                                                                    
+┃        ~5m · CI ✗                 ┃ ffffffffffffffffffffffffffffffffffffffff                                          
+┃   ▮▮▯▯ #103 chore(billing): remo… ┃ f feature 100%                                                                    
+┃        ⚠1 breaking · 1 eyes · ~1… ┃ +30 −0 → ~30 lines that matter · ~9 min · 1 of 5 chunks need eyes                 
+┃ ── YOURS (1) ──────────────────── ┃                                                                                   
+┃   ▮▮▮▯ #102 refactor(web): renam… ┃ ┌─ Branch state ─────────────────────────────────────────────────────────────────┐
+┃        CI … · 5d                  ┃ │ spike .69                                                                      │
+┃ ── BRANCHES (1) ───────────────── ┃ │ spike .69 · WIP .31 · ready for PR .00 · abandoned .00 · superseded .00        │
+┃ ▸ ▮▮▯▯ 05-spike-dark-mode         ┃ │ 2 unpushed commits                                                             │
+┃        spike .69 · 2 unpushed · … ┃ │   ecb485d wip: theme toggle in header                                          │
+┃ ── INVOLVED (1) ───────────────── ┃ │   f76eaa1 wip: dark palette                                                    │
+┃   ▮▮▮▮ #106 feat(server): user p… ┃ │ Suggested PR title: Add dark theme  ai·from group names                        │
+┃        ⚠4 breaking · 10 eyes · ~… ┃ └────────────────────────────────────────────────────────────────────────────────┘
+┃ ── ADDED (0) ──────────────────── ┃ ┌─ Headlines · contract surface ─────────────────────────────────────────────────┐
+┃                                   ┃ │ no contract changes                                                            │
+┃                                   ┃ └────────────────────────────────────────────────────────────────────────────────┘
+┃                                   ┃ ┌─ API endpoints ────────────────────────────────────────────────────────────────┐
+┃                                   ┃ │ no endpoint changes                                                            │
+┃                                   ┃ └────────────────────────────────────────────────────────────────────────────────┘
+┃                                   ┃ ┌─ Database ─────────────────────────────────────────────────────────────────────┐
+┃                                   ┃ │ no schema or migration changes                                                 │
+┃                                   ┃ └────────────────────────────────────────────────────────────────────────────────┘
+┃ / search  s sort: urgency ▾       ┃ ┌─ Feature flags & config ───────────────────────────────────────────────────────┐
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ │ no flag, env or config changes                                                 │
+j/k move  space select  / search and add  enter focus main pane  1 2 3 tabs  ctrl+x stop  P pipeline page …
+
+=== screen: picker + code · branch:05-spike-dark-mode ===
+prt · acme/portal · 5 PRs · 1 branch · role: frontend
+┏━ Queue · ranked ━━━━━━━━━━━━━━━━━━┓    1 Overview  [2 Code]  3 Architecture              05-spike-dark-mode · 5 chunks
+┃ ── NEEDS YOU (3) ──────────────── ┃ ┌─ Files · by attention ──┐ ┌─ web/src/components/ThemeToggle.tsx  +19 −0 ───────┐
+┃   ▮▮▮▮ #101 feat(web): cached us… ┃ │▸ …/ThemeToggle.tsx    ▒□│ │@@ 5  added · feature · behaviour ✓ .93             │
+┃        ⚠5 breaking · 26 eyes · ~… ┃ │  web/src/App.tsx      □▒│ │      undocumented · tests ✗ · data_write · risk 2  │
+┃   ▮▮▮▯ #104 build(deps): bump th… ┃ │  …/styles/theme.css    □│ │      eyes · ?                                      │
+┃        ~5m · CI ✗                 ┃ │                         │ │  L5–19 · +15 −0 · export function ThemeToggle()    │
+┃   ▮▮▯▯ #103 chore(billing): remo… ┃ │                         │ │⋯▸    5 + // TODO: respect prefers-color-scheme bef…│
+┃        ⚠1 breaking · 1 eyes · ~1… ┃ │                         │ │·     6 + export function ThemeToggle() {           │
+┃ ── YOURS (1) ──────────────────── ┃ │                         │ │◆     7 +   const [theme, setTheme] = useState<Them…│
+┃   ▮▮▮▯ #102 refactor(web): renam… ┃ │                         │ │  ╭─ ai-draft · medium ────────────────────────────╮│
+┃        CI … · 5d                  ┃ │                         │ │  │ **medium** localStorage.getItem is called      ││
+┃ ── BRANCHES (1) ───────────────── ┃ │                         │ │  │ unguarded during the first render, so a        ││
+┃ ▸ ▮▮▯▯ 05-spike-dark-mode         ┃ │                         │ │  │ browser with storage disabled or blocked will  ││
+┃        spike .69 · 2 unpushed · … ┃ │                         │ │  │ throw and crash the header, which renders on   ││
+┃ ── INVOLVED (1) ───────────────── ┃ │                         │ │  │ every page.                                    ││
+┃   ▮▮▮▮ #106 feat(server): user p… ┃ │                         │ │  │                                                ││
+┃        ⚠4 breaking · 10 eyes · ~… ┃ │                         │ │  │ Suggested fix: Wrap the read in try/catch and  ││
+┃ ── ADDED (0) ──────────────────── ┃ │                         │ │  │ fall back to "light"; wrap the setItem call in ││
+┃                                   ┃ │                         │ │  │ the effect the same way.                       ││
+┃                                   ┃ │                         │ │  │ a accept · d dismiss · ! override              ││
+┃                                   ┃ │                         │ │  ╰────────────────────────────────────────────────╯│
+┃                                   ┃ │                         │ │  ╭─ ai-draft · low ───────────────────────────────╮│
+┃                                   ┃ │                         │ │  │ **low** The as Theme cast does not validate    ││
+┃                                   ┃ │                         │ │  │ the stored value, so an unexpected string such ││
+┃                                   ┃ │                         │ │  │ as "blue" is written to data-theme and the     ││
+┃                                   ┃ │                         │ │  │ button icon shows the light state while the    ││
+┃ / search  s sort: urgency ▾       ┃ └─────────────────────────┘ └────────────────────────────────────────────────────┘
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ Comments 2 · 0 drafts · 0 pending · 0 posted · 2 ai · 0 threads (0 open) (tab foc…
+j/k move  space select  / search and add  enter focus main pane  1 2 3 tabs  ctrl+x stop  P pipeline page …
+
+=== screen: picker + code-by-change · branch:05-spike-dark-mode ===
+prt · acme/portal · 5 PRs · 1 branch · role: frontend
+┏━ Queue · ranked ━━━━━━━━━━━━━━━━━━┓    1 Overview  [2 Code]  3 Architecture              05-spike-dark-mode · 5 chunks
+┃ ── NEEDS YOU (3) ──────────────── ┃ ┌─ Change groups · revi… ─┐ ┌─ ai·Add dark theme  5 units · 3 files ─────────────┐
+┃   ▮▮▮▮ #101 feat(web): cached us… ┃ │by: file [change] · inte…│ │ai·Add dark theme                                   │
+┃        ⚠5 breaking · 26 eyes · ~… ┃ │▸ 1 ai·Add dark theme    │ │risk 2 · data_write · tests: 0 of 5 units           │
+┃   ▮▮▮▯ #104 build(deps): bump th… ┃ │    5u 3f · fast · 2 fin…│ │? 3 unsure · routed: fast · routing: if true → fast │
+┃        ~5m · CI ✗                 ┃ │                         │ │no context found: types                             │
+┃   ▮▮▯▯ #103 chore(billing): remo… ┃ │                         │ │ai· title written by the fast model (no description…│
+┃        ⚠1 breaking · 1 eyes · ~1… ┃ │                         │ │                                                    │
+┃ ── YOURS (1) ──────────────────── ┃ │                         │ │why these belong together                           │
+┃   ▮▮▮▯ #102 refactor(web): renam… ┃ │                         │ │  jev caller update .64 · cos .94  App.tsx → App.ts…│
+┃        CI … · 5d                  ┃ │                         │ │  jev caller update .95 · cos .90  App.tsx → ThemeT…│
+┃ ── BRANCHES (1) ───────────────── ┃ │                         │ │  imports App.tsx → ThemeToggle.tsx ThemeToggle     │
+┃ ▸ ▮▮▯▯ 05-spike-dark-mode         ┃ │                         │ │  jev caller update .99 · cos .88  App.tsx App → Th…│
+┃        spike .69 · 2 unpushed · … ┃ │                         │ │  jev caller update .99 · cos .86  App.tsx App → Th…│
+┃ ── INVOLVED (1) ───────────────── ┃ │                         │ │  jev same intent .80 · cos .77  App.tsx App → them…│
+┃   ▮▮▮▮ #106 feat(server): user p… ┃ │                         │ │  jev same intent .97 · cos .90  ThemeToggle.tsx → …│
+┃        ⚠4 breaking · 10 eyes · ~… ┃ │                         │ │  jev same intent .95 · cos .80  ThemeToggle.tsx → …│
+┃ ── ADDED (0) ──────────────────── ┃ │                         │ │  jev same intent .92 · cos .81  ThemeToggle.tsx Th…│
+┃                                   ┃ │                         │ │                                                    │
+┃                                   ┃ │                         │ │── Units · interface first ─────────────────────────│
+┃                                   ┃ │                         │ │1 web/src/components/ThemeToggle.tsx@5 caller · eyes│
+┃                                   ┃ │                         │ │@@ 5  added · feature · behaviour ✓ .93             │
+┃                                   ┃ │                         │ │      undocumented · tests ✗ · data_write · risk 2  │
+┃                                   ┃ │                         │ │      eyes · ?                                      │
+┃                                   ┃ │                         │ │  L5–19 · +15 −0 · export function ThemeToggle()    │
+┃                                   ┃ │                         │ │⋯▸    5 + // TODO: respect prefers-color-scheme bef…│
+┃ / search  s sort: urgency ▾       ┃ └─────────────────────────┘ └────────────────────────────────────────────────────┘
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ Comments 2 · 0 drafts · 0 pending · 0 posted · 2 ai · 0 threads (0 open) (tab foc…
+j/k move  space select  / search and add  enter focus main pane  1 2 3 tabs  ctrl+x stop  P pipeline page …
+
+=== screen: picker + code-split · branch:05-spike-dark-mode ===
+prt · acme/portal · 5 PRs · 1 branch · role: frontend
+┏━ Queue · ranked ━━━━━━━━━━━━━━━━━━┓    1 Overview  [2 Code]  3 Architecture              05-spike-dark-mode · 5 chunks
+┃ ── NEEDS YOU (3) ──────────────── ┃ side-by-side needs a ≥140-column terminal — showing unified                       
+┃   ▮▮▮▮ #101 feat(web): cached us… ┃ ┌─ Files · by attention ──┐ ┌─ web/src/components/ThemeToggle.tsx  +19 −0 ───────┐
+┃        ⚠5 breaking · 26 eyes · ~… ┃ │▸ …/ThemeToggle.tsx    ▒□│ │@@ 5  added · feature · behaviour ✓ .93             │
+┃   ▮▮▮▯ #104 build(deps): bump th… ┃ │  web/src/App.tsx      □▒│ │      undocumented · tests ✗ · data_write · risk 2  │
+┃        ~5m · CI ✗                 ┃ │  …/styles/theme.css    □│ │      eyes · ?                                      │
+┃   ▮▮▯▯ #103 chore(billing): remo… ┃ │                         │ │  L5–19 · +15 −0 · export function ThemeToggle()    │
+┃        ⚠1 breaking · 1 eyes · ~1… ┃ │                         │ │⋯▸    5 + // TODO: respect prefers-color-scheme bef…│
+┃ ── YOURS (1) ──────────────────── ┃ │                         │ │·     6 + export function ThemeToggle() {           │
+┃   ▮▮▮▯ #102 refactor(web): renam… ┃ │                         │ │◆     7 +   const [theme, setTheme] = useState<Them…│
+┃        CI … · 5d                  ┃ │                         │ │  ╭─ ai-draft · medium ────────────────────────────╮│
+┃ ── BRANCHES (1) ───────────────── ┃ │                         │ │  │ **medium** localStorage.getItem is called      ││
+┃ ▸ ▮▮▯▯ 05-spike-dark-mode         ┃ │                         │ │  │ unguarded during the first render, so a        ││
+┃        spike .69 · 2 unpushed · … ┃ │                         │ │  │ browser with storage disabled or blocked will  ││
+┃ ── INVOLVED (1) ───────────────── ┃ │                         │ │  │ throw and crash the header, which renders on   ││
+┃   ▮▮▮▮ #106 feat(server): user p… ┃ │                         │ │  │ every page.                                    ││
+┃        ⚠4 breaking · 10 eyes · ~… ┃ │                         │ │  │                                                ││
+┃ ── ADDED (0) ──────────────────── ┃ │                         │ │  │ Suggested fix: Wrap the read in try/catch and  ││
+┃                                   ┃ │                         │ │  │ fall back to "light"; wrap the setItem call in ││
+┃                                   ┃ │                         │ │  │ the effect the same way.                       ││
+┃                                   ┃ │                         │ │  │ a accept · d dismiss · ! override              ││
+┃                                   ┃ │                         │ │  ╰────────────────────────────────────────────────╯│
+┃                                   ┃ │                         │ │  ╭─ ai-draft · low ───────────────────────────────╮│
+┃                                   ┃ │                         │ │  │ **low** The as Theme cast does not validate    ││
+┃                                   ┃ │                         │ │  │ the stored value, so an unexpected string such ││
+┃                                   ┃ │                         │ │  │ as "blue" is written to data-theme and the     ││
+┃ / search  s sort: urgency ▾       ┃ └─────────────────────────┘ └────────────────────────────────────────────────────┘
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ Comments 2 · 0 drafts · 0 pending · 0 posted · 2 ai · 0 threads (0 open) (tab foc…
+side-by-side needs a 140-column terminal (pane has 82) — showing unified
+
+=== screen: picker + pipeline · branch:05-spike-dark-mode ===
+prt · acme/portal · 5 PRs · 1 branch · role: frontend
+┏━ Queue · ranked ━━━━━━━━━━━━━━━━━━┓    1 Overview   2 Code   3 Architecture  [P Pipeline]           05-spike-dark-mode
+┃ ── NEEDS YOU (3) ──────────────── ┃ prt · 05-spike-dark-mode wip: theme toggle in header · pipeline     ✓ done · ready
+┃   ▮▮▮▮ #101 feat(web): cached us… ┃                                                                                   
+┃        ⚠5 breaking · 26 eyes · ~… ┃ Stages  run 10-13 12:00:00 · fetch ✓ 0 ms                                         
+┃   ▮▮▮▯ #104 build(deps): bump th… ┃ ┌────────────────┐   ┌────────────────┐   ┌────────────────┐   ┌────────────────┐ 
+┃        ~5m · CI ✗                 ┃ │✓ parse         │   │✓ link          │   │✓ embed         │   │✓ jev           │ 
+┃   ▮▮▯▯ #103 chore(billing): remo… ┃ │3→5 · 0 ms      │ → │5→1 · 0 ms      │ → │5→9 · 0 ms      │ → │5→293 · 0 ms    │ 
+┃        ⚠1 breaking · 1 eyes · ~1… ┃ └────────────────┘   └────────────────┘   └────────────────┘   └────────────────┘ 
+┃ ── YOURS (1) ──────────────────── ┃ ┌────────────────┐   ┌────────────────┐   ┌────────────────┐   ┌────────────────┐ 
+┃   ▮▮▮▯ #102 refactor(web): renam… ┃ │✓ cluster       │   │✓ route         │   │✓ review        │   │✓ agg           │ 
+┃        CI … · 5d                  ┃ │5→1 · 0 ms      │ → │1→1 · 0 ms      │ → │1→1 · 0 ms      │ → │5→285 · 0 ms    │ 
+┃ ── BRANCHES (1) ───────────────── ┃ └────────────────┘   └────────────────┘   └────────────────┘   └────────────────┘ 
+┃ ▸ ▮▮▯▯ 05-spike-dark-mode         ┃                                                                                   
+┃        spike .69 · 2 unpushed · … ┃ ┏━ Routing · one call per group ━━━━━━━━━━━━━━━━━━ D deep · s skip · c call log ━┓
+┃ ── INVOLVED (1) ───────────────── ┃ ┃    # group                  tier            status           time find    cost ┃
+┃   ▮▮▮▮ #106 feat(server): user p… ┃ ┃ ▸  1 ai·Add dark theme      fast            ✓ done          4.7 s    2 $0.0006 ┃
+┃        ⚠4 breaking · 10 eyes · ~… ┃ ┃        if true → fast · ctx types:none                                         ┃
+┃ ── ADDED (0) ──────────────────── ┃ ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+┃                                   ┃                                                                                   
+┃                                   ┃ tier mix ffffffffffffffffffffffff n none 0 · f fast 1 · d deep 0                  
+┃                                   ┃ time — parallel vs ~19 s all-deep sequential  ·  cost $0.0010 of $0.40 cap        
+┃                                   ┃ jev 19 calls · $0.0014                                                            
+┃                                   ┃ 1 group: done 1 · escalations 0 · calibration samples 0 · findings 2              
+┃                                   ┃                                                                                   
+┃                                   ┃ ┌─ Rules · prt.routing.toml ──────────────────────────────────────────── e edit ─┐
+┃                                   ┃ │ 1 if mechanical || kind in [formatting, moved, generated, dependency] → none   │
+┃ / search  s sort: urgency ▾       ┃ │   0 rows                                                                       │
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ │ 2 if risk >= 4 || tag.auth || tag.money || tag.async → deep  +security · ctx   │
+j/k move  space select  / search and add  enter focus main pane  1 2 3 tabs  ctrl+x stop  P pipeline page …
+
+=== screen: picker + architecture · branch:05-spike-dark-mode ===
+prt · acme/portal · 5 PRs · 1 branch · role: frontend
+┏━ Queue · ranked ━━━━━━━━━━━━━━━━━━┓    1 Overview   2 Code  [3 Architecture]                     6 modules · 2 touched
+┃ ── NEEDS YOU (3) ──────────────── ┃ 5 modules · 6 edges                   05-spike-dark-mode · modules touched + 1 hop
+┃   ▮▮▮▮ #101 feat(web): cached us… ┃ ┌─ Module graph · depth 1 ─────────────────────┐ ┌─ Per module ──────────────────┐
+┃        ⚠5 breaking · 26 eyes · ~… ┃ │ ── hop 0 ─────────────────────────────────── │ │ module   units risk tests you │
+┃   ▮▮▮▯ #104 build(deps): bump th… ┃ │ ▸ ● ★ web/src/components                     │ │ w/compo…     2    2     ?   ★ │
+┃        ~5m · CI ✗                 ┃ │     1 eyes · r2 · ? · +1 undoc               │ │ w/src        2    2     ?   ★ │
+┃   ▮▮▯▯ #103 chore(billing): remo… ┃ │   ● ★ web/src                                │ └───────────────────────────────┘
+┃        ⚠1 breaking · 1 eyes · ~1… ┃ │     skim · r2 · ? · +1 undoc                 │ ┌─ Contracts crossing edges ────┐
+┃ ── YOURS (1) ──────────────────── ┃ │ ── hop 1 ─────────────────────────────────── │ │ none                          │
+┃   ▮▮▮▯ #102 refactor(web): renam… ┃ │   web/src/api                                │ └───────────────────────────────┘
+┃        CI … · 5d                  ┃ │     10 files                                 │ ┌─ Net effect ──────────────────┐
+┃ ── BRANCHES (1) ───────────────── ┃ │   web/src/hooks                              │ │ no import changes             │
+┃ ▸ ▮▮▯▯ 05-spike-dark-mode         ┃ │     4 files                                  │ └───────────────────────────────┘
+┃        spike .69 · 2 unpushed · … ┃ │   web/src/utils                              │ ┌─ Legend ──────────────────────┐
+┃ ── INVOLVED (1) ───────────────── ┃ │     1 file                                   │ │ ● changed  ★ yours  ? unsure  │
+┃   ▮▮▮▮ #106 feat(server): user p… ┃ │ ── edges ─────────────────────────────────── │ │ + new module / edge           │
+┃        ⚠4 breaking · 10 eyes · ~… ┃ │   web/src → web/src/components · 8 imports   │ │ ✕ ╌ removed  ── unchanged     │
+┃ ── ADDED (0) ──────────────────── ┃ │   web/src/api → web/src/utils · 1 import     │ │ □ eyes  □ skim  □ skip (box)  │
+┃                                   ┃ │   web/src/components → web/src/api · 15 imp… │ │ r = max risk  ✗ untested      │
+┃                                   ┃ │   web/src/components → web/src/hooks · 3 im… │ └───────────────────────────────┘
+┃                                   ┃ │   web/src/components → web/src/utils · 4 im… │  Graph from import analysis.     
+┃                                   ┃ │   web/src/hooks → web/src/api · 4 imports    │                                  
+┃                                   ┃ │                                              │                                  
+┃                                   ┃ │                                              │                                  
+┃                                   ┃ │                                              │                                  
+┃                                   ┃ │                                              │                                  
+┃ / search  s sort: urgency ▾       ┃ │                                              │                                  
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ └──────────────────────────────────────────────┘                                  
+j/k move  space select  / search and add  enter focus main pane  1 2 3 tabs  ctrl+x stop  P pipeline page …
+
+=== screen: picker + code-ai-draft · branch:05-spike-dark-mode ===
+prt · acme/portal · 5 PRs · 1 branch · role: frontend
+┏━ Queue · ranked ━━━━━━━━━━━━━━━━━━┓    1 Overview  [2 Code]  3 Architecture              05-spike-dark-mode · 5 chunks
+┃ ── NEEDS YOU (3) ──────────────── ┃ jumped to web/src/components/ThemeToggle.tsx:L7                                   
+┃   ▮▮▮▮ #101 feat(web): cached us… ┃ ┌─ Files · by attention ──┐ ┌─ web/src/components/ThemeToggle.tsx  +19 −0 ───────┐
+┃        ⚠5 breaking · 26 eyes · ~… ┃ │▸ …/ThemeToggle.tsx    ▒□│ │@@ 5  added · feature · behaviour ✓ .93             │
+┃   ▮▮▮▯ #104 build(deps): bump th… ┃ │  web/src/App.tsx      □▒│ │      undocumented · tests ✗ · data_write · risk 2  │
+┃        ~5m · CI ✗                 ┃ │  …/styles/theme.css    □│ │      eyes · ?                                      │
+┃   ▮▮▯▯ #103 chore(billing): remo… ┃ │                         │ │  L5–19 · +15 −0 · export function ThemeToggle()    │
+┃        ⚠1 breaking · 1 eyes · ~1… ┃ │                         │ │⋯     5 + // TODO: respect prefers-color-scheme bef…│
+┃ ── YOURS (1) ──────────────────── ┃ │                         │ │·     6 + export function ThemeToggle() {           │
+┃   ▮▮▮▯ #102 refactor(web): renam… ┃ │                         │ │◆▸    7 +   const [theme, setTheme] = useState<Them…│
+┃        CI … · 5d                  ┃ │                         │ │  ╭─ ai-draft · medium ────────────────────────────╮│
+┃ ── BRANCHES (1) ───────────────── ┃ │                         │ │  │ **medium** localStorage.getItem is called      ││
+┃ ▸ ▮▮▯▯ 05-spike-dark-mode         ┃ │                         │ │  │ unguarded during the first render, so a        ││
+┃        spike .69 · 2 unpushed · … ┃ │                         │ │  │ browser with storage disabled or blocked will  ││
+┃ ── INVOLVED (1) ───────────────── ┃ │                         │ │  │ throw and crash the header, which renders on   ││
+┃   ▮▮▮▮ #106 feat(server): user p… ┃ │                         │ │  │ every page.                                    ││
+┃        ⚠4 breaking · 10 eyes · ~… ┃ │                         │ │  │                                                ││
+┃ ── ADDED (0) ──────────────────── ┃ │                         │ │  │ Suggested fix: Wrap the read in try/catch and  ││
+┃                                   ┃ │                         │ │  │ fall back to "light"; wrap the setItem call in ││
+┃                                   ┃ │                         │ │  │ the effect the same way.                       ││
+┃                                   ┃ │                         │ │  │ a accept · d dismiss · ! override              ││
+┃                                   ┃ │                         │ │  ╰────────────────────────────────────────────────╯│
+┃                                   ┃ │                         │ │  ╭─ ai-draft · low ───────────────────────────────╮│
+┃                                   ┃ │                         │ │  │ **low** The as Theme cast does not validate    ││
+┃                                   ┃ │                         │ │  │ the stored value, so an unexpected string such ││
+┃                                   ┃ │                         │ │  │ as "blue" is written to data-theme and the     ││
+┃ / search  s sort: urgency ▾       ┃ └─────────────────────────┘ └────────────────────────────────────────────────────┘
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ Comments 2 · 0 drafts · 0 pending · 0 posted · 2 ai · 0 threads (0 open) (tab foc…
+j/k move  space select  / search and add  enter focus main pane  1 2 3 tabs  ctrl+x stop  P pipeline page …
+
+=== screen: picker + overview · pr:106 ===
+prt · acme/portal · 5 PRs · 1 branch · role: frontend
+┏━ Queue · ranked ━━━━━━━━━━━━━━━━━━┓   [1 Overview]  2 Code   3 Architecture   @dana · 1d · main ← 06-user-preferences…
+┃ ── NEEDS YOU (3) ──────────────── ┃ #106 feat(server): user preferences API and ops health check · dana · 1d · main ←…
+┃   ▮▮▮▮ #101 feat(web): cached us… ┃ Adds a flagged user preferences API and a migration that drops users.legacy_theme,
+┃        ⚠5 breaking · 26 eyes · ~… ┃ moves health checks to /healthz, and includes breaking route changes.             
+┃   ▮▮▮▯ #104 build(deps): bump th… ┃ ai·from labels                                                                    
+┃        ~5m · CI ✗                 ┃ fffffffffffffffffffffffffffffffffffftttt                                          
+┃   ▮▮▯▯ #103 chore(billing): remo… ┃ f feature 91% · t test 9%                                                         
+┃        ⚠1 breaking · 1 eyes · ~1… ┃ +202 −10 → ~212 lines that matter · ~65 min · 10 of 25 chunks need eyes           
+┃ ── YOURS (1) ──────────────────── ┃                                                                                   
+┃   ▮▮▮▯ #102 refactor(web): renam… ┃ ┌─ Headlines · contract surface ─────────────────────────────────────────────────┐
+┃        CI … · 5d                  ┃ │   ⚠ breaking  Routes  server/internal/users/users.go:84  .95                   │
+┃ ── BRANCHES (1) ───────────────── ┃ │   ⚠ breaking  main  server/cmd/api/main.go:20  .85                             │
+┃   ▮▮▯▯ 05-spike-dark-mode         ┃ │   ⚠ breaking  (top level)  …er/migrations/20261010_user_preferences.sql:1  .71 │
+┃        spike .69 · 2 unpushed · … ┃ │   ⚠ breaking  Routes  server/internal/users/users.go:100  .62                  │
+┃ ── INVOLVED (1) ───────────────── ┃ │   +1 more                                                                      │
+┃ ▸ ▮▮▮▮ #106 feat(server): user p… ┃ │   +1 below .60 (unsure)                                                        │
+┃        ⚠4 breaking · 10 eyes · ~… ┃ └────────────────────────────────────────────────────────────────────────────────┘
+┃        why: breaking · untested … ┃ ┌─ Check before approving · hot spots ───────────────────────────────────────────┐
+┃ ── ADDED (0) ──────────────────── ┃ │ 1 web/src/components/SettingsForm.tsx:8  `getPreferences` has no reject…  10.5 │
+┃                                   ┃ │ 2 web/src/components/SettingsForm.tsx:27  If `savePreferences` rejects a…  9.4 │
+┃                                   ┃ │ 3 web/src/components/SettingsForm.tsx:4  data-write, crash, untested  8.5      │
+┃                                   ┃ └────────────────────────────────────────────────────────────────────────────────┘
+┃                                   ┃ ┌─ API endpoints ────────────────────────────────────────────────────────────────┐
+┃                                   ┃ │   − GET /api/v1/health  server/cmd/api/main.go:25  .97                         │
+┃                                   ┃ │   ~ contract change: putPreferences  …er/internal/users/preferences.go:70  .60 │
+┃                                   ┃ │   + GET /healthz  server/cmd/api/main.go:33  .97                               │
+┃ / search  s sort: urgency ▾       ┃ │   + GET /api/v1/users/{id}/preferences  …rver/internal/users/users.go:101  .97 │
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ │   +1 more                                                                      │
+j/k move  space select  / search and add  enter focus main pane  1 2 3 tabs  ctrl+x stop  P pipeline page …
+
+=== screen: picker + code · pr:106 ===
+prt · acme/portal · 5 PRs · 1 branch · role: frontend
+┏━ Queue · ranked ━━━━━━━━━━━━━━━━━━┓    1 Overview  [2 Code]  3 Architecture                           #106 · 25 chunks
+┃ ── NEEDS YOU (3) ──────────────── ┃ ┌─ Files · by attention ──┐ ┌─ web/src/components/SettingsForm.tsx  +25 −2 ──────┐
+┃   ▮▮▮▮ #101 feat(web): cached us… ┃ │▸ …/SettingsForm.tsx ▒██▒│ │@@ 8  modified · feature · behaviour ✓ .96 · b5     │
+┃        ⚠5 breaking · 26 eyes · ~… ┃ │  web/src/api/index.ts  □│ │      tests ✗ · pii · risk 3 · eyes                 │
+┃   ▮▮▮▯ #104 build(deps): bump th… ┃ │  …/preferences.ts    □▒□│ │  L8–22 · +7 −2 · export function SettingsForm({ us…│
+┃        ~5m · CI ✗                 ┃ │  …/utils/flags.ts   ▒▒▒□│ │ ▸ 6    - export function SettingsForm() {          │
+┃   ▮▮▯▯ #103 chore(billing): remo… ┃ │── not yours ────────────│ │·     8 + export function SettingsForm({ userId = "…│
+┃        ⚠1 breaking · 1 eyes · ~1… ┃ │  …preferences.go ▒□█□□□█│ │  ╭─ ai-draft · low ───────────────────────────────╮│
+┃ ── YOURS (1) ──────────────────── ┃ │  …/users/users.go     □□│ │  │ **low** The default userId = "me" relies on    ││
+┃   ▮▮▮▯ #102 refactor(web): renam… ┃ │  …/cmd/api/main.go     █│ │  │ the /users/{id}/preferences handler resolving  ││
+┃        CI … · 5d                  ┃ │  …user_preferences.sql □│ │  │ the literal "me" to the caller, which this PR  ││
+┃ ── BRANCHES (1) ───────────────── ┃ │  …/users_test.go      ▒□│ │  │ does not show.                                 ││
+┃   ▮▮▯▯ 05-spike-dark-mode         ┃ │                         │ │  │                                                ││
+┃        spike .69 · 2 unpushed · … ┃ │                         │ │  │ Suggested fix: Confirm the server maps "me" to ││
+┃ ── INVOLVED (1) ───────────────── ┃ │                         │ │  │ the authenticated user, or pass the real user  ││
+┃ ▸ ▮▮▮▮ #106 feat(server): user p… ┃ │                         │ │  │ id.                                            ││
+┃        ⚠4 breaking · 10 eyes · ~… ┃ │                         │ │  │ a accept · d dismiss · ! override              ││
+┃        why: breaking · untested … ┃ │                         │ │  ╰────────────────────────────────────────────────╯│
+┃ ── ADDED (0) ──────────────────── ┃ │                         │ │   7  9     const [settings, setSettings] = useStat…│
+┃                                   ┃ │                         │ │·    10 +   const [prefs, setPrefs] = useState<Pref…│
+┃                                   ┃ │                         │ │   8 11     const [saved, setSaved] = useState(fals…│
+┃                                   ┃ │                         │ │·    12 +   const showTheme = isEnabled("user-prefe…│
+┃                                   ┃ │                         │ │   9 13                                             │
+┃                                   ┃ │                         │ │  10 14     useEffect(() => {                       │
+┃                                   ┃ │                         │ │  11 15       fetchJSON<Settings>("/settings").then…│
+┃                                   ┃ │                         │ │  12    -   }, []);                                 │
+┃ / search  s sort: urgency ▾       ┃ └─────────────────────────┘ └────────────────────────────────────────────────────┘
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ Comments 24 · 0 drafts · 0 pending · 0 posted · 24 ai · 0 threads (0 open) (tab f…
+j/k move  space select  / search and add  enter focus main pane  1 2 3 tabs  ctrl+x stop  P pipeline page …
+
+=== screen: picker + code-by-change · pr:106 ===
+prt · acme/portal · 5 PRs · 1 branch · role: frontend
+┏━ Queue · ranked ━━━━━━━━━━━━━━━━━━┓    1 Overview  [2 Code]  3 Architecture                           #106 · 25 chunks
+┃ ── NEEDS YOU (3) ──────────────── ┃ ┌─ Change groups · revi… ─┐ ┌─ Settings page: theme picker behind the `user-pr… ─┐
+┃   ▮▮▮▮ #101 feat(web): cached us… ┃ │by: file [change] · inte…│ │Settings page: theme picker behind the `user-prefer…│
+┃        ⚠5 breaking · 26 eyes · ~… ┃ │  1 ai·Add user preferen…│ │b5 .93 · risk 3 · async · data_write ×3 · pii ×6    │
+┃   ▮▮▮▯ #104 build(deps): bump th… ┃ │  2 `GET` and `PUT /api/…│ │tests: 0 of 7 units · test gap 6 · ? 2 unsure       │
+┃        ~5m · CI ✗                 ┃ │▸ 3 Settings page: theme…│ │routed: deep · security · performance               │
+┃   ▮▮▯▯ #103 chore(billing): remo… ┃ │    7u 3f · b5 .93 · dee…│ │routing: if risk >= 4 || tag.auth || tag.money || t…│
+┃        ⚠1 breaking · 1 eyes · ~1… ┃ │  4 ai·Load injected fea…│ │no context found: callers, types, tests             │
+┃ ── YOURS (1) ──────────────────── ┃ │── ungrouped (5) ────────│ │                                                    │
+┃   ▮▮▮▯ #102 refactor(web): renam… ┃ │  5 ‹preferences.go› — 1…│ │why these belong together                           │
+┃        CI … · 5d                  ┃ │  6 ‹preferences.go› — 1…│ │  imports SettingsForm.tsx → preferences.ts getPref…│
+┃ ── BRANCHES (1) ───────────────── ┃ │  7 ‹20261010_user_prefe…│ │  imports SettingsForm.tsx → preferences.ts savePre…│
+┃   ▮▮▯▯ 05-spike-dark-mode         ┃ │  8 ‹index.ts› — 1 unit …│ │  imports SettingsForm.tsx → flags.ts isEnabled     │
+┃        spike .69 · 2 unpushed · … ┃ │  9 ‹preferences.ts› — 1…│ │  calls  SettingsForm.tsx SettingsForm → preference…│
+┃ ── INVOLVED (1) ───────────────── ┃ │                         │ │  same symbol SettingsForm.tsx SettingsForm → Setti…│
+┃ ▸ ▮▮▮▮ #106 feat(server): user p… ┃ │                         │ │  same symbol SettingsForm.tsx SettingsForm → Setti…│
+┃        ⚠4 breaking · 10 eyes · ~… ┃ │                         │ │  calls  SettingsForm.tsx SettingsForm → flags.ts i…│
+┃        why: breaking · untested … ┃ │                         │ │  calls  SettingsForm.tsx SettingsForm → preference…│
+┃ ── ADDED (0) ──────────────────── ┃ │                         │ │                                                    │
+┃                                   ┃ │                         │ │── Units · interface first ─────────────────────────│
+┃                                   ┃ │                         │ │5 web/src/components/SettingsForm.tsx… caller · eyes│
+┃                                   ┃ │                         │ │@@ 8  modified · feature · behaviour ✓ .96 · b5     │
+┃                                   ┃ │                         │ │      tests ✗ · pii · risk 3 · eyes                 │
+┃                                   ┃ │                         │ │  L8–22 · +7 −2 · export function SettingsForm({ us…│
+┃                                   ┃ │                         │ │ ▸ 6    - export function SettingsForm() {          │
+┃                                   ┃ │                         │ │·     8 + export function SettingsForm({ userId = "…│
+┃ / search  s sort: urgency ▾       ┃ └─────────────────────────┘ └────────────────────────────────────────────────────┘
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ Comments 24 · 0 drafts · 0 pending · 0 posted · 24 ai · 0 threads (0 open) (tab f…
+j/k move  space select  / search and add  enter focus main pane  1 2 3 tabs  ctrl+x stop  P pipeline page …
+
+=== screen: picker + code-split · pr:106 ===
+prt · acme/portal · 5 PRs · 1 branch · role: frontend
+┏━ Queue · ranked ━━━━━━━━━━━━━━━━━━┓    1 Overview  [2 Code]  3 Architecture                           #106 · 25 chunks
+┃ ── NEEDS YOU (3) ──────────────── ┃ side-by-side needs a ≥140-column terminal — showing unified                       
+┃   ▮▮▮▮ #101 feat(web): cached us… ┃ ┌─ Files · by attention ──┐ ┌─ web/src/components/SettingsForm.tsx  +25 −2 ──────┐
+┃        ⚠5 breaking · 26 eyes · ~… ┃ │▸ …/SettingsForm.tsx ▒██▒│ │@@ 8  modified · feature · behaviour ✓ .96 · b5     │
+┃   ▮▮▮▯ #104 build(deps): bump th… ┃ │  web/src/api/index.ts  □│ │      tests ✗ · pii · risk 3 · eyes                 │
+┃        ~5m · CI ✗                 ┃ │  …/preferences.ts    □▒□│ │  L8–22 · +7 −2 · export function SettingsForm({ us…│
+┃   ▮▮▯▯ #103 chore(billing): remo… ┃ │  …/utils/flags.ts   ▒▒▒□│ │ ▸ 6    - export function SettingsForm() {          │
+┃        ⚠1 breaking · 1 eyes · ~1… ┃ │── not yours ────────────│ │·     8 + export function SettingsForm({ userId = "…│
+┃ ── YOURS (1) ──────────────────── ┃ │  …preferences.go ▒□█□□□█│ │  ╭─ ai-draft · low ───────────────────────────────╮│
+┃   ▮▮▮▯ #102 refactor(web): renam… ┃ │  …/users/users.go     □□│ │  │ **low** The default userId = "me" relies on    ││
+┃        CI … · 5d                  ┃ │  …/cmd/api/main.go     █│ │  │ the /users/{id}/preferences handler resolving  ││
+┃ ── BRANCHES (1) ───────────────── ┃ │  …user_preferences.sql □│ │  │ the literal "me" to the caller, which this PR  ││
+┃   ▮▮▯▯ 05-spike-dark-mode         ┃ │  …/users_test.go      ▒□│ │  │ does not show.                                 ││
+┃        spike .69 · 2 unpushed · … ┃ │                         │ │  │                                                ││
+┃ ── INVOLVED (1) ───────────────── ┃ │                         │ │  │ Suggested fix: Confirm the server maps "me" to ││
+┃ ▸ ▮▮▮▮ #106 feat(server): user p… ┃ │                         │ │  │ the authenticated user, or pass the real user  ││
+┃        ⚠4 breaking · 10 eyes · ~… ┃ │                         │ │  │ id.                                            ││
+┃        why: breaking · untested … ┃ │                         │ │  │ a accept · d dismiss · ! override              ││
+┃ ── ADDED (0) ──────────────────── ┃ │                         │ │  ╰────────────────────────────────────────────────╯│
+┃                                   ┃ │                         │ │   7  9     const [settings, setSettings] = useStat…│
+┃                                   ┃ │                         │ │·    10 +   const [prefs, setPrefs] = useState<Pref…│
+┃                                   ┃ │                         │ │   8 11     const [saved, setSaved] = useState(fals…│
+┃                                   ┃ │                         │ │·    12 +   const showTheme = isEnabled("user-prefe…│
+┃                                   ┃ │                         │ │   9 13                                             │
+┃                                   ┃ │                         │ │  10 14     useEffect(() => {                       │
+┃                                   ┃ │                         │ │  11 15       fetchJSON<Settings>("/settings").then…│
+┃ / search  s sort: urgency ▾       ┃ └─────────────────────────┘ └────────────────────────────────────────────────────┘
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ Comments 24 · 0 drafts · 0 pending · 0 posted · 24 ai · 0 threads (0 open) (tab f…
+side-by-side needs a 140-column terminal (pane has 82) — showing unified
+
+=== screen: picker + pipeline · pr:106 ===
+prt · acme/portal · 5 PRs · 1 branch · role: frontend
+┏━ Queue · ranked ━━━━━━━━━━━━━━━━━━┓    1 Overview   2 Code   3 Architecture  [P Pipeline]                         #106
+┃ ── NEEDS YOU (3) ──────────────── ┃ prt · #106 feat(server): user preferences API and ops health check · pipeline     
+┃   ▮▮▮▮ #101 feat(web): cached us… ┃ ✓ done · ready                                                                    
+┃        ⚠5 breaking · 26 eyes · ~… ┃ Stages  run 10-13 12:00:00 · fetch ✓ 0 ms                                         
+┃   ▮▮▮▯ #104 build(deps): bump th… ┃ ┌────────────────┐   ┌────────────────┐   ┌────────────────┐   ┌────────────────┐ 
+┃        ~5m · CI ✗                 ┃ │✓ parse         │   │✓ link          │   │✓ embed         │   │✓ jev           │ 
+┃   ▮▮▯▯ #103 chore(billing): remo… ┃ │9→25 · 0 ms     │ → │25→30 · 0 ms    │ → │25→47 · 0 ms    │ → │25→1774 · 0 ms  │ 
+┃        ⚠1 breaking · 1 eyes · ~1… ┃ └────────────────┘   └────────────────┘   └────────────────┘   └────────────────┘ 
+┃ ── YOURS (1) ──────────────────── ┃ ┌────────────────┐   ┌────────────────┐   ┌────────────────┐   ┌────────────────┐ 
+┃   ▮▮▮▯ #102 refactor(web): renam… ┃ │✓ cluster       │   │✓ route         │   │✓ review        │   │✓ agg           │ 
+┃        CI … · 5d                  ┃ │25→9 · 0 ms     │ → │9→9 · 0 ms      │ → │9→9 · 0 ms      │ → │25→1737 · 0 ms  │ 
+┃ ── BRANCHES (1) ───────────────── ┃ └────────────────┘   └────────────────┘   └────────────────┘   └────────────────┘ 
+┃   ▮▮▯▯ 05-spike-dark-mode         ┃                                                                                   
+┃        spike .69 · 2 unpushed · … ┃ ┏━ Routing · one call per group ━━━━━━━━━━━━━━━━━━ D deep · s skip · c call log ━┓
+┃ ── INVOLVED (1) ───────────────── ┃ ┃    # group                  tier            status           time find    cost ┃
+┃ ▸ ▮▮▮▮ #106 feat(server): user p… ┃ ┃ ▸  1 ai·Add user preferenc… deep            ✓ done         14.1 s    7 $0.0398 ┃
+┃        ⚠4 breaking · 10 eyes · ~… ┃ ┃        if risk >= 4 || tag.auth || tag.money || tag.async → deep · ctx caller… ┃
+┃        why: breaking · untested … ┃ ┃    2 `GET` and `PUT /api/v… deep            ✓ done          6.4 s    3 $0.0199 ┃
+┃ ── ADDED (0) ──────────────────── ┃ ┃        if risk >= 4 || tag.auth || tag.money || tag.async → deep · ctx caller… ┃
+┃                                   ┃ ┃    3 Settings page: theme … deep            ✓ done         12.2 s    4 $0.0348 ┃
+┃                                   ┃ ┃        if risk >= 4 || tag.auth || tag.money || tag.async → deep · ctx caller… ┃
+┃                                   ┃ ┃    4 ai·Load injected feat… fast            ✓ done          4.4 s    3 $0.0005 ┃
+┃                                   ┃ ┃        if true → fast · ctx config:none                                        ┃
+┃                                   ┃ ┃    5 ‹preferences.go›       deep            ✓ done         10.7 s    3 $0.0202 ┃
+┃                                   ┃ ┃        if risk >= 4 || tag.auth || tag.money || tag.async → deep · ctx caller… ┃
+┃                                   ┃ ┃    6 ‹preferences.go›       fast → deep .40 ✓ done          6.2 s    0 $0.0050 ┃
+┃ / search  s sort: urgency ▾       ┃ ┃        if true → fast                                                          ┃
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ ┃    7 ‹20261010_user_prefer… deep            ✓ done          8.0 s    3 $0.0193 ┃
+j/k move  space select  / search and add  enter focus main pane  1 2 3 tabs  ctrl+x stop  P pipeline page …
+
+=== screen: picker + architecture · pr:106 ===
+prt · acme/portal · 5 PRs · 1 branch · role: frontend
+┏━ Queue · ranked ━━━━━━━━━━━━━━━━━━┓    1 Overview   2 Code  [3 Architecture]                    10 modules · 5 touched
+┃ ── NEEDS YOU (3) ──────────────── ┃ 10 modules · 10 edges                               #106 · modules touched + 1 hop
+┃   ▮▮▮▮ #101 feat(web): cached us… ┃ ┌─ Module graph · depth 1 ─────────────────────┐ ┌─ Per module ──────────────────┐
+┃        ⚠5 breaking · 26 eyes · ~… ┃ │ ── hop 0 ─────────────────────────────────── │ │ module   units risk tests you │
+┃   ▮▮▮▯ #104 build(deps): bump th… ┃ │ ▸ ● server/cmd/api                           │ │ s/api        1    4     ✓     │
+┃        ~5m · CI ✗                 ┃ │     1 eyes · r4 · ⚠1                         │ │ s/users     11    4     ?     │
+┃   ▮▮▯▯ #103 chore(billing): remo… ┃ │   ● server/internal/users                    │ │ w/compo…     4    3     ✗   ★ │
+┃        ⚠1 breaking · 1 eyes · ~1… ┃ │     6 eyes · r4 · ? · ⚠3                     │ │ w/api        4    3     ✗   ★ │
+┃ ── YOURS (1) ──────────────────── ┃ │   ● ★ web/src/components                     │ │ w/utils      4    2     ?   ★ │
+┃   ▮▮▮▯ #102 refactor(web): renam… ┃ │     2 eyes · r3 · ✗                          │ └───────────────────────────────┘
+┃        CI … · 5d                  ┃ │   ● ★ web/src/api                            │ ┌─ Contracts crossing edges ────┐
+┃ ── BRANCHES (1) ───────────────── ┃ │     skim · r3 · ✗ · ?                        │ │ ⚠ s/users → s/api             │
+┃   ▮▮▯▯ 05-spike-dark-mode         ┃ │   ● ★ web/src/utils                          │ │   Routes · breaking           │
+┃        spike .69 · 2 unpushed · … ┃ │     skim · r2 · ?                            │ │   putPreferences · api shape  │
+┃ ── INVOLVED (1) ───────────────── ┃ │ ── hop 1 ─────────────────────────────────── │ └───────────────────────────────┘
+┃ ▸ ▮▮▮▮ #106 feat(server): user p… ┃ │   server/internal/auth                       │ ┌─ Net effect ──────────────────┐
+┃        ⚠4 breaking · 10 eyes · ~… ┃ │     2 files                                  │ │ no import changes             │
+┃        why: breaking · untested … ┃ │   server/internal/billing                    │ └───────────────────────────────┘
+┃ ── ADDED (0) ──────────────────── ┃ │     4 files                                  │ ┌─ Legend ──────────────────────┐
+┃                                   ┃ │   web/src                                    │ │ ● changed  ★ yours  ? unsure  │
+┃                                   ┃ │     1 file                                   │ │ + new module / edge           │
+┃                                   ┃ │   web/src/__tests__                          │ │ ✕ ╌ removed  ── unchanged     │
+┃                                   ┃ │     2 files                                  │ │ □ eyes  □ skim  □ skip (box)  │
+┃                                   ┃ │   web/src/hooks                              │ │ r = max risk  ✗ untested      │
+┃                                   ┃ │     4 files                                  │ └───────────────────────────────┘
+┃                                   ┃ │ ── edges ─────────────────────────────────── │  Graph from import analysis.     
+┃ / search  s sort: urgency ▾       ┃ │   server/cmd/api → server/internal/auth · 1… │                                  
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ │   server/cmd/api → server/internal/billing … │                                  
+j/k move  space select  / search and add  enter focus main pane  1 2 3 tabs  ctrl+x stop  P pipeline page …
+
+=== screen: picker + code-ai-draft · pr:106 ===
+prt · acme/portal · 5 PRs · 1 branch · role: frontend
+┏━ Queue · ranked ━━━━━━━━━━━━━━━━━━┓    1 Overview  [2 Code]  3 Architecture                           #106 · 25 chunks
+┃ ── NEEDS YOU (3) ──────────────── ┃ jumped to server/cmd/api/main.go:L25                                              
+┃   ▮▮▮▮ #101 feat(web): cached us… ┃ ┌─ Files · by attention ──┐ ┌─ server/cmd/api/main.go  +18 −5  (not yours) ──────┐
+┃        ⚠5 breaking · 26 eyes · ~… ┃ │  …/SettingsForm.tsx ▒██▒│ │@@ 17  modified · feature · behaviour ✓ .98         │
+┃   ▮▮▮▯ #104 build(deps): bump th… ┃ │  web/src/api/index.ts  □│ │       ⚠ breaking .85 · b4 · tests ✓ · async        │
+┃        ~5m · CI ✗                 ┃ │  …/preferences.ts    □▒□│ │       error_path · pii · risk 4 · eyes             │
+┃   ▮▮▯▯ #103 chore(billing): remo… ┃ │  …/utils/flags.ts   ▒▒▒□│ │  L17–48 · +18 −5 · func main()                     │
+┃        ⚠1 breaking · 1 eyes · ~1… ┃ │── not yours ────────────│ │  17 17   func main() {                             │
+┃ ── YOURS (1) ──────────────────── ┃ │  …preferences.go ▒□█□□□█│ │  18 18       logger := slog.New(slog.NewJSONHandle…│
+┃   ▮▮▮▯ #102 refactor(web): renam… ┃ │  …/users/users.go     □□│ │  19 19       store := users.NewMemoryStore()       │
+┃        CI … · 5d                  ┃ │▸ …/cmd/api/main.go     █│ │·    20 +     prefs := users.NewMemoryPreferences() │
+┃ ── BRANCHES (1) ───────────────── ┃ │  …user_preferences.sql □│ │  20 21       invoices := billing.NewService(billin…│
+┃   ▮▮▯▯ 05-spike-dark-mode         ┃ │  …/users_test.go      ▒□│ │  21 22                                             │
+┃        spike .69 · 2 unpushed · … ┃ │                         │ │  22 23       r := chi.NewRouter()                  │
+┃ ── INVOLVED (1) ───────────────── ┃ │                         │ │  23 24       r.Use(auth.Middleware(auth.NewSession…│
+┃ ▸ ▮▮▮▮ #106 feat(server): user p… ┃ │                         │ │ ▸24 25       r.Route("/api/v1", func(r chi.Router)…│
+┃        ⚠4 breaking · 10 eyes · ~… ┃ │                         │ │  ╭─ ai-draft · medium ────────────────────────────╮│
+┃        why: breaking · untested … ┃ │                         │ │  │ **medium** Removing GET /api/v1/health breaks  ││
+┃ ── ADDED (0) ──────────────────── ┃ │                         │ │  │ existing probes, monitors and clients, and the ││
+┃                                   ┃ │                         │ │  │ new endpoint returns 204 with no body instead  ││
+┃                                   ┃ │                         │ │  │ of the old JSON status and version.            ││
+┃                                   ┃ │                         │ │  │                                                ││
+┃                                   ┃ │                         │ │  │ Suggested fix: Keep /api/v1/health as a        ││
+┃                                   ┃ │                         │ │  │ deprecated alias until the load balancer and   ││
+┃                                   ┃ │                         │ │  │ monitors are migrated, or document the         ││
+┃                                   ┃ │                         │ │  │ breaking change.                               ││
+┃ / search  s sort: urgency ▾       ┃ └─────────────────────────┘ └────────────────────────────────────────────────────┘
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ Comments 24 · 0 drafts · 0 pending · 0 posted · 24 ai · 0 threads (0 open) (tab f…
+j/k move  space select  / search and add  enter focus main pane  1 2 3 tabs  ctrl+x stop  P pipeline page …
+
+=== screen: search · #101 ===
+prt · acme/portal · 5 PRs · 1 branch · role: frontend                                                           2 drafts
+┏━ Queue · ranked ━━━━━━━━━━━━━━━━━━┓   [1 Overview]  2 Code   3 Architecture   @alice · 6d · main ← 01-user-profile-re…
+┃ ── NEEDS YOU (3) ──────────────── ┃ #101 feat(web): cached user profiles with team and avatar · alice · 6d · main ← 0…
+┃ ▸ ▮▮▮▮ #101 feat(web): cached us… ┃ Adds a profile cache, Avatar components and a required getUser options argument,  
+┃        ⚠5 breaking · 26 eyes · ~… ┃ but 9 of 41 risky units lack tests and logout cache invalidation is missing.      
+┃        why: breaking · untested … ┃ ai·from labels                                                                    
+┃   ▮▮▮▯ #104 build(deps): bump th… ┃ fffffffffffffffffffffffffffttttttttrrr░░                                          
+┃        ~5m · CI ✗                 ┃ f feature 69% · t test 21% · r refactor 7% · ░ noise 4%                           
+┃   ▮▮▯▯ #103 chore(billing): remo… ┃ +334 −64 → ~382 lines that matter · ~127 min · 26 of 48 chunks need eyes          
+┃        ⚠1 breaking · 1 eyes · ~1… ┃                                                                                   
+┃ ── YOURS (1) ──────────────────── ┃ ┌─ Headlines · contract surface ─────────────────────────────────────────────────┐
+┃   ▮▮▮▯ #102 refactor(web): renam… ┃ │   ⚠ breaking  getUser  web/src/api/client.ts:66  .97                           │
+┃        CI … · 5d                  ┃ │   ⚠ breaking  (top level)  web/src/api/index.ts:2  .90                         │
+┃ ── BRANCHES (1) ───────────────── ┃ │   ⚠ breaking  (top level)  web/src/api/client.ts:32  .76                       │
+┃   ▮▮▯▯ 05-spike-dark-mode         ┃ │   ⚠ breaking  authHeader  web/src/api/client.ts:34  .75                        │
+┃        spike .69 · 2 unpushed · … ┃ │   +2 more                                                                      │
+┃                                   ┃ │   +3 below .60 (unsure)                                                        │
+┃                                   ┃ └────────────────────────────────────────────────────────────────────────────────┘
+┃                                   ┃ ┌─ Check before approving · hot spots ───────────────────────────────────────────┐
+┃                                   ┃ │ 1 web/src/components/UserCard.tsx:30  The new `Avatar` rendering is  5.3       │
+┃                                   ┃ │ 2 web/src/api/errors.ts:14  auth, crash, untested  5.1                         │
+┃                                   ┃ │ 3 web/src/components/Avatar.tsx:11  `broken` is never reset when  5.1          │
+┃                                   ┃ └────────────────────────────────────────────────────────────────────────────────┘
+┃                                   ┃ ┌─ API endpoints ────────────────────────────────────────────────────────────────┐
+┃                                   ┃ │   ~ contract change: Routes  server/internal/users/users.go:104  .92           │
+┃                                   ┃ │   ~ contract change: toResponse  server/internal/users/users.go:84  .73        │
+┃ ▸ pr  #101 feat(we… · 6d · listed ┃ │   + response field userResponse.avatarUrl  …er/internal/users/users.go:69  .90 │
+┃ / #101█                           ┃ └────────────────────────────────────────────────────────────────────────────────┘
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ ┌─ Database ─────────────────────────────────────────────────────────────────────┐
+up/down results  enter add  tab preview  esc close
+
+=== screen: help · picker ===
+prt · acme/portal · 5 PRs · 1 branch · role: frontend                                                           2 drafts
+┏━ Queue · ranked ━━━━━━━━━━━━━━━━━━┓   [1 Overview]  2 Code   3 Architecture   @alice · 6d · main ← 01-user-profile-re…
+┃ ── NEEDS YOU (3) ──────────────── ┃ ┌────────────────────────────────────────────────────────────────────────────────┐
+┃ ▸ ▮▮▮▮ #101 feat(web): cached us… ┃ │ Keys · picker                                                                  │
+┃        ⚠5 breaking · 26 eyes · ~… ┃ │                                                                                │
+┃        why: breaking · untested … ┃ │ j down          /     search and add       enter     focus main pane           │
+┃   ▮▮▮▯ #104 build(deps): bump th… ┃ │ k up            x     remove added item    tab       next pane                 │
+┃        ~5m · CI ✗                 ┃ │ g top           space select               shift+tab previous pane             │
+┃   ▮▮▯▯ #103 chore(billing): remo… ┃ │ G bottom        esc   clear selection      1         overview tab              │
+┃        ⚠1 breaking · 1 eyes · ~1… ┃ │ s cycle sort                               2         code tab                  │
+┃ ── YOURS (1) ──────────────────── ┃ │                                            3         architecture tab          │
+┃   ▮▮▮▯ #102 refactor(web): renam… ┃ │                                            P         pipeline page             │
+┃        CI … · 5d                  ┃ │                                                                                │
+┃ ── BRANCHES (1) ───────────────── ┃ │ r refresh item      S submit review      ctrl+x stop analysis                  │
+┃   ▮▮▯▯ 05-spike-dark-mode         ┃ │ o open on GitHub    a approve            ctrl+k stop all analysis              │
+┃        spike .69 · 2 unpushed · … ┃ │ c git checkout      A request changes    ctrl+o resume analysis                │
+┃ ── INVOLVED (1) ───────────────── ┃ │                                          ,      settings                       │
+┃   ▮▮▮▮ #106 feat(server): user p… ┃ │                                                                                │
+┃        ⚠4 breaking · 10 eyes · ~… ┃ │ < narrower pane    : command line                                              │
+┃ ── ADDED (0) ──────────────────── ┃ │ > wider pane       ? help                                                      │
+┃                                   ┃ │                    q quit                                                      │
+┃                                   ┃ │ mouse: drag the picker's or the Code list's right border to resize; < > resize │
+┃                                   ┃ │ the focused pane                                                               │
+┃                                   ┃ │                                                                                │
+┃                                   ┃ │ Commands                                                                       │
+┃                                   ┃ │ :add #482 | :add feat/x                  add a PR or branch and analyse it now │
+┃                                   ┃ │ :auto manual|needs-you|needs-you+yours|all                                     │
+┃ / search  s sort: urgency ▾       ┃ │   set the auto-review strategy (saved to .git/prt/prt.toml)                    │
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ │ :tier deep|none|rules                    set the review tier of the focused    │
+j/k move  space select  / search and add  enter focus main pane  1 2 3 tabs  ctrl+x stop  P pipeline page …
