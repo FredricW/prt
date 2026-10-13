@@ -197,20 +197,38 @@ func (p *Pipeline) addressedComments(ctx context.Context, it model.Item, head, b
 
 // commentCases builds the comment_addressed cases for cs: the code around
 // each comment's line on the commit it was made on (else the base) and the
-// diff of its file from base to head (one git diff per run); when the base
-// is not local, the current diff of the unit the comment is anchored to.
+// diff of its file from that commit to head, so a fix pushed before the
+// Since base still counts (DECISIONS "comment_addressed diffs from the
+// comment's commit"); from base to head when the comment's commit is not
+// local; and, when neither is, the current diff of the unit the comment is
+// anchored to. One git diff per distinct start commit.
 func (p *Pipeline) commentCases(ctx context.Context, cs []model.Comment, head, base string, local bool, units []model.ChangeUnit) []judge.CommentCase {
-	var fileDiffs map[string]string
-	if local {
-		fileDiffs = p.fileDiffs(ctx, base, head)
+	diffs := map[string]map[string]string{} // by start commit; nil: unavailable
+	diffFrom := func(from string) map[string]string {
+		if m, ok := diffs[from]; ok {
+			return m
+		}
+		var m map[string]string
+		if (from == base && local) || (from != base && p.haveCommit(ctx, from)) {
+			m = p.fileDiffs(ctx, from, head)
+		}
+		diffs[from] = m
+		return m
 	}
 	byID := unitsByID(units)
 	out := make([]judge.CommentCase, len(cs))
 	for i, c := range cs {
 		cc := judge.CommentCase{ID: c.ID, Path: c.Path, Line: c.Line, Side: c.Side, Body: c.Body}
 		cc.Before = p.codeAround(ctx, []string{c.CommitSHA, base}, c.Path, c.Line)
-		if fileDiffs != nil {
-			cc.Diff = fileDiffs[c.Path]
+		var fd map[string]string
+		if c.CommitSHA != "" && c.CommitSHA != head {
+			fd = diffFrom(c.CommitSHA)
+		}
+		if fd == nil {
+			fd = diffFrom(base)
+		}
+		if fd != nil {
+			cc.Diff = fd[c.Path]
 		} else if u, ok := byID[c.UnitID]; ok {
 			cc.Diff = u.Diff
 		}

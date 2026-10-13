@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -274,11 +275,97 @@ func TestSinceDegraded(t *testing.T) {
 	}
 }
 
-// When the base head is not local the requests carry the comment's unit
-// diff instead of the base→head diff.
+// emptyDiffGit answers Diff(base, head) with an empty diff, as if nothing
+// changed between them (a push after the fix touching other files only).
+type emptyDiffGit struct {
+	gitx.Git
+	base, head string
+}
+
+func (g emptyDiffGit) Diff(ctx context.Context, base, head string) (string, error) {
+	if base == g.base && head == g.head {
+		return "", nil
+	}
+	return g.Git.Diff(ctx, base, head)
+}
+
+// A comment fixed by a push before the Since base is judged against the
+// diff from its own commit, not the (here empty) base→head diff
+// (regression: the fix was invisible and the comment flipped to "not
+// addressed").
+func TestSinceAddressedDiffsFromCommentCommit(t *testing.T) {
+	ctx := context.Background()
+	e := newSinceEnv(t)
+	e.item.ViewerReviewedSHA = v1SHA
+	mb, err := e.git.MergeBase(ctx, gitx.CompareRef(ctx, e.git, e.item.BaseRef), e.head)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The TTL comment was made on the PR's base commit, before v1.
+	for ti, th := range e.gh.ThreadMap[101] {
+		for ci, c := range th.Comments {
+			if c.ID == ttlID {
+				e.gh.ThreadMap[101][ti].Comments[ci].CommitSHA = mb
+			}
+		}
+	}
+	const fix = "+export const PROFILE_TTL_MS = 5 * 60 * 1000;"
+	e.jev.Answer = func(name string, q jev.Question, state any) jev.Answer {
+		if name != model.QCommentAddressed {
+			return jev.DefaultAnswer(name, q, state)
+		}
+		p := 0.1
+		if strings.Contains(stateJSON(state), fix) {
+			p = 0.9
+		}
+		return jev.Answer{Type: jev.Boolean, Probability: &p}
+	}
+	p := e.pipeline(t, func(d *Deps) { d.Git = emptyDiffGit{Git: e.git, base: v1SHA, head: e.head} })
+	s := e.run(t, p).Since
+	if s == nil || len(s.Comments) != 2 {
+		t.Fatalf("since = %+v", s)
+	}
+	for _, r := range s.Comments {
+		if r.CommentID == ttlID && (!r.Known || !r.Addressed) {
+			t.Errorf("TTL row = %+v, want addressed (its commit's diff has the fix)", r)
+		}
+	}
+}
+
+// Every read-modify-write of stored comments (threads merge, re-anchoring,
+// ai-draft sync) holds the host's comment lock for the item, so a run never
+// writes a stale copy over a concurrent submit or edit (regression: the
+// pipeline took no lock).
+func TestCommentWritesHoldCommentLock(t *testing.T) {
+	e := newSinceEnv(t)
+	var mu sync.Mutex
+	held := map[string]int{}
+	p := e.pipeline(t, func(d *Deps) {
+		d.CommentLock = func(id string) func() {
+			mu.Lock()
+			held[id]++
+			mu.Unlock()
+			return func() {}
+		}
+	})
+	e.run(t, p)
+	mu.Lock()
+	defer mu.Unlock()
+	if n := held[e.item.ID]; n < 3 || len(held) != 1 {
+		t.Errorf("comment lock taken %v, want ≥ 3 times for %s (threads, re-anchor, ai-drafts)", held, e.item.ID)
+	}
+}
+
+// When neither the base head nor the comment's commit is local the
+// requests carry the comment's unit diff.
 func TestSinceBaseNotLocalUsesUnitDiff(t *testing.T) {
 	e := newSinceEnv(t)
 	e.item.ViewerReviewedSHA = "0123456789abcdef0123456789abcdef01234567"
+	for ti, th := range e.gh.ThreadMap[101] {
+		for ci := range th.Comments {
+			e.gh.ThreadMap[101][ti].Comments[ci].CommitSHA = "fedcba9876543210fedcba9876543210fedcba98"
+		}
+	}
 	e.run(t, e.pipeline(t))
 	reqs := e.addressedRequests()
 	if len(reqs) != 2 {
