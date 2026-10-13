@@ -262,6 +262,12 @@ func (c *InProcess) Preview(ctx context.Context, query string) (model.Item, erro
 	return it, nil
 }
 
+// RemovePreview implements Client: it deletes id silently when it is still
+// a preview and does nothing otherwise (see removePreview).
+func (c *InProcess) RemovePreview(ctx context.Context, id string) error {
+	return c.removePreview(ctx, id)
+}
+
 // removePreviews deletes every stored preview except keep, silently (no
 // event: a preview was never listed). Failures are logged.
 func (c *InProcess) removePreviews(ctx context.Context, keep string) {

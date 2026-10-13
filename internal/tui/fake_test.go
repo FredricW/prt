@@ -49,7 +49,9 @@ type fakeClient struct {
 	// and ids; searches every Search call. hits are Search's canned answers
 	// per source; added and previewed are what Add and Preview return (Add
 	// also lists it); searchErr fails every Search.
+	// previewRemoves records RemovePreview ids.
 	adds, removes, previews []string
+	previewRemoves          []string
 	searches                []proto.SearchParams
 	hits                    map[proto.SearchSource][]proto.SearchHit
 	added, previewed        model.Item
@@ -117,6 +119,22 @@ func (f *fakeClient) Remove(_ context.Context, id string) error {
 	var keep []model.Item
 	for _, it := range f.items {
 		if it.ID != id {
+			keep = append(keep, it)
+		}
+	}
+	f.items = keep
+	return nil
+}
+
+// RemovePreview records the id and, like the daemon, drops the item only
+// when it is still a preview (listed items are never removed).
+func (f *fakeClient) RemovePreview(_ context.Context, id string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.previewRemoves = append(f.previewRemoves, id)
+	var keep []model.Item
+	for _, it := range f.items {
+		if it.ID != id || it.Source != model.SourcePreview {
 			keep = append(keep, it)
 		}
 	}

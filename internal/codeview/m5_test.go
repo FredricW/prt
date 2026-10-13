@@ -126,7 +126,7 @@ func TestSplitWrapsLongLines(t *testing.T) {
 }
 
 func TestSplitDegradesBelowMinWidth(t *testing.T) {
-	m := splitModel(t, loadDetail(t), 120, 30)
+	m := splitModel(t, loadDetail(t), 100, 30)
 	if m.DiffLayout() != LayoutSplit || m.layout().split {
 		t.Fatalf("layout %v split %v", m.DiffLayout(), m.layout().split)
 	}
@@ -508,7 +508,7 @@ func TestGoldenSplit(t *testing.T) {
 			press(t, &m, "g")
 			return m
 		},
-		"split_narrow_degraded": func(t *testing.T) Model { return splitModel(t, loadDetail(t), 120, 30) },
+		"split_narrow_degraded": func(t *testing.T) Model { return splitModel(t, loadDetail(t), 100, 30) },
 		"split_comments": func(t *testing.T) Model {
 			m := splitModel(t, loadComments(t), 180, 40)
 			moveTo(t, &m, model.SideNew, 12, "")

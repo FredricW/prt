@@ -90,6 +90,10 @@ type Client interface {
 	// model.SourcePreview (never listed by Items) and starts its analysis,
 	// so `tab` can show its overview without adding it (M5).
 	Preview(ctx context.Context, query string) (model.Item, error)
+	// RemovePreview deletes itemID only if it is still a preview; a listed
+	// item (ranked, discovered, added or promoted meanwhile) is kept. The
+	// TUI uses it to discard a preview when the search prompt closes (M5).
+	RemovePreview(ctx context.Context, itemID string) error
 	// Events streams patches; closed by Close.
 	Events() <-chan proto.Event
 	Close() error

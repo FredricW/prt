@@ -85,6 +85,10 @@ const (
 	// MethodPreview stores and analyses an item without listing it (`tab`
 	// on a search result): AddParams → model.Item (Source preview). M5.
 	MethodPreview = "preview"
+	// MethodRemovePreview deletes an item only while it is still a preview
+	// (the search prompt closed): ItemParams → {}. An item that is listed
+	// (ranked, discovered or added) is left alone. M5.
+	MethodRemovePreview = "remove_preview"
 )
 
 // SearchSource is one of the search-and-add sources (spec Picker "Search

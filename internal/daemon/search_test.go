@@ -333,6 +333,70 @@ func TestRemovePreviewIsSilent(t *testing.T) {
 	}
 }
 
+// RemovePreview (the TUI's discard when the prompt closes) never deletes a
+// listed item: one previewed while already stored, or a preview promoted
+// by enter before the discard landed.
+func TestRemovePreviewKeepsListedItems(t *testing.T) {
+	ctx := context.Background()
+	c, _ := previewClient(t)
+	ranked := model.Item{ID: model.PRItemID(483), Kind: model.KindPR, Number: 483, Source: model.SourceRanked, Section: model.SectionInvolved}
+	put(t, c.d.Store, ranked)
+	// tab on a listed hit, then esc.
+	it, err := c.Preview(ctx, "#483")
+	if err != nil {
+		t.Fatal(err)
+	}
+	drain(c.Events())
+	if err := c.RemovePreview(ctx, it.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := itemMap(t, c)[ranked.ID]; !ok {
+		t.Error("RemovePreview deleted a ranked item")
+	}
+	if hasEvent(drain(c.Events()), proto.EventRemove, ranked.ID) {
+		t.Error("RemovePreview emitted a remove event for a listed item")
+	}
+	// tab then enter before the preview reply: the late discard must keep
+	// the promoted item.
+	p, err := c.Preview(ctx, "#482")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Add(ctx, "#482"); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.RemovePreview(ctx, p.ID); err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := itemMap(t, c)[p.ID]; !ok || got.Source != model.SourceAdded {
+		t.Errorf("RemovePreview after Add: item %+v listed %v", got, ok)
+	}
+	// A real preview is removed; an unknown id is not an error.
+	q, err := c.Preview(ctx, "#300")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := c.RemovePreview(ctx, q.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.d.Store.Item(ctx, q.ID); err == nil {
+		t.Error("RemovePreview kept a preview")
+	}
+	if err := c.RemovePreview(ctx, "pr:999999"); err != nil {
+		t.Errorf("RemovePreview of a missing id: %v", err)
+	}
+}
+
+// A merged PR added from search records its state, so branch.state does
+// not read it as an open PR.
+func TestAddMergedPRKeepsState(t *testing.T) {
+	c, _ := previewClient(t)
+	it, err := c.Add(context.Background(), "#301")
+	if err != nil || it.PRState != "merged" {
+		t.Fatalf("add #301 = %+v, %v", it, err)
+	}
+}
+
 func TestStartupRemovesPreviews(t *testing.T) {
 	ctx := context.Background()
 	st := newTestStore(t)

@@ -477,8 +477,8 @@ func TestSearchPreview(t *testing.T) {
 		t.Error("a patch of the preview item did not reload it")
 	}
 	m = pressRun(t, m, "esc")
-	if s.active || m.previewID != "" || fmt.Sprint(f.removes) != "[pr:99]" {
-		t.Errorf("esc: open %v preview %q removes %v", s.active, m.previewID, f.removes)
+	if s.active || m.previewID != "" || fmt.Sprint(f.previewRemoves) != "[pr:99]" || len(f.removes) != 0 {
+		t.Errorf("esc: open %v preview %q previewRemoves %v removes %v", s.active, m.previewID, f.previewRemoves, f.removes)
 	}
 	if strings.Contains(m.View(), previewLine) {
 		t.Error("preview still shown after esc")
@@ -489,14 +489,77 @@ func TestSearchPreview(t *testing.T) {
 // without removing it.
 func TestSearchPreviewThenAdd(t *testing.T) {
 	m, f, _ := searchModel(t)
-	f.previewed = model.Item{ID: "pr:99", Kind: model.KindPR, Number: 99}
+	f.previewed = model.Item{ID: "pr:99", Kind: model.KindPR, Number: 99, Source: model.SourcePreview}
 	f.added = model.Item{ID: "pr:99", Kind: model.KindPR, Number: 99, Section: model.SectionAdded, Source: model.SourceAdded}
 	m = press(t, m, "/")
 	m = typeKeys(m, "9")
 	m = pressRun(t, m, "tab")
 	m = pressRun(t, m, "enter")
-	if len(f.removes) != 0 || fmt.Sprint(f.adds) != "[#99]" || m.previewID != "" {
-		t.Errorf("removes %v adds %v preview %q", f.removes, f.adds, m.previewID)
+	if len(f.removes) != 0 || len(f.previewRemoves) != 0 || fmt.Sprint(f.adds) != "[#99]" || m.previewID != "" {
+		t.Errorf("removes %v previewRemoves %v adds %v preview %q", f.removes, f.previewRemoves, f.adds, m.previewID)
+	}
+}
+
+// tab on a hit that is already listed, then esc, must never remove it: the
+// listed hit just moves the cursor (no preview is made).
+func TestSearchPreviewListedThenEsc(t *testing.T) {
+	m, f, s := searchModel(t)
+	m = press(t, m, "/")
+	m = typeKeys(m, "two")
+	m = press(t, m, "down")
+	m = pressRun(t, m, "tab")
+	m = pressRun(t, m, "esc")
+	if len(f.previews) != 0 || len(f.removes) != 0 || len(f.previewRemoves) != 0 || m.previewID != "" || s.active {
+		t.Errorf("listed tab+esc: previews %v removes %v previewRemoves %v id %q open %v",
+			f.previews, f.removes, f.previewRemoves, m.previewID, s.active)
+	}
+	if selectedID(m) != "pr:2" {
+		t.Errorf("cursor on %s, want the listed item", selectedID(m))
+	}
+}
+
+// When the daemon answers a preview with an item that is already stored
+// (not a preview), the TUI does not track it, so closing removes nothing.
+func TestSearchPreviewOfStoredItemNotTracked(t *testing.T) {
+	m, f, _ := searchModel(t)
+	f.previewed = model.Item{ID: "pr:2", Kind: model.KindPR, Number: 2, Title: "two", Source: model.SourceRanked}
+	m = press(t, m, "/")
+	m = typeKeys(m, "9")
+	m = update(t, m, previewMsg{item: f.previewed})
+	if m.previewID != "" {
+		t.Fatalf("a ranked item was tracked as the preview")
+	}
+	m = pressRun(t, m, "esc")
+	if len(f.removes) != 0 || len(f.previewRemoves) != 0 {
+		t.Errorf("esc removed %v / %v", f.removes, f.previewRemoves)
+	}
+}
+
+// tab then enter before the preview reply: the late reply only asks for a
+// preview-only removal (the daemon keeps the item Add promoted).
+func TestSearchLatePreviewAfterAdd(t *testing.T) {
+	m, f, s := searchModel(t)
+	f.previewed = model.Item{ID: "pr:99", Kind: model.KindPR, Number: 99, Source: model.SourcePreview}
+	f.added = model.Item{ID: "pr:99", Kind: model.KindPR, Number: 99, Section: model.SectionAdded, Source: model.SourceAdded}
+	m = press(t, m, "/")
+	m = typeKeys(m, "9")
+	m, tabCmd := updateCmd(t, m, keyMsg("tab"))
+	m = pressRun(t, m, "enter") // adds; the prompt closes
+	if s.active || fmt.Sprint(f.adds) != "[#99]" {
+		t.Fatalf("enter: open %v adds %v", s.active, f.adds)
+	}
+	for _, msg := range run(tabCmd) {
+		if _, ok := msg.(previewMsg); ok {
+			var cmd tea.Cmd
+			m, cmd = updateCmd(t, m, msg)
+			run(cmd)
+		}
+	}
+	if len(f.removes) != 0 || fmt.Sprint(f.previewRemoves) != "[pr:99]" {
+		t.Errorf("late preview: removes %v previewRemoves %v", f.removes, f.previewRemoves)
+	}
+	if items, _ := f.Items(context.Background()); len(items) != 4 {
+		t.Errorf("the added item was dropped: %v", items)
 	}
 }
 
@@ -772,7 +835,7 @@ func TestCodeLayoutAndOpenKeys(t *testing.T) {
 	}
 	m = press(t, m, "u")
 	_, mw, _ := m.dims()
-	want := fmt.Sprintf("side-by-side needs 140 columns (pane has %d) — showing unified", mw)
+	want := fmt.Sprintf("side-by-side needs a 140-column terminal (pane has %d) — showing unified", mw)
 	if p.layout != codeview.LayoutSplit || m.note != want {
 		t.Errorf("u: layout %v note %q", p.layout, m.note)
 	}

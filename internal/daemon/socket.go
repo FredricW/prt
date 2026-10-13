@@ -225,6 +225,11 @@ func (s *Socket) Preview(ctx context.Context, query string) (model.Item, error) 
 	return it, err
 }
 
+// RemovePreview implements Client.
+func (s *Socket) RemovePreview(ctx context.Context, itemID string) error {
+	return s.call(ctx, proto.MethodRemovePreview, proto.ItemParams{ItemID: itemID}, nil)
+}
+
 // Remove implements Client.
 func (s *Socket) Remove(ctx context.Context, itemID string) error {
 	return s.call(ctx, proto.MethodRemove, proto.ItemParams{ItemID: itemID}, nil)

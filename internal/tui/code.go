@@ -226,7 +226,7 @@ func (m *Model) layoutNote() {
 	}
 	l := m.code.DiffLayout()
 	if _, mw, _ := m.dims(); l == codeview.LayoutSplit && mw < codeview.SplitMinWidth {
-		m.note = fmt.Sprintf("side-by-side needs %d columns (pane has %d) — showing unified", codeview.SplitMinWidth, mw)
+		m.note = fmt.Sprintf("side-by-side needs a %d-column terminal (pane has %d) — showing unified", codeview.SplitMinTerminal, mw)
 		return
 	}
 	m.note = "diff: " + l.String()

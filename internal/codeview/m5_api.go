@@ -22,13 +22,18 @@ const (
 	LayoutSplit
 )
 
-// SplitMinWidth is the narrowest component width that renders side-by-side
-// (spec: "Below ~140 columns side-by-side degrades to unified").
-const SplitMinWidth = 140
+// SplitMinTerminal is the spec's threshold in terminal columns ("Below
+// ~140 columns side-by-side degrades to unified").
+const SplitMinTerminal = 140
+
+// SplitMinWidth is the narrowest component width that renders side-by-side:
+// the Code pane of a SplitMinTerminal-column terminal (the TUI's 36-column
+// sidebar plus its 2-column gap take 38).
+const SplitMinWidth = SplitMinTerminal - 38
 
 // noteSplitNarrow is the standing note while side-by-side is requested but
 // the component is narrower than SplitMinWidth.
-const noteSplitNarrow = "side-by-side needs ≥140 columns — showing unified"
+const noteSplitNarrow = "side-by-side needs a ≥140-column terminal — showing unified"
 
 // String names the layout for notes and help.
 func (l Layout) String() string {

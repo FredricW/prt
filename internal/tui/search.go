@@ -120,6 +120,14 @@ func (m *Model) onChoice(ch searchview.Choice) tea.Cmd {
 		}
 		return m.addCmd(hit.Query)
 	case searchview.ChoicePreview:
+		if i := m.picker.indexOf(hit.ItemID); hit.Listed || i >= 0 {
+			// Already listed: nothing to preview, show it in the picker.
+			m.note = hitLabel(hit) + " is already in the picker"
+			if i >= 0 && m.picker.moveTo(i) {
+				return m.selectionChanged()
+			}
+			return nil
+		}
 		m.note = "previewing " + hitLabel(hit) + "…"
 		c, q := m.client, hit.Query
 		return func() tea.Msg {
@@ -159,16 +167,24 @@ func (m *Model) removeCmd(it model.Item) tea.Cmd {
 	}
 }
 
-// discardPreview removes the previewed item (the prompt closed).
+// discardPreview removes the previewed item (the prompt closed). It goes
+// through RemovePreview, so an item that is listed (or was added or
+// promoted meanwhile) is never deleted.
 func (m *Model) discardPreview() tea.Cmd {
 	if m.previewID == "" {
 		return nil
 	}
-	c, id := m.client, m.previewID
+	id := m.previewID
 	m.previewID, m.preview = "", nil
 	m.previewSeq++
+	return m.removePreviewCmd(id)
+}
+
+// removePreviewCmd asks the daemon to drop id if it is still a preview.
+func (m *Model) removePreviewCmd(id string) tea.Cmd {
+	c := m.client
 	return func() tea.Msg {
-		return removedMsg{label: id, quiet: true, err: c.Remove(context.Background(), id)}
+		return removedMsg{label: id, quiet: true, err: c.RemovePreview(context.Background(), id)}
 	}
 }
 
@@ -210,9 +226,20 @@ func (m Model) onSearchMsg(msg tea.Msg) (Model, tea.Cmd, bool) {
 			m.note = "preview failed: " + msg.err.Error()
 			return m, nil, true
 		}
+		if msg.item.Source != model.SourcePreview {
+			// Already listed (ranked, discovered or added): never track it as
+			// a preview, so closing the prompt cannot delete it. Show it by
+			// moving the picker cursor to it instead.
+			m.note = itemLabel(msg.item) + " is already in the picker"
+			m.previewID, m.preview = "", nil // the daemon dropped any older preview
+			m.previewSeq++
+			if i := m.picker.indexOf(msg.item.ID); i >= 0 && m.picker.moveTo(i) {
+				return m, m.selectionChanged(), true
+			}
+			return m, nil, true
+		}
 		if !m.search.Active() { // closed meanwhile: drop it again
-			m.previewID = msg.item.ID
-			return m, m.discardPreview(), true
+			return m, m.removePreviewCmd(msg.item.ID), true
 		}
 		m.note = ""
 		m.previewID, m.preview = msg.item.ID, nil

@@ -394,6 +394,12 @@ func (s *server) call(ctx context.Context, sc *serverConn, m proto.Message) (any
 			return nil, err
 		}
 		return c.Preview(ctx, p.Query)
+	case proto.MethodRemovePreview:
+		p, err := params[proto.ItemParams](m)
+		if err != nil {
+			return nil, err
+		}
+		return empty{}, c.RemovePreview(ctx, p.ItemID)
 	case proto.MethodSubscribe:
 		sc.subscribe()
 		return empty{}, nil
