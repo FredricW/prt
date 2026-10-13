@@ -263,6 +263,36 @@ func TestFormat(t *testing.T) {
 	}
 }
 
+// Regression: two functions with the same edit gave two units with the same
+// id, so the store kept only one of them.
+func TestSplitDuplicateBodiesGetUniqueIDs(t *testing.T) {
+	body := "\tif err != nil {\n\t\treturn err\n\t}\n\treturn nil\n}\n"
+	fn := func(name string, wrapped bool) string {
+		b := body
+		if wrapped {
+			b = strings.Replace(b, "return err", "return wrap(err)", 1)
+		}
+		return "func " + name + "() error {\n\terr := do()\n\tx := 1\n\ty := 2\n\tz := 3\n" + b
+	}
+	gap := "\n// spacer\n// spacer\n// spacer\n// spacer\n// spacer\n// spacer\n\n"
+	old := "package x\n\n" + fn("A", false) + gap + fn("B", false)
+	head := "package x\n\n" + fn("A", true) + gap + fn("B", true)
+	files, src := build(t, change{path: "x.go", old: old, new: head})
+	units := split(t, files, src) // checkInvariants requires unique ids
+	if len(units) != 2 {
+		t.Fatalf("got %d units %v, want 2", len(units), symbols(units))
+	}
+	if units[0].Diff != units[1].Diff {
+		t.Fatalf("fixture should give identical bodies:\n%s\n---\n%s", units[0].Diff, units[1].Diff)
+	}
+	if units[0].ID != model.UnitID("x.go", units[0].Diff) {
+		t.Errorf("first duplicate should keep the content id")
+	}
+	if units[1].ID != model.DuplicateUnitID(units[0].ID, units[1].Symbol, 2) {
+		t.Errorf("second duplicate id = %s", units[1].ID)
+	}
+}
+
 func TestSplitFallback(t *testing.T) {
 	store := change{path: "store.go", old: fixture(t, "go/store.base.go"), new: fixture(t, "go/store.head.go")}
 	broken := change{path: "bad.go",

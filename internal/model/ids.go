@@ -42,6 +42,15 @@ func UnitID(path, hunk string) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
+// DuplicateUnitID is the id of the n-th (n >= 2) unit of one item whose
+// UnitID equals id (identical path and diff body, e.g. the same edit in two
+// functions of one file). Ids must be unique within an item, so later
+// duplicates mix in their enclosing symbol and occurrence number; the first
+// keeps the plain content id. See DECISIONS "Duplicate unit ids".
+func DuplicateUnitID(id, symbol string, n int) string {
+	return ContentHash("dup-unit", id, symbol, strconv.Itoa(n))
+}
+
 // GroupID is the hash of the sorted unit id list; it is also the cache key for
 // a group's review.
 func GroupID(unitIDs []string) string {

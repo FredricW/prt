@@ -75,7 +75,21 @@ func Split(ctx context.Context, in Input) ([]model.ChangeUnit, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, fmt.Errorf("parse: %w", err)
 	}
-	return DetectMoved(units), nil
+	return DetectMoved(dedupeIDs(units)), nil
+}
+
+// dedupeIDs makes unit ids unique within the item: the second and later
+// units with the same content id get model.DuplicateUnitID.
+func dedupeIDs(units []model.ChangeUnit) []model.ChangeUnit {
+	seen := make(map[string]int, len(units))
+	for i := range units {
+		id := units[i].ID
+		seen[id]++
+		if n := seen[id]; n > 1 {
+			units[i].ID = model.DuplicateUnitID(id, units[i].Symbol, n)
+		}
+	}
+	return units
 }
 
 // fileCtx is one diff file with its parsed sides (nil sides = fallback).

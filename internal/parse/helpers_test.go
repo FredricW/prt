@@ -169,6 +169,13 @@ func checkInvariants(t *testing.T, files []diff.File, units []model.ChangeUnit) 
 	if i != len(units) {
 		t.Fatalf("%d units left over after all hunks", len(units)-i)
 	}
+	ids := map[string]bool{}
+	for _, u := range units {
+		if ids[u.ID] {
+			t.Fatalf("unit id %s is not unique within the item", u.ID)
+		}
+		ids[u.ID] = true
+	}
 	return groups
 }
 
@@ -197,11 +204,26 @@ func checkUnit(t *testing.T, u model.ChangeUnit, order int) {
 		t.Errorf("unit %d range %+v, diff has %d old / %d new lines", order, u.Range, oldN, newN)
 	case u.Order != order:
 		t.Errorf("unit order %d, want %d", u.Order, order)
-	case u.ID != model.UnitID(u.Path, u.Diff) || u.FileID != u.Path:
+	case !contentID(u) || u.FileID != u.Path:
 		t.Errorf("unit %d id/file id not content-based", order)
 	case u.ShapeHash == "":
 		t.Errorf("unit %d has no shape hash", order)
 	}
+}
+
+// contentID reports whether u's id is its content id or one of its
+// duplicate ids.
+func contentID(u model.ChangeUnit) bool {
+	id := model.UnitID(u.Path, u.Diff)
+	if u.ID == id {
+		return true
+	}
+	for n := 2; n <= 64; n++ {
+		if u.ID == model.DuplicateUnitID(id, u.Symbol, n) {
+			return true
+		}
+	}
+	return false
 }
 
 // bySymbol returns the units of path with the given symbol.
