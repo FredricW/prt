@@ -71,6 +71,11 @@ make demo       # interactive
 make snapshot   # non-interactive
 ```
 
+Both run with `--offline`, so Jev is never called and every fixture item
+shows the `labels unavailable` mode (git facts, filters off). To see label
+chips, gutter marks, filters and the full Overview, run `prt` with
+`JEV_API_KEY` set.
+
 Configuration is optional: `prt.toml`, `prt.routing.toml` and
 `prt.questions.toml` are looked up in `.git/prt/`, then `$XDG_CONFIG_HOME/prt/`.
 See the spec's Configuration section for every key.
