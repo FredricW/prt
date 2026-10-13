@@ -168,8 +168,8 @@ func capFor(it model.Item, r config.Routing) float64 {
 // routeStage is stage 6: route.Route over the groups' aggregate labels
 // (from a pre-aggregate pass without reviews), the user's overrides,
 // context blocks (route.Gather), review requests, and route.Plan under the
-// cost cap with estimates (0 for groups whose review is cached). It stores
-// the routing table (queued rows) and returns what stage 7 needs.
+// cost cap with estimates (cached reviews included, see estimate). It
+// stores the routing table (queued rows) and returns what stage 7 needs.
 func (p *Pipeline) routeStage(ctx context.Context, r *run, a analysis, rl *model.RunLog) (*routeOut, error) {
 	in, err := p.aggInput(ctx, r, a)
 	if err != nil {
@@ -205,10 +205,9 @@ func (p *Pipeline) routeStage(ctx context.Context, r *run, a analysis, rl *model
 		ro.inputs[d.GroupID] = gi
 		ro.reqs[d.GroupID] = p.fn.buildReview(gi)
 	}
-	ignore := r.opt.ignoresCache(model.StageReview)
 	ro.plan = p.fn.plan(route.PlanInput{
 		Decisions: decs, CapUSD: ro.capUSD, Spent: r.titleCost,
-		Estimate: func(d route.Decision) float64 { return p.estimate(ctx, ro, d.GroupID, d.Tier, ignore) },
+		Estimate: func(d route.Decision) float64 { return p.estimate(ro, d.GroupID, d.Tier) },
 	})
 	ro.reserved = r.titleCost
 	for _, pl := range ro.plan {
@@ -226,17 +225,16 @@ func (p *Pipeline) routeStage(ctx context.Context, r *run, a analysis, rl *model
 }
 
 // estimate is the pre-call cost bound of a group's routed review: 0 for
-// tier none or a cached review (unless the cache is ignored), else
-// review.EstimateCost of its request on the tier's model.
-func (p *Pipeline) estimate(ctx context.Context, ro *routeOut, groupID string, tier model.Tier, ignoreCache bool) float64 {
+// tier none, else review.EstimateCost of its request on the tier's model —
+// also when the review is cached. The cap bounds the item's estimated
+// review cost, not this run's spend, so a re-run plans exactly like the run
+// that filled the cache: a refresh does not quietly review the over-cap
+// groups (only `$` does), and replays do not depend on the store's history
+// (DECISIONS "M3 integration").
+func (p *Pipeline) estimate(ro *routeOut, groupID string, tier model.Tier) float64 {
 	req, ok := ro.reqs[groupID]
 	if !ok || tier == model.TierNone {
 		return 0
-	}
-	if !ignoreCache {
-		if _, hit := p.cachedReview(ctx, groupID, tier); hit {
-			return 0
-		}
 	}
 	return review.EstimateCost(p.tierModel(tier), req)
 }

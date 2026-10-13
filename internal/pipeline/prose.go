@@ -32,6 +32,17 @@ func (o proseOut) spent() float64 {
 	return total
 }
 
+// cost sums what the calls cost when they ran, cache hits included. The
+// route plan counts titles at this cost so a re-run with cached titles
+// plans like the run that made them.
+func (o proseOut) cost() float64 {
+	total := 0.0
+	for _, c := range o.calls {
+		total += c.Cost
+	}
+	return total
+}
+
 // prose answers a fast-tier prose request from the cache namespace ns, or
 // (bypass, or a miss) with one call retried once, then caches the cleaned
 // text. A cache hit is logged as a Cached call with what it cost when it
@@ -106,7 +117,7 @@ func (p *Pipeline) titleGroups(ctx context.Context, r *run, units []model.Change
 			rl.Calls += len(res.calls)
 		}
 		rl.Cost += res.spent()
-		r.titleCost += res.spent()
+		r.titleCost += res.cost()
 		switch {
 		case res.cached:
 			cached++

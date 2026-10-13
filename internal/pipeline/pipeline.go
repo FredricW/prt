@@ -167,8 +167,9 @@ type run struct {
 	f     model.Fetch
 	opt   RunOptions
 	calls *callLog
-	// titleCost is what this run's group-title calls cost; the route plan
-	// counts it against the item's cap.
+	// titleCost is what the current groups' titles cost when they were
+	// asked (cache hits included); the route plan counts it against the
+	// item's cap.
 	titleCost float64
 	// jevCalls and jevCost are this run's stage-4 totals (ReviewStats).
 	jevCalls int

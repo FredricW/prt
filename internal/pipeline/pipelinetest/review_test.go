@@ -425,6 +425,37 @@ func TestFixtureCostCap(t *testing.T) {
 	}
 }
 
+// The cap bounds estimates: a re-run counts cached reviews at their
+// estimate and cached titles at what they cost, so it plans exactly like
+// the first run instead of spending freed budget on the groups that were
+// over the cap (which also kept snapshot replays from depending on the
+// store's history). Calls cost a fifth of their estimate, as real ones do.
+func TestFixtureCostCapRerunPlansTheSame(t *testing.T) {
+	answer := reviewAnswer(0.9, 0.9)
+	s := newScripted(func(req review.Request) (review.Result, error) {
+		res, err := answer(req)
+		spec := fastSpec
+		if req.Tier == model.TierDeep {
+			spec = deepSpec
+		}
+		res.Cost = review.EstimateCost(spec, req) / 5
+		return res, err
+	})
+	f := openFixture(t, s.tiers(), routing(func(r *config.Routing) { r.CostCapUSD = 0.40 }))
+	first := runPR(t, f, 101, pipeline.RunOptions{})
+	calls := s.count(review.TaskReview, model.TierFast) + s.count(review.TaskReview, model.TierDeep)
+	if calls == 0 || first.Agg.Review.OverCap == 0 {
+		t.Fatalf("want some reviewed and some over the cap: %d calls, %s", calls, tierCounts(first.Reviews))
+	}
+	second := runPR(t, f, 101, pipeline.RunOptions{})
+	if n := s.count(review.TaskReview, model.TierFast) + s.count(review.TaskReview, model.TierDeep); n != calls {
+		t.Errorf("re-run made %d more review calls", n-calls)
+	}
+	if a, b := tierCounts(first.Reviews), tierCounts(second.Reviews); a != b {
+		t.Errorf("re-run rows %s, first run %s", b, a)
+	}
+}
+
 // Calibration: with calibration_sample 1 every fast-routed group is also
 // reviewed deep; a medium deep finding the fast review lacks is a miss,
 // stored as a sample and counted in the calibration panel.
