@@ -134,6 +134,7 @@ Details: `CHANGELOG.md` (per milestone), `docs/DECISIONS.md` (every call made), 
   - billing-svc has no recordings: its items show "labels unavailable" in the demo (no spend this milestone).
   - A long workspace root cuts the counts off the header line.
 - Review fixes: discovery no longer loses repos behind a symlink at the depth limit; repo keys are unique and space-free; repos that cannot be opened show as error headers and discovery notes reach the screen; one process runs a repo's pipeline (a lock file; `prt` in a repo a workspace daemon serves attaches to it); a repo-qualified `/` search wins over the filter; the settings page says a global save skips repos with their own prt.toml; resize clamp, ordered width saves and lost drag releases fixed.
+- Second review fixes: one preview per workspace (a preview in another repo no longer leaves the first one analysing unseen); a global settings save writes only the changed keys, so a repo's own role and owns never reach the global file; clones of one GitHub repo get distinct labels and an ambiguous repo name is reported as such; git failures other than "not a repository" are shown instead of switching to a workspace; two prt processes keep each other's pane widths; `prt daemon` is tested end to end.
 - No model spend, no GitHub writes.
 
 ### Not done

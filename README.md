@@ -182,7 +182,8 @@ prt --root ~/code   # every git repository under ~/code in one picker
 - **Settings page** (`,` or `:settings`): auto-review strategy, your role
   and owned globs, cost cap and deep slots, fast/deep models and embedder,
   urgency weights and thresholds. It saves to `.git/prt/prt.toml` (default)
-  or the global `$XDG_CONFIG_HOME/prt/prt.toml`, keeping your comments and
+  or the global `$XDG_CONFIG_HOME/prt/prt.toml` (only the fields you
+  changed), keeping your comments and
   unrelated keys, and applies the change without a restart (re-ranking or
   re-routing as needed). It shows whether `JEV_API_KEY` and
   `PRT_ANTHROPIC_API_KEY` are set (never their values), whether Ollama is

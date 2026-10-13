@@ -507,6 +507,25 @@ new resize lines. No model spend; no GitHub writes.
   are ordered and flushed at quit; a lost mouse release no longer leaves the
   picker drag stuck.
 
+#### Fixed (second review)
+
+- One preview per workspace: tabbing to a hit of another repo drops the
+  previous repo's preview, which before stayed stored and kept analysing
+  (at user priority, possibly paid) without ever being listed.
+- A global settings save writes only the keys you changed. From a repo with
+  its own prt.toml it used to copy that repo's role, owns, weights and
+  models into the global file, and in a workspace every other repo applied
+  them at once.
+- Two clones of one GitHub repo get labels that tell them apart
+  ("acme/portal (portal-2)"); `:repo acme/portal` and a query qualified with
+  an ambiguous repo name now say it is ambiguous instead of picking one or
+  searching the text.
+- prt run where git fails for another reason than "not a git repository"
+  (git missing, dubious ownership) prints git's error instead of switching
+  to a workspace and reporting "no git repositories under".
+- Two prt processes resizing different panes no longer undo each other's
+  saved widths.
+
 #### Known limits
 
 - A long workspace root (such as a temp dir) cuts the counts off the header
