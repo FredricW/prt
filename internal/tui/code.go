@@ -1,11 +1,14 @@
 package tui
 
 import (
+	"context"
+
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/fredricw/prt/internal/codeview"
+	"github.com/fredricw/prt/internal/model"
 	"github.com/fredricw/prt/internal/proto"
 )
 
@@ -25,6 +28,12 @@ type codePane interface {
 	// every key except ctrl+c then goes to the pane.
 	Capturing() bool
 	FocusUnit(unitID string) bool
+	// Mode is the reading mode in effect; SetMode switches it and reports
+	// false when by change is not available (no groups yet).
+	Mode() codeview.Mode
+	SetMode(md codeview.Mode) bool
+	// PendingEdit returns and clears a merge/split made by the last key.
+	PendingEdit() (model.GroupEdit, bool)
 	HelpBindings() [][]key.Binding
 	ShortBindings() []key.Binding
 	View() string
@@ -48,12 +57,54 @@ func (p *codeviewPane) Clear()                        { p.m.Clear() }
 func (p *codeviewPane) HandleKey(k tea.KeyMsg) bool   { return p.m.HandleKey(k) }
 func (p *codeviewPane) Capturing() bool               { return p.m.Capturing() }
 func (p *codeviewPane) FocusUnit(id string) bool      { return p.m.FocusUnit(id) }
-func (p *codeviewPane) HelpBindings() [][]key.Binding { return p.m.HelpBindings() }
-func (p *codeviewPane) ShortBindings() []key.Binding  { return p.m.ShortBindings() }
-func (p *codeviewPane) View() string                  { return p.m.View() }
+func (p *codeviewPane) Mode() codeview.Mode           { return p.m.Mode() }
+func (p *codeviewPane) SetMode(md codeview.Mode) bool { return p.m.SetMode(md) }
+
+func (p *codeviewPane) PendingEdit() (model.GroupEdit, bool) { return p.m.PendingEdit() }
+func (p *codeviewPane) HelpBindings() [][]key.Binding        { return p.m.HelpBindings() }
+func (p *codeviewPane) ShortBindings() []key.Binding         { return p.m.ShortBindings() }
+func (p *codeviewPane) View() string                         { return p.m.View() }
 
 func (p *codeviewPane) Update(msg tea.Msg) tea.Cmd {
 	var cmd tea.Cmd
 	p.m, cmd = p.m.Update(msg)
 	return cmd
+}
+
+// groupEditedMsg answers a daemon EditGroups call.
+type groupEditedMsg struct{ err error }
+
+// sendGroupEdit returns a command that sends the Code page's pending merge
+// or split to the daemon for the shown item, or nil when there is none.
+// The daemon stores the edit and re-runs the item; its patch events reload
+// the detail through the usual flow.
+func (m Model) sendGroupEdit() tea.Cmd {
+	e, ok := m.code.PendingEdit()
+	if !ok {
+		return nil
+	}
+	id := ""
+	if m.detail != nil {
+		id = m.detail.Item.ID
+	} else if it, ok := m.picker.selected(); ok {
+		id = it.ID
+	}
+	if id == "" {
+		return nil
+	}
+	e.ItemID = id
+	c := m.client
+	return func() tea.Msg {
+		return groupEditedMsg{err: c.EditGroups(context.Background(), proto.GroupEditParams{ItemID: id, Edit: e})}
+	}
+}
+
+// onGroupEdited shows the outcome of a merge or split in the status line.
+func (m Model) onGroupEdited(msg groupEditedMsg) Model {
+	if msg.err != nil {
+		m.note = "regroup failed: " + msg.err.Error()
+	} else {
+		m.note = "regrouping…"
+	}
+	return m
 }

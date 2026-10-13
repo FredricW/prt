@@ -21,7 +21,24 @@ const (
 	rowCollapsed                // one-line noise summary
 	rowNote                     // dim note (hidden units, empty file)
 	rowBlank                    // gap between units
+	rowGroupHead                // chips strip of a group (by change)
+	rowText                     // a styled text line (by change: why block, counts)
 )
+
+// textStyle picks the style of a rowText line.
+type textStyle uint8
+
+const (
+	textPlain textStyle = iota
+	textBold
+	textDim
+)
+
+// ptext is the content of one rowText line.
+type ptext struct {
+	s  string
+	st textStyle
+}
 
 // prow is one right-pane row; it holds indices, strings are made on render.
 type prow struct {
@@ -74,7 +91,19 @@ type pane struct {
 	heads  []int // header row of each unit (same order as units)
 	notes  []string
 	gutter int // digits of the widest line number
+
+	// By change: the group header's chips and their rows, and text lines.
+	gchips    []chip
+	gchipRows [][2]int
+	texts     []ptext
 }
+
+func (p *pane) addText(s string, st textStyle) {
+	p.rows = append(p.rows, prow{kind: rowText, line: int32(len(p.texts)), pair: -1})
+	p.texts = append(p.texts, ptext{s: s, st: st})
+}
+
+func (p *pane) addBlank() { p.rows = append(p.rows, prow{kind: rowBlank, pair: -1}) }
 
 // buildPane lays out file fi's visible units in line order.
 func (m *Model) buildPane(fi int) *pane {

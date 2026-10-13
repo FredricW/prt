@@ -31,6 +31,7 @@ type styles struct {
 	markHi, markMid, markLow, markValue     lipgloss.Style
 	markLeft, markNone                      lipgloss.Style
 	cellEyes, cellSkim, cellSkip            lipgloss.Style
+	placeholder                             lipgloss.Style // placeholder group names
 }
 
 func newStyles(r *lipgloss.Renderer) styles {
@@ -51,6 +52,7 @@ func newStyles(r *lipgloss.Renderer) styles {
 		markLow: faint, markValue: r.NewStyle().Foreground(lipgloss.Color("6")),
 		markLeft: r.NewStyle().Foreground(yellow), markNone: faint,
 		cellEyes: r.NewStyle().Foreground(red), cellSkim: r.NewStyle().Foreground(yellow), cellSkip: faint,
+		placeholder: faint.Italic(true),
 	}
 }
 
@@ -78,7 +80,12 @@ func (m Model) View() string {
 	if lay.top == 1 {
 		out = append(out, m.topLine())
 	}
-	list := m.listLines(lay)
+	var list []string
+	if m.byChange() {
+		list = m.groupListLines(lay)
+	} else {
+		list = m.listLines(lay)
+	}
 	pane := m.paneLines(lay)
 	for i := range lay.bodyH {
 		if lay.listW > 0 {
@@ -215,7 +222,13 @@ func (m Model) paneLines(lay layout) []string {
 	if m.overlay {
 		return m.overlayView(lay, out)
 	}
-	out[0] = m.st.title.Render(pad(fit(m.fileTitle(lay), lay.paneW), lay.paneW))
+	title := ""
+	if m.byChange() {
+		title = m.groupTitle(lay)
+	} else {
+		title = m.fileTitle(lay)
+	}
+	out[0] = m.st.title.Render(pad(fit(title, lay.paneW), lay.paneW))
 	if m.cache.width != lay.paneW {
 		m.cache.width = lay.paneW
 		m.cache.lines = map[int]string{}
@@ -295,6 +308,10 @@ func (m Model) buildRow(i, width int) string {
 		return m.st.collapsed.Render(fit("▸ "+diffview.Clean(m.collapsedText(m.p.units[r.unit])), width))
 	case rowNote:
 		return m.st.hidden.Render(fit(m.p.notes[r.line], width))
+	case rowGroupHead:
+		return ansi.Truncate(m.groupHeadText(int(r.line)), width, ellipsis)
+	case rowText:
+		return m.textRow(m.p.texts[r.line], width)
 	}
 	return ""
 }

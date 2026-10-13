@@ -43,6 +43,9 @@ const (
 func (c *InProcess) Discover(ctx context.Context) error {
 	c.discoverMu.Lock()
 	defer c.discoverMu.Unlock()
+	if n := c.sourceNote(); n != "" {
+		c.send(proto.Event{Type: proto.EventLog, Note: n})
+	}
 	seen := map[string]bool{}
 	ghOK := c.discoverPRs(ctx, seen)
 	if ghOK {

@@ -34,6 +34,13 @@ type content struct {
 	// anyOwned is true when at least one file is owned; without owned files
 	// the "mine" filter is ignored (it would hide everything).
 	anyOwned bool
+
+	// groups is the by-change list (mode B), empty before M2 analysis;
+	// groupOf maps a unit id to its index in groups.
+	groups  []groupEntry
+	groupOf map[string]int
+	// split is the split suggestion (Agg.Split), nil when none.
+	split []model.SplitFile
 }
 
 // plain reports whether there are no units to lay out, so the component
@@ -74,6 +81,10 @@ func buildContent(d proto.Detail) content {
 	}
 	for _, f := range c.files {
 		c.anyOwned = c.anyOwned || f.owned
+	}
+	buildGroups(&c, d)
+	if len(c.groups) > 0 && d.Agg != nil && d.Agg.Split != nil {
+		c.split = d.Agg.Split.Files
 	}
 	return c
 }

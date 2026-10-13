@@ -56,6 +56,10 @@ type Client interface {
 	// Checkout runs `git checkout` of the item's head ref. With p.Force false
 	// and a dirty tree it does nothing and returns Dirty = true.
 	Checkout(ctx context.Context, p proto.CheckoutParams) (proto.CheckoutResult, error)
+	// EditGroups stores a user merge/split/reset of the item's groups and
+	// queues the item for re-analysis (cached stages are skipped, so only
+	// clustering re-runs); a patch event follows when the new groups land.
+	EditGroups(ctx context.Context, p proto.GroupEditParams) error
 	// Events streams patches; closed by Close.
 	Events() <-chan proto.Event
 	Close() error

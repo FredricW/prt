@@ -91,14 +91,29 @@ func (m *Model) filterActive(f Filter) bool {
 }
 
 // collapsed reports whether a unit is drawn as a one-line noise summary:
-// noise per the aggregate, not unsure, and not expanded by `z` or FocusUnit.
+// noise per the aggregate, not unsure, and not expanded by `z` (on its file
+// by file, on its group by change) or FocusUnit.
 func (m *Model) collapsed(id string) bool {
 	a := m.c.aggs[id]
-	if !m.c.hasAgg || a == nil || !a.Noise || a.Unsure {
+	if !m.c.hasAgg || a == nil || !a.Noise || a.Unsure || m.expandedUnits[id] {
 		return false
 	}
-	u := m.c.units[id]
-	return !m.expandedFiles[u.Path] && !m.expandedUnits[id]
+	if m.byChange() {
+		gi, ok := m.c.groupOf[id]
+		return !ok || !m.expandedGroups[m.c.groups[gi].g.ID]
+	}
+	return !m.expandedFiles[m.c.units[id].Path]
+}
+
+// hiddenIn counts the units of ids that filters hide.
+func (m *Model) hiddenIn(ids []string) int {
+	n := 0
+	for _, id := range ids {
+		if !m.visible(id) {
+			n++
+		}
+	}
+	return n
 }
 
 // SetFilter turns filter f on or off (filters without data in M1 are

@@ -223,6 +223,11 @@ func (s *Socket) Checkout(ctx context.Context, p proto.CheckoutParams) (proto.Ch
 	return r, err
 }
 
+// EditGroups implements Client.
+func (s *Socket) EditGroups(ctx context.Context, p proto.GroupEditParams) error {
+	return s.call(ctx, proto.MethodEditGroups, p, nil)
+}
+
 // Events implements Client. The channel closes when the connection drops or
 // Close is called.
 func (s *Socket) Events() <-chan proto.Event { return s.events }

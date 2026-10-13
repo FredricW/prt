@@ -8,6 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/fredricw/prt/internal/codeview"
 	"github.com/fredricw/prt/internal/daemon"
 )
 
@@ -24,8 +25,10 @@ func Snapshot(ctx context.Context, c daemon.Client, w io.Writer, width, height, 
 
 // SnapshotWithOptions discovers items, analyses every item synchronously
 // (when c is a Runner), then writes, for each of the first maxItems items,
-// the picker with the Overview tab and the picker with the Code tab, plus
-// one help-overlay screen. Screens are separated by "=== screen: … ==="
+// the picker with the Overview tab, the picker with the Code tab by file
+// and the picker with the Code tab by change ("code-by-change"; by file
+// with the note "no groups yet" when the item has no groups), plus one
+// help-overlay screen. Screens are separated by "=== screen: … ==="
 // headers. Output has no colour; pass o.Now for deterministic ages.
 func SnapshotWithOptions(ctx context.Context, c daemon.Client, w io.Writer, width, height, maxItems int, o Options) error {
 	if err := c.Discover(ctx); err != nil {
@@ -72,6 +75,13 @@ func SnapshotWithOptions(ctx context.Context, c daemon.Client, w io.Writer, widt
 			if _, err := fmt.Fprintf(w, "=== screen: picker + %s · %s ===\n%s\n\n", tab.name, it.ID, m.View()); err != nil {
 				return err
 			}
+		}
+		// By change; without groups the page stays by file and says so.
+		m.code.SetMode(codeview.ModeChange)
+		_, err = fmt.Fprintf(w, "=== screen: picker + code-by-change · %s ===\n%s\n\n", it.ID, m.View())
+		m.code.SetMode(codeview.ModeFile)
+		if err != nil {
+			return err
 		}
 	}
 	m.tab, m.focus, m.showHelp = TabOverview, FocusPicker, true

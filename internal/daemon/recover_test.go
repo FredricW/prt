@@ -144,6 +144,27 @@ func TestDiscoverWithoutGitHubSendsNote(t *testing.T) {
 	}
 }
 
+// A source note (Jev replay) is reported on every discovery.
+func TestDiscoverSendsSourceNote(t *testing.T) {
+	ctx := context.Background()
+	c := newClient(t, newTestStore(t), discoverGit(), nil, nil)
+	c.SetSourceNote("Jev: replay of testdata/recordings/jev (offline)")
+	for range 2 {
+		if err := c.Discover(ctx); err != nil {
+			t.Fatal(err)
+		}
+		found := false
+		for _, e := range drain(c.Events()) {
+			if e.Type == proto.EventLog && strings.Contains(e.Note, "Jev: replay") {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatal("no EventLog note for the Jev replay source")
+		}
+	}
+}
+
 // A discovery pass that changes nothing must not emit item events (each one
 // makes clients reload the whole list).
 func TestDiscoverUnchangedEmitsNoItemEvents(t *testing.T) {

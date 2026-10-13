@@ -29,6 +29,10 @@ type fakeClient struct {
 	refreshes []proto.ItemParams
 	checkouts []proto.CheckoutParams
 	detailIDs []string
+	// groupEdits records EditGroups calls (Code page ⇧M / X); editErr is
+	// returned by EditGroups when set.
+	groupEdits []proto.GroupEditParams
+	editErr    error
 }
 
 var _ daemon.Client = (*fakeClient)(nil)
@@ -91,6 +95,13 @@ func (f *fakeClient) Checkout(_ context.Context, p proto.CheckoutParams) (proto.
 	return res, nil
 }
 
+func (f *fakeClient) EditGroups(_ context.Context, p proto.GroupEditParams) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.groupEdits = append(f.groupEdits, p)
+	return f.editErr
+}
+
 // listenerStarted is signalled each time a command asks for the event
 // channel: that command is the (blocking) event listener, so run abandons it.
 var listenerStarted = make(chan struct{}, 64)
@@ -105,8 +116,9 @@ func (f *fakeClient) Events() <-chan proto.Event {
 func (f *fakeClient) Close() error { return nil }
 
 // fakePane is a recording codePane: it handles NextUnit/PrevUnit, opens a
-// "filters bar" on Filters (capturing every key until Close) and records
-// every key it was offered and every FocusUnit call.
+// "filters bar" on Filters (capturing every key until Close), toggles its
+// mode on Mode, and records every key it was offered and every FocusUnit
+// call. pending is handed out (once) by PendingEdit.
 type fakePane struct {
 	keys      codeview.Keys
 	offered   []string // every key passed to HandleKey
@@ -116,6 +128,8 @@ type fakePane struct {
 	details   []string // item ids passed to SetDetail
 	clears    int
 	focusOK   bool
+	mode      codeview.Mode
+	pending   *model.GroupEdit
 }
 
 var _ codePane = (*fakePane)(nil)
@@ -129,6 +143,21 @@ func (p *fakePane) Capturing() bool               { return p.capturing }
 func (p *fakePane) HelpBindings() [][]key.Binding { return [][]key.Binding{{p.keys.NextUnit}} }
 func (p *fakePane) ShortBindings() []key.Binding  { return []key.Binding{p.keys.NextUnit} }
 func (p *fakePane) View() string                  { return "fake code pane" }
+func (p *fakePane) Mode() codeview.Mode           { return p.mode }
+
+func (p *fakePane) SetMode(md codeview.Mode) bool {
+	p.mode = md
+	return true
+}
+
+func (p *fakePane) PendingEdit() (model.GroupEdit, bool) {
+	if p.pending == nil {
+		return model.GroupEdit{}, false
+	}
+	e := *p.pending
+	p.pending = nil
+	return e, true
+}
 
 func (p *fakePane) FocusUnit(id string) bool {
 	p.focused = append(p.focused, id)
@@ -149,6 +178,9 @@ func (p *fakePane) HandleKey(k tea.KeyMsg) bool {
 		p.capturing = true
 		return true
 	case key.Matches(k, p.keys.NextUnit), key.Matches(k, p.keys.PrevUnit):
+		return true
+	case key.Matches(k, p.keys.Mode):
+		p.mode = 1 - p.mode
 		return true
 	}
 	return false

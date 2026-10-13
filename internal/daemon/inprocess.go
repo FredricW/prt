@@ -41,10 +41,11 @@ type InProcess struct {
 	q          *queue
 	wg         sync.WaitGroup
 
-	evMu   sync.RWMutex
-	closed bool
-	events chan proto.Event
-	ghNote string // guarded by evMu
+	evMu    sync.RWMutex
+	closed  bool
+	events  chan proto.Event
+	ghNote  string // guarded by evMu
+	srcNote string // guarded by evMu
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -92,6 +93,21 @@ func (c *InProcess) SetGitHubNote(note string) {
 	c.evMu.Lock()
 	c.ghNote = note
 	c.evMu.Unlock()
+}
+
+// SetSourceNote records a standing note about where answers come from
+// (e.g. "Jev: replay of testdata/recordings/jev (offline)"). Each discovery
+// reports it as an EventLog note so the status bar says so; "" clears it.
+func (c *InProcess) SetSourceNote(note string) {
+	c.evMu.Lock()
+	c.srcNote = note
+	c.evMu.Unlock()
+}
+
+func (c *InProcess) sourceNote() string {
+	c.evMu.RLock()
+	defer c.evMu.RUnlock()
+	return c.srcNote
 }
 
 func (c *InProcess) gitHubNote() string {
@@ -343,6 +359,38 @@ func (c *InProcess) refreshHead(ctx context.Context, id string) error {
 		return err
 	}
 	return nil
+}
+
+// EditGroups implements Client: validates and stores the edit, then queues
+// the item (not forced: fetch, labels, embeddings and pairs come from the
+// cache; the cluster stage applies the stored edits).
+func (c *InProcess) EditGroups(ctx context.Context, p proto.GroupEditParams) error {
+	e := p.Edit
+	if e.ItemID == "" {
+		e.ItemID = p.ItemID
+	}
+	if e.ItemID != p.ItemID {
+		return fmt.Errorf("daemon: edit groups: edit for %q sent for item %q", e.ItemID, p.ItemID)
+	}
+	switch e.Op {
+	case model.EditMerge, model.EditSplit:
+		if len(e.Units) == 0 {
+			return fmt.Errorf("daemon: edit groups %s: %s without units", p.ItemID, e.Op)
+		}
+	case model.EditReset:
+	default:
+		return fmt.Errorf("daemon: edit groups %s: unknown op %q", p.ItemID, e.Op)
+	}
+	if _, err := c.d.Store.Item(ctx, p.ItemID); err != nil {
+		return fmt.Errorf("daemon: edit groups %s: %w", p.ItemID, err)
+	}
+	if e.At.IsZero() {
+		e.At = c.now()
+	}
+	if err := c.d.Store.AppendGroupEdit(ctx, e); err != nil {
+		return fmt.Errorf("daemon: edit groups %s: %w", p.ItemID, err)
+	}
+	return c.Analyse(ctx, false, p.ItemID)
 }
 
 // Analyse queues items for background analysis as one batch, so they start

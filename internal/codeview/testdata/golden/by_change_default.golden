@@ -1,0 +1,30 @@
+▸ Pass request options through getUser    Pass request options through getUser  3 units · 3 files                       
+    3u 3f · b2 .82 · — · not reviewed    ┌ b2 .82 · risk 4 · auth · error_path · test gap 1 · breaking 1
+  ‹ApiError› — 2 units hidden by filters │ routing: — (M3)
+  Invalidate the profile cache on logout 
+    1u 1f · b1 .64 · — · not reviewed    why these belong together
+  ‹import fetchJSON from client› — 5 un…   calls  UserCard.tsx UserCard → client.ts getUser
+── ungrouped (3) ───────────────────────   tests  client.test.ts → client.ts getUser
+  ‹f.tsx› — 1 unit hidden by filters       jev caller update .82 · cos .79  UserCard.tsx UserCard → client.test.ts
+  ‹theme.css› — 1 unit hidden by filters 
+  ‹save› — 1 unit hidden by filters      ┌ modified · feature · behaviour ✓ .90 · breaking .86 · b2 · tests ✗ · auth
+── split suggestion ──────────────────── │ error_path · risk 4 · eyes
+  split? web/src/styles/theme.css .74    │ L10–12 · +2 −2 · export async function getUser(id: string, opts?: RequestIni…
+                                           10    - export async function getUser(id: string) {
+                                           11    -   return fetchJSON(`/users/${id}`);
+                                         ·    10 + export async function getUser(id: string, opts?: RequestInit) {
+                                         ·    11 +   return fetchJSON(`/users/${id}`, opts);
+                                           12 12   }
+                                         
+                                         ┌ modified · feature · behaviour ✓ .80 · b2 · tests ✓ · risk 2 · eyes
+                                         │ L8–10 · +1 −1 · export function UserCard({ id }: Props)
+                                            8  8   export function UserCard({ id }: Props) {
+                                            9    -   const user = useUser(() => getUser(id));
+                                         ·     9 +   const user = useUser(() => getUser(id, { cache: "no-store" }));
+                                           10 10     return <Card user={user} />;
+                                         
+                                         1 unit hidden by filters (f)
+                                         
+                                         findings: none yet (review lands in M3)
+                                         
+                                         

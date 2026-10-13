@@ -346,6 +346,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(m.discover(), m.scheduleRefresh())
 	case checkoutMsg:
 		return m.onCheckout(msg), nil
+	case groupEditedMsg:
+		return m.onGroupEdited(msg), nil
 	case openedMsg:
 		if msg.err != nil {
 			m.note = "open failed: " + msg.err.Error()
@@ -569,7 +571,7 @@ func (m Model) handleKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	if !m.showHelp && m.focus == FocusMain {
 		if next, ok := m.routeMain(k); ok {
-			return next, nil
+			return next, next.sendGroupEdit()
 		}
 	}
 	if key.Matches(k, km.Quit) {

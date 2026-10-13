@@ -316,6 +316,12 @@ func (s *server) call(ctx context.Context, sc *serverConn, m proto.Message) (any
 			return nil, err
 		}
 		return c.Checkout(ctx, p)
+	case proto.MethodEditGroups:
+		p, err := params[proto.GroupEditParams](m)
+		if err != nil {
+			return nil, err
+		}
+		return empty{}, c.EditGroups(ctx, p)
 	case proto.MethodSubscribe:
 		sc.subscribe()
 		return empty{}, nil

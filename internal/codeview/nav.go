@@ -77,6 +77,10 @@ func (m *Model) listRows() []int {
 // ensureListVisible scrolls the list so the selected file (and the divider
 // right above it) is visible.
 func (m *Model) ensureListVisible() {
+	if m.byChange() {
+		m.ensureGroupVisible()
+		return
+	}
 	h := m.layout().bodyH
 	rows := m.listRows()
 	if h <= 0 || len(rows) == 0 {
@@ -103,12 +107,13 @@ func (m *Model) ensureListVisible() {
 	m.listOff = clamp(m.listOff, 0, max(0, len(rows)-h))
 }
 
-// selectFile selects file fi (clamped) with the pane at its top.
-func (m *Model) selectFile(fi int) {
-	if len(m.c.files) == 0 {
+// selectEntry selects file (by change: group) fi, clamped, with the pane
+// at its top.
+func (m *Model) selectEntry(fi int) {
+	if m.entries() == 0 {
 		return
 	}
-	fi = clamp(fi, 0, len(m.c.files)-1)
+	fi = clamp(fi, 0, m.entries()-1)
 	if fi == m.sel {
 		return
 	}
@@ -136,19 +141,29 @@ func (m *Model) handleKey(k tea.KeyMsg) bool {
 	case m.barOpen && m.barKey(k):
 		return true
 	}
-	if m.scrollKey(k) {
+	kk := m.keys
+	switch {
+	case key.Matches(k, kk.Mode):
+		m.toggleMode()
+		return true
+	case key.Matches(k, kk.Close) && m.cancelMerge():
+		return true
+	case m.scrollKey(k):
 		return true
 	}
-	kk := m.keys
 	switch {
 	case key.Matches(k, kk.NextUnit):
 		m.nextUnit()
 	case key.Matches(k, kk.PrevUnit):
 		m.prevUnit()
 	case key.Matches(k, kk.NextFile):
-		m.selectFile(m.sel + 1)
+		m.selectEntry(m.sel + 1)
 	case key.Matches(k, kk.PrevFile):
-		m.selectFile(m.sel - 1)
+		m.selectEntry(m.sel - 1)
+	case key.Matches(k, kk.MergeGroups):
+		m.mergeKey()
+	case key.Matches(k, kk.SplitGroup):
+		m.splitKey()
 	case key.Matches(k, kk.Filters):
 		m.barOpen = !m.barOpen
 		m.clamp()
@@ -289,33 +304,40 @@ func (m *Model) overlayLines(width int) []string {
 	return strings.Split(strings.TrimSuffix(RawLabelsText(*u, m.c.labels, width), "\n"), "\n")
 }
 
-// toggleExpand flips `z` for the selected file; collapsing again also
-// drops units FocusUnit expanded there.
+// toggleExpand flips `z` for the selected file (by change: group);
+// collapsing again also drops units FocusUnit expanded there.
 func (m *Model) toggleExpand() {
-	path := m.selectedPath()
-	if path == "" {
+	name, set, units := m.selectedPath(), m.expandedFiles, []string(nil)
+	if m.byChange() {
+		name, set, units = m.c.groups[m.sel].g.ID, m.expandedGroups, m.c.groups[m.sel].units
+	} else if m.sel < len(m.c.files) {
+		units = m.c.files[m.sel].units
+	}
+	if name == "" {
 		return
 	}
-	if m.expandedFiles[path] {
-		delete(m.expandedFiles, path)
-		for _, id := range m.c.files[m.sel].units {
+	if set[name] {
+		delete(set, name)
+		for _, id := range units {
 			delete(m.expandedUnits, id)
 		}
 	} else {
-		m.expandedFiles[path] = true
+		set[name] = true
 	}
 	m.rebuildKeep()
 }
 
-// nextUnit moves to the next visible unit, crossing into later files.
+// nextUnit moves to the next visible unit, crossing into later files (by
+// change: groups).
 func (m *Model) nextUnit() {
-	for _, h := range m.p.heads {
-		if h > m.off {
-			m.off = h
-			return
-		}
+	// The unit after the current one: by change the pane may be scrolled
+	// above the first header (group header rows), which already counts as
+	// being on the first unit.
+	if ui := m.p.unitAt(m.off); ui+1 < len(m.p.heads) {
+		m.off = m.p.heads[ui+1]
+		return
 	}
-	for fi := m.sel + 1; fi < len(m.c.files); fi++ {
+	for fi := m.sel + 1; fi < m.entries(); fi++ {
 		if id := m.edgeVisible(fi, true); id != "" {
 			m.focusRow(fi, id)
 			return
@@ -341,9 +363,9 @@ func (m *Model) prevUnit() {
 	m.note = "no previous unit (f: filters)"
 }
 
-// edgeVisible returns the first (or last) visible unit of file fi, or "".
+// edgeVisible returns the first (or last) visible unit of entry fi, or "".
 func (m *Model) edgeVisible(fi int, first bool) string {
-	ids := m.c.files[fi].units
+	ids := m.entryUnits(fi)
 	for i := range ids {
 		j := i
 		if !first {
@@ -381,13 +403,13 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	switch mm.Button {
 	case tea.MouseButtonWheelUp:
 		if inList {
-			m.selectFile(m.sel - 1)
+			m.selectEntry(m.sel - 1)
 		} else if !m.overlay {
 			m.scrollBy(-wheelStep)
 		}
 	case tea.MouseButtonWheelDown:
 		if inList {
-			m.selectFile(m.sel + 1)
+			m.selectEntry(m.sel + 1)
 		} else if !m.overlay {
 			m.scrollBy(wheelStep)
 		}
@@ -399,10 +421,15 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	return m, nil
 }
 
-// clickList selects the file on list row r (relative to the list top).
+// clickList selects the file on list row r (relative to the list top); by
+// change, the group on that row, or a split-suggestion row's group.
 func (m *Model) clickList(r int) {
+	if m.byChange() {
+		m.clickGroupList(m.listOff + r)
+		return
+	}
 	rows := m.listRows()
 	if i := m.listOff + r; i >= 0 && i < len(rows) && rows[i] >= 0 {
-		m.selectFile(rows[i])
+		m.selectEntry(rows[i])
 	}
 }
