@@ -148,8 +148,13 @@ func (m *Model) pipeActionCmd() tea.Cmd {
 		return m.reviewActionCmd(a)
 	case pipeview.ActRerun:
 		m.note = "re-running from " + orDash(string(a.Stage)) + "…"
+		// Force (re-resolve the head, re-fetch) only for fetch or a whole
+		// re-run: re-running a later stage re-runs it on the current
+		// analysis, and FromStage already makes it and the later stages
+		// skip their caches.
+		force := a.Stage == "" || a.Stage == model.StageFetch
 		return func() tea.Msg {
-			err := c.Refresh(context.Background(), proto.ItemParams{ItemID: a.ItemID, FromStage: a.Stage, Force: true})
+			err := c.Refresh(context.Background(), proto.ItemParams{ItemID: a.ItemID, FromStage: a.Stage, Force: force})
 			return rerunMsg{stage: a.Stage, err: err}
 		}
 	case pipeview.ActEditRules:
