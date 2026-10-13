@@ -9,6 +9,34 @@ import (
 	"testing"
 )
 
+// OLLAMA_HOST is read the way Ollama's client reads it: a bare host gets
+// the default port 11434 (OLLAMA_HOST=0.0.0.0 is common for the server).
+func TestOllamaBaseURL(t *testing.T) {
+	tests := map[string]string{
+		"":                       DefaultOllamaHost,
+		"0.0.0.0":                "http://0.0.0.0:11434",
+		":11434":                 "http://127.0.0.1:11434",
+		"localhost":              "http://localhost:11434",
+		"example.com:5000":       "http://example.com:5000",
+		"http://h:1":             "http://h:1",
+		"http://h":               "http://h:80",
+		"https://h":              "https://h:443",
+		"https://h:8443/ollama/": "https://h:8443/ollama",
+		"[::1]":                  "http://[::1]:11434",
+		"[::1]:9":                "http://[::1]:9",
+		" 10.0.0.2 ":             "http://10.0.0.2:11434",
+	}
+	for in, want := range tests {
+		if got := OllamaBaseURL(in); got != want {
+			t.Errorf("OllamaBaseURL(%q) = %q, want %q", in, got, want)
+		}
+	}
+	t.Setenv("OLLAMA_HOST", "0.0.0.0")
+	if got := NewOllama("", "").Host; got != "http://0.0.0.0:11434" {
+		t.Errorf("NewOllama with OLLAMA_HOST=0.0.0.0: host %q", got)
+	}
+}
+
 func TestOllamaEmbed(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req ollamaReq

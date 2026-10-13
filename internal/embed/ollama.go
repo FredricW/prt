@@ -6,8 +6,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -33,16 +36,54 @@ func NewOllama(host, model string) *Ollama {
 	if host == "" {
 		host = os.Getenv("OLLAMA_HOST")
 	}
-	if host == "" {
-		host = DefaultOllamaHost
-	}
-	if !strings.Contains(host, "://") {
-		host = "http://" + host
-	}
 	if model == "" {
 		model = DefaultOllamaModel
 	}
-	return &Ollama{Host: strings.TrimRight(host, "/"), Name: model, HC: &http.Client{Timeout: 60 * time.Second}, Batch: 64}
+	return &Ollama{Host: OllamaBaseURL(host), Name: model, HC: &http.Client{Timeout: 60 * time.Second}, Batch: 64}
+}
+
+// OllamaBaseURL reads an OLLAMA_HOST value the way Ollama's own client does
+// (envconfig.Host): scheme defaults to http, host to 127.0.0.1, and the
+// port to 11434 when no scheme is given (80/443 for an explicit
+// http/https scheme). "0.0.0.0" → http://0.0.0.0:11434, ":11434" →
+// http://127.0.0.1:11434, "" → DefaultOllamaHost. A path is kept; the
+// result has no trailing slash.
+func OllamaBaseURL(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return DefaultOllamaHost
+	}
+	defaultPort := "11434"
+	scheme, hostport, ok := strings.Cut(s, "://")
+	switch {
+	case !ok:
+		scheme, hostport = "http", s
+	case scheme == "http":
+		defaultPort = "80"
+	case scheme == "https":
+		defaultPort = "443"
+	}
+	hostport, path, _ := strings.Cut(hostport, "/")
+	host, port, err := net.SplitHostPort(hostport)
+	if err != nil {
+		host, port = "127.0.0.1", defaultPort
+		if ip := net.ParseIP(strings.Trim(hostport, "[]")); ip != nil {
+			host = ip.String()
+		} else if hostport != "" {
+			host = hostport
+		}
+	}
+	if host == "" {
+		host = "127.0.0.1"
+	}
+	if n, err := strconv.Atoi(port); err != nil || n < 0 || n > 65535 {
+		port = defaultPort
+	}
+	u := url.URL{Scheme: scheme, Host: net.JoinHostPort(host, port)}
+	if path != "" {
+		u.Path = "/" + path
+	}
+	return strings.TrimRight(u.String(), "/")
 }
 
 // Model implements Embedder.
