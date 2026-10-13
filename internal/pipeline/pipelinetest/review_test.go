@@ -579,6 +579,7 @@ func TestRecordedReviewReplay(t *testing.T) {
 	}
 	reportAll(t, pipelinetest.Problems(outs))
 	reportAll(t, pipelinetest.ReviewExpectations(outs))
+	reportAll(t, pipelinetest.CommentExpectations(outs))
 }
 
 // reviewMisses wraps a reviewer and records requests without a recording.

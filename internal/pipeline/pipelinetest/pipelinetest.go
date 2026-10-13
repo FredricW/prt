@@ -58,6 +58,9 @@ type Outcome struct {
 	RunLogs []model.RunLog
 	// Reviews is the routing table (Store.ItemReviews): one row per group.
 	Reviews []model.Review
+	// Comments are the item's stored comments after the run (GitHub
+	// threads, ai-drafts, local drafts), sorted by id.
+	Comments []model.Comment
 }
 
 // Failed returns the RunLog rows of stages that failed (empty when the run
@@ -251,6 +254,7 @@ func itemFor(pr gh.PR) model.Item {
 		CI: pr.CI, Labels: pr.Labels, URL: pr.URL, Source: model.SourceRanked,
 		CreatedAt: pr.CreatedAt, UpdatedAt: pr.UpdatedAt, Draft: pr.Draft,
 		ReviewRequested: pr.ReviewRequested, ViewerApproved: pr.ViewerApproved,
+		ViewerReviewedSHA: pr.ViewerReviewedSHA,
 	}
 }
 
@@ -295,6 +299,10 @@ func collect(ctx context.Context, st store.Store, id string) (Outcome, error) {
 	if o.Reviews, err = st.ItemReviews(ctx, id); err != nil {
 		return o, fmt.Errorf("pipelinetest: reviews %s: %w", id, err)
 	}
+	if o.Comments, err = st.Comments(ctx, id); err != nil {
+		return o, fmt.Errorf("pipelinetest: comments %s: %w", id, err)
+	}
+	sort.SliceStable(o.Comments, func(i, j int) bool { return o.Comments[i].ID < o.Comments[j].ID })
 	return o, nil
 }
 

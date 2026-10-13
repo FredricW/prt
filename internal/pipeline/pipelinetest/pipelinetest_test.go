@@ -103,6 +103,7 @@ func TestRecordedReplay(t *testing.T) {
 	}
 	reportAll(t, pipelinetest.Problems(outs))
 	reportAll(t, pipelinetest.Expectations(outs))
+	reportAll(t, pipelinetest.CommentExpectations(outs))
 	if !haveM2 {
 		t.Logf("NO M2 JEV RECORDINGS YET (no recorded request asks %s): pair, name and split requests answered unavailable; "+
 			"GroupExpectations skipped. Integrator: run `make record-jev-dry`, then `make record-jev`.", strings.Join(m2Questions, ", "))
@@ -161,6 +162,30 @@ func (m *m2Unavailable) Evaluate(ctx context.Context, req jev.Request) (jev.Resp
 		return jev.Response{}, fmt.Errorf("%w: no M2 recordings yet (transition rule)", jev.ErrUnavailable)
 	}
 	return m.next.Evaluate(ctx, req)
+}
+
+// TestRecordedCommentAddressed replays the committed recordings and checks
+// the recorded comment_addressed answers for #101: the TTL comment (gh-5001)
+// is addressed by the push, the swallowed-error comment (gh-5003) is not.
+func TestRecordedCommentAddressed(t *testing.T) {
+	dir := testutil.RecordingsDir(t, "jev")
+	if recs, _ := filepath.Glob(filepath.Join(dir, "*.json")); len(recs) == 0 {
+		t.Skip("NO JEV RECORDINGS YET: run `make record-jev`")
+	}
+	replay := &missingKeys{next: &jev.Replay{Dir: dir}}
+	emb := embedReplay(t)
+	outs, err := pipelinetest.FixtureRun(context.Background(), testutil.FixtureRepo(t), testutil.FixturePRs(t), replay, embedOption(emb))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(replay.keys) > 0 {
+		t.Fatalf("%d requests have no recording in %s: %v", len(replay.keys), dir, replay.keys)
+	}
+	problems, recorded := pipelinetest.AddressedExpectations(outs[101])
+	if !recorded {
+		t.Fatal("comment_addressed answers for #101 are not recorded (Since you looked: labels unavailable); run `make record-jev`")
+	}
+	reportAll(t, problems)
 }
 
 // embedMisses wraps an embedder and records the texts it had no recording

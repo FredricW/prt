@@ -428,23 +428,47 @@ func (rr *reviewRun) serveCached(ctx context.Context, groupID string, tier model
 	return c, true
 }
 
-// unitStarts maps each unit id to the first line of its anchor span.
+// oldStartSuffix marks the UnitStarts entry holding a unit's old-side start
+// (key unit id + suffix), used to shift old-side findings (M4).
+const oldStartSuffix = "@old"
+
+// unitStarts maps each unit id to the first line of its anchor span and,
+// for units with an old side, id+oldStartSuffix to the old span's start.
 func unitStarts(units []model.ChangeUnit) map[string]int {
 	if len(units) == 0 {
 		return nil
 	}
-	out := make(map[string]int, len(units))
+	out := make(map[string]int, 2*len(units))
 	for _, u := range units {
 		out[u.ID] = review.AnchorStart(u)
+		if u.Range.Old.Count > 0 {
+			out[u.ID+oldStartSuffix] = u.Range.Old.Start
+		}
 	}
 	return out
+}
+
+// startKey is the UnitStarts key f's shift is measured by: the old start
+// for an old-side finding when both maps record one (reviews cached before
+// M4 do not), else the anchor start.
+func startKey(f model.Finding, was, now map[string]int) string {
+	if f.Side == model.SideOld {
+		k := f.UnitID + oldStartSuffix
+		_, ok1 := was[k]
+		_, ok2 := now[k]
+		if ok1 && ok2 {
+			return k
+		}
+	}
+	return f.UnitID
 }
 
 // rebaseFindings moves a cached review's findings to where their units
 // are now: the group id (the cache key) hashes unit content without line
 // numbers, so after a push or rebase moves a unit the cached lines are
 // stale. Each finding anchored to a unit shifts by (current start − start
-// when reviewed); then findings are re-anchored to the current units.
+// when reviewed), measured on the finding's side (old-side findings by the
+// old span's start); then findings are re-anchored to the current units.
 // Reviews cached without UnitStarts (before this was recorded) are served
 // unchanged. The input slice is not modified.
 func rebaseFindings(fs []model.Finding, starts map[string]int, units []model.ChangeUnit) []model.Finding {
@@ -454,8 +478,9 @@ func rebaseFindings(fs []model.Finding, starts map[string]int, units []model.Cha
 	now := unitStarts(units)
 	out := slices.Clone(fs)
 	for i, f := range out {
-		was, ok1 := starts[f.UnitID]
-		cur, ok2 := now[f.UnitID]
+		k := startKey(f, starts, now)
+		was, ok1 := starts[k]
+		cur, ok2 := now[k]
 		if f.UnitID != "" && ok1 && ok2 {
 			out[i].Line += cur - was
 		}

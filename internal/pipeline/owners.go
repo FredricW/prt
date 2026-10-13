@@ -152,7 +152,7 @@ func (p *Pipeline) viewer(ctx context.Context) string {
 	}
 	login, err := p.d.GH.Viewer(ctx)
 	if err != nil {
-		p.d.Log.Warn("viewer lookup failed; CODEOWNERS ignored", "err", err)
+		p.d.Log.Warn("viewer lookup failed; CODEOWNERS and your earlier comments ignored", "err", err)
 		return ""
 	}
 	p.login = login

@@ -6,7 +6,10 @@
 //
 //	recordjev              dry run: counts the requests a recording run
 //	                       would send (with a fake client) and how many are
-//	                       already recorded; no network, no spend
+//	                       already recorded, with separate counts for the
+//	                       M2 requests and the M4 comment_addressed ones
+//	                       (#101's two earlier viewer comments); no
+//	                       network, no spend
 //	recordjev --live       records with the real endpoint (JEV_API_KEY,
 //	                       JEV_BASE_URL); requests already recorded are not
 //	                       sent; stops before a call that could push the
@@ -228,6 +231,7 @@ func dryRun(ctx context.Context, cfg config, repo, prs string, stdout io.Writer,
 	fmt.Fprintf(stdout, "dry run (no Jev calls): %d Jev requests, ~%d tokens estimated, %d already recorded in %s, %d to record\n",
 		c.requests, c.tokens, c.recorded, cfg.out, c.requests-c.recorded)
 	fmt.Fprintln(stdout, c.m2Summary())
+	fmt.Fprintln(stdout, c.m4Summary())
 	fmt.Fprintln(stdout, "record with: go run ./tools/recordjev --live --embed "+cfg.embed+"   (needs JEV_API_KEY; cap $"+fmt.Sprintf("%.2f", cfg.capUSD)+")")
 	return nil
 }
@@ -255,8 +259,30 @@ func recordLive(ctx context.Context, cfg config, repo, prs string, getenv env, s
 	if runErr == nil {
 		warnExpectations(outs, stdout)
 		warnGroupExpectations(outs, stdout)
+		warnCommentExpectations(outs, stdout)
 	}
 	return runErr
+}
+
+// warnCommentExpectations prints how the recorded run's comment layer and
+// #101's comment_addressed answers deviate from pipelinetest's
+// CommentExpectations and AddressedExpectations (asserted by the replay
+// tests; the latter once the answers are recorded).
+func warnCommentExpectations(outs map[int]pipelinetest.Outcome, stdout io.Writer) {
+	ps := pipelinetest.CommentExpectations(outs)
+	addressed, recorded := pipelinetest.AddressedExpectations(outs[101])
+	if !recorded {
+		addressed = append(addressed, "#101: comment_addressed answers unknown (requests failed or were refused)")
+	}
+	ps = append(ps, addressed...)
+	if len(ps) == 0 {
+		fmt.Fprintln(stdout, "comment expectations: all hold")
+		return
+	}
+	fmt.Fprintf(stdout, "WARNING: %d comment expectations do not hold with these recordings:\n", len(ps))
+	for _, p := range ps {
+		fmt.Fprintln(stdout, "  -", p)
+	}
 }
 
 // recordSynthetic writes heuristic recordings for requests not yet recorded.
@@ -323,6 +349,27 @@ type counter struct {
 	mu                         sync.Mutex
 	requests, tokens, recorded int
 	m2                         map[string]*kindCount // by m2Kind
+	addressed                  kindCount             // comment_addressed (M4)
+}
+
+// isAddressed reports whether req asks comment_addressed (M4 "Since you
+// looked": one request per earlier comment of the viewer).
+func isAddressed(req jev.Request) bool {
+	for name := range req.Questions {
+		if base, _, _ := strings.Cut(name, "__"); base == model.QCommentAddressed {
+			return true
+		}
+	}
+	return false
+}
+
+// m4Summary renders the comment_addressed request counts.
+func (c *counter) m4Summary() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	a := c.addressed
+	return fmt.Sprintf("M4 requests: %s %d (%d recorded, %d to record) — one per earlier viewer comment (Since you looked)",
+		model.QCommentAddressed, a.requests, a.recorded, a.requests-a.recorded)
 }
 
 // kindCount counts requests of one M2 kind and how many are recorded.
@@ -395,6 +442,12 @@ func (c *counter) Evaluate(ctx context.Context, req jev.Request) (jev.Response, 
 		c.m2[k].requests++
 		if statErr == nil {
 			c.m2[k].recorded++
+		}
+	}
+	if isAddressed(req) {
+		c.addressed.requests++
+		if statErr == nil {
+			c.addressed.recorded++
 		}
 	}
 	c.mu.Unlock()

@@ -187,6 +187,12 @@ func normalisePath(p string) string {
 // whose span holds the line (the new-side span, or the old-side span of a
 // pure deletion), else the nearest unit in that file (ties: the earlier
 // unit in units). A finding on a file outside units keeps UnitID "".
+//
+// It also sets Side from the anchored unit's numbered diff (FindingSide):
+// the review prompt asks for the old-side number of a deleted line, so a
+// finding is on the old side when the line can only be a deleted one. The
+// unit choice itself does not depend on the side, so anchoring (and every
+// request built from anchored findings) is what it was before sides.
 func AnchorFindings(fs []model.Finding, units []model.ChangeUnit) []model.Finding {
 	byPath := map[string][]model.ChangeUnit{}
 	for _, u := range units {
@@ -194,17 +200,75 @@ func AnchorFindings(fs []model.Finding, units []model.ChangeUnit) []model.Findin
 		byPath[p] = append(byPath[p], u)
 	}
 	for i := range fs {
-		fs[i].UnitID = ""
+		fs[i].UnitID, fs[i].Side = "", ""
 		cands := byPath[normalisePath(fs[i].Path)]
-		best, bestDist := "", math.MaxInt
-		for _, u := range cands {
-			if d := spanDistance(anchorSpan(u), fs[i].Line); d < bestDist {
-				best, bestDist = u.ID, d
+		var best *model.ChangeUnit
+		bestDist := math.MaxInt
+		for k := range cands {
+			if d := spanDistance(anchorSpan(cands[k]), fs[i].Line); d < bestDist {
+				best, bestDist = &cands[k], d
 			}
 		}
-		fs[i].UnitID = best
+		if best != nil {
+			fs[i].UnitID, fs[i].Side = best.ID, FindingSide(*best, fs[i].Line)
+		}
 	}
 	return fs
+}
+
+// FindingSide is the diff side a finding's line counts on in unit u:
+//   - model.SideOld for a pure deletion (no new-side lines);
+//   - model.SideOld when line lies in the old span but not the new one;
+//   - model.SideOld when it lies in both and the unit's diff deletes old
+//     line `line` while no added or context line has new number `line`;
+//   - "" (new) otherwise, including lines outside both spans.
+func FindingSide(u model.ChangeUnit, line int) model.Side {
+	if u.Range.New.Count == 0 && u.Range.Old.Count > 0 {
+		return model.SideOld
+	}
+	inOld, inNew := spanHolds(u.Range.Old, line), spanHolds(u.Range.New, line)
+	switch {
+	case inOld && !inNew:
+		return model.SideOld
+	case inOld && inNew:
+		deleted, present := numberedSides(u)
+		if deleted[line] && !present[line] {
+			return model.SideOld
+		}
+	}
+	return ""
+}
+
+// spanHolds reports whether a non-empty span holds line.
+func spanHolds(s model.Span, line int) bool {
+	return s.Count > 0 && line >= s.Start && line < s.Start+s.Count
+}
+
+// numberedSides numbers u's diff: deleted holds the old numbers of '-'
+// lines, present the new numbers of '+' and context lines. Old lines count
+// from Range.Old.Start, new lines from Range.New.Start; hunk headers and
+// "\ No newline" markers are skipped.
+func numberedSides(u model.ChangeUnit) (deleted, present map[int]bool) {
+	deleted, present = map[int]bool{}, map[int]bool{}
+	if u.Diff == "" {
+		return deleted, present
+	}
+	oldNo, newNo := u.Range.Old.Start, u.Range.New.Start
+	for _, ln := range strings.Split(strings.TrimSuffix(u.Diff, "\n"), "\n") {
+		switch {
+		case strings.HasPrefix(ln, "@@"), strings.HasPrefix(ln, `\`):
+		case strings.HasPrefix(ln, "-"):
+			deleted[oldNo] = true
+			oldNo++
+		case strings.HasPrefix(ln, "+"):
+			present[newNo] = true
+			newNo++
+		default:
+			present[newNo] = true
+			oldNo, newNo = oldNo+1, newNo+1
+		}
+	}
+	return deleted, present
 }
 
 // AnchorStart is the first line of the span findings anchor to in u.

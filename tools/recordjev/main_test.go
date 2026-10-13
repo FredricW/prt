@@ -158,6 +158,44 @@ func TestDryRunOffline(t *testing.T) {
 	if !strings.Contains(out.String(), "Jev requests") || !strings.Contains(out.String(), "dry run") {
 		t.Fatalf("stdout %q", out.String())
 	}
+	// M4: #101's two earlier viewer comments each ask comment_addressed,
+	// none recorded in an empty directory.
+	if !strings.Contains(out.String(), "M4 requests: comment_addressed 2 (0 recorded, 2 to record)") {
+		t.Fatalf("stdout lacks the comment_addressed count:\n%s", out.String())
+	}
+}
+
+func TestIsAddressed(t *testing.T) {
+	cases := map[string]bool{model.QCommentAddressed: true, model.QCommentAddressed + "__x": true, model.QKind: false, model.QRelation: false}
+	for name, want := range cases {
+		if got := isAddressed(jev.Request{Questions: map[string]jev.Question{name: {}}}); got != want {
+			t.Errorf("isAddressed(%s) = %v, want %v", name, got, want)
+		}
+	}
+}
+
+// The counter counts comment_addressed requests and which are recorded.
+func TestCounterCountsAddressed(t *testing.T) {
+	dir := t.TempDir()
+	ctx := context.Background()
+	addressed := func(s string) jev.Request {
+		return jev.Request{Model: jev.Model, State: s, Questions: map[string]jev.Question{model.QCommentAddressed: {Type: jev.Boolean, Instructions: "?"}}}
+	}
+	if _, err := (&jev.Recorder{Live: &jev.Fake{}, Dir: dir}).Evaluate(ctx, addressed("recorded")); err != nil {
+		t.Fatal(err)
+	}
+	c := &counter{next: &jev.Fake{}, dir: dir}
+	for _, r := range []jev.Request{addressed("recorded"), addressed("new"), req("label")} {
+		if _, err := c.Evaluate(ctx, r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := c.m4Summary(); !strings.Contains(got, "comment_addressed 2 (1 recorded, 1 to record)") {
+		t.Errorf("summary %q", got)
+	}
+	if c.requests != 3 || c.recorded != 1 {
+		t.Errorf("requests %d recorded %d", c.requests, c.recorded)
+	}
 }
 
 // fakeOllama serves /api/embed with deterministic vectors (embed.Fake) and

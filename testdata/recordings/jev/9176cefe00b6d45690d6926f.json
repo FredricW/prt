@@ -1,0 +1,41 @@
+{
+  "key": "9176cefe00b6d45690d6926f",
+  "request": {
+    "model": "typesafe-ai/jev",
+    "state": {
+      "comment": {
+        "path": "web/src/hooks/useProfileCache.ts",
+        "line": 6,
+        "side": "new",
+        "body": "An hour is far longer than the 5 minute TTL the description promises. Please use 5 minutes here (or make it configurable)."
+      },
+      "codeWhenCommented": "1: import { useCallback, useEffect, useState } from \"react\";\n2: \n3: import { getUser, type User } from \"../api/client\";\n4: \n5: // How long a cached profile is served without revalidating.\n6: export const PROFILE_TTL_MS = 60 * 60 * 1000;\n7: \n8: interface Entry {\n9:   user: User;\n10:   fetchedAt: number;\n11: }\n12: \n13: const cache = new Map\u003cstring, Entry\u003e();\n14: const inflight = new Map\u003cstring, Promise\u003cUser\u003e\u003e();\n15: \n16: export function clearProfileCache(): void {",
+      "latestPushDiff": "@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from \"react\";\n import { getUser, type User } from \"../api/client\";\n \n // How long a cached profile is served without revalidating.\n-export const PROFILE_TTL_MS = 60 * 60 * 1000;\n+export const PROFILE_TTL_MS = 5 * 60 * 1000;\n \n interface Entry {\n   user: User;\n@@ -15,6 +15,7 @@ const inflight = new Map\u003cstring, Promise\u003cUser\u003e\u003e();\n \n export function clearProfileCache(): void {\n   cache.clear();\n+  inflight.clear();\n }\n \n export function primeProfile(user: User, now = Date.now()): void {"
+    },
+    "questions": {
+      "comment_addressed": {
+        "type": "boolean",
+        "instructions": "Does the latest push address this review comment: does the changed code now do what the comment asked, or remove the problem it pointed out?"
+      }
+    }
+  },
+  "response": {
+    "model": "typesafe-ai/jev",
+    "answers": {
+      "comment_addressed": {
+        "type": "boolean",
+        "probability": 0.95
+      }
+    },
+    "usage": {
+      "inputTokens": 714,
+      "outputTokens": 22
+    },
+    "providerMetadata": {
+      "gateway": {
+        "cost": "0.000029988",
+        "generationId": "gen_01M4SVJBT5JHJ59QHS48MYPYE9"
+      }
+    }
+  }
+}

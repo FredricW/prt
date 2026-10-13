@@ -1,0 +1,41 @@
+{
+  "key": "421877ad44cf33004fccccbc",
+  "request": {
+    "model": "typesafe-ai/jev",
+    "state": {
+      "comment": {
+        "path": "web/src/hooks/useProfileCache.ts",
+        "line": 75,
+        "side": "new",
+        "body": "This swallows load errors and leaves `loading` true forever. Set `loading` to false and surface the error, for example as an `error` field in `ProfileCacheState`."
+      },
+      "codeWhenCommented": "65: \n66:   useEffect(() =\u003e {\n67:     setLoading(true);\n68:     loadProfile(id, nonce \u003e 0)\n69:       .then((user) =\u003e {\n70:         setProfile(user);\n71:         setStale(false);\n72:         setLoading(false);\n73:       })\n74:       .catch(() =\u003e {});\n75:   }, [id, nonce]);\n76: \n77:   const refresh = useCallback(() =\u003e setNonce((n) =\u003e n + 1), []);\n78: \n79:   return { profile, loading, stale, refresh };\n80: }",
+      "latestPushDiff": "@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from \"react\";\n import { getUser, type User } from \"../api/client\";\n \n // How long a cached profile is served without revalidating.\n-export const PROFILE_TTL_MS = 60 * 60 * 1000;\n+export const PROFILE_TTL_MS = 5 * 60 * 1000;\n \n interface Entry {\n   user: User;\n@@ -15,6 +15,7 @@ const inflight = new Map\u003cstring, Promise\u003cUser\u003e\u003e();\n \n export function clearProfileCache(): void {\n   cache.clear();\n+  inflight.clear();\n }\n \n export function primeProfile(user: User, now = Date.now()): void {"
+    },
+    "questions": {
+      "comment_addressed": {
+        "type": "boolean",
+        "instructions": "Does the latest push address this review comment: does the changed code now do what the comment asked, or remove the problem it pointed out?"
+      }
+    }
+  },
+  "response": {
+    "model": "typesafe-ai/jev",
+    "answers": {
+      "comment_addressed": {
+        "type": "boolean",
+        "probability": 0.03
+      }
+    },
+    "usage": {
+      "inputTokens": 727,
+      "outputTokens": 22
+    },
+    "providerMetadata": {
+      "gateway": {
+        "cost": "0.000030534",
+        "generationId": "gen_01M4SVJBTYBGH81WKCPGRB3BYA"
+      }
+    }
+  }
+}

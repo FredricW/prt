@@ -21,13 +21,22 @@
 // LabelsMissing; no embeddings: groups from structural links only, with a
 // note; no review key: rows skipped with a note).
 //
+// M4 adds the comment layer: fetch loads a PR's review threads into the
+// item's comments (also on a fetch-cache hit), parse re-anchors stored
+// comments to the new units, ai-drafts follow the review findings after
+// stage 7, and aggregate computes "Since you looked" (changed units since
+// the head the user last looked at, and Jev comment_addressed for their
+// earlier comments). All of it is soft: a failure is logged or noted and
+// never fails a stage.
+//
 // A stage function marks its row skipped (ran, but had nothing it could do,
 // e.g. no embedding model) with skipStage; runStage keeps that status.
 //
 // Cache namespaces (Store.CacheGet/CachePut) owned by this package:
 // nsOverride (per-group D/s overrides), nsCallLog (raw LLM calls per
-// routing row), nsTitle (group titles by request key) and nsTLDR (TL;DR
-// text by request key).
+// routing row), nsTitle (group titles by request key), nsTLDR (TL;DR
+// text by request key) and nsSinceUnits (unit ids of a "Since you looked"
+// base head, by item and base SHA).
 package pipeline
 
 import (
@@ -207,7 +216,11 @@ func (p *Pipeline) RunWith(ctx context.Context, it model.Item, opt RunOptions) e
 // fetch failed), so the caller can tell whether the item moved meanwhile.
 func (p *Pipeline) RunHead(ctx context.Context, it model.Item, opt RunOptions) (string, error) {
 	f, err := runStage(ctx, p, it.ID, model.StageFetch, func(rl *model.RunLog) (model.Fetch, error) {
-		return p.fetch(ctx, it, opt.Force || opt.ignoresCache(model.StageFetch), rl)
+		f, err := p.fetch(ctx, it, opt.Force || opt.ignoresCache(model.StageFetch), rl)
+		if err == nil {
+			p.loadThreads(ctx, it, rl)
+		}
+		return f, err
 	})
 	if err != nil {
 		return "", err
@@ -224,7 +237,11 @@ func (p *Pipeline) runAfterFetch(ctx context.Context, r *run) error {
 		return fmt.Errorf("pipeline: parse diff: %w", err)
 	}
 	parsed, err := runStage(ctx, p, it.ID, model.StageParse, func(rl *model.RunLog) (parseOut, error) {
-		return p.parse(ctx, it.ID, f, files, rl)
+		out, err := p.parse(ctx, it.ID, f, files, rl)
+		if err == nil {
+			p.reanchorComments(ctx, it.ID, out.units)
+		}
+		return out, err
 	})
 	if err != nil {
 		return err
@@ -303,6 +320,12 @@ func (p *Pipeline) runReviewStages(ctx context.Context, r *run, a analysis) erro
 			return err
 		}
 		p.d.Log.Warn("reviews failed; aggregating what landed", "item", itemID, "err", err)
+	} else if !ro.failed {
+		rows := rv.rows
+		if rows == nil {
+			rows = ro.rows
+		}
+		p.syncAIDrafts(ctx, itemID, rows, a.parsed.units)
 	}
 	_, err = runStage(ctx, p, itemID, model.StageAggregate, func(rl *model.RunLog) (model.ItemAgg, error) {
 		return p.aggregate(ctx, r, a, ro, rv, rl)
@@ -371,8 +394,9 @@ func (p *Pipeline) aggInput(ctx context.Context, r *run, a analysis) (aggregate.
 // aggregate is stage 8: it computes the ItemAgg from files, units, groups,
 // links, the stored labels (overrides applied) and the routing rows, adds
 // the grouping record and split suggestion from stage 5, the TL;DR, the
-// review totals and the calibration panel, stores it with the raw call
-// log, then copies the picker fields onto the stored Item.
+// review totals, the calibration panel and "Since you looked" (whose Jev
+// calls count on this row and in the review totals), stores it with the
+// raw call log, then copies the picker fields onto the stored Item.
 func (p *Pipeline) aggregate(ctx context.Context, r *run, a analysis, ro *routeOut, rv reviewOut, rl *model.RunLog) (model.ItemAgg, error) {
 	in, err := p.aggInput(ctx, r, a)
 	if err != nil {
@@ -391,6 +415,15 @@ func (p *Pipeline) aggregate(ctx context.Context, r *run, a analysis, ro *routeO
 		p.carryJevStats(ctx, r.it.ID, agg.Review)
 	}
 	agg.Calibration = p.calibrationStats(ctx)
+	so, err := p.sinceLooked(ctx, r, a.parsed.units)
+	if err != nil {
+		return agg, err
+	}
+	agg.Since = so.since
+	rl.Calls, rl.Cost = rl.Calls+so.calls, rl.Cost+so.cost
+	if agg.Review != nil && so.calls > 0 {
+		agg.Review.JevCalls, agg.Review.JevCost = agg.Review.JevCalls+so.calls, agg.Review.JevCost+so.cost
+	}
 	rl.In, rl.Out = len(a.parsed.units), len(in.Labels)
 	if err := r.calls.flush(ctx, p.d.Store, r.it.ID, groupIDs(a.gro.groups, "")); err != nil {
 		p.d.Log.Warn("store call log failed", "item", r.it.ID, "err", err)

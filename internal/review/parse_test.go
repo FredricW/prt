@@ -33,7 +33,7 @@ func TestParseReview(t *testing.T) {
 		{name: "confidence below range", text: `{"findings":[],"verdict":"approve","confidence":-0.5}`, verdict: VerdictApprove, conf: 0, wantNone: true},
 		{name: "deletion anchors to old span", text: `{"findings":[{"file":"server/internal/billing/legacy.go","line":41,"severity":"medium","claim":"Callers of LegacyExport remain"}],"verdict":"request changes","confidence":0.5}`,
 			verdict: VerdictRequestChanges, conf: 0.5,
-			want: []model.Finding{{UnitID: "u-legacy", Path: "server/internal/billing/legacy.go", Line: 41, Severity: model.SevMedium, Claim: "Callers of LegacyExport remain"}}},
+			want: []model.Finding{{UnitID: "u-legacy", Path: "server/internal/billing/legacy.go", Line: 41, Side: model.SideOld, Severity: model.SevMedium, Claim: "Callers of LegacyExport remain"}}},
 		{name: "nearest unit in file", text: `{"findings":[{"file":"web/src/api/client.ts","line":90,"severity":"low","claim":"Far away."}],"verdict":"weird","confidence":0.5}`,
 			verdict: VerdictComment, conf: 0.5,
 			want: []model.Finding{{UnitID: "u-client", Path: "web/src/api/client.ts", Line: 90, Severity: model.SevLow, Claim: "Far away."}}},
