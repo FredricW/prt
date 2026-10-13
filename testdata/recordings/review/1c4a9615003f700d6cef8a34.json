@@ -1,0 +1,22 @@
+{
+  "key": "1c4a9615003f700d6cef8a34",
+  "model": "anthropic:claude-haiku-5-5",
+  "request": {
+    "task": "group-title",
+    "tier": "fast",
+    "groupId": "8ebcd87a192d4ed5711b2c152c9a6fdcaa9f7b8fcc3ced29b6730d7ee702e4cf",
+    "system": "You name a group of related code changes for a reviewer's list. Answer with exactly three words saying what the change does, for example: Validate upload size. No punctuation, no quotes, nothing else.",
+    "prompt": "Changes in this group:\n\n## web/src/components/ThemeToggle.tsx (ThemeToggle)\nsignature: export function ThemeToggle()\n```diff\n+// TODO: respect prefers-color-scheme before anything is stored\n+export function ThemeToggle() {\n+  const [theme, setTheme] = useState\u003cTheme\u003e(() =\u003e (localStorage.getItem(\"portal.theme\") as Theme) ?? \"light\");\n+\n+  useEffect(() =\u003e {\n+    document.documentElement.dataset.theme = theme;\n+    localStorage.setItem(\"portal.theme\", theme);\n+  }, [theme]);\n+\n+  return (\n+    \u003cbutton aria-label=\"Toggle dark mode\" onClick={() =\u003e setTheme(theme === \"dark\" ? \"light\" : \"dark\")}\u003e\n+      {theme === \"dark\" ? \"☀\" : \"☾\"}\n…\n```\n\n## web/src/App.tsx\n```diff\n import { SearchBox } from \"./components/SearchBox\";\n import { SettingsForm } from \"./components/SettingsForm\";\n import { StatusFooter } from \"./components/StatusFooter\";\n+import { ThemeToggle } from \"./components/ThemeToggle\";\n import { UserList } from \"./components/UserList\";\n import \"./styles/theme.css\";\n \n```\n\n## web/src/App.tsx (App)\nsignature: export function App()\n```diff\n         \u003c/nav\u003e\n         \u003cSearchBox onPick={(kind, id) =\u003e kind === \"user\" \u0026\u0026 setRoute({ page: \"profile\", id })} /\u003e\n         \u003cNotificationBell /\u003e\n+        \u003cThemeToggle /\u003e\n       \u003c/header\u003e\n       {route.page === \"users\" \u0026\u0026 \u003cUserList /\u003e}\n       {route.page === \"profile\" \u0026\u0026 \u003cProfilePage userId={route.id} /\u003e}\n```\n\n## web/src/components/ThemeToggle.tsx\n```diff\n+import { useEffect, useState } from \"react\";\n+\n+type Theme = \"light\" | \"dark\";\n+\n```\n\n## web/src/styles/theme.css\n```diff\n   font-family: system-ui, sans-serif;\n }\n \n+/* WIP: dark palette, contrast not checked yet */\n+:root[data-theme=\"dark\"] {\n+  --bg: #11151c;\n+  --fg: #e6e9ef;\n+  --muted: #9aa3b2;\n+  --accent: #6b9cff;\n+  --border: #2a313d;\n+}\n+\n…\n```\n\nAnswer with exactly three words.\n",
+    "maxTokens": 256
+  },
+  "result": {
+    "text": "Add dark theme toggle",
+    "confidence": 0,
+    "model": "anthropic:claude-haiku-5-5",
+    "inputTokens": 870,
+    "outputTokens": 11,
+    "cost": 0.0000925,
+    "ms": 1271,
+    "stopReason": "end_turn"
+  }
+}

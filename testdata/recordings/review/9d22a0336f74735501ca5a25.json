@@ -1,0 +1,21 @@
+{
+  "key": "9d22a0336f74735501ca5a25",
+  "model": "anthropic:claude-haiku-5-5",
+  "request": {
+    "task": "pr-title",
+    "tier": "fast",
+    "system": "You write the title of a pull request for a branch that has no pull request yet. Answer with one short title in the imperative mood that says what the change does, for example: Add dark mode toggle to settings. At most 72 characters, one line, no trailing period, no quotes, nothing else.",
+    "prompt": "Branch: 05-spike-dark-mode\n\nGroups of related changes on the branch, in review order:\n- Add dark theme\n\nAnswer with the pull request title only.\n",
+    "maxTokens": 256
+  },
+  "result": {
+    "text": "Add dark theme",
+    "confidence": 0,
+    "model": "anthropic:claude-haiku-5-5",
+    "inputTokens": 147,
+    "outputTokens": 8,
+    "cost": 0.000018700000000000004,
+    "ms": 911,
+    "stopReason": "end_turn"
+  }
+}
