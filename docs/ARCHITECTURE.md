@@ -41,21 +41,22 @@ Nothing outside those five packages makes a network call or runs `git`.
 
 | Package | Owner | Purpose | Status |
 | --- | --- | --- | --- |
-| `cmd/prt` | M0 | flags (`--repo --no-daemon --offline --snapshot`), `daemon` subcommand, wiring from env | wiring done; daemon socket TODO |
+| `cmd/prt` | M0 | flags (`--repo --no-daemon --offline --fixtures --snapshot --now`), `daemon` subcommand (socket + periodic discovery), wiring from env, browser opener | done for M0 |
 | `internal/model` | M0 | domain types (spec "Data model"), `UnitID`, `GroupID`, `ContentHash`, aggregates | done |
 | `internal/config` | M0 | `prt.toml`, `prt.routing.toml` (+ raw `prt.questions.toml`), lookup `.git/prt` → XDG → builtin, unknown keys rejected | done |
 | `internal/gitx` | M0 | `Git` interface, `Exec` (git CLI), `Fake` | done |
-| `internal/gh` | M0/M4 | `Client` interface, `API` (go-github + githubv4; token from `gh auth token`), `Fake`, `ParseRemote` | interface + fake done; API methods TODO |
+| `internal/gh` | M0/M4 | `Client` interface, `API` (go-github + githubv4; token from `gh auth token`), `Fake`, `ParseRemote` | `Viewer`, `SearchPRs`, `PR`, `PRDiff`, `CODEOWNERS` done; fake + `LoadFixture`; M4 write methods (`Threads`, `SubmitReview`, `Reply`, `ResolveThread`, `CreatePR`) TODO |
 | `internal/store` | M0 | `Store` interface, `SQLite` (JSON docs table + cache + runlog, `PRAGMA user_version` migrations), `OpenMemory` for tests | done |
 | `internal/diff` | M0 | unified diff parser, hunk/line numbering, `IntraLine` char diff, `Pair` | done |
 | `internal/proto` | M0 | NDJSON `Message`, `Event`, `Detail`, encoder/decoder | done |
-| `internal/daemon` | M0 | `Client` interface, `InProcess`, `Serve`/`Dial` over the socket | InProcess done; socket TODO |
-| `internal/tui` | M0→M5 | root model, picker, screens, `Snapshot` (no-TTY render) | skeleton: picker + plain diff |
-| `internal/pipeline` | M0→M3 | stage orchestration, caching, RunLog events, degradation | fetch/parse/aggregate wired; others skipped |
+| `internal/daemon` | M0 | `Client` interface, `InProcess` (discovery, worker pool, checkout), `Serve`/`Dial` over the socket | done for M0 |
+| `internal/diffview` | M0 | plain unified diff viewer component (lazy row rendering, file navigation, intra-line highlight) | done |
+| `internal/tui` | M0→M5 | root model, picker, Overview/Code tabs, help overlay, rebindable keys, `Snapshot` (no-TTY render) | M0 done |
+| `internal/pipeline` | M0→M3 | stage orchestration, caching, RunLog events, degradation | fetch (local or `PRDiff` fallback)/parse/aggregate wired; others skipped |
 | `internal/parse` | M1 | tree-sitter split at function boundaries, symbol/signature, shape hash, format detection, `Lang` | hunk fallback only |
 | `internal/questions` | M1 | catalogue types, validation, `Wire()` to `jev.Question`, embedded `default.toml` | types done; catalogue partial |
 | `internal/jev` | M1 | `Client`, `HTTP` (AI Gateway `/v1/evaluate`), `Fake`, `Replay`, `Recorder`, `RequestKey` | done (batching lives in pipeline) |
-| `internal/aggregate` | M1/M3 | spec "Ranking and aggregation" arithmetic, urgency + "why" | line counts only |
+| `internal/aggregate` | M1/M3 | spec "Ranking and aggregation" arithmetic, urgency + "why" | M0 urgency placeholder (no label terms) |
 | `internal/link` | M2 | structural links, embed kNN candidates, mechanical candidates | TODO |
 | `internal/embed` | M2 | `Embedder`, `Ollama` (`/api/embed`), `ONNX` stub, `Fake`, `Cosine`, `FromSpec` | done (ONNX TODO) |
 | `internal/cluster` | M2 | components, splitting, mechanical groups, review order | placeholder: one group per unit |
@@ -126,6 +127,7 @@ type Client interface {
     Refresh(ctx, proto.ItemParams) error
     Add(ctx, query string) (model.Item, error)
     Remove(ctx, itemID string) error
+    Checkout(ctx, proto.CheckoutParams) (proto.CheckoutResult, error)
     Events() <-chan proto.Event
     Close() error
 }
@@ -138,7 +140,7 @@ type Client interface {
 | Jev unreachable → `unknown`, confidence 0, route deep, picker "labels unavailable" | `jev.ErrUnavailable` (no key, network, 401/429/5xx) → pipeline writes `model.LabelUnknown` labels, sets `ItemAgg.LabelsMissing` |
 | Embedding model missing → skip stage 3 | `embed.ErrUnavailable` or nil `Deps.Embedder` → RunLog `skipped` with note |
 | LLM error/timeout (30 s fast, 120 s deep) → failed, retry once, then `R` | `review.FastTimeout/DeepTimeout`, `Review.Attempts`, `ReviewFailed` |
-| No GitHub (no remote, no token, `--offline`) | `Deps.GH == nil` → local branches only |
+| No GitHub (no remote, no token, `--offline`) | `Deps.GH == nil` → local branches only; a GitHub error (incl. `gh.ErrUnauthorized`) during discovery keeps cached PR items and emits "GitHub unavailable: …" |
 
 ## Testing
 

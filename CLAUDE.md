@@ -55,10 +55,10 @@ Additional targets:
 | Target | Runs |
 | --- | --- |
 | `make fixtures` | regenerate `testdata/fixture-repo` (gitignored) from `testdata/fixtures/{base,prs/*.patch}` via `tools/fixturegen`; deterministic SHAs |
-| `make demo` | build, generate fixtures if missing, run `bin/prt --no-daemon --offline` on the fixture repo (interactive) |
-| `make snapshot` | same, but `--snapshot`: prints a few screens to stdout with no TTY and no colour; use it to check UI changes |
+| `make demo` | build, generate fixtures if missing, run `bin/prt --no-daemon --offline --fixtures testdata/fixtures/prs.json` on the fixture repo (interactive) |
+| `make snapshot` | same, but `--snapshot --now <fixed>`: prints a few screens to stdout with no TTY and no colour, byte-stable; use it to check UI changes |
 
-Running by hand: `bin/prt [--repo DIR] [--no-daemon] [--offline] [--snapshot --width N --height N --max-items N]`, and `bin/prt daemon [--repo DIR]`. Per-repo state lives in `.git/prt/` (`prt.db`, `prt.log`, `prtd.sock`, optional `prt*.toml`).
+Running by hand: `bin/prt [--repo DIR] [--no-daemon] [--offline] [--fixtures FILE] [--snapshot --width N --height N --max-items N --now RFC3339]`, and `bin/prt daemon [--repo DIR] [--offline] [--fixtures FILE]`. Per-repo state lives in `.git/prt/` (`prt.db`, `prt.log`, `prtd.sock`, optional `prt*.toml`).
 
 Environment: the local toolchain is Go 1.27; `go.mod` says `go 1.26.0` (forced by deps, see DECISIONS.md). In this sandbox Bash runs simple commands only (no `&&`, `;`, `cd`): use `go -C /Users/fredric/code/prt …`, `git -C …`, `make -C …`, and `go fmt ./...` for formatting.
 
@@ -70,7 +70,7 @@ Full map, dependency rules and interfaces: `docs/ARCHITECTURE.md`. Summary:
 - `internal/model` — domain types and content-hash ids; imports nothing from prt.
 - Boundaries (each an interface + real impl + `Fake`): `gitx` (git CLI), `gh` (GitHub), `jev` (AI Gateway `/v1/evaluate`, plus `Replay`/`Recorder`), `embed` (Ollama; ONNX stub), `review` (Anthropic, fast/deep `Tiers`), `store` (SQLite).
 - Pure stages: `diff` (unified diff parse, intra-line), `parse` (M1, tree-sitter units), `questions` (catalogue), `link` (M2), `cluster` (M2), `route` (M3, rule language), `aggregate` (M1/M3 arithmetic).
-- `pipeline` wires stages to boundaries and emits `RunLog` events; `daemon` exposes it as `daemon.Client` (`InProcess` now, socket later); `proto` is the NDJSON wire format; `tui` renders and talks only to `daemon.Client`.
+- `pipeline` wires stages to boundaries and emits `RunLog` events; `daemon` exposes it as `daemon.Client` (`InProcess`, or `Dial` → `Socket` against `prt daemon`'s `Serve`); `diffview` is the plain diff viewer component; `proto` is the NDJSON wire format; `tui` renders and talks only to `daemon.Client`.
 - `internal/deps` (`//go:build tools`) pins every third-party module: add new modules there, run `go mod tidy` once, so parallel work never needs `go get`.
 - `internal/testutil` — `RepoRoot`, `Testdata`, `FixtureRepo`, `RecordingsDir`. `testdata/recordings/{jev,review}` hold recorded real responses.
 

@@ -27,6 +27,25 @@ on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); milestones follow
   (fetch → parse → aggregate) with RunLog events.
 - Skeleton TUI (picker + plain diff) and `--snapshot` mode.
 - Deterministic fixture repo generator (`tools/fixturegen`).
+- Fixture set: a "portal" monorepo (TS/TSX, Go, Python) with five branches —
+  mixed refactor+feature with a breaking `getUser` signature change, a
+  20-file mechanical rename, deletions only, a dependency bump, and a local
+  spike branch — plus `testdata/fixtures/prs.json` for the fake GitHub client.
+- GitHub client: `Viewer`, `SearchPRs`, `PR`, `PRDiff` and `CODEOWNERS` over
+  GraphQL/REST; 401 maps to `gh.ErrUnauthorized`; `gh.LoadFixture`.
+- Daemon: `prt daemon` serves NDJSON over `.git/prt/prtd.sock` with event
+  fan-out and periodic discovery; `daemon.Dial` client; discovery into
+  Needs you / Yours / Branches / Added with stale detection; an
+  urgency-ordered worker pool; `git checkout` with a dirty-tree check.
+- Pipeline falls back to the GitHub PR diff when the head is not local;
+  aggregate computes the M0 urgency placeholder and "why".
+- Plain diff viewer (`internal/diffview`): lazy row rendering, file
+  navigation, intra-line highlighting, escape-sequence-safe output.
+- TUI: picker with urgency bars and per-section secondary lines, Overview and
+  Code tabs, help overlay, rebindable keys (`[keys]` in `prt.toml`), checkout
+  prompt, `o` opens the PR in the browser, periodic refresh.
+- `--fixtures` and `--now` flags; `make demo` and `make snapshot` run fully
+  offline against the fixture repo.
 
 ### M1 — units and labels
 

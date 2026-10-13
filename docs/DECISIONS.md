@@ -86,7 +86,83 @@ Each entry: date, decision, why, alternatives considered.
 - **Decision:** golangci-lint v2 with `default: standard` plus bodyclose, copyloopvar, errorlint, misspell (no locale), nolintlint, noctx, revive (selected rules; `exported` and `blank-imports` off), unconvert, usestdlibvars; formatters gofmt and goimports (local prefix `github.com/fredricw/prt`).
 - **Why:** strict on correctness, quiet on style. misspell has no US locale because the spec and label ids use British spelling (`behaviour`, `catalogue`, `normalise`).
 
+## 2026-10-13 — M0 shared contracts for parallel work
+
+- **Decision:** before splitting M0 into parallel packages the lead fixed these contracts:
+  - `model.Item` gains `Draft`, `ViewerApproved`, `Additions`, `Deletions`, `Urgency`, `UrgencyQuartile` (0–4, relative to the other items; computed by the daemon) and `Why`, so the picker can sort and draw the urgency bar from `Items()` alone without loading every `Detail`.
+  - `daemon.Client` gains `Checkout(ctx, proto.CheckoutParams) (proto.CheckoutResult, error)`: without `Force`, a dirty tree returns `Dirty=true` and does nothing, so the TUI can prompt (spec keybinding `c`). `proto` adds `MethodDiscover` and `MethodCheckout`.
+  - Offline GitHub is `gh.Fixture` JSON (`testdata/fixtures/prs.json`) loaded by `gh.LoadFixture` into `gh.Fake`; `make demo` passes it with `--fixtures`. A PR's `headSha` may be empty; consumers resolve it from the local head ref.
+  - The plain diff viewer is a separate package `internal/diffview` (component with `SetDiff/SetSize/Update/View/ScrollBy/GotoTop/GotoBottom/NextFile/PrevFile/CurrentFile`), consumed by `internal/tui`.
+- **Why:** lets fixtures, GitHub, daemon/pipeline, diff viewer and TUI be built in parallel on disjoint directories.
+- **Alternatives:** compute urgency quartiles in the TUI (rejected: daemon owns ranking, TUI never does maths); viewer inside `internal/tui` (rejected: one package per agent).
+
+## 2026-10-13 — M0 urgency placeholder
+
+- **Decision:** until M3, `aggregate` computes the spec's urgency formula with only the terms that need no labels — review requested, release path, CI red after approval, age, minutes (from changed lines at 0.1 min/line as a stand-in) and, for branches, unpushed commits; label terms are 0. "Why" is the top three positive contributions in words.
+- **Why:** the spec allows a placeholder until M3 but the picker's urgency bar and "why" must render now; using the real formula with zeros means M3 only fills in terms.
+
 ## 2026-10-13 — Unit id normalisation
 
 - **Decision:** `model.UnitID(path, hunk)` = sha256(path + "\n" + hunk with trailing whitespace stripped per line and leading/trailing blank lines dropped). The `+`/`-`/space prefixes are kept.
 - **Why:** spec says sha256(path + normalised hunk) without defining "normalised"; this keeps ids stable across whitespace noise at hunk edges while distinguishing additions from deletions. Identifier normalisation is reserved for the shape hash.
+
+## 2026-10-13 — Fixture set (M0)
+
+- **Patch authoring:** patches are authored in a scratch repo built by `fixturegen` and exported with `git format-patch --zero-commit --no-signature`. The `.patch` files are the only source of truth; `fixturegen` has no authoring mode. To change one: generate, check out the branch, edit, commit with `--date`, re-export, then update SHAs and stats in `prs.json` (tests catch mismatches). `.gitattributes` marks `testdata/fixtures/prs/*.patch` as `-text` so nothing normalises them.
+- **Identity and dates:** an mbox patch keeps its own author and Date; the committer is "Fixture Author" with committer date = author date. The base commit and plain-diff commits use 2026-10-01T09:00:00Z.
+- **Dependabot message** has no `---` line, because `git am` would cut the message there.
+- **Fake hashes:** `go.sum` h1 hashes and `package-lock.json` integrity hashes are plausible but not real; fixtures are never installed.
+- **#104 is approved and CI red** (`viewerApproved=true`) to exercise the "CI red after approval" urgency term; #101 and #103 have `reviewRequested=true`.
+- **Unimplemented bullet:** #101's body lists "Invalidate the profile cache on logout", which the diff does not implement (M3 description-check target).
+- **`codeowners`** field in `prs.json` mirrors `base/CODEOWNERS`.
+- **Guard:** `fixturegen` refuses output outside `testdata/` and a path whose last element is `testdata` itself.
+- **Alternatives:** an authoring mode in `fixturegen` (more code for a rare task); plain diffs only (loses author/date per PR).
+
+## 2026-10-13 — GitHub client behaviour (M0)
+
+- **`ErrUnauthorized` wraps `ErrNoToken`**, so callers that fall back to local branches on a missing token do the same on a rejected one. Alternative: a separate error every caller checks.
+- **"Viewer commented" is inferred:** true when the viewer's latest review is not PENDING, or they wrote one of the PR's last 20 comments. Alternatives: an extra `commenter:@me` search per refresh; the participants list (also counts the author).
+- **Only user review requests count;** team requests neither add a reviewer nor set ReviewRequested. Team membership may come later.
+- **Fake `is:closed`** matches closed and merged PRs, like GitHub; an empty State counts as open.
+- **`type:pr` counts as `is:pr`** when building search queries.
+- **Viewer login is cached** after the first success; failures are never cached, so the next refresh retries.
+
+## 2026-10-13 — Daemon and discovery (M0)
+
+- **Adding an existing item** returns it in its current section and queues analysis; it does not move a ranked item into Added. Alternative: convert it to source=added.
+- **Staleness without a new field:** an item becomes Stale only if it was Ready or Error and its head SHA changed (note "new push since analysis"); in-flight items are left alone.
+- **Discovery computes urgency from metadata** with the M0 formula and GitHub's Additions/Deletions (when non-zero) so the picker can rank and queue before analysis. M3 must merge label terms from the stored ItemAgg (TODO in `setUrgency`).
+- **Urgency terms by kind:** PR-only terms (requested, release, CI red) are omitted for branches; unpushed is omitted for PRs (spec: "Branches replace the PR-only terms"). Label terms are stored with value 0.
+- **GitHub failure keeps cached PR items** (not pruned); their head ref/SHA still hide matching local branches.
+- **Owned-path search** uses `is:pr is:open path:<glob>` best-effort; GitHub may reject `path:`, so errors are only logged. Remaining PRs go to Needs you.
+- **Socket:** requests on one connection run concurrently (responses may be out of order, correlated by ID). Each subscriber has a 256-event buffer; events drop on overflow, as InProcess does. A live socket gives `ErrDaemonRunning`; a dead socket file is removed.
+- **Periodic discovery:** `prt daemon` runs `Discover` at start and every `pipeline.refresh_seconds`; the TUI also runs it on the same interval (`tui.Options.RefreshEvery`), so a TUI on an in-process client stays fresh too. Duplicate discovery through the socket is cheap and idempotent. Alternative: only the daemon refreshes and pushes events (the TUI would then need a separate path for `--no-daemon`).
+
+## 2026-10-13 — Diff viewer (M0)
+
+- pgdown/pgup/space scroll a full page; ctrl+d/ctrl+u half a page.
+- NextFile/PrevFile may scroll past the normal bottom so the last file's header is the top row; scrolling down never pulls that back, `SetSize`/`GotoBottom` clamp. PrevFile inside a file goes to that file's header first.
+- Raw fallback when `diff.Parse` fails or finds no `diff --git` section.
+- `Line()` returns 0 for a file header, the hunk's NewStart for a hunk header, and for a deleted line the nearest earlier new-side line (or max(1, NewStart)).
+- Control characters in diff text render as `?` to block escape-sequence injection.
+- Intra-line highlighting is skipped when a pair totals more than 4096 bytes; each line is cut at 4×width+64 bytes before styling.
+- Gutter width comes from the largest line number in the whole diff so columns stay aligned; hunk headers are drawn at column 0.
+
+## 2026-10-13 — TUI behaviour (M0)
+
+- **Empty picker sections** show as a dim "Name (0)" header so absence is explicit.
+- **Selection without colour:** the cursor row has a "▸" marker as well as bold, so selection is visible in snapshots.
+- **Notes clear on the next key press**, not a timer (deterministic, no tick commands).
+- **Detail loads:** only the newest load is applied (sequence number); no debounce delay.
+- **Analysis start** runs in daemon order in one command, at most once per (item, head SHA); `r` always forces.
+- **Rebinding:** `[keys]` in `prt.toml` maps action → comma-separated keys (`down = "j,down"`). Actions: up, down, top, bottom, focus, back, next_focus, prev_focus, refresh, overview, code, open, checkout, page_down, page_up, next_file, prev_file, help, quit. An unknown action logs a warning and the defaults are used.
+- **Branches secondary line:** "<n> unpushed · <n> ahead · age"; branch state arrives in M5.
+- **Markdown without colour** uses glamour's "notty" style; with colour it picks dark/light from `HasDarkBackground()` read before the program starts.
+- **tab / shift+tab** both toggle picker ↔ main pane until the bottom strip exists.
+- **Snapshot degrades:** a failed Discover writes `# discover failed: …` and renders stored items instead of aborting.
+
+## 2026-10-13 — CLI wiring (M0)
+
+- **`--fixtures FILE`** loads `gh.LoadFixture` as `Deps.GH` and wins over the real client; it works with `--offline` (offline still disables Jev, LLMs and embeddings). `make demo` and `make snapshot` use `testdata/fixtures/prs.json`.
+- **`--now RFC3339`** fixes the clock for ages; `make snapshot` passes `2026-10-13T12:00:00Z` so output is byte-stable. Alternative: a `PRT_NOW` env var (flags are more visible in the Makefile).
+- **Opener for `o`:** `open` on macOS, `xdg-open` elsewhere, started without a shell and not waited on.

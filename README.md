@@ -6,7 +6,7 @@ PR is safe instead of all 400. Judgments come from Jev, grouping from a local
 embedding model, reviews from the cheapest LLM tier that can do the job, and
 every number on screen traces back to a label, a rule or a git fact.
 
-> Status: early development (milestone M0 in progress). See
+> Status: early development (M0 — a fast PR browser — done; labels from M1). See
 > [`docs/spec.md`](docs/spec.md) for the design and
 > [`CHANGELOG.md`](CHANGELOG.md) for what works today.
 
@@ -47,7 +47,9 @@ prt                 # picker on the left, the selected PR/branch on the right
 ```
 
 - `j`/`k` move through the picker, `enter` focuses the diff, `esc` goes back.
-- `r` re-runs analysis for the selected item; `q` quits.
+- `1` overview, `2` code; `]`/`[` jump between files in the diff.
+- `o` opens the PR on GitHub, `c` checks it out (asks first if your tree is dirty).
+- `r` re-runs analysis for the selected item; `?` shows every key; `q` quits.
 - `prt daemon` keeps analysis warm in the background (one per repo); `prt`
   connects to it automatically, or runs everything in-process with `--no-daemon`.
 - `prt --offline` never touches the network; `prt --snapshot` prints a few
