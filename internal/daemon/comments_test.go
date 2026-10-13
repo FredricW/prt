@@ -177,6 +177,63 @@ func TestSaveCommentCreates(t *testing.T) {
 	}
 }
 
+// A V selection from a deleted line down to an added one is a LEFT→RIGHT
+// range: kept as sent even when the line numbers are equal or the old one
+// is larger (regression: collapsed to a line, or refused).
+func TestSaveCommentCrossSideRange(t *testing.T) {
+	cases := []struct {
+		name        string
+		start, line int
+	}{
+		{"equal numbers", 11, 11},
+		{"old number larger", 12, 11},
+		{"old number smaller", 10, 13},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c, st, _ := commentClient(t, &gh.Fake{Login: "fredric"})
+			in := model.Comment{Path: "a.go", Line: tc.line, Side: model.SideNew, StartLine: tc.start, StartSide: model.SideOld, Body: "x"}
+			got, err := c.SaveComment(context.Background(), proto.CommentParams{ItemID: cItem, Comment: in})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.StartLine != tc.start || got.StartSide != model.SideOld || got.Line != tc.line || got.Side != model.SideNew {
+				t.Errorf("saved = start %d (%s) line %d (%s)", got.StartLine, got.StartSide, got.Line, got.Side)
+			}
+			if got.UnitID != "u1" || got.StartOffset != tc.start-10 {
+				t.Errorf("anchor = %q start offset %d", got.UnitID, got.StartOffset)
+			}
+			if s := storedComments(t, st, cItem)[got.ID]; s.StartLine != tc.start || s.StartSide != model.SideOld {
+				t.Errorf("stored = %+v", s)
+			}
+		})
+	}
+	c, _, _ := commentClient(t, &gh.Fake{Login: "fredric"})
+	_, err := c.SaveComment(context.Background(), proto.CommentParams{ItemID: cItem,
+		Comment: model.Comment{Path: "a.go", Line: 11, Side: model.SideNew, StartLine: 20, StartSide: model.SideOld, Body: "x"}})
+	wantErr(t, err, "start line not in the diff")
+}
+
+// Pending comments left by a process that died mid-submission are drafts
+// again when a client starts (regression: stuck pending for good).
+func TestStartupRecoversPendingComments(t *testing.T) {
+	st := newTestStore(t)
+	put(t, st, model.Item{ID: cItem, Kind: model.KindPR, Number: 7, HeadSHA: "h2", AnalysedSHA: cAnalysed})
+	pending := userDraft("d-p", "a.go", 12, "in flight")
+	pending.State = model.CommentPending
+	posted := userDraft("d-posted", "a.go", 11, "sent")
+	posted.State, posted.GHID = model.CommentPosted, 4
+	putComments(t, st, pending, posted)
+	newClient(t, st, &gitx.Fake{}, nil, nil)
+	cs := storedComments(t, st, cItem)
+	if cs["d-p"].State != model.CommentDraft || cs["d-p"].Body != "in flight" {
+		t.Errorf("pending = %+v, want a draft again", cs["d-p"])
+	}
+	if cs["d-posted"].State != model.CommentPosted {
+		t.Errorf("posted comment changed: %+v", cs["d-posted"])
+	}
+}
+
 func TestSaveCommentDraftIDsUnique(t *testing.T) {
 	c, _, _ := commentClient(t, nil)
 	seen := map[string]bool{}
@@ -504,6 +561,24 @@ func TestCommentActionReplyAndResolve(t *testing.T) {
 			t.Fatal("failed resolve changed the stored thread")
 		}
 	})
+}
+
+// A reply takes its position and side from the thread's stored comments
+// (the mutation has no diff side): a reply on a LEFT thread is anchored on
+// the old side (regression: stored with Side "" and anchored as new).
+func TestReplyCopiesThreadSide(t *testing.T) {
+	ctx := context.Background()
+	c, st, _ := commentClient(t, &gh.Fake{Login: "fredric"})
+	first := model.Comment{ID: "gh-1", ItemID: cItem, Path: "b.go", Line: 6, Side: model.SideOld, Body: "why drop this?",
+		Source: model.CommentGitHub, State: model.CommentPosted, GHID: 1, ThreadID: "T1", UnitID: "u3", UnitOffset: 1}
+	putComments(t, st, first)
+	got, err := c.CommentAction(ctx, proto.CommentActionParams{ItemID: cItem, Action: proto.CommentReply, ThreadID: "T1", Body: "unused"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Path != "b.go" || got.Line != 6 || got.Side != model.SideOld || got.UnitID != "u3" || got.UnitOffset != 1 {
+		t.Errorf("reply = %+v, want b.go:6 old side in u3", got)
+	}
 }
 
 func TestCommentActionNeedsGitHub(t *testing.T) {

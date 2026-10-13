@@ -2,11 +2,31 @@ package pipeline
 
 import (
 	"context"
+	"sync"
 
 	"github.com/fredricw/prt/internal/comments"
 	"github.com/fredricw/prt/internal/gh"
 	"github.com/fredricw/prt/internal/model"
 )
+
+// NewKeyedLock returns a lock function for Deps.CommentLock: one mutex per
+// key (item id), created on first use; call the returned function to
+// unlock.
+func NewKeyedLock() func(key string) func() {
+	var mu sync.Mutex
+	locks := map[string]*sync.Mutex{}
+	return func(key string) func() {
+		mu.Lock()
+		l, ok := locks[key]
+		if !ok {
+			l = &sync.Mutex{}
+			locks[key] = l
+		}
+		mu.Unlock()
+		l.Lock()
+		return l.Unlock
+	}
+}
 
 // loadThreads loads a PR's review threads and reconciles the item's stored
 // comments with them (comments.MergeGitHub). It runs inside the fetch
@@ -27,6 +47,8 @@ func (p *Pipeline) loadThreads(ctx context.Context, it model.Item, rl *model.Run
 		}
 		return
 	}
+	unlock := p.d.CommentLock(it.ID)
+	defer unlock()
 	stored, err := p.d.Store.Comments(ctx, it.ID)
 	if err != nil {
 		p.d.Log.Warn("load comments failed; threads not merged", "item", it.ID, "err", err)
@@ -88,9 +110,12 @@ func normaliseThreadComment(itemID string, t gh.Thread, c model.Comment) model.C
 }
 
 // reanchorComments moves the item's stored comments onto the units stage 1
-// just stored (comments.Reanchor) and stores the ones that changed. Store
-// errors are logged only: comments never fail the parse stage.
+// just stored (comments.Reanchor) and stores the ones that changed, under
+// the item's comment lock. Store errors are logged only: comments never
+// fail the parse stage.
 func (p *Pipeline) reanchorComments(ctx context.Context, itemID string, units []model.ChangeUnit) {
+	unlock := p.d.CommentLock(itemID)
+	defer unlock()
 	stored, err := p.d.Store.Comments(ctx, itemID)
 	if err != nil {
 		p.d.Log.Warn("load comments failed; not re-anchored", "item", itemID, "err", err)
@@ -102,8 +127,11 @@ func (p *Pipeline) reanchorComments(ctx context.Context, itemID string, units []
 // syncAIDrafts materialises one ai-draft per finding of the routing rows
 // (comments.AIDrafts, skipping findings the user accepted or dismissed)
 // and deletes the ai-drafts whose finding is gone (comments.SyncAIDrafts).
-// Errors are logged only.
+// It holds the item's comment lock, so an accept or dismiss (mark written,
+// ai row deleted) is never undone by a stale re-put. Errors are logged only.
 func (p *Pipeline) syncAIDrafts(ctx context.Context, itemID string, rows []model.Review, units []model.ChangeUnit) {
+	unlock := p.d.CommentLock(itemID)
+	defer unlock()
 	marks, err := p.d.Store.FindingMarks(ctx, itemID)
 	if err != nil {
 		p.d.Log.Warn("load finding marks failed; ai-drafts not synced", "item", itemID, "err", err)

@@ -94,6 +94,13 @@ type Deps struct {
 	// Item so the pipeline does not lose concurrent updates made by its host
 	// (the daemon's state changes and discovery).
 	ItemLock sync.Locker
+	// CommentLock, when set, locks the comments of one item and returns the
+	// unlock function. The pipeline holds it around every read-modify-write
+	// of stored comments (threads merge, re-anchoring, ai-draft sync) so it
+	// never writes back a stale copy over a host's concurrent comment write
+	// (the daemon's submit, edit, accept). Defaults to a per-item lock of the
+	// pipeline's own.
+	CommentLock func(itemID string) func()
 }
 
 // RunOptions tune one run.
@@ -168,6 +175,9 @@ func New(d Deps) *Pipeline {
 	}
 	if d.ItemLock == nil {
 		d.ItemLock = &sync.Mutex{}
+	}
+	if d.CommentLock == nil {
+		d.CommentLock = NewKeyedLock()
 	}
 	if len(d.Routing.Rules) == 0 {
 		d.Routing = config.DefaultRouting()

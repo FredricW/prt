@@ -48,14 +48,14 @@ type InProcess struct {
 	ghNote  string // guarded by evMu
 	srcNote string // guarded by evMu
 
-	// Comment writes (see comments.go): commentLocks serialises them per
-	// item, draftSeq makes draft ids unique within the process, viewer
-	// caches the GitHub login used as a draft's author.
-	commentMu    sync.Mutex
-	commentLocks map[string]*sync.Mutex
-	draftSeq     atomic.Uint64
-	viewerMu     sync.Mutex
-	viewer       string
+	// Comment writes (see comments.go): commentLock serialises them per
+	// item (shared with the pipeline through Deps.CommentLock), draftSeq
+	// makes draft ids unique within the process, viewer caches the GitHub
+	// login used as a draft's author.
+	commentLock func(itemID string) func()
+	draftSeq    atomic.Uint64
+	viewerMu    sync.Mutex
+	viewer      string
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -71,7 +71,7 @@ func NewInProcess(d pipeline.Deps) *InProcess {
 	ctx, cancel := context.WithCancel(context.Background())
 	c := &InProcess{
 		events: make(chan proto.Event, 256), ctx: ctx, cancel: cancel,
-		itemMu: &sync.Mutex{}, commentLocks: map[string]*sync.Mutex{},
+		itemMu: &sync.Mutex{}, commentLock: pipeline.NewKeyedLock(),
 	}
 	if d.Log == nil {
 		d.Log = log.New(io.Discard)
@@ -88,6 +88,7 @@ func NewInProcess(d pipeline.Deps) *InProcess {
 		}
 	}
 	d.ItemLock = c.itemMu
+	d.CommentLock = c.commentLock
 	c.d, c.log, c.now = d, d.Log, d.Now
 	c.p = pipeline.New(d)
 	slots := d.Config.Pipeline.Concurrency
@@ -524,6 +525,37 @@ func (c *InProcess) recoverStates(ctx context.Context) {
 		if it.State == model.StateFetching || it.State == model.StateAnalysing {
 			c.resetState(it.ID)
 		}
+		c.recoverPending(ctx, it.ID)
+	}
+}
+
+// recoverPending turns the item's local pending comments back into drafts.
+// A comment is pending only while a review submission is in flight in this
+// process, so one found at start-up was left by a process that died
+// between marking it pending and recording the outcome; as a draft it can
+// be edited, deleted or submitted again (DECISIONS "Pending comments are
+// recovered as drafts at start-up").
+func (c *InProcess) recoverPending(ctx context.Context, itemID string) {
+	unlock := c.lockComments(itemID)
+	defer unlock()
+	cs, err := c.d.Store.Comments(ctx, itemID)
+	if err != nil {
+		c.log.Warn("recover pending comments", "item", itemID, "err", err)
+		return
+	}
+	var stuck []model.Comment
+	for _, cm := range cs {
+		if cm.Source == model.CommentUser && cm.State == model.CommentPending {
+			stuck = append(stuck, cm)
+		}
+	}
+	if len(stuck) == 0 {
+		return
+	}
+	c.log.Warn("pending comments from an interrupted submission are drafts again; check the PR on GitHub before submitting them again",
+		"item", itemID, "comments", len(stuck))
+	if err := c.putStates(ctx, stuck, model.CommentDraft); err != nil {
+		c.log.Warn("recover pending comments", "item", itemID, "err", err)
 	}
 }
 

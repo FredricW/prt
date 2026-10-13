@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"slices"
 	"strings"
-	"sync"
 
 	"github.com/fredricw/prt/internal/comments"
 	"github.com/fredricw/prt/internal/model"
@@ -122,9 +121,15 @@ func (c *InProcess) placeDraft(ctx context.Context, d model.Comment) (model.Comm
 		return model.Comment{}, fmt.Errorf("daemon: comment %s:%d (%s): line not in the diff", d.Path, d.Line, d.Side)
 	}
 	if d.StartLine > 0 {
-		start := model.Comment{Path: d.Path, Line: d.StartLine, Side: cmp.Or(d.StartSide, d.Side)}
-		if comments.Anchor(start, units).UnitID == "" {
+		start := model.Comment{Path: d.Path, Line: d.StartLine, Side: comments.StartSide(d), UnitID: d.UnitID}
+		su := comments.Anchor(start, units).UnitID
+		switch {
+		case su == "":
 			return model.Comment{}, fmt.Errorf("daemon: comment %s:%d (%s): start line not in the diff", d.Path, d.StartLine, start.Side)
+		case su != d.UnitID && comments.CrossSide(d):
+			// Re-anchoring places a cross-side start by its offset in the
+			// end's unit, so both ends must lie in that unit.
+			return model.Comment{}, fmt.Errorf("daemon: comment %s: a range across sides must stay within one change", d.Path)
 		}
 	}
 	if err := c.d.Store.PutComment(ctx, d); err != nil {
@@ -134,8 +139,9 @@ func (c *InProcess) placeDraft(ctx context.Context, d model.Comment) (model.Comm
 }
 
 // normaliseDraft checks a draft's body, path, line and side, defaults the
-// side to new, and turns a range starting on its own line into a
-// single-line comment.
+// side to new, and turns a same-side range starting on its own line into a
+// single-line comment. Start and end are compared only on the same side: a
+// cross-side range (comments.CrossSide) is kept as sent.
 func normaliseDraft(d model.Comment) (model.Comment, error) {
 	switch {
 	case strings.TrimSpace(d.Body) == "":
@@ -154,13 +160,20 @@ func normaliseDraft(d model.Comment) (model.Comment, error) {
 			return d, fmt.Errorf("daemon: comment: unknown side %q", s)
 		}
 	}
-	if d.StartLine == d.Line {
-		d.StartLine = 0
-	}
 	switch {
-	case d.StartLine < 0 || d.StartLine > d.Line:
+	case d.StartLine < 0:
+		return d, fmt.Errorf("daemon: comment: bad start line %d", d.StartLine)
+	case comments.CrossSide(d):
+		// A range from one side to the other (a deleted line down to an
+		// added one): the two numbers are on different sides and are not
+		// compared; GitHub takes start_side LEFT with side RIGHT.
+		return d, nil
+	case d.StartLine == d.Line:
+		d.StartLine = 0
+	case d.StartLine > d.Line:
 		return d, fmt.Errorf("daemon: comment: start line %d must come before line %d", d.StartLine, d.Line)
-	case d.StartLine == 0:
+	}
+	if d.StartLine == 0 {
 		d.StartSide = ""
 	}
 	return d, nil
@@ -290,9 +303,25 @@ func (c *InProcess) normaliseReply(ctx context.Context, it model.Item, threadID 
 	if rc.CreatedAt.IsZero() {
 		rc.CreatedAt = c.now()
 	}
-	if units, err := c.d.Store.Units(ctx, it.ID); err == nil {
-		a := comments.Anchor(rc, units)
-		rc.UnitID, rc.UnitOffset = a.UnitID, a.UnitOffset
+	// The reply mutation has no diff side: take the position from the
+	// thread's stored comments (as the thread loader would).
+	if cs, err := c.d.Store.Comments(ctx, it.ID); err == nil {
+		for _, t := range cs {
+			if t.ThreadID != rc.ThreadID || t.ID == rc.ID {
+				continue
+			}
+			rc.Path, rc.Line, rc.Side = cmp.Or(t.Path, rc.Path), cmp.Or(t.Line, rc.Line), t.Side
+			rc.StartLine, rc.StartSide, rc.Outdated = t.StartLine, t.StartSide, t.Outdated || rc.Outdated
+			break
+		}
+	}
+	units, err := c.d.Store.Units(ctx, it.ID)
+	if err != nil {
+		return rc
+	}
+	// Reanchor anchors a posted github comment (no outdated thread).
+	if a := comments.Reanchor([]model.Comment{rc}, units); len(a) == 1 {
+		rc = a[0]
 	}
 	return rc
 }
@@ -395,18 +424,10 @@ func (c *InProcess) applyOverride(ctx context.Context, it model.Item, o model.Ov
 	return nil
 }
 
-// lockComments serialises comment writes of one item; call the returned
-// function to unlock.
+// lockComments serialises comment writes of one item (the pipeline's
+// included); call the returned function to unlock.
 func (c *InProcess) lockComments(itemID string) func() {
-	c.commentMu.Lock()
-	mu, ok := c.commentLocks[itemID]
-	if !ok {
-		mu = &sync.Mutex{}
-		c.commentLocks[itemID] = mu
-	}
-	c.commentMu.Unlock()
-	mu.Lock()
-	return mu.Unlock
+	return c.commentLock(itemID)
 }
 
 // comment returns the stored comment id of itemID.
