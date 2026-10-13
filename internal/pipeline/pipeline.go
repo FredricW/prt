@@ -180,12 +180,26 @@ func (p *Pipeline) runAfterFetch(ctx context.Context, it model.Item, f model.Fet
 		}
 		p.d.Log.Warn("clustering failed; no groups", "item", it.ID, "err", err)
 		gro = groupOut{links: in.keptLinks(), noStructural: in.structural == nil}
+		p.clearGroups(ctx, it.ID, gro.links)
 	}
 	p.skip(it.ID, "M3", model.StageRoute, model.StageReview)
 	_, err = runStage(ctx, p, it.ID, model.StageAggregate, func(rl *model.RunLog) (model.ItemAgg, error) {
 		return p.aggregate(ctx, it, f, parsed, jo, gro, rl)
 	})
 	return err
+}
+
+// clearGroups replaces the item's stored groups (none) and links (this
+// run's) after stage 5 failed, so Detail does not serve the previous head's
+// groups next to an aggregate without grouping. A store error here is only
+// logged: the stage already failed.
+func (p *Pipeline) clearGroups(ctx context.Context, itemID string, links []model.Link) {
+	if err := p.d.Store.PutGroups(ctx, itemID, nil); err != nil {
+		p.d.Log.Warn("clear stale groups failed", "item", itemID, "err", err)
+	}
+	if err := p.d.Store.PutLinks(ctx, itemID, links); err != nil {
+		p.d.Log.Warn("store links failed", "item", itemID, "err", err)
+	}
 }
 
 // skip records stages that are not built yet (note names the milestone).

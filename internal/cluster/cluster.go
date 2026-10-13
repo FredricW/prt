@@ -1,8 +1,9 @@
 // Package cluster is pipeline stage 5: connected components over structural
 // and Jev-confirmed links, split of components larger than max_group_units by
 // cutting the weakest Jev-confirmed (embed-derived) links, mechanical groups
-// (count ≥ mechanical_min, members verified against the example's shape hash,
-// non-matching members ejected), user merge/split edits, placeholder names
+// (count ≥ mechanical_min units with the same shape.Key — shape hash and
+// literal edit — linked by mechanical candidates; units of the class left
+// out are ejected), user merge/split edits, placeholder names
 // and review order (interface units first, then callers, then tests).
 //
 // Jev naming (name_bullet) is done by the pipeline through internal/judge
@@ -10,7 +11,12 @@
 // pure: no I/O, deterministic output.
 package cluster
 
-import "github.com/fredricw/prt/internal/model"
+import (
+	"context"
+	"fmt"
+
+	"github.com/fredricw/prt/internal/model"
+)
 
 // Defaults applied when an Options field is ≤ 0.
 const (
@@ -72,6 +78,14 @@ type Result struct {
 // edits. It is pure and deterministic: the result depends only on unit
 // Order (ties by id) and link content, never on input or map order.
 func Cluster(in Input) Result {
+	r, _ := ClusterContext(context.Background(), in)
+	return r
+}
+
+// ClusterContext is Cluster that stops early when ctx is done (the split
+// of oversized components is the only long step) and then returns an
+// error wrapping ctx's and an empty Result.
+func ClusterContext(ctx context.Context, in Input) (Result, error) {
 	opts := in.Options.withDefaults()
 	g := newGraph(in.Units, in.Links)
 
@@ -83,7 +97,10 @@ func Cluster(in Input) Result {
 		}
 	}
 
-	parts, cut := splitComponents(g, inMech, opts.MaxGroupUnits)
+	parts, cut := splitComponents(ctx, g, inMech, opts.MaxGroupUnits)
+	if err := ctx.Err(); err != nil {
+		return Result{}, fmt.Errorf("cluster: %w", err)
+	}
 	groups := make([]*group, 0, len(mech)+len(parts))
 	groups = append(groups, mech...)
 	for _, p := range parts {
@@ -98,7 +115,7 @@ func Cluster(in Input) Result {
 	stats.Units = len(g.units)
 	stats.CutLinks = len(cut)
 	stats.UserEdits = applied
-	return Result{Groups: out, Stats: stats}
+	return Result{Groups: out, Stats: stats}, nil
 }
 
 // statsOf counts the groups of a result.

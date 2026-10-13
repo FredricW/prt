@@ -1,6 +1,7 @@
 package cluster
 
 import (
+	"context"
 	"sort"
 
 	"github.com/fredricw/prt/internal/model"
@@ -102,8 +103,8 @@ func graphEdge(l link) bool {
 // mechanical groups over structural and Jev links, then splits components
 // larger than maxUnits by cutting their weakest Jev links. It returns the
 // parts (each ascending, ordered by first unit) and the cut links' indexes
-// in g.links.
-func splitComponents(g *graph, inMech []bool, maxUnits int) ([][]int, map[int]bool) {
+// in g.links. Once ctx is done, remaining parts are left unsplit.
+func splitComponents(ctx context.Context, g *graph, inMech []bool, maxUnits int) ([][]int, map[int]bool) {
 	var nodes, edges []int
 	for u := range g.units {
 		if !inMech[u] {
@@ -118,7 +119,7 @@ func splitComponents(g *graph, inMech []bool, maxUnits int) ([][]int, map[int]bo
 	cut := map[int]bool{}
 	var parts [][]int
 	for _, c := range components(g, nodes, edges, cut) {
-		parts = append(parts, refine(g, c, edges, cut, maxUnits)...)
+		parts = append(parts, refine(ctx, g, c, edges, cut, maxUnits)...)
 	}
 	sort.Slice(parts, func(i, j int) bool { return parts[i][0] < parts[j][0] })
 	return parts, cut
@@ -127,14 +128,14 @@ func splitComponents(g *graph, inMech []bool, maxUnits int) ([][]int, map[int]bo
 // refine splits an oversized part by cutting its weakest Jev link until
 // every piece fits. A piece with no Jev link left is split at its
 // structural bridges (structuralSplit); one that has none stays whole.
-func refine(g *graph, part []int, edges []int, cut map[int]bool, maxUnits int) [][]int {
-	if len(part) <= maxUnits {
+func refine(ctx context.Context, g *graph, part []int, edges []int, cut map[int]bool, maxUnits int) [][]int {
+	if len(part) <= maxUnits || ctx.Err() != nil {
 		return [][]int{part}
 	}
 	inside := insideEdges(g, part, edges, cut)
 	w, ok := weakestJev(g, inside)
 	if !ok {
-		pieces, crossing := structuralSplit(g, part, inside)
+		pieces, crossing := structuralSplit(ctx, g, part, inside)
 		if pieces == nil {
 			return [][]int{part}
 		}
@@ -143,14 +144,14 @@ func refine(g *graph, part []int, edges []int, cut map[int]bool, maxUnits int) [
 		}
 		var out [][]int
 		for _, c := range pieces {
-			out = append(out, refine(g, c, inside, cut, maxUnits)...)
+			out = append(out, refine(ctx, g, c, inside, cut, maxUnits)...)
 		}
 		return out
 	}
 	cut[w] = true
 	var out [][]int
 	for _, c := range components(g, part, inside, cut) {
-		out = append(out, refine(g, c, inside, cut, maxUnits)...)
+		out = append(out, refine(ctx, g, c, inside, cut, maxUnits)...)
 	}
 	return out
 }

@@ -64,7 +64,15 @@ type Pipeline struct {
 	LineBatch      int     `toml:"line_batch"`
 	MechanicalMin  int     `toml:"mechanical_min"`
 	RefreshSeconds int     `toml:"refresh_seconds"`
+	// MaxPairsPerUnit caps the relation pairs judged per item at this many
+	// times its unit count, highest cosine first (≤ 0: default 3). Not in
+	// the spec: a cost bound for embedders whose cosines are compressed
+	// (see DECISIONS "Pair requests are capped per item").
+	MaxPairsPerUnit int `toml:"max_pairs_per_unit"`
 }
+
+// DefaultMaxPairsPerUnit is the default max_pairs_per_unit.
+const DefaultMaxPairsPerUnit = 3
 
 // Models names the external models. Endpoints and keys come from env:
 // JEV_BASE_URL / JEV_API_KEY, OLLAMA_HOST, PRT_ANTHROPIC_API_KEY.
@@ -106,6 +114,7 @@ func Defaults() Config {
 		Pipeline: Pipeline{
 			MaxGroupUnits: 8, EmbedMinCosine: 0.72, EmbedTopK: 3, KeepPairP: 0.60, UnsureBelow: 0.60,
 			Concurrency: 4, LineBatch: 20, MechanicalMin: 3, RefreshSeconds: 60,
+			MaxPairsPerUnit: DefaultMaxPairsPerUnit,
 		},
 		Models: Models{
 			Embed: "ollama:embeddinggemma-2",

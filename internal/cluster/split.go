@@ -1,21 +1,15 @@
 package cluster
 
 import (
+	"context"
 	"sort"
 
 	"github.com/fredricw/prt/internal/model"
 )
 
-// pairKey is an unordered unit pair (a < b): every link between the same two
-// units is one edge for the structural split.
+// pairKey is an unordered pair of local unit indexes (a < b): every link
+// between the same two units is one edge for the structural split.
 type pairKey struct{ a, b int }
-
-func keyOf(l link) pairKey {
-	if l.from < l.to {
-		return pairKey{l.from, l.to}
-	}
-	return pairKey{l.to, l.from}
-}
 
 // kindLooseness ranks link kinds by how loosely they bind review work: a
 // test or an import is cut before a call, a call before a move.
@@ -35,6 +29,13 @@ func kindLooseness(k model.LinkKind) int {
 	return 5
 }
 
+// recomputeDivisor bounds the betweenness recomputations of one structural
+// split: betweenness is recomputed after every 1 + pairs/recomputeDivisor
+// removals (every removal for parts under recomputeDivisor pairs, the exact
+// Girvan–Newman order), so a split costs O(recomputeDivisor·V·E) plus a
+// cheap connectivity check per removal instead of O(V·E²).
+const recomputeDivisor = 64
+
 // structuralSplit splits an oversized part that has no Jev link left
 // (Girvan–Newman style): it removes the unit pair with the highest edge
 // betweenness, ties to the looser link kind and then the later pair, until
@@ -42,58 +43,68 @@ func kindLooseness(k model.LinkKind) int {
 // back and never tried again, so stars (one helper and its many callers)
 // stay whole instead of shedding ungrouped leaves. It returns the pieces
 // (ascending, ordered by first unit) and the links crossing them, or nil
-// when no split leaves every piece with at least two units.
-func structuralSplit(g *graph, part []int, inside []int) ([][]int, []int) {
+// when no split leaves every piece with at least two units or ctx is done.
+func structuralSplit(ctx context.Context, g *graph, part []int, inside []int) ([][]int, []int) {
+	nodes := append([]int(nil), part...)
+	sort.Ints(nodes)
+	local := make(map[int]int, len(nodes))
+	for i, u := range nodes {
+		local[u] = i
+	}
 	byPair := map[pairKey][]int{}
 	var pairs []pairKey
 	for _, e := range inside {
-		k := keyOf(g.links[e])
+		l := g.links[e]
+		k := pairKey{min(local[l.from], local[l.to]), max(local[l.from], local[l.to])}
 		if _, ok := byPair[k]; !ok {
 			pairs = append(pairs, k)
 		}
 		byPair[k] = append(byPair[k], e)
 	}
+	// Local indexes follow ascending positions, so this is the
+	// (From position, To position) order.
 	sort.Slice(pairs, func(i, j int) bool {
 		if pairs[i].a != pairs[j].a {
 			return pairs[i].a < pairs[j].a
 		}
 		return pairs[i].b < pairs[j].b
 	})
-	loose := make(map[pairKey]int, len(pairs))
-	for _, k := range pairs {
+	loose := make([]int, len(pairs))
+	for i, k := range pairs {
 		r := 5
 		for _, e := range byPair[k] {
 			r = min(r, kindLooseness(g.links[e].l.Kind))
 		}
-		loose[k] = r
+		loose[i] = r
 	}
-	removed := map[pairKey]bool{}
-	protected := map[pairKey]bool{}
-	activeEdges := func() []int {
-		var out []int
-		for _, k := range pairs {
-			if !removed[k] {
-				out = append(out, byPair[k]...)
-			}
-		}
-		return out
-	}
+	removed := make([]bool, len(pairs))
+	protected := make([]bool, len(pairs))
+	every := 1 + len(pairs)/recomputeDivisor
+	var eb []float64
+	since := every
 	for {
-		eb := betweenness(part, pairs, removed)
-		best, found := pairKey{}, false
-		for _, k := range pairs {
-			if removed[k] || protected[k] {
+		if ctx.Err() != nil {
+			return nil, nil
+		}
+		if since >= every {
+			eb = betweenness(len(nodes), pairs, removed)
+			since = 0
+		}
+		best := -1
+		for i := range pairs {
+			if removed[i] || protected[i] {
 				continue
 			}
-			if !found || better(k, best, eb, loose) {
-				best, found = k, true
+			if best < 0 || better(i, best, pairs, eb, loose) {
+				best = i
 			}
 		}
-		if !found {
+		if best < 0 {
 			return nil, nil
 		}
 		removed[best] = true
-		comps := components(g, part, activeEdges(), map[int]bool{})
+		since++
+		comps := localComponents(len(nodes), pairs, removed)
 		if len(comps) == 1 {
 			continue
 		}
@@ -104,14 +115,18 @@ func structuralSplit(g *graph, part []int, inside []int) ([][]int, []int) {
 			}
 		}
 		if small {
-			delete(removed, best)
+			// Put back: the graph is as before, so eb is still current.
+			removed[best] = false
 			protected[best] = true
+			since--
 			continue
 		}
-		piece := map[int]int{}
+		piece := make(map[int]int, len(nodes))
+		out := make([][]int, len(comps))
 		for i, c := range comps {
-			for _, u := range c {
-				piece[u] = i
+			for _, x := range c {
+				piece[nodes[x]] = i
+				out[i] = append(out[i], nodes[x])
 			}
 		}
 		var crossing []int
@@ -121,68 +136,121 @@ func structuralSplit(g *graph, part []int, inside []int) ([][]int, []int) {
 				crossing = append(crossing, e)
 			}
 		}
-		return comps, crossing
+		return out, crossing
 	}
 }
 
-// better reports whether pair a is removed before b.
-func better(a, b pairKey, eb map[pairKey]float64, loose map[pairKey]int) bool {
+// better reports whether pair a is removed before b (indexes into pairs).
+func better(a, b int, pairs []pairKey, eb []float64, loose []int) bool {
 	if eb[a] != eb[b] {
 		return eb[a] > eb[b]
 	}
 	if loose[a] != loose[b] {
 		return loose[a] < loose[b]
 	}
-	if a.a != b.a {
-		return a.a > b.a
+	if pairs[a].a != pairs[b].a {
+		return pairs[a].a > pairs[b].a
 	}
-	return a.b > b.b
+	return pairs[a].b > pairs[b].b
 }
 
-// betweenness is Brandes' unweighted edge betweenness over the part's unit
-// pairs that are not removed. Nodes and neighbours are visited in ascending
-// order so the float sums are deterministic.
-func betweenness(part []int, pairs []pairKey, removed map[pairKey]bool) map[pairKey]float64 {
-	adj := make(map[int][]int, len(part))
-	for _, k := range pairs {
-		if removed[k] {
+// arc is one direction of a unit pair in the adjacency of betweenness.
+type arc struct{ to, pair int }
+
+// adjacency lists the pairs not removed per local node, neighbours
+// ascending.
+func adjacency(n int, pairs []pairKey, removed []bool) [][]arc {
+	adj := make([][]arc, n)
+	for i, k := range pairs {
+		if removed[i] {
 			continue
 		}
-		adj[k.a] = append(adj[k.a], k.b)
-		adj[k.b] = append(adj[k.b], k.a)
+		adj[k.a] = append(adj[k.a], arc{k.b, i})
+		adj[k.b] = append(adj[k.b], arc{k.a, i})
 	}
 	for _, ns := range adj {
-		sort.Ints(ns)
+		sort.Slice(ns, func(i, j int) bool { return ns[i].to < ns[j].to })
 	}
-	nodes := append([]int(nil), part...)
-	sort.Ints(nodes)
-	eb := map[pairKey]float64{}
-	for _, s := range nodes {
-		sigma := map[int]float64{s: 1}
-		dist := map[int]int{s: 0}
-		preds := map[int][]int{}
-		order := []int{s}
+	return adj
+}
+
+// localComponents returns the connected components over local nodes 0..n−1
+// and the pairs not removed: each ascending, ordered by first node.
+func localComponents(n int, pairs []pairKey, removed []bool) [][]int {
+	parent := make([]int, n)
+	for i := range parent {
+		parent[i] = i
+	}
+	find := func(u int) int {
+		for parent[u] != u {
+			parent[u] = parent[parent[u]]
+			u = parent[u]
+		}
+		return u
+	}
+	for i, k := range pairs {
+		if removed[i] {
+			continue
+		}
+		a, b := find(k.a), find(k.b)
+		switch {
+		case a < b:
+			parent[b] = a
+		case b < a:
+			parent[a] = b
+		}
+	}
+	idx := make([]int, n)
+	var out [][]int
+	for u := range n {
+		r := find(u)
+		if r == u {
+			idx[u] = len(out)
+			out = append(out, nil)
+		}
+		out[idx[r]] = append(out[idx[r]], u)
+	}
+	return out
+}
+
+// betweenness is Brandes' unweighted edge betweenness over local nodes
+// 0..n−1 and the pairs not removed, indexed like pairs. Nodes and
+// neighbours are visited in ascending order so the float sums are
+// deterministic.
+func betweenness(n int, pairs []pairKey, removed []bool) []float64 {
+	adj := adjacency(n, pairs, removed)
+	eb := make([]float64, len(pairs))
+	sigma := make([]float64, n)
+	dist := make([]int, n)
+	delta := make([]float64, n)
+	preds := make([][]arc, n)
+	order := make([]int, 0, n)
+	for s := range n {
+		for i := range n {
+			sigma[i], dist[i], delta[i], preds[i] = 0, -1, 0, preds[i][:0]
+		}
+		sigma[s], dist[s] = 1, 0
+		order = append(order[:0], s)
 		for i := 0; i < len(order); i++ {
 			v := order[i]
-			for _, w := range adj[v] {
-				if _, seen := dist[w]; !seen {
+			for _, a := range adj[v] {
+				w := a.to
+				if dist[w] < 0 {
 					dist[w] = dist[v] + 1
 					order = append(order, w)
 				}
 				if dist[w] == dist[v]+1 {
 					sigma[w] += sigma[v]
-					preds[w] = append(preds[w], v)
+					preds[w] = append(preds[w], arc{v, a.pair})
 				}
 			}
 		}
-		delta := map[int]float64{}
 		for i := len(order) - 1; i > 0; i-- {
 			w := order[i]
-			for _, v := range preds[w] {
-				c := sigma[v] / sigma[w] * (1 + delta[w])
-				k := pairKey{min(v, w), max(v, w)}
-				eb[k] += c
-				delta[v] += c
+			for _, p := range preds[w] {
+				c := sigma[p.to] / sigma[w] * (1 + delta[w])
+				eb[p.pair] += c
+				delta[p.to] += c
 			}
 		}
 	}

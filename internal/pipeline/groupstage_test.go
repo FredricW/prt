@@ -43,6 +43,7 @@ type fakeM2 struct {
 	mu sync.Mutex
 
 	structErr    error
+	clusterErr   error
 	oneGroup     bool
 	unknownPairs bool
 	nameValue    string // default "b1"
@@ -171,10 +172,14 @@ func (f *fakeM2) confirm(cands []model.Link, ls []model.Label, keepP float64) ([
 	return kept, rejected
 }
 
-func (f *fakeM2) cluster(in cluster.Input) cluster.Result {
+func (f *fakeM2) cluster(_ context.Context, in cluster.Input) (cluster.Result, error) {
 	f.mu.Lock()
 	f.clusterIn = append(f.clusterIn, in)
+	failed := f.clusterErr
 	f.mu.Unlock()
+	if failed != nil {
+		return cluster.Result{}, failed
+	}
 	u := pathOf(in.Units)
 	sets := [][]string{{pClient, pTest}, {pUsers, pReport}}
 	if f.oneGroup {
@@ -190,7 +195,7 @@ func (f *fakeM2) cluster(in cluster.Input) cluster.Result {
 	}
 	ids := []string{u[pNotes].ID}
 	groups = append(groups, model.Group{ID: model.GroupID(ids), ItemID: in.ItemID, UnitIDs: ids, Name: pNotes, NameSource: model.NamePlaceholder, Order: len(groups), Ungrouped: true})
-	return cluster.Result{Groups: groups, Stats: model.GroupingStats{Groups: len(sets), Ungrouped: 1}}
+	return cluster.Result{Groups: groups, Stats: model.GroupingStats{Groups: len(sets), Ungrouped: 1}}, nil
 }
 
 func (f *fakeM2) names(_ context.Context, _ jev.Client, in judge.NameInput) (judge.Result, error) {
@@ -387,6 +392,32 @@ func TestM2StagesWiredAndCached(t *testing.T) {
 	groups, _ = e.st.Groups(context.Background(), e.item.ID)
 	if groups[0].Name != "Build the url once" {
 		t.Errorf("cached names not applied: %+v", groups[0])
+	}
+}
+
+// A failed stage 5 clears the previous run's groups, so Detail never shows
+// them next to an aggregate without grouping.
+func TestClusterFailureClearsStaleGroups(t *testing.T) {
+	f := &fakeM2{}
+	e, p := m2Env(t, &jev.Fake{}, &embed.Fake{}, f)
+	e.run(t, p)
+	if groups, _ := e.st.Groups(context.Background(), e.item.ID); len(groups) != 3 {
+		t.Fatalf("first run stored %d groups", len(groups))
+	}
+	f.clusterErr = errors.New("boom")
+	e.run(t, p)
+	if rl := e.stage(t, model.StageCluster); rl.Status != model.StageFailed {
+		t.Errorf("cluster row = %+v", rl)
+	}
+	groups, err := e.st.Groups(context.Background(), e.item.ID)
+	if err != nil || len(groups) != 0 {
+		t.Errorf("stored groups after failure = %+v, %v; want none", groups, err)
+	}
+	if links, _ := e.st.Links(context.Background(), e.item.ID); len(links) != 4 {
+		t.Errorf("stored links after failure = %d, want this run's 4", len(links))
+	}
+	if agg := e.agg(t); agg.Grouping != nil {
+		t.Errorf("agg grouping after failure = %+v", agg.Grouping)
 	}
 }
 
@@ -631,6 +662,67 @@ func TestPairCandidates(t *testing.T) {
 	pairs := judgePairs(units, append(got, l("c", "a", model.LinkEmbedNeighbor)))
 	if len(pairs) != 2 || pairs[0].A.ID != "a" || pairs[0].B.ID != "b" || pairs[1].B.ID != "c" {
 		t.Errorf("judge pairs = %+v", pairs)
+	}
+
+	// Same shape, different literal edits: the class of 4 has a partition
+	// of 3 (verified by code) and an odd unit, whose pair goes to Jev.
+	ren := "-\tgetUser(id)\n+\tfetchUser(id)\n"
+	units = []model.ChangeUnit{u("p", "s", 0), u("q", "s", 1), u("r", "s", 2), u("o", "s", 3)}
+	for i := range units[:3] {
+		units[i].Diff = ren
+	}
+	units[3].Diff = "-\tfoo(x)\n+\tbar(x)\n"
+	mech = []model.Link{l("p", "q", model.LinkMechanical), l("p", "r", model.LinkMechanical), l("p", "o", model.LinkMechanical)}
+	s = nil
+	for _, c := range pairCandidates(units, nil, nil, mech, 3) {
+		s = append(s, c.From+c.To)
+	}
+	if strings.Join(s, ",") != "po" {
+		t.Errorf("candidates = %v, want [po] (only the cross-edit pair)", s)
+	}
+}
+
+// Every unit pair an embedder with compressed cosines proposes is judged at
+// most max_pairs_per_unit × units per item, highest cosine first.
+func TestPairRequestsCapped(t *testing.T) {
+	f := &fakeM2{}
+	e, p := m2Env(t, &jev.Fake{}, &embed.Fake{}, f)
+	p.fn.embedCands = func(units []model.ChangeUnit, _ map[string][]float32, _ link.EmbedOptions) []model.Link {
+		var out []model.Link
+		for i := range units {
+			for j := i + 1; j < len(units); j++ {
+				w := 0.70 + float64(i*len(units)+j)/100
+				out = append(out, model.Link{From: units[i].ID, To: units[j].ID, Kind: model.LinkEmbedNeighbor, Source: model.LinkEmbed, Weight: w})
+			}
+		}
+		return out
+	}
+	p.d.Config.Pipeline.MaxPairsPerUnit = 1
+	e.run(t, p)
+	if len(f.pairCalls) != 1 || len(f.pairCalls[0]) != 5 {
+		t.Fatalf("pair calls = %d (first %d pairs), want one call with 5 (= 1 × 5 units)", len(f.pairCalls), len(f.pairCalls[0]))
+	}
+	if rl := e.stage(t, model.StageJev); !strings.Contains(rl.Note, "pairs: 5 asked, 0 cached (4 over the cap not asked)") {
+		t.Errorf("jev row = %+v", rl)
+	}
+}
+
+func TestCapPairs(t *testing.T) {
+	unit := func(id string) model.ChangeUnit { return model.ChangeUnit{ID: id} }
+	pr := func(a, b string, cos float64) judge.Pair { return judge.Pair{A: unit(a), B: unit(b), Cosine: cos} }
+	cand := func(a, b string, w float64) model.Link { return model.Link{From: a, To: b, Weight: w} }
+	pairs := []judge.Pair{pr("a", "b", 0.75), pr("a", "c", 1), pr("b", "c", 0.9), pr("c", "d", 0.75)}
+	cands := []model.Link{cand("a", "b", 0.75), cand("a", "c", 1), cand("c", "b", 0.9), cand("c", "d", 0.75)}
+	kp, kc, dropped := capPairs(pairs, cands, 3)
+	var got []string
+	for _, p := range kp {
+		got = append(got, p.A.ID+p.B.ID)
+	}
+	if strings.Join(got, ",") != "ab,ac,bc" || dropped != 1 || len(kc) != 3 {
+		t.Errorf("kept %v (cands %d), dropped %d; want ab,ac,bc (tie by subject), 3, 1", got, len(kc), dropped)
+	}
+	if kp, _, dropped := capPairs(pairs, cands, 4); len(kp) != 4 || dropped != 0 {
+		t.Errorf("under the cap: kept %d dropped %d", len(kp), dropped)
 	}
 }
 

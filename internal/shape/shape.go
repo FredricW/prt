@@ -1,19 +1,37 @@
-package cluster
+// Package shape decides which change units make the same mechanical edit.
+// The shape hash (set by parse) maps identifiers and literals to
+// placeholders, so it alone cannot tell `"old"` → `"new"` from `"alt"` →
+// `"neu"`; the edit signature adds the literal tokens that changed. Two
+// units are one mechanical edit when their Keys are equal. link (mechanical
+// candidates), pipeline (which candidates Jev judges) and cluster
+// (verification) share this key so they agree on the classes.
+package shape
 
 import (
 	"sort"
 	"strings"
 	"unicode"
+
+	"github.com/fredricw/prt/internal/model"
 )
 
-// editSig is the literal token edit a unit makes: the tokens its removed
+// Key is a unit's mechanical class key: its shape hash plus its edit
+// signature, or "" when the unit has no shape hash (it never verifies).
+func Key(u model.ChangeUnit) string {
+	if u.ShapeHash == "" {
+		return ""
+	}
+	return u.ShapeHash + "\x02" + EditSig(u.Diff)
+}
+
+// EditSig is the literal token edit a unit makes: the tokens its removed
 // lines have that its added lines lack, and the reverse, as sorted
 // multisets joined into one string. Two units with equal shape hashes make
 // the same mechanical edit only when their edit signatures are equal too:
 // a rename getUser → fetchUser at two call sites with different arguments
 // matches, while `"k": "old"` → `"new"` and `"k": "alt"` → `"neu"` (same
 // shape, different literals) do not.
-func editSig(diff string) string {
+func EditSig(diff string) string {
 	var old, nu []string
 	for _, line := range strings.Split(diff, "\n") {
 		if line == "" {

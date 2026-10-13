@@ -7,11 +7,13 @@ import (
 )
 
 // applyEdits applies the user's merge and split edits in order and returns
-// the groups plus the number of edits applied. Unit ids not in the item are
-// dropped from an edit; an edit left with no unit, a reset (the store has
-// already cleared earlier edits) or an unknown op is skipped and not
-// counted. Both merge and split move the edit's units out of their groups
-// into one new user-edited group; they differ only in intent.
+// the groups plus the number of edits applied. Unit ids not in the item
+// (rewritten by a push) are dropped from an edit; a split left with no unit,
+// a merge left with fewer than two (it would only tear one unit out of its
+// group, the opposite of a merge), a reset (the store has already cleared
+// earlier edits) or an unknown op is skipped and not counted. Both merge and
+// split move the edit's units out of their groups into one new user-edited
+// group; they differ only in intent.
 func applyEdits(g *graph, groups []*group, edits []model.GroupEdit, minCount int) ([]*group, int) {
 	applied := 0
 	for _, e := range edits {
@@ -19,7 +21,7 @@ func applyEdits(g *graph, groups []*group, edits []model.GroupEdit, minCount int
 			continue
 		}
 		units := editUnits(g, e.Units)
-		if len(units) == 0 {
+		if len(units) == 0 || (e.Op == model.EditMerge && len(units) < 2) {
 			continue
 		}
 		groups = moveUnits(groups, units, minCount)
@@ -93,7 +95,7 @@ func removeUnits(gr *group, move map[int]bool, minCount int) bool {
 	}
 	links := gr.mechLinks[:0:0]
 	for _, l := range gr.mechLinks {
-		if l.from == gr.example && in[l.to] {
+		if (l.from == gr.example && in[l.to]) || (l.to == gr.example && in[l.from]) {
 			links = append(links, l)
 		}
 	}

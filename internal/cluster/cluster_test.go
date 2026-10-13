@@ -1,11 +1,14 @@
 package cluster
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"math/rand"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/fredricw/prt/internal/model"
 )
@@ -316,6 +319,35 @@ func TestMechanical(t *testing.T) {
 			want:  []string{"M:e,m1,m2"},
 		},
 		{
+			// Regression: the lowest-Order unit of the shape class makes
+			// another literal edit. The four identical renames still group,
+			// with their own example; the odd one is ejected.
+			name: "odd lowest-order unit does not sink the class",
+			units: items(
+				u("a", shapeOf("s"), withDiff("-\tfoo(x)\n+\tbar(x)\n")),
+				u("b", shapeOf("s"), withDiff("-\tgetUser(id)\n+\tfetchUser(id)\n")),
+				u("c", shapeOf("s"), withDiff("-\tgetUser(id)\n+\tfetchUser(id)\n")),
+				u("d", shapeOf("s"), withDiff("-\tgetUser(id)\n+\tfetchUser(id)\n")),
+				u("e", shapeOf("s"), withDiff("-\tgetUser(id)\n+\tfetchUser(id)\n")),
+			),
+			links:   []model.Link{mc("a", "b"), mc("a", "c"), mc("a", "d"), mc("a", "e")},
+			want:    []string{"M:b,c,d,e", "U:a"},
+			ejected: 1,
+		},
+		{
+			name: "two literal edits of one shape form two groups",
+			units: items(
+				u("a", shapeOf("s"), withDiff("-\"v\": \"1.0\"\n+\"v\": \"1.1\"\n")),
+				u("b", shapeOf("s"), withDiff("-\"n\": \"a\"\n+\"n\": \"b\"\n")),
+				u("c", shapeOf("s"), withDiff("-\"v\": \"1.0\"\n+\"v\": \"1.1\"\n")),
+				u("d", shapeOf("s"), withDiff("-\"n\": \"a\"\n+\"n\": \"b\"\n")),
+				u("e", shapeOf("s"), withDiff("-\"v\": \"1.0\"\n+\"v\": \"1.1\"\n")),
+				u("f", shapeOf("s"), withDiff("-\"n\": \"a\"\n+\"n\": \"b\"\n")),
+			),
+			links: []model.Link{mc("a", "c"), mc("a", "e"), mc("a", "b"), mc("b", "d"), mc("b", "f")},
+			want:  []string{"M:a,c,e", "M:b,d,f"},
+		},
+		{
 			name:  "empty shape hash never verifies",
 			units: items(u("e"), u("m1"), u("m2")),
 			links: []model.Link{mc("e", "m1"), mc("e", "m2")},
@@ -343,6 +375,21 @@ func TestMechanical(t *testing.T) {
 	wantStats := model.GroupingStats{Units: 5, Groups: 1, Mechanical: 1, MechanicalCollapsed: 2, Ejected: 1, Ungrouped: 2}
 	if !reflect.DeepEqual(r.Stats, wantStats) {
 		t.Errorf("stats = %+v, want %+v", r.Stats, wantStats)
+	}
+
+	// A partition re-rooted away from the candidate star's root gets
+	// code-made example → member links, and the odd root is ejected.
+	rename := withDiff("-\tgetUser(id)\n+\tfetchUser(id)\n")
+	r = Cluster(Input{ItemID: "pr:1", Units: items(
+		u("a", shapeOf("s"), withDiff("-\tfoo(x)\n+\tbar(x)\n")),
+		u("b", shapeOf("s"), rename), u("c", shapeOf("s"), rename), u("d", shapeOf("s"), rename),
+	), Links: []model.Link{mc("a", "b"), mc("a", "c"), mc("a", "d")}})
+	g = r.Groups[0]
+	if g.ExampleUnit != "b" || g.Count != 3 || !reflect.DeepEqual(g.Ejected, []string{"a"}) {
+		t.Errorf("re-rooted group = %+v", g)
+	}
+	if want := []model.Link{mc("b", "c"), mc("b", "d")}; !reflect.DeepEqual(g.Links, want) {
+		t.Errorf("re-rooted links = %+v, want %+v", g.Links, want)
 	}
 }
 
@@ -478,6 +525,13 @@ func TestEdits(t *testing.T) {
 			applied: 1,
 		},
 		{
+			name:  "merge with one surviving unit is skipped",
+			units: unitsOf("a", "b", "c", "d"),
+			links: pairs,
+			edits: []model.GroupEdit{edit(model.EditMerge, "a", "zz")},
+			want:  []string{"a,b", "c,d"},
+		},
+		{
 			name:    "sequential edits",
 			units:   unitsOf("a", "b", "c", "d"),
 			links:   pairs,
@@ -599,6 +653,48 @@ func randomInput(rng *rand.Rand, n int) Input {
 		edits = append(edits, model.GroupEdit{Op: ops[rng.Intn(len(ops))], Units: []string{pick(), pick(), "gone"}})
 	}
 	return Input{ItemID: "pr:9", Units: us, Links: ls, Edits: edits, Options: Options{MaxGroupUnits: 4, MechanicalMin: 2}}
+}
+
+// bigStructural is a connected structural graph of n units: a random
+// spanning tree plus 2n random calls links.
+func bigStructural(n int) ([]model.ChangeUnit, []model.Link) {
+	rng := rand.New(rand.NewSource(int64(n)))
+	ids := make([]string, n)
+	for i := range ids {
+		ids[i] = fmt.Sprintf("u%04d", i)
+	}
+	var ls []model.Link
+	for i := 1; i < n; i++ {
+		ls = append(ls, st(ids[i], ids[rng.Intn(i)], model.LinkCalls))
+	}
+	for range 2 * n {
+		a, b := rng.Intn(n), rng.Intn(n)
+		if a != b {
+			ls = append(ls, st(ids[a], ids[b], model.LinkCalls))
+		}
+	}
+	return unitsOf(ids...), ls
+}
+
+// Regression: the structural split recomputed betweenness after every
+// removal (O(V·E²); n=400 took about two minutes). It must stay fast.
+func TestStructuralSplitScales(t *testing.T) {
+	us, ls := bigStructural(400)
+	start := time.Now()
+	r := Cluster(Input{ItemID: "pr:1", Units: us, Links: ls})
+	if d := time.Since(start); d > 20*time.Second {
+		t.Errorf("400-unit structural split took %v", d)
+	}
+	checkInvariants(t, r, us)
+}
+
+func TestClusterContextCancelled(t *testing.T) {
+	us, ls := bigStructural(200)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := ClusterContext(ctx, Input{ItemID: "pr:1", Units: us, Links: ls}); !errors.Is(err, context.Canceled) {
+		t.Errorf("err = %v, want context.Canceled", err)
+	}
 }
 
 func TestDeterministic(t *testing.T) {

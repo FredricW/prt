@@ -19,7 +19,7 @@ type stageFuncs struct {
 	structural func(context.Context, link.Input) ([]model.Link, error)
 	embedCands func([]model.ChangeUnit, map[string][]float32, link.EmbedOptions) []model.Link
 	mechanical func([]model.ChangeUnit) []model.Link
-	cluster    func(cluster.Input) cluster.Result
+	cluster    func(context.Context, cluster.Input) (cluster.Result, error)
 
 	pairs   func(context.Context, jev.Client, judge.PairInput) (judge.Result, error)
 	confirm func([]model.Link, []model.Label, float64) ([]model.Link, int)
@@ -41,7 +41,7 @@ func defaultStages() stageFuncs {
 		structural: link.Structural,
 		embedCands: link.EmbedCandidates,
 		mechanical: link.MechanicalCandidates,
-		cluster:    cluster.Cluster,
+		cluster:    cluster.ClusterContext,
 		pairs:      judge.Pairs,
 		confirm:    judge.Confirm,
 		names:      judge.Names,

@@ -7,8 +7,10 @@ import (
 	"sort"
 	"sync"
 
+	"github.com/fredricw/prt/internal/config"
 	"github.com/fredricw/prt/internal/judge"
 	"github.com/fredricw/prt/internal/model"
+	"github.com/fredricw/prt/internal/shape"
 )
 
 // pairOut is the outcome of the pair pass of stage 4.
@@ -55,14 +57,20 @@ func (p *Pipeline) jevStage(ctx context.Context, it model.Item, in parseOut, str
 }
 
 // pairStage judges candidate pairs: every embed-neighbour candidate, plus
-// mechanical candidates of shape classes smaller than mechanical_min,
-// minus pairs that already have a structural link. Stored relation labels
+// the mechanical candidates cluster does not verify by code (see
+// pairCandidates), minus pairs that already have a structural link. Stored relation labels
 // that are known are cache hits; the rest are asked (when Jev is set) and
 // stored, never replacing a known label with an unknown one. Errors other
 // than cancellation are soft and only noted.
 func (p *Pipeline) pairStage(ctx context.Context, units []model.ChangeUnit, structural []model.Link, em embedOut, rl *model.RunLog) (pairOut, error) {
-	cands := pairCandidates(units, structural, em.cands, em.mech, p.d.Config.Pipeline.MechanicalMin)
+	pc := p.d.Config.Pipeline
+	cands := pairCandidates(units, structural, em.cands, em.mech, pc.MechanicalMin)
 	pairs := judgePairs(units, cands)
+	perUnit := pc.MaxPairsPerUnit
+	if perUnit <= 0 {
+		perUnit = config.DefaultMaxPairsPerUnit
+	}
+	pairs, cands, dropped := capPairs(pairs, cands, perUnit*len(units))
 	out := pairOut{asked: len(pairs)}
 	rl.Out = len(pairs)
 	if len(pairs) == 0 {
@@ -86,6 +94,9 @@ func (p *Pipeline) pairStage(ctx context.Context, units []model.ChangeUnit, stru
 		}
 	}
 	rl.Note = fmt.Sprintf("pairs: %d asked, %d cached", len(pairs), len(pairs)-len(need))
+	if dropped > 0 {
+		rl.Note += fmt.Sprintf(" (%d over the cap not asked)", dropped)
+	}
 	rl.CacheHit = len(need) == 0
 	fresh, note, err := p.askPairs(ctx, need, stored, rl)
 	rl.Note += note
@@ -132,21 +143,24 @@ func failedNote(res judge.Result) string {
 }
 
 // pairCandidates selects the candidate links to judge: all embed-neighbour
-// candidates and the mechanical candidates whose shape class has fewer than
-// mechMin members (larger classes are verified by code in cluster), minus
-// any pair with a structural link in either direction ("structural links
-// are never sent"). Candidate order is kept.
+// candidates and every mechanical candidate except those inside one
+// shape.Key partition (same shape hash and literal edit) of at least mechMin
+// units — those are verified by code in cluster. Pairs across partitions
+// (same shape, another literal edit) and pairs in smaller partitions go to
+// Jev. Any pair with a structural link in either direction is left out
+// ("structural links are never sent"). Candidate order is kept.
 func pairCandidates(units []model.ChangeUnit, structural, embedCands, mech []model.Link, mechMin int) []model.Link {
 	linked := map[string]bool{}
 	for _, l := range structural {
 		linked[model.PairSubject(l.From, l.To)] = true
 	}
-	shape := map[string]string{}
-	classSize := map[string]int{}
+	key := map[string]string{}
+	partSize := map[string]int{}
 	for _, u := range units {
-		shape[u.ID] = u.ShapeHash
-		if u.ShapeHash != "" {
-			classSize[u.ShapeHash]++
+		k := shape.Key(u)
+		key[u.ID] = k
+		if k != "" {
+			partSize[k]++
 		}
 	}
 	var out []model.Link
@@ -156,11 +170,48 @@ func pairCandidates(units []model.ChangeUnit, structural, embedCands, mech []mod
 		}
 	}
 	for _, c := range mech {
-		if classSize[shape[c.From]] < mechMin && !linked[model.PairSubject(c.From, c.To)] {
+		k := key[c.From]
+		verified := k != "" && k == key[c.To] && partSize[k] >= mechMin
+		if !verified && !linked[model.PairSubject(c.From, c.To)] {
 			out = append(out, c)
 		}
 	}
 	return out
+}
+
+// capPairs keeps at most limit pairs: the highest cosine first (mechanical
+// candidates have weight 1, so they go first), ties by pair subject. Kept
+// pairs stay sorted by subject; cands is filtered to the kept pairs so a
+// dropped pair cannot be confirmed by an old stored label. It returns the
+// number of pairs dropped.
+func capPairs(pairs []judge.Pair, cands []model.Link, limit int) ([]judge.Pair, []model.Link, int) {
+	if limit < 0 || len(pairs) <= limit {
+		return pairs, cands, 0
+	}
+	ranked := append([]judge.Pair(nil), pairs...)
+	sort.SliceStable(ranked, func(i, j int) bool {
+		if ranked[i].Cosine != ranked[j].Cosine {
+			return ranked[i].Cosine > ranked[j].Cosine
+		}
+		return model.PairSubject(ranked[i].A.ID, ranked[i].B.ID) < model.PairSubject(ranked[j].A.ID, ranked[j].B.ID)
+	})
+	keep := map[string]bool{}
+	for _, pr := range ranked[:limit] {
+		keep[model.PairSubject(pr.A.ID, pr.B.ID)] = true
+	}
+	var kp []judge.Pair
+	for _, pr := range pairs {
+		if keep[model.PairSubject(pr.A.ID, pr.B.ID)] {
+			kp = append(kp, pr)
+		}
+	}
+	var kc []model.Link
+	for _, c := range cands {
+		if keep[model.PairSubject(c.From, c.To)] {
+			kc = append(kc, c)
+		}
+	}
+	return kp, kc, len(pairs) - len(kp)
 }
 
 // judgePairs turns candidate links into distinct judge pairs sorted by pair

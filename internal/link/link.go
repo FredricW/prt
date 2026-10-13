@@ -24,6 +24,7 @@ import (
 	"strings"
 
 	"github.com/fredricw/prt/internal/model"
+	"github.com/fredricw/prt/internal/shape"
 )
 
 // Source provides file contents and listings at a revision (gitx.Git
@@ -197,23 +198,34 @@ func cosine(a, b []float32) (float64, bool) {
 	return dot / (math.Sqrt(na) * math.Sqrt(nb)), true
 }
 
-// MechanicalCandidates links units with identical, non-empty shape hashes:
-// for each shape class of ≥ 2 units, a star from the example (lowest Order)
-// to every other member, Kind mechanical, Source embed, Weight 1.
+// MechanicalCandidates links units with identical, non-empty shape hashes,
+// Kind mechanical, Source embed, Weight 1. A shape class is partitioned by
+// shape.Key (shape hash plus literal edit signature): each partition of ≥ 2
+// units gets a star from its root (lowest Order) to its other members, and
+// the class root links to the root of every other partition, so units that
+// share a shape but make another literal edit stay candidates (for Jev)
+// without being compared only against one example.
 func MechanicalCandidates(units []model.ChangeUnit) []model.Link {
 	us := sortedUnits(units)
 	ls := newLinkSet(us)
-	example := map[string]string{}
+	classRoot := map[string]string{}
+	partRoot := map[string]string{}
 	for _, u := range us {
 		if u.ShapeHash == "" {
 			continue
 		}
-		ex, ok := example[u.ShapeHash]
-		if !ok {
-			example[u.ShapeHash] = u.ID
+		k := shape.Key(u)
+		root, ok := partRoot[k]
+		if ok {
+			ls.add(root, u.ID, model.LinkMechanical, model.LinkEmbed, 1)
 			continue
 		}
-		ls.add(ex, u.ID, model.LinkMechanical, model.LinkEmbed, 1)
+		partRoot[k] = u.ID
+		if cr, ok := classRoot[u.ShapeHash]; ok {
+			ls.add(cr, u.ID, model.LinkMechanical, model.LinkEmbed, 1)
+			continue
+		}
+		classRoot[u.ShapeHash] = u.ID
 	}
 	return ls.sorted()
 }

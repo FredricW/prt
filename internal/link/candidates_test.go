@@ -134,3 +134,28 @@ func TestMechanicalCandidates(t *testing.T) {
 		t.Errorf("not deterministic under input order")
 	}
 }
+
+// A shape class whose lowest-Order unit makes another literal edit: each
+// literal edit gets its own star, and the class root links to the other
+// partition roots (for Jev).
+func TestMechanicalCandidatesPartitions(t *testing.T) {
+	odd := "-\tfoo(x)\n+\tbar(x)\n"
+	ren := "-\tgetUser(id)\n+\tfetchUser(id)\n"
+	other := "-\tgetA(id)\n+\tfetchA(id)\n"
+	units := []model.ChangeUnit{
+		{ID: "a", Order: 0, ShapeHash: "s", Diff: odd},
+		{ID: "b", Order: 1, ShapeHash: "s", Diff: ren},
+		{ID: "c", Order: 2, ShapeHash: "s", Diff: ren},
+		{ID: "d", Order: 3, ShapeHash: "s", Diff: other},
+		{ID: "e", Order: 4, ShapeHash: "s", Diff: ren},
+		{ID: "f", Order: 5, ShapeHash: "s", Diff: other},
+	}
+	var got []string
+	for _, l := range MechanicalCandidates(units) {
+		got = append(got, l.From+"->"+l.To)
+	}
+	want := []string{"a->b", "a->d", "b->c", "b->e", "d->f"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got %v, want %v", got, want)
+	}
+}

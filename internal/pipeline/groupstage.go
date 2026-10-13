@@ -69,10 +69,13 @@ func (p *Pipeline) clusterStage(ctx context.Context, it model.Item, in clusterIn
 		return groupOut{}, err
 	}
 	pc := p.d.Config.Pipeline
-	res := p.fn.cluster(cluster.Input{
+	res, err := p.fn.cluster(ctx, cluster.Input{
 		ItemID: it.ID, Units: units, Links: links, Labels: ls, Edits: edits,
 		Options: cluster.Options{MaxGroupUnits: pc.MaxGroupUnits, MechanicalMin: pc.MechanicalMin},
 	})
+	if err != nil {
+		return groupOut{}, err
+	}
 	groups, nameNote, err := p.nameGroups(ctx, it, units, res.Groups, rl)
 	if err != nil {
 		return groupOut{}, err
