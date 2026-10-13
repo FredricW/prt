@@ -99,10 +99,25 @@ func stripEntry(b *cblock) string {
 }
 
 // stripKey handles a key while the strip has focus: j/k (and the top and
-// bottom keys) select, StripJump jumps. Other keys are not the strip's.
+// bottom keys) select, StripJump jumps, and on a selected ai-draft Accept
+// (a) and Dismiss (d) act on it, so a finding the pane cannot show inline
+// (off the diff) can still be accepted or dismissed. Other keys are not
+// the strip's.
 func (m *Model) stripKey(k tea.KeyMsg) bool {
 	kk, n := m.keys, len(m.c.blocks)
+	var ai *cblock
+	if m.stripSel >= 0 && m.stripSel < n && m.c.blocks[m.stripSel].kind == blockAI {
+		ai = &m.c.blocks[m.stripSel]
+	}
 	switch {
+	case ai != nil && key.Matches(k, kk.Accept):
+		m.pendingComment = &CommentOp{Kind: CommentOpAccept, CommentID: ai.c.ID}
+		m.note = "AI finding accepted: it becomes your draft"
+		return true
+	case ai != nil && key.Matches(k, kk.Dismiss):
+		m.pendingComment = &CommentOp{Kind: CommentOpDismiss, CommentID: ai.c.ID}
+		m.note = "AI finding dismissed"
+		return true
 	case key.Matches(k, kk.Down):
 		m.stripSel = min(m.stripSel+1, n-1)
 	case key.Matches(k, kk.Up):

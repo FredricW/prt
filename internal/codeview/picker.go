@@ -100,11 +100,17 @@ type labelPicker struct {
 	sel    int
 }
 
-// openPicker opens the label picker on unit id (a note when it has no
-// label that can be corrected).
+// openPicker opens the label picker on unit id. When the unit has no label
+// that can be corrected it shows a note; started on an ai-draft (aiID), it
+// still dismisses the finding, without an override.
 func (m *Model) openPicker(id, aiID string) {
 	ls := pickableLabels(m.c.labels, id)
 	if len(ls) == 0 {
+		if aiID != "" {
+			m.pendingComment = &CommentOp{Kind: CommentOpDismiss, CommentID: aiID}
+			m.note = "AI finding dismissed; no labels on its unit to mark wrong"
+			return
+		}
 		m.note = "mark a label wrong: no labels on this unit to correct"
 		return
 	}
