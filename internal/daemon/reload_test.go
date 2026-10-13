@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -172,6 +173,19 @@ func TestReloadSettingsAppliesGlobalSaveOfAnotherRepo(t *testing.T) {
 	}
 	if !hasEvent(drain(b.Events()), proto.EventSettings, "") {
 		t.Error("no EventSettings from B")
+	}
+	if len(info.Warnings) != 0 {
+		t.Errorf("B warnings %q, want none (no repo file)", info.Warnings)
+	}
+	// A repo with its own prt.toml is not reached, and its reload says so.
+	c := client("c")
+	own := writeFile(t, config.RepoDir(filepath.Join(root, "c", ".git")), config.MainFile, allTOML)
+	info, err = c.ReloadSettings(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.cfg().Rank.WAge == 0.375 || !slices.Contains(info.Warnings, "global prt.toml is shadowed by "+own) {
+		t.Errorf("C after reload: w_age %v, warnings %q", c.cfg().Rank.WAge, info.Warnings)
 	}
 }
 

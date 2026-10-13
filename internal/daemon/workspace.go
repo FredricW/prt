@@ -136,9 +136,12 @@ func (c *InProcess) Workspace(_ context.Context) (proto.WorkspaceInfo, error) {
 // is applied to the others with this). An EventSettings follows. It writes
 // nothing and is serialised with SaveSettings. Applied says what changed
 // ("nothing changed" when nothing did); on a load error the previous
-// configuration stays and the error is returned. A client without config
-// dirs (its configuration was not read from files) has nothing to reload:
-// it answers "nothing changed" and sends no event.
+// configuration stays and the error is returned. As after a global save,
+// the warnings name a repo file that shadows the global one (config lookup
+// takes the first file found, no merge), so the saver learns which repos
+// the global save did not reach. A client without config dirs (its
+// configuration was not read from files) has nothing to reload: it answers
+// "nothing changed" and sends no event.
 func (c *InProcess) ReloadSettings(ctx context.Context) (proto.SettingsInfo, error) {
 	c.saveMu.Lock()
 	defer c.saveMu.Unlock()
@@ -147,7 +150,7 @@ func (c *InProcess) ReloadSettings(ctx context.Context) (proto.SettingsInfo, err
 		info.Applied = nothingChanged
 		return info, nil
 	}
-	return c.reloadLocked(ctx, settings.FromConfig(c.cfg(), c.p.Routing().Config), nil)
+	return c.reloadLocked(ctx, settings.FromConfig(c.cfg(), c.p.Routing().Config), c.shadowWarnings(proto.ScopeGlobal))
 }
 
 // Quartile maps an urgency score to 0–4 urgency-bar cells relative to the

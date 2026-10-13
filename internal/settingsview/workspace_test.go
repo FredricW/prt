@@ -37,7 +37,8 @@ func TestWorkspaceLines(t *testing.T) {
 	for _, s := range []string{
 		"workspace: /home/u/code · repo: acme/billing-svc",
 		"repo    /home/u/code/billing-svc/.git/prt/prt.toml (acme/billing-svc only)",
-		"global  /home/u/.config/prt/prt.toml (every repo)",
+		// The repo's own prt.toml shadows the global one whole.
+		"global  /home/u/.config/prt/prt.toml (repos without their own prt.toml; not this one)",
 	} {
 		if !strings.Contains(v, s) {
 			t.Errorf("workspace view lacks %q:\n%s", s, v)
@@ -45,6 +46,13 @@ func TestWorkspaceLines(t *testing.T) {
 	}
 	if i, j := strings.Index(v, "workspace: "), strings.Index(v, "auto_review"); i < 0 || i > j {
 		t.Errorf("the workspace line is not above the form:\n%s", v)
+	}
+	// A repo read from the global file is reached by a global save.
+	shared := workspaceInfo()
+	shared.Source = "/home/u/.config/prt/prt.toml"
+	if v := view(loaded(t, shared, 140, 40)); !strings.Contains(v, "global  /home/u/.config/prt/prt.toml (repos without their own prt.toml)") ||
+		strings.Contains(v, "not this one") {
+		t.Errorf("global scope of a repo without its own file:\n%s", v)
 	}
 
 	// Without a label the repo key names the repo.
@@ -57,7 +65,7 @@ func TestWorkspaceLines(t *testing.T) {
 
 	// A single repo gains only the "saves to" line.
 	v = view(loaded(t, sampleInfo(), 140, 40))
-	for _, s := range []string{"workspace:", "(every repo)", " only)", "urgency scale"} {
+	for _, s := range []string{"workspace:", "without their own", " only)", "urgency scale"} {
 		if strings.Contains(v, s) {
 			t.Errorf("single-repo view has %q:\n%s", s, v)
 		}

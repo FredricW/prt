@@ -302,7 +302,9 @@ type SettingsInfo struct {
 	// Repo and RepoLabel name the workspace repo these settings belong to
 	// (M5.3; RepoInfo.Key and Label); Workspace is the workspace root. All
 	// three are "" in single-repo mode. A repo-scope save writes that repo's
-	// RepoDir; a global save writes GlobalDir and applies to every repo.
+	// RepoDir; a global save writes GlobalDir and applies to every repo
+	// without its own prt.toml (the first file found wins; a shadowed
+	// repo's reload warns).
 	Repo      string `json:"repo,omitempty"`
 	RepoLabel string `json:"repoLabel,omitempty"`
 	Workspace string `json:"workspace,omitempty"`

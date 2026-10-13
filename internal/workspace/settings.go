@@ -41,9 +41,11 @@ func (c *Client) Settings(ctx context.Context, p proto.SettingsParams) (proto.Se
 // SaveSettings implements daemon.Client. A repo-scope save writes p.Repo's
 // repo (the first when ""). A global save is made through that repo too
 // and then reloaded by every other repo that can (ReloadSettings), so the
-// global file applies everywhere; its Applied reads "<label>: <applied>"
-// for every repo, joined by "; ", and its warnings are merged (the other
-// repos' prefixed with their label). The result is the saving repo's info;
+// global file applies to every repo that reads it (a repo with its own
+// prt.toml does not, and its reload warns that the file shadows the global
+// one); its Applied reads "<label>: <applied>" for every repo, joined by
+// "; ", and its warnings are merged (the other repos' prefixed with their
+// label). The result is the saving repo's info;
 // the error joins the save's and the reloads' failures.
 func (c *Client) SaveSettings(ctx context.Context, p proto.SaveSettingsParams) (proto.SettingsInfo, error) {
 	m, err := c.memberFor(p.Repo)

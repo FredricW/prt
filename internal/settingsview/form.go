@@ -117,13 +117,21 @@ func analysisFields(info proto.SettingsInfo, fv *formValues) []huh.Field {
 
 // scopeLabels are the save-scope options: "repo    <dir>/prt.toml" and
 // "global  <dir>/prt.toml"; in a workspace (M5.3) they say which repos a
-// save reaches: "(acme/billing-svc only)" and "(every repo)".
+// save reaches: "(acme/billing-svc only)" and "(repos without their own
+// prt.toml)", since config lookup takes the first file found, so a repo
+// prt.toml shadows the global one whole; "; not this one" when the edited
+// repo has its own.
 func scopeLabels(info proto.SettingsInfo) (repo, global string) {
-	repo = "repo    " + join(info.RepoDir, config.MainFile)
+	repoFile := join(info.RepoDir, config.MainFile)
+	repo = "repo    " + repoFile
 	global = "global  " + join(info.GlobalDir, config.MainFile)
 	if info.Workspace != "" {
 		repo += " (" + repoName(info) + " only)"
-		global += " (every repo)"
+		if info.Source == repoFile {
+			global += " (repos without their own prt.toml; not this one)"
+		} else {
+			global += " (repos without their own prt.toml)"
+		}
 	}
 	return repo, global
 }
