@@ -28,7 +28,6 @@ const DefaultBaseURL = "https://ai-gateway.vercel.sh"
 const (
 	MaxRequestTokens     = 64000
 	MaxStatePlusQuestion = 32000
-	approxCharsPerToken  = 4
 )
 
 // ErrUnavailable means Jev cannot be reached (no key, network or 5xx). The
@@ -133,8 +132,12 @@ type Client interface {
 	Evaluate(ctx context.Context, req Request) (Response, error)
 }
 
-// EstimateTokens is a cheap upper-ish estimate used for batching.
+// EstimateTokens is a cheap upper bound used for batching: 2.5 bytes per
+// token, rounded up. Every recorded request (testdata/recordings/jev) used
+// between 2.54 and 3.93 bytes of compact request JSON per input token, so
+// this never under-counts them (TestEstimateTokensCoversRecordings); the
+// earlier 4 bytes per token under-counted every one.
 func EstimateTokens(s string) int { return EstimateTokensLen(len(s)) }
 
 // EstimateTokensLen is EstimateTokens for a text of n bytes.
-func EstimateTokensLen(n int) int { return (n + approxCharsPerToken - 1) / approxCharsPerToken }
+func EstimateTokensLen(n int) int { return (2*n + 4) / 5 }

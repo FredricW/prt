@@ -517,6 +517,53 @@ func TestUnavailable(t *testing.T) {
 	}
 }
 
+// Regression: a blackholed endpoint made every remaining request wait out
+// its timeout; after breakerAfter consecutive outages the rest is skipped.
+func TestUnavailableBreaker(t *testing.T) {
+	fake := &jev.Fake{Err: fmt.Errorf("%w: timeout", jev.ErrUnavailable)}
+	res, err := Run(context.Background(), fake, baseInput(mkUnit("u1", "a.go", 45), mkUnit("u2", "b.go", 45)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(fake.Calls) != breakerAfter || res.Calls != breakerAfter || !res.Unavailable {
+		t.Fatalf("calls = %d (res %d), unavailable %v; want %d", len(fake.Calls), res.Calls, res.Unavailable, breakerAfter)
+	}
+	wantN := 2*(13+len(model.RiskTags)) + 2*45*6
+	if len(res.Labels) != wantN {
+		t.Fatalf("labels = %d, want %d unknowns", len(res.Labels), wantN)
+	}
+	for _, l := range res.Labels {
+		if !model.IsUnknown(l) {
+			t.Fatalf("label %+v, want unknown", l)
+		}
+	}
+
+	// A success resets the count: outages must be consecutive.
+	n, calls := 0, 0
+	flaky := &jev.Fake{}
+	inner := funcClient(func(ctx context.Context, req jev.Request) (jev.Response, error) {
+		calls++
+		if calls%2 == 0 {
+			n++
+			return jev.Response{}, jev.ErrUnavailable
+		}
+		return flaky.Evaluate(ctx, req)
+	})
+	if _, err := Run(context.Background(), inner, baseInput(mkUnit("u1", "a.go", 45))); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 4 || n != 2 {
+		t.Errorf("alternating outages: %d calls, %d failures; want every job sent", calls, n)
+	}
+}
+
+// funcClient adapts a function to jev.Client.
+type funcClient func(context.Context, jev.Request) (jev.Response, error)
+
+func (f funcClient) Evaluate(ctx context.Context, req jev.Request) (jev.Response, error) {
+	return f(ctx, req)
+}
+
 func TestMissingOrMalformedAnswerIsUnknown(t *testing.T) {
 	fake := &jev.Fake{Answer: answering(map[string]jev.Answer{
 		"kind":      {Type: jev.Choice, Choice: "bogus"},

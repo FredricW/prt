@@ -130,19 +130,30 @@ func normalise(in Input) (Input, limits) {
 }
 
 // outcome is the result of one job; done is false when it was never sent.
+// skipped marks a job not sent because the circuit breaker tripped (Jev
+// treated as unavailable for it).
 type outcome struct {
-	resp jev.Response
-	err  error
-	done bool
+	resp    jev.Response
+	err     error
+	done    bool
+	skipped bool
 }
 
+// breakerAfter is the number of consecutive jev.ErrUnavailable failures
+// after which no new request is sent in a run: the rest of the item's
+// questions become unknown at once instead of each waiting out the HTTP
+// timeout against an unreachable endpoint.
+const breakerAfter = 3
+
 // execute runs jobs with at most conc in flight. After a fatal error (not
-// jev.ErrUnavailable) or cancellation no new job starts.
+// jev.ErrUnavailable) or cancellation no new job starts; after breakerAfter
+// consecutive ErrUnavailable failures the remaining jobs are skipped.
 func execute(ctx context.Context, c jev.Client, jobs []job, conc int) []outcome {
 	outs := make([]outcome, len(jobs))
 	sem := make(chan struct{}, conc)
 	var wg sync.WaitGroup
 	var failed atomic.Bool
+	var unavailable atomic.Int32 // consecutive ErrUnavailable failures
 	for i := range jobs {
 		select {
 		case sem <- struct{}{}:
@@ -151,13 +162,23 @@ func execute(ctx context.Context, c jev.Client, jobs []job, conc int) []outcome 
 		if ctx.Err() != nil || failed.Load() {
 			break
 		}
+		if unavailable.Load() >= breakerAfter {
+			<-sem
+			outs[i] = outcome{skipped: true}
+			continue
+		}
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
 			defer func() { <-sem }()
 			resp, err := c.Evaluate(ctx, jobs[i].req)
 			outs[i] = outcome{resp: resp, err: err, done: true}
-			if err != nil && !errors.Is(err, jev.ErrUnavailable) {
+			switch {
+			case err == nil:
+				unavailable.Store(0)
+			case errors.Is(err, jev.ErrUnavailable):
+				unavailable.Add(1)
+			default:
 				failed.Store(true)
 			}
 		}(i)
@@ -175,6 +196,13 @@ func assemble(units []model.ChangeUnit, p plan, outs []outcome) Result {
 	}
 	for k, j := range p.jobs {
 		o := outs[k]
+		if o.skipped {
+			res.Unavailable = true
+			for _, b := range j.binds {
+				perUnit[j.unit] = append(perUnit[j.unit], unknownLabel(units[j.unit].ID, b.line, b.wq))
+			}
+			continue
+		}
 		if !o.done {
 			continue
 		}
