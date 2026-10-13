@@ -193,7 +193,10 @@ prt --root ~/code   # every git repository under ~/code in one picker
 - `prt daemon` keeps analysis warm in the background (one per repo, or
   `prt daemon --root DIR` for a workspace: one daemon, one worker pool and
   one cost ledger for every repo under DIR); `prt` connects to it
-  automatically, or runs everything in-process with `--no-daemon`.
+  automatically (inside a repo a workspace daemon serves, to that daemon),
+  or runs everything in-process with `--no-daemon`. Only one process
+  analyses a repo at a time; a second one that cannot attach says which
+  process holds the repo.
 - `prt --offline` never touches the network; `prt --snapshot` prints a few
   screens to stdout without a terminal.
 

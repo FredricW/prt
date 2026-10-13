@@ -448,8 +448,8 @@ new resize lines. No model spend; no GitHub writes.
   node_modules, vendor, dot directories, nested repos and submodules skipped;
   linked worktrees deduplicated; symlink loops safe) and shows all their PRs
   and branches in one picker. Each repo keeps its own store, log and config
-  under its own `.git/prt`; a repo's prt.toml overrides the global one for
-  that repo.
+  under its own `.git/prt`; a repo's prt.toml replaces the global one for
+  that repo (the first file found wins, as in a single repo).
 - **Repo-grouped picker:** a collapsible header per repo with its item count
   and GitHub status (`gh ✓`, `gh off`, `not on GitHub`, `no remote`), the
   usual sections inside, urgency bars on one scale across repos, `z` folds a
@@ -483,10 +483,32 @@ new resize lines. No model spend; no GitHub writes.
   recordings, so it shows "labels unavailable".
 - `cmd/prt/testdata/snapshot_single.golden` pins the single-repo snapshot.
 
+#### Fixed (review)
+
+- Discovery is breadth first: a directory symlink at the depth limit no
+  longer hides the repos of the directory it points at.
+- Repo keys are unique (`<key>~2` with a note when two paths clean to one
+  key) and hold no whitespace, so every repo can be named in a qualified
+  query, search hit or filtered `:add`.
+- A repo that cannot be opened (a malformed prt.toml, a repo another prt
+  analyses) is listed with an `error` header and its reason on the repo
+  card; discovery notes (symlink loops, bad globs, skipped worktrees) show
+  in the status line when they appear and on every repo card.
+- One process runs a repo's pipeline: an advisory lock in
+  `.git/prt/pipeline.lock` names its holder. `prt` in a repo served by a
+  workspace daemon attaches to it instead of running a second pipeline on
+  the same store (which reset the daemon's in-flight items and paid twice);
+  `--no-daemon`, `--snapshot` and a second in-process prt get a message
+  naming the holder.
+- `/` with a repo filter: a repo-qualified query searches the repo it names.
+- The settings page's global scope says it reaches "repos without their own
+  prt.toml", and a global save warns for each repo whose own file shadows it.
+- Resizing: on 62–69 columns `>` no longer narrows the picker; width saves
+  are ordered and flushed at quit; a lost mouse release no longer leaves the
+  picker drag stuck.
+
 #### Known limits
 
-- A repo daemon and a workspace daemon on the same repo at once is
-  unsupported (two writers on one store).
 - A long workspace root (such as a temp dir) cuts the counts off the header
   line.
 - Snapshots on the generated fixtures show stages as run on the first run

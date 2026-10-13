@@ -132,9 +132,9 @@ Details: `CHANGELOG.md` (per milestone), `docs/DECISIONS.md` (every call made), 
   - A single repo behaves as before: the single-repo snapshot is pinned by a golden test and differs from M5.2 only in the help overlay's resize lines.
 - Partial:
   - billing-svc has no recordings: its items show "labels unavailable" in the demo (no spend this milestone).
-  - A repo daemon and a workspace daemon on the same repo at once is unsupported.
   - A long workspace root cuts the counts off the header line.
-- No model spend, no GitHub writes. Not pushed.
+- Review fixes: discovery no longer loses repos behind a symlink at the depth limit; repo keys are unique and space-free; repos that cannot be opened show as error headers and discovery notes reach the screen; one process runs a repo's pipeline (a lock file; `prt` in a repo a workspace daemon serves attaches to it); a repo-qualified `/` search wins over the filter; the settings page says a global save skips repos with their own prt.toml; resize clamp, ordered width saves and lost drag releases fixed.
+- No model spend, no GitHub writes.
 
 ### Not done
 - **M6: overlap.** Deferred per the spec. The data model leaves room for it: content-based unit ids, and `semantic_conflict` is reserved. A design exists in `docs/design/Overlap.dc.html` and `docs/design/v2/Overlap.dc.html`.
@@ -188,7 +188,8 @@ The early Anthropic rows were priced at assumed rates and over-count somewhat (C
 - Secrets are read only from the environment and `gh`, never from config.
 
 **Daemon vs in-process:**
-- `prt daemon` keeps analysis warm, one per repo, on `.git/prt/prtd.sock`. `prt daemon --root DIR` serves a whole workspace on `$XDG_STATE_HOME/prt/ws-<hash>/prtd.sock`. `prt` connects to the matching one automatically.
+- `prt daemon` keeps analysis warm, one per repo, on `.git/prt/prtd.sock`. `prt daemon --root DIR` serves a whole workspace on `$XDG_STATE_HOME/prt/ws-<hash>/prtd.sock`. `prt` connects to the matching one automatically, and `prt` inside a repo that a workspace daemon serves attaches to that daemon (through the repo's `.git/prt/pipeline.lock`).
+- Only one process runs a repo's pipeline. A second one that cannot attach (`--no-daemon`, `--snapshot`, or another in-process prt holds the repo) exits with a message naming the holder; a workspace shows such a repo as an error header.
 - `prt --no-daemon` runs everything in-process.
 - `--offline` never touches the network.
 - Store, log and config live under `.git/prt/`.
@@ -227,8 +228,9 @@ The early Anthropic rows were priced at assumed rates and over-count somewhat (C
 8. **Per-item cost cap stays at $0.40 and is charged at expected output length.** Every routed group runs on the fixtures; a single deep call can cost more than its reservation.
 9. **Change blocks merge code detection with Jev.** A Jev-only entry needs P ≥ 0.60; test files never count; client calls (`fetch`, axios) are not endpoints.
 10. **Workspace picker groups by repo** rather than one global ranked list with a repo column; urgency bars use one scale and repos are ordered by their most urgent item, so the most urgent work is still on top. Raw scores of repos with different `[rank]` weights are not normalised.
-11. **Workspace item ids are mapped, not migrated** (`<repo>::<id>` only in the workspace client), and **one daemon per workspace** lives in `$XDG_STATE_HOME/prt`, not in any repo. Running a repo daemon and a workspace daemon over the same repo at once is unsupported.
+11. **Workspace item ids are mapped, not migrated** (`<repo>::<id>` only in the workspace client), and **one daemon per workspace** lives in `$XDG_STATE_HOME/prt`, not in any repo. A per-repo lock file makes sure only one process analyses a repo; two in-process `prt` in the same repo, which used to run two pipelines silently, now refuse the second.
 12. **Resize keys are `<`/`>`** (ctrl+left/right were rejected: terminals and tmux bind them), and the mouse mode stays cell motion, so there is no hover highlight, only the drag affordance.
+13. **A repo's own prt.toml replaces the global one whole** (the spec's first-file-found lookup), in a workspace as in a single repo; a global save in a workspace does not reach such repos, and the settings page and save result say so. A key-by-key merge would need a spec change.
 
 ## Three things I would do next
 
