@@ -669,6 +669,41 @@ func TestOverride(t *testing.T) {
 	}
 }
 
+// After `!` the Code page must show the override: Detail applies stored
+// overrides to the labels it returns (Overridden set, Jev's answer kept in
+// Original, the choice's other options still offered).
+func TestDetailAppliesOverrides(t *testing.T) {
+	ctx := context.Background()
+	c, st, _ := commentClient(t, nil)
+	if err := st.PutLabels(ctx, []model.Label{
+		{UnitID: "u1", Question: "risk", Value: "low", P: 0.7, Confidence: 0.7, Probs: map[string]float64{"low": 0.7, "medium": 0.2, "high": 0.1}},
+		{UnitID: "u2", Question: "risk", Value: "low", P: 0.9, Confidence: 0.9, Probs: map[string]float64{"low": 0.9, "high": 0.1}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Override(ctx, proto.OverrideParams{ItemID: cItem, Override: model.Override{UnitID: "u1", Question: "risk", Value: "high"}}); err != nil {
+		t.Fatal(err)
+	}
+	det, err := c.Detail(ctx, cItem)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]model.Label{}
+	for _, l := range det.Labels {
+		got[l.UnitID+"/"+l.Question] = l
+	}
+	u1 := got["u1/risk"]
+	if u1.Value != "high" || u1.Overridden == nil || *u1.Overridden != "high" || u1.Original != "low" || u1.P != 1 {
+		t.Errorf("u1 risk = %+v", u1)
+	}
+	if len(u1.Probs) != 3 || u1.Probs["high"] != 1 || u1.Probs["low"] != 0 {
+		t.Errorf("u1 probs = %v, want every option kept", u1.Probs)
+	}
+	if u2 := got["u2/risk"]; u2.Value != "low" || u2.Overridden != nil || u2.Original != "" {
+		t.Errorf("u2 risk (no override) = %+v", u2)
+	}
+}
+
 func TestDetailSortsComments(t *testing.T) {
 	c, st, _ := commentClient(t, nil)
 	putComments(t, st,

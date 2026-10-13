@@ -116,7 +116,8 @@ func (p *Pipeline) unpushed(ctx context.Context, it model.Item, f model.Fetch) (
 	return commits, n
 }
 
-// openPRs returns the stored open PR items (previews excluded), newest
+// openPRs returns the stored open PR items (previews, and closed or merged
+// PRs added from search, excluded; an unknown state counts as open), newest
 // number first, at most judge.MaxOpenPRTitles: the open PR titles
 // branch.state reads and SupersededBy picks from. A store error is logged
 // and yields none.
@@ -128,7 +129,8 @@ func (p *Pipeline) openPRs(ctx context.Context) []model.Item {
 	}
 	var out []model.Item
 	for _, it := range items {
-		if it.Kind == model.KindPR && it.Number > 0 && it.Source != model.SourcePreview {
+		closed := it.PRState == "closed" || it.PRState == "merged"
+		if it.Kind == model.KindPR && it.Number > 0 && it.Source != model.SourcePreview && !closed {
 			out = append(out, it)
 		}
 	}
@@ -224,6 +226,29 @@ func branchInfo(l model.Label, known bool, idle float64, abandonedDays int) mode
 	}
 	b.State, b.P, b.Rule = model.BranchAbandoned, p, fmt.Sprintf("no commits for %d days", b.IdleDays)
 	return b
+}
+
+// AgeBranchInfo re-applies the abandoned? default of branchInfo to a stored
+// block at idle days (the time since the head commit, measured now), for
+// readers that do not re-run the pipeline: an idle branch has no new head,
+// so nothing else would turn its stored WIP into abandoned? once
+// abandonedDays pass. Jev's answer (State, P, Probs, Known) is reused; only
+// IdleDays, and State/P/Rule when the age rule applies, change. A smaller
+// idle than stored (clock skew) leaves b as it is.
+func AgeBranchInfo(b model.BranchInfo, idle float64, abandonedDays int) model.BranchInfo {
+	if idle < float64(b.IdleDays) {
+		return b
+	}
+	aged := branchInfo(model.Label{Value: b.State, P: b.P, Probs: b.Probs}, b.Known, idle, abandonedDays)
+	out := b
+	out.IdleDays = aged.IdleDays
+	switch {
+	case aged.Rule != "":
+		out.State, out.P, out.Rule = aged.State, aged.P, aged.Rule
+	case b.Rule != "": // already abandoned by age: keep the count current
+		out.Rule = fmt.Sprintf("no commits for %d days", out.IdleDays)
+	}
+	return out
 }
 
 // supersededBy returns the number of the open PR whose title shares the

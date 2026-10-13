@@ -310,9 +310,17 @@ func (c *InProcess) Detail(ctx context.Context, itemID string) (proto.Detail, er
 	if det.Units, err = s.Units(ctx, itemID); err != nil {
 		return det, err
 	}
-	if det.Labels, err = s.Labels(ctx, labelSubjects(itemID, det.Files, det.Units)); err != nil {
+	subjects := labelSubjects(itemID, det.Files, det.Units)
+	if det.Labels, err = s.Labels(ctx, subjects); err != nil {
 		return det, err
 	}
+	// The Code page shows labels as the aggregate uses them: the user's
+	// overrides applied (Overridden set, Jev's answer in Original).
+	ovs, err := s.Overrides(ctx, subjects)
+	if err != nil {
+		return det, err
+	}
+	det.Labels = pipeline.ApplyOverrides(det.Labels, ovs)
 	if det.Links, err = s.Links(ctx, itemID); err != nil {
 		return det, err
 	}
@@ -330,6 +338,11 @@ func (c *InProcess) Detail(ctx context.Context, itemID string) (proto.Detail, er
 		return det, err
 	}
 	if agg, ok, err := s.Agg(ctx, itemID); err == nil && ok {
+		if agg.Branch != nil && it.Kind == model.KindBranch && (it.AnalysedSHA == "" || it.AnalysedSHA == it.HeadSHA) {
+			// The Branch state box ages like the picker line (setUrgency).
+			b := pipeline.AgeBranchInfo(*agg.Branch, idleDays(it, c.now()), c.d.Config.Pipeline.AbandonedDays)
+			agg.Branch = &b
+		}
 		det.Agg = &agg
 	}
 	info := c.routingInfo()

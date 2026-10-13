@@ -615,6 +615,9 @@ func (p *Pipeline) applyAgg(ctx context.Context, it model.Item, f model.Fetch, a
 	cur.BranchState, cur.BranchStateP = "", 0
 	if agg.Branch != nil {
 		cur.BranchState, cur.BranchStateP = agg.Branch.State, agg.Branch.P
+		// Items added from search (remote-tracking refs included) get their
+		// unpushed count only here; discovery refreshes local branches.
+		cur.Unpushed = agg.Branch.Unpushed
 	}
 	if err := p.d.Store.UpsertItem(ctx, cur); err != nil {
 		return fmt.Errorf("pipeline: store item %s: %w", cur.ID, err)

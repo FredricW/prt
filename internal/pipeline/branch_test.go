@@ -149,6 +149,8 @@ func newBranchEnv(t *testing.T, state string, idle time.Duration) *branchEnv {
 		{ID: model.PRItemID(7), Kind: model.KindPR, Number: 7, Title: "Add dark mode toggle to header"},
 		{ID: model.PRItemID(8), Kind: model.KindPR, Number: 8, Title: "Retry failed fetches"},
 		{ID: model.PRItemID(9), Kind: model.KindPR, Number: 9, Title: "Preview only", Source: model.SourcePreview},
+		{ID: model.PRItemID(10), Kind: model.KindPR, Number: 10, Title: "Merged dark mode toggle header work", PRState: "merged", Source: model.SourceAdded},
+		{ID: model.PRItemID(11), Kind: model.KindPR, Number: 11, Title: "Closed old thing", PRState: "closed", Source: model.SourceAdded},
 	} {
 		if err := e.st.UpsertItem(ctx, it); err != nil {
 			t.Fatal(err)
@@ -226,8 +228,8 @@ func TestBranchBlockReadyForPR(t *testing.T) {
 		t.Errorf("title %+v", b)
 	}
 	it, err := e.st.Item(context.Background(), e.item.ID)
-	if err != nil || it.BranchState != model.BranchReady || it.BranchStateP != 0.8 {
-		t.Errorf("item state %q %v (%v)", it.BranchState, it.BranchStateP, err)
+	if err != nil || it.BranchState != model.BranchReady || it.BranchStateP != 0.8 || it.Unpushed != 2 {
+		t.Errorf("item state %q %v unpushed %d (%v)", it.BranchState, it.BranchStateP, it.Unpushed, err)
 	}
 	if c, ok := contribOf(agg.UrgencyTerms, "w_ready_stale"); !ok || c <= 0 {
 		t.Errorf("w_ready_stale missing: %+v", agg.UrgencyTerms)
@@ -247,6 +249,9 @@ func TestBranchBlockReadyForPR(t *testing.T) {
 			}
 			if strings.Contains(s, "Preview only") {
 				t.Errorf("preview PR sent: %s", s)
+			}
+			if strings.Contains(s, "Merged dark") || strings.Contains(s, "Closed old") {
+				t.Errorf("closed or merged PR sent as open: %s", s)
 			}
 		}
 	}

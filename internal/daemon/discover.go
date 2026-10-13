@@ -16,6 +16,7 @@ import (
 	"github.com/fredricw/prt/internal/gh"
 	"github.com/fredricw/prt/internal/gitx"
 	"github.com/fredricw/prt/internal/model"
+	"github.com/fredricw/prt/internal/pipeline"
 	"github.com/fredricw/prt/internal/proto"
 	"github.com/fredricw/prt/internal/store"
 )
@@ -207,6 +208,9 @@ func applyPR(it *model.Item, pr gh.PR, head string) {
 	it.ViewerApproved, it.ReviewRequested = pr.ViewerApproved, pr.ReviewRequested
 	it.ViewerReviewedSHA, it.ViewerReviewedAt = pr.ViewerReviewedSHA, pr.ViewerReviewedAt
 	it.OpenThreads, it.CrossRepo = pr.OpenThreads, pr.CrossRepo
+	if pr.State != "" { // keep a known state when a source omits it
+		it.PRState = pr.State
+	}
 	if pr.Additions+pr.Deletions > 0 { // fixtures may omit counts; keep the diff's
 		it.Additions, it.Deletions = pr.Additions, pr.Deletions
 	}
@@ -301,6 +305,14 @@ func (c *InProcess) setUrgency(ctx context.Context, it *model.Item, sameHead boo
 	if sameHead && it.State != model.StateStale && (it.AnalysedSHA == "" || it.AnalysedSHA == it.HeadSHA) {
 		if agg, ok, err := c.d.Store.Agg(ctx, it.ID); err == nil && ok {
 			it.Minutes = agg.Minutes
+			if agg.Branch != nil && it.Kind == model.KindBranch {
+				// An idle branch is never re-analysed (its head does not
+				// move), so the abandoned? default is re-applied here as the
+				// days pass.
+				b := pipeline.AgeBranchInfo(*agg.Branch, in.IdleDays, c.d.Config.Pipeline.AbandonedDays)
+				agg.Branch = &b
+				it.BranchState, it.BranchStateP = b.State, b.P
+			}
 			in.Prior = &agg
 		}
 	}

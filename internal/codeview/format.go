@@ -111,7 +111,11 @@ func RawLabelsText(u model.ChangeUnit, labels []model.Label, width int) string {
 	row := func(prefix string, l model.Label) {
 		v := l.Value
 		if l.Overridden != nil {
-			v = *l.Overridden + " ! (was " + l.Value + ")"
+			was := l.Original
+			if was == "" {
+				was = model.LabelUnknown
+			}
+			v = *l.Overridden + " ! (was " + was + ")"
 		}
 		s := fmt.Sprintf("%s%-22s %-18s p %s  conf %s  %s", prefix, l.Question, v, ProbText(l.P), ProbText(l.Confidence), l.Model)
 		b.WriteString(clipText(strings.TrimRight(s, " "), width) + "\n")

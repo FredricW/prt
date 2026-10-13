@@ -335,8 +335,18 @@ func applyOverrides(ls []model.Label, ovs []model.Override) []model.Label {
 	return append(out, extra...)
 }
 
+// ApplyOverrides is applyOverrides for readers outside the pipeline (the
+// daemon's Detail, so the Code page shows what the aggregate uses).
+func ApplyOverrides(ls []model.Label, ovs []model.Override) []model.Label {
+	return applyOverrides(ls, ovs)
+}
+
+// overridden returns l with o applied. Jev's answer is kept in Original;
+// a distribution keeps its options (at 0, the override at 1) so the Code
+// page's `!` picker can still offer the other values.
 func overridden(l model.Label, o model.Override) model.Label {
 	v := o.Value
+	l.Original = l.Value
 	l.Value, l.Overridden, l.Confidence, l.P = v, &v, 1, 1
 	if v == model.LabelNo {
 		l.P = 0
@@ -345,7 +355,12 @@ func overridden(l model.Label, o model.Override) model.Label {
 		l.Score = float64(lvl)
 	}
 	if l.Probs != nil {
-		l.Probs = map[string]float64{v: 1}
+		probs := make(map[string]float64, len(l.Probs)+1)
+		for k := range l.Probs {
+			probs[k] = 0
+		}
+		probs[v] = 1
+		l.Probs = probs
 	}
 	return l
 }

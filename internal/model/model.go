@@ -106,6 +106,10 @@ type Item struct {
 
 	// Draft is true for draft PRs.
 	Draft bool `json:"draft,omitempty"`
+	// PRState is the PR's GitHub state ("open", "closed", "merged"; "" when
+	// unknown, read as open). Closed and merged PRs reach the picker only
+	// when added from search.
+	PRState string `json:"prState,omitempty"`
 	// ViewerApproved is true when the current user has approved this PR
 	// (feeds "CI red on something you approved").
 	ViewerApproved bool `json:"viewerApproved,omitempty"`
@@ -268,7 +272,11 @@ type Label struct {
 	P          float64 `json:"p"`               // booleans: P(yes); choice/score: P(Value)
 	Confidence float64 `json:"confidence"`      // 0 when unknown
 	Model      string  `json:"model,omitempty"` // e.g. "typesafe-ai/jev"
+	// Overridden is set (to the override) when the user's override replaced
+	// the answer; Value then holds the override and Original Jev's answer
+	// ("" when no answer was stored).
 	Overridden *string `json:"overridden,omitempty"`
+	Original   string  `json:"original,omitempty"`
 	Score      float64 `json:"score,omitempty"` // interpolated 1-based score for Score questions
 	// Probs is the full distribution: choice option → p, or 1-based score
 	// rung ("1".."5") → p. Empty for booleans and unknown labels.
