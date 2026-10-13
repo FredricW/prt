@@ -224,7 +224,7 @@ func setup(ctx context.Context, o options) (*environment, error) {
 		env.close()
 		return nil, err
 	}
-	cat, err := questions.Parse(qraw, qsrc)
+	cat, err := questions.Load(qraw, qsrc)
 	if err != nil {
 		env.close()
 		return nil, err

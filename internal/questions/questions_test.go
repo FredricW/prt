@@ -239,6 +239,43 @@ func TestParseRejects(t *testing.T) {
 	}
 }
 
+// Regression: a user file with one added question replaced the whole
+// built-in catalogue (kind, risk, depth, ... gone). Load merges it over the
+// built-ins by (scope, id).
+func TestLoadMergesOverBuiltins(t *testing.T) {
+	data := []byte(validRow + `
+[[question]]
+scope = "unit"
+id = "risk"
+type = "N"
+prompt = "Risky?"
+feeds = ["risk"]
+deferred = "off"
+`)
+	c, err := Load(data, "user.toml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Source != "user.toml" || len(c.Questions) != len(specRows)+1 {
+		t.Fatalf("source %q, %d questions, want %d", c.Source, len(c.Questions), len(specRows)+1)
+	}
+	if _, ok := find(c, ScopeUnit, "x"); !ok {
+		t.Error("added question missing")
+	}
+	if q, ok := find(c, ScopeUnit, model.QKind); !ok || q.Deferred != "" {
+		t.Error("built-in kind lost")
+	}
+	if q, _ := find(c, ScopeUnit, model.QRisk); q.Deferred != "off" || q.Prompt != "Risky?" {
+		t.Errorf("risk not replaced by the user row: %+v", q)
+	}
+	if _, err := Load([]byte("[[question]\n"), "bad"); err == nil {
+		t.Error("invalid user file accepted")
+	}
+	if def, err := Load(nil, "x"); err != nil || len(def.Questions) != len(specRows) {
+		t.Fatalf("nil data: %v, %d questions", err, len(def.Questions))
+	}
+}
+
 func TestParseAccepts(t *testing.T) {
 	data := row(`scope="unit"` + "\n" + `id="x"` + "\n" + `type="C"` + "\ndynamic=\"pr_bullets\"\nfeeds=[\"a\"]")
 	c, err := Parse(data, "t")

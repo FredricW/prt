@@ -1,6 +1,8 @@
 # Built-in Jev question catalogue (spec: "Jev question catalogue"; every row of
-# the spec table). Users override this file with .git/prt/prt.questions.toml or
-# $XDG_CONFIG_HOME/prt/prt.questions.toml.
+# the spec table). Users extend it with .git/prt/prt.questions.toml or
+# $XDG_CONFIG_HOME/prt/prt.questions.toml: rows there are merged over these by
+# (scope, id), so a new id adds a question and a repeated id replaces or (with
+# `deferred`) switches off the built-in row (questions.Load).
 #
 # Fields per [[question]]:
 #   scope    line | unit | file | group | pair | item | branch

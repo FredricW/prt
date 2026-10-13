@@ -201,6 +201,42 @@ func Parse(data []byte, source string) (Catalogue, error) {
 	return c, nil
 }
 
+// Load parses a user prt.questions.toml and merges it over the built-in
+// catalogue (Merge): users add questions, or redefine or defer (`deferred =
+// "off"`) a built-in one by repeating its scope and id. nil data means the
+// built-in catalogue.
+func Load(data []byte, source string) (Catalogue, error) {
+	if data == nil {
+		return Default(), nil
+	}
+	user, err := Parse(data, source)
+	if err != nil {
+		return Catalogue{}, err
+	}
+	return Merge(Default(), user), nil
+}
+
+// Merge returns base with every question of over applied: a question with
+// the same (scope, id) replaces the base one in place, any other is appended
+// in over's order. Source is over's.
+func Merge(base, over Catalogue) Catalogue {
+	key := func(q Question) string { return string(q.Scope) + "/" + q.ID }
+	idx := map[string]int{}
+	out := Catalogue{Questions: append([]Question(nil), base.Questions...), Source: over.Source}
+	for i, q := range out.Questions {
+		idx[key(q)] = i
+	}
+	for _, q := range over.Questions {
+		if i, ok := idx[key(q)]; ok {
+			out.Questions[i] = q
+			continue
+		}
+		idx[key(q)] = len(out.Questions)
+		out.Questions = append(out.Questions, q)
+	}
+	return out
+}
+
 var slugRe = regexp.MustCompile(`^[a-z0-9_]+$`)
 
 // validSlug reports whether s can be part of a wire name: [a-z0-9_]+ without
