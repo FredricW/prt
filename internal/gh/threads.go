@@ -127,7 +127,7 @@ func threadFromNode(n threadNode, number int) Thread {
 		c := commentFromNode(cn)
 		c.ItemID = model.PRItemID(number)
 		c.ThreadID = t.ID
-		c.Path, c.Side, c.Line, c.StartLine = t.Path, t.Side, line, t.StartLine
+		c.Path, c.Side, c.Line, c.StartLine, c.OriginalLine = t.Path, t.Side, line, t.StartLine, t.OriginalLine
 		c.State, c.Outdated = state, outdated
 		if c.InReplyTo == 0 && i > 0 {
 			c.InReplyTo = t.Comments[0].GHID // GitHub omitted replyTo; replies answer the first comment

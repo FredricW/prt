@@ -253,6 +253,9 @@ func TestAPIPR(t *testing.T) {
 	if p.ViewerAddressed || p.ViewerReviewedSHA != p.HeadSHA {
 		t.Errorf("answered mention must not count; reviewed SHA = %q", p.ViewerReviewedSHA)
 	}
+	if !p.ViewerReviewedAt.Equal(time.Date(2026, 10, 12, 9, 0, 0, 0, time.UTC)) {
+		t.Errorf("reviewed at = %v", p.ViewerReviewedAt)
+	}
 	reqs := fg.requests()
 	vars := reqs[len(reqs)-1].Variables
 	if vars["owner"] != "acme" || vars["name"] != "widgets" || vars["number"] != float64(7) {

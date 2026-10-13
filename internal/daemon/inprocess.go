@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"math/rand/v2"
 	"sort"
 	"strconv"
 	"strings"
@@ -50,7 +51,7 @@ type InProcess struct {
 
 	// Comment writes (see comments.go): commentLock serialises them per
 	// item (shared with the pipeline through Deps.CommentLock), draftSeq
-	// makes draft ids unique within the process, viewer caches the GitHub
+	// (from a random start) makes draft ids unique, viewer caches the GitHub
 	// login used as a draft's author.
 	commentLock func(itemID string) func()
 	draftSeq    atomic.Uint64
@@ -73,6 +74,10 @@ func NewInProcess(d pipeline.Deps) *InProcess {
 		events: make(chan proto.Event, 256), ctx: ctx, cancel: cancel,
 		itemMu: &sync.Mutex{}, commentLock: pipeline.NewKeyedLock(),
 	}
+	// A random start keeps draft ids unique across processes too: with a
+	// fixed clock (--now) every process would otherwise count from 1 and
+	// a new draft could overwrite one stored by an earlier run.
+	c.draftSeq.Store(rand.Uint64() >> 1)
 	if d.Log == nil {
 		d.Log = log.New(io.Discard)
 	}

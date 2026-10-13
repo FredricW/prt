@@ -1,6 +1,7 @@
 package pipeline
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -170,7 +171,7 @@ func (p *Pipeline) addressedComments(ctx context.Context, it model.Item, head, b
 	if len(prev) == 0 {
 		return addressedOut{}, nil
 	}
-	cases := p.commentCases(ctx, prev, head, base, local, units)
+	cases := p.commentCases(ctx, it, prev, head, base, local, units)
 	ans, err := p.addressedLabels(ctx, it.ID, cases)
 	if err != nil {
 		return addressedOut{}, err
@@ -202,7 +203,7 @@ func (p *Pipeline) addressedComments(ctx context.Context, it model.Item, head, b
 // comment's commit"); from base to head when the comment's commit is not
 // local; and, when neither is, the current diff of the unit the comment is
 // anchored to. One git diff per distinct start commit.
-func (p *Pipeline) commentCases(ctx context.Context, cs []model.Comment, head, base string, local bool, units []model.ChangeUnit) []judge.CommentCase {
+func (p *Pipeline) commentCases(ctx context.Context, it model.Item, cs []model.Comment, head, base string, local bool, units []model.ChangeUnit) []judge.CommentCase {
 	diffs := map[string]map[string]string{} // by start commit; nil: unavailable
 	diffFrom := func(from string) map[string]string {
 		if m, ok := diffs[from]; ok {
@@ -219,7 +220,7 @@ func (p *Pipeline) commentCases(ctx context.Context, cs []model.Comment, head, b
 	out := make([]judge.CommentCase, len(cs))
 	for i, c := range cs {
 		cc := judge.CommentCase{ID: c.ID, Path: c.Path, Line: c.Line, Side: c.Side, Body: c.Body}
-		cc.Before = p.codeAround(ctx, []string{c.CommitSHA, base}, c.Path, c.Line)
+		cc.Before = p.beforeCode(ctx, it, c, base)
 		var fd map[string]string
 		if c.CommitSHA != "" && c.CommitSHA != head {
 			fd = diffFrom(c.CommitSHA)
@@ -274,6 +275,27 @@ func renderHunks(hs []diff.Hunk) string {
 		}
 	}
 	return b.String()
+}
+
+// beforeCode returns the code around comment c as it was when it was made,
+// read where its line number belongs (codeAround): a GitHub comment's Line is on the PR's current head, so its OriginalLine
+// is used with CommitSHA (its originalCommit); a local posted comment's Line
+// is already on CommitSHA. An old-side (deleted-line) comment's number is on
+// the diff's base side, so the file is read at the merge base of CommitSHA
+// with the item's base (else the item's BaseSHA), never at CommitSHA. When
+// that commit is not available the since base is tried, as before.
+func (p *Pipeline) beforeCode(ctx context.Context, it model.Item, c model.Comment, base string) string {
+	line := cmp.Or(c.OriginalLine, c.Line)
+	rev := c.CommitSHA
+	if c.Side == model.SideOld {
+		rev = it.BaseSHA
+		if c.CommitSHA != "" && it.BaseSHA != "" && p.d.Git != nil {
+			if mb, err := p.d.Git.MergeBase(ctx, c.CommitSHA, it.BaseSHA); err == nil && mb != "" {
+				rev = mb
+			}
+		}
+	}
+	return p.codeAround(ctx, []string{rev, base}, c.Path, line)
 }
 
 // codeAround returns up to beforeContext numbered lines ("<n>: <text>")

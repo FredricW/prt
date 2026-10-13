@@ -27,7 +27,9 @@ func GitHubID(ghID int64) string { return "gh-" + strconv.FormatInt(ghID, 10) }
 func AIDraftID(findingKey string) string { return "ai-" + findingKey }
 
 // DraftID is a new local draft's Comment.ID: "d-" + a hash of the item,
-// the time and a caller-supplied sequence number (unique per process).
+// the time and a caller-supplied sequence number (the daemon starts its
+// sequence at a random value, so ids stay unique across processes even
+// with a fixed clock).
 func DraftID(itemID string, now time.Time, seq uint64) string {
 	return "d-" + model.ContentHash("draft", itemID, now.UTC().Format(time.RFC3339Nano), strconv.FormatUint(seq, 10))[:16]
 }
@@ -46,11 +48,35 @@ func covers(u model.ChangeUnit, side model.Side, line int) bool {
 	return s.Count > 0 && line >= s.Start && line < s.Start+s.Count
 }
 
+// leadingBlank counts the blank context lines at the top of u's diff body:
+// the lines model.NormaliseHunk drops, so they are not part of the unit's
+// id. Each one takes a line on both sides.
+// A diff that is all blank (or empty) counts 0.
+func leadingBlank(u model.ChangeUnit) int {
+	lines := strings.Split(u.Diff, "\n")
+	for n, l := range lines {
+		if strings.TrimSpace(l) != "" {
+			return n
+		}
+	}
+	return 0
+}
+
+// origin is the line UnitOffset and StartOffset count from: the first line
+// of u's span on side that is part of its id (after the leading blank
+// context lines), so two units with the same id give an offset the same
+// meaning even when their leading blank context differs (DECISIONS
+// "Comment offsets count from the unit's first non-blank line").
+func origin(u model.ChangeUnit, side model.Side) int {
+	return span(u, side).Start + leadingBlank(u)
+}
+
 // Anchor returns c with UnitID and UnitOffset set from the unit whose span
 // on c.Side covers c.Line (SideOld: Range.Old; SideNew or "": Range.New),
 // preferring the unit c.UnitID already names when it still covers the
 // line; among others the first in Order. A line no unit covers leaves
 // UnitID "" and UnitOffset 0. Outdated is cleared when a unit is found.
+// Offsets count from origin (they are negative on a leading blank line).
 func Anchor(c model.Comment, units []model.ChangeUnit) model.Comment {
 	var best *model.ChangeUnit
 	for i := range units {
@@ -70,10 +96,10 @@ func Anchor(c model.Comment, units []model.ChangeUnit) model.Comment {
 		c.UnitID, c.UnitOffset, c.StartOffset = "", 0, 0
 		return c
 	}
-	c.UnitID, c.UnitOffset, c.Outdated = best.ID, c.Line-span(*best, c.Side).Start, false
+	c.UnitID, c.UnitOffset, c.Outdated = best.ID, c.Line-origin(*best, c.Side), false
 	c.StartOffset = 0
 	if c.StartLine > 0 {
-		c.StartOffset = c.StartLine - span(*best, StartSide(c)).Start
+		c.StartOffset = c.StartLine - origin(*best, StartSide(c))
 	}
 	return c
 }
@@ -118,6 +144,15 @@ func movable(c model.Comment) bool {
 // an older commit: they get no unit. It returns the comments that changed,
 // in input order.
 func Reanchor(cs []model.Comment, units []model.ChangeUnit) []model.Comment {
+	return ReanchorAt(cs, units, "")
+}
+
+// ReanchorAt is Reanchor onto units that describe head: every comment that
+// moves (a local, unposted one) also gets CommitSHA = head, so a draft's
+// line numbers and the commit they belong to always travel together and a
+// review is posted on the commit its lines describe. head "" leaves
+// CommitSHA alone.
+func ReanchorAt(cs []model.Comment, units []model.ChangeUnit, head string) []model.Comment {
 	byID := make(map[string]model.ChangeUnit, len(units))
 	for _, u := range units {
 		if _, dup := byID[u.ID]; !dup {
@@ -127,6 +162,9 @@ func Reanchor(cs []model.Comment, units []model.ChangeUnit) []model.Comment {
 	var changed []model.Comment
 	for _, c := range cs {
 		n := reanchorOne(c, units, byID)
+		if head != "" && movable(n) {
+			n.CommitSHA = head
+		}
 		if n != c {
 			changed = append(changed, n)
 		}
@@ -148,17 +186,22 @@ func reanchorOne(c model.Comment, units []model.ChangeUnit, byID map[string]mode
 		return c
 	}
 	if u, ok := byID[c.UnitID]; ok && c.UnitID != "" {
-		if s := span(u, c.Side); s.Count > 0 {
-			line := s.Start + c.UnitOffset
-			switch {
-			case CrossSide(c):
-				// The start's span moves on its own: place it by its offset in
-				// the unit's span on the start side.
-				c.StartLine = span(u, StartSide(c)).Start + c.StartOffset
-			case c.StartLine > 0:
-				c.StartLine += line - c.Line
-			}
-			c.Path, c.Line, c.Outdated = u.Path, line, false
+		line := origin(u, c.Side) + c.UnitOffset
+		start := c.StartLine
+		switch {
+		case CrossSide(c):
+			// The start's span moves on its own: place it by its offset in
+			// the unit's span on the start side.
+			start = origin(u, StartSide(c)) + c.StartOffset
+		case c.StartLine > 0:
+			start += line - c.Line
+		}
+		// An offset into a leading blank line can fall outside a unit whose
+		// blank context shrank: then the unit no longer holds the line.
+		// (A same-side range may start in an earlier unit; a cross-side one
+		// lies within this one.)
+		if covers(u, c.Side, line) && (!CrossSide(c) || covers(u, StartSide(c), start)) {
+			c.Path, c.Line, c.StartLine, c.Outdated = u.Path, line, start, false
 			return c
 		}
 	}
@@ -174,8 +217,10 @@ func reanchorOne(c model.Comment, units []model.ChangeUnit, byID map[string]mode
 //   - put: every loaded comment that is new or differs from its stored
 //     copy (anchor fields UnitID/UnitOffset of the stored copy are kept);
 //   - del: stored github comments no longer on GitHub, and local posted
-//     user comments whose GHID now appears among the loaded ones (GitHub's
-//     copy replaces the local one).
+//     user comments that GitHub's copy now replaces: those whose GHID
+//     appears among the loaded ones, and those without a GHID (the id
+//     lookup after the submit failed) that match a loaded comment
+//     (postedMatch).
 //
 // Drafts, pending comments and ai-drafts are never touched.
 func MergeGitHub(stored, loaded []model.Comment) (put []model.Comment, del []string) {
@@ -198,6 +243,8 @@ func MergeGitHub(stored, loaded []model.Comment) (put []model.Comment, del []str
 			}
 		case s.Source == model.CommentUser && s.State == model.CommentPosted && s.GHID != 0 && loadedGH[s.GHID]:
 			del = append(del, s.ID)
+		case s.Source == model.CommentUser && s.State == model.CommentPosted && s.GHID == 0 && hasPostedMatch(s, loaded):
+			del = append(del, s.ID)
 		}
 	}
 	for _, c := range loaded {
@@ -211,6 +258,25 @@ func MergeGitHub(stored, loaded []model.Comment) (put []model.Comment, del []str
 	}
 	slices.Sort(del)
 	return put, del
+}
+
+// postedMatch reports whether gh (a comment loaded from GitHub) is the
+// GitHub copy of local, a posted user comment whose GHID is unknown: both
+// top-level, same path, side, body (trimmed) and commit, and gh's line on
+// that commit (OriginalLine, else Line) is local's line. Used when the id
+// lookup after a submit failed (DECISIONS "Posted copies without a GitHub
+// id are matched by content").
+func postedMatch(local, gh model.Comment) bool {
+	return gh.Source == model.CommentGitHub && gh.InReplyTo == 0 && local.InReplyTo == 0 &&
+		gh.Path == local.Path && normSide(gh.Side) == normSide(local.Side) &&
+		local.CommitSHA != "" && gh.CommitSHA == local.CommitSHA &&
+		cmp.Or(gh.OriginalLine, gh.Line) == local.Line &&
+		strings.TrimSpace(gh.Body) == strings.TrimSpace(local.Body)
+}
+
+// hasPostedMatch reports whether any of cs is GitHub's copy of local.
+func hasPostedMatch(local model.Comment, cs []model.Comment) bool {
+	return slices.ContainsFunc(cs, func(gh model.Comment) bool { return postedMatch(local, gh) })
 }
 
 // findingSide is the finding's side ("" counts as new).
@@ -237,8 +303,9 @@ func DraftBody(f model.Finding) string {
 // AIDrafts returns the ai-draft comments the item's routing rows call for:
 // one per finding with a path and a line > 0 (Source ai-draft, State
 // draft, ID AIDraftID(key), FindingKey, Severity, Side from the finding,
-// Body DraftBody, Author the reviewing model, anchored with Anchor),
-// skipping findings whose key has a FindingMark (accepted or dismissed).
+// Body DraftBody, Author the reviewing model, anchored with Anchor, and
+// Outdated when no unit covers its line), skipping findings whose key has a
+// FindingMark (accepted or dismissed).
 // Calibration findings are not drafts. Sorted by path, line, ID.
 func AIDrafts(itemID string, reviews []model.Review, units []model.ChangeUnit, marks []model.FindingMark, now time.Time) []model.Comment {
 	marked := make(map[string]bool, len(marks))
@@ -265,7 +332,12 @@ func AIDrafts(itemID string, reviews []model.Review, units []model.ChangeUnit, m
 				Source: model.CommentAIDraft, State: model.CommentDraft,
 				FindingKey: key, Severity: f.Severity, CreatedAt: now,
 			}
-			out = append(out, Anchor(c, units))
+			c = Anchor(c, units)
+			// A finding on a line no unit covers (the reviewer cited a line
+			// outside the diff) cannot be posted there: it is outdated, as
+			// Reanchor would mark it, so the two agree and it is never sent.
+			c.Outdated = c.UnitID == ""
+			out = append(out, c)
 		}
 	}
 	sortByPosition(out)
@@ -340,7 +412,8 @@ func ForSubmit(cs []model.Comment, ids []string) (send, skipped []model.Comment)
 
 // NextViewMark returns the view mark after the user looked at head of an
 // item: unchanged when head is "" or the stored HeadSHA; otherwise HeadSHA
-// = head, PrevHeadSHA = the old HeadSHA (when there was one) and At = now.
+// = head, At = now, and PrevHeadSHA/PrevAt = the old HeadSHA and At (when
+// there was one).
 func NextViewMark(prev model.ViewMark, ok bool, itemID, head string, now time.Time) model.ViewMark {
 	if head == "" || (ok && prev.HeadSHA == head) {
 		if !ok {
@@ -350,28 +423,40 @@ func NextViewMark(prev model.ViewMark, ok bool, itemID, head string, now time.Ti
 	}
 	v := model.ViewMark{ItemID: itemID, HeadSHA: head, At: now}
 	if ok {
-		v.PrevHeadSHA = prev.HeadSHA
+		v.PrevHeadSHA, v.PrevAt = prev.HeadSHA, prev.At
 	}
 	return v
 }
 
 // SinceBase returns the head "Since you looked" compares the analysed head
-// with, and its source: with a view mark, PrevHeadSHA when HeadSHA is the
-// analysed head, else HeadSHA (model.SinceViewed); when that gives no base
-// (no mark, or the first head looked at is the analysed one),
-// it.ViewerReviewedSHA (model.SinceReviewed). ("", "") when there is no
-// base or it equals the analysed head.
+// with, and its source. The view mark gives PrevHeadSHA (first looked at
+// PrevAt) when HeadSHA is the analysed head, else HeadSHA (looked at At)
+// (model.SinceViewed); the viewer's latest GitHub review gives
+// it.ViewerReviewedSHA (model.SinceReviewed). The review wins when the mark
+// gives no base (no mark, or the first head looked at is the analysed one)
+// or when it was submitted after the mark's head was first looked at
+// (it.ViewerReviewedAt after that time): the user reviewed on github.com
+// after last opening the item in prt, so "your last review" is the newer
+// point (DECISIONS "Since you looked: the newer of view mark and review").
+// ("", "") when there is no base or it equals the analysed head.
 func SinceBase(it model.Item, analysedHead string, mark model.ViewMark, ok bool) (base, source string) {
+	r := it.ViewerReviewedSHA
+	if r == analysedHead {
+		r = ""
+	}
 	if ok {
-		b := mark.HeadSHA
+		b, at := mark.HeadSHA, mark.At
 		if b == analysedHead {
-			b = mark.PrevHeadSHA
+			b, at = mark.PrevHeadSHA, mark.PrevAt
 		}
 		if b != "" && b != analysedHead {
+			if r != "" && r != b && !it.ViewerReviewedAt.IsZero() && it.ViewerReviewedAt.After(at) {
+				return r, model.SinceReviewed
+			}
 			return b, model.SinceViewed
 		}
 	}
-	if r := it.ViewerReviewedSHA; r != "" && r != analysedHead {
+	if r != "" {
 		return r, model.SinceReviewed
 	}
 	return "", ""
@@ -397,7 +482,8 @@ func ChangedUnits(old, cur []model.ChangeUnit) []string {
 // looked" asks about: Author == viewer (case-insensitive, viewer non-empty),
 // Source github (or user with State posted), InReplyTo 0, CommitSHA !=
 // analysedHead. A local posted copy whose GHID also appears as a github
-// comment is dropped. In path/line order.
+// comment, or that has no GHID and matches one (postedMatch), is dropped.
+// In path/line order.
 func Previous(cs []model.Comment, viewer, analysedHead string) []model.Comment {
 	if viewer == "" {
 		return nil
@@ -415,7 +501,8 @@ func Previous(cs []model.Comment, viewer, analysedHead string) []model.Comment {
 		}
 		switch {
 		case c.Source == model.CommentGitHub:
-		case c.Source == model.CommentUser && c.State == model.CommentPosted && (c.GHID == 0 || !onGitHub[c.GHID]):
+		case c.Source == model.CommentUser && c.State == model.CommentPosted && c.GHID == 0 && !hasPostedMatch(c, cs):
+		case c.Source == model.CommentUser && c.State == model.CommentPosted && c.GHID != 0 && !onGitHub[c.GHID]:
 		default:
 			continue
 		}

@@ -16,7 +16,10 @@ import (
 
 // SubmitReview implements Client: it posts the item's user drafts
 // (comments.ForSubmit: p.CommentIDs when set, outdated ones skipped,
-// ai-drafts never) as one GitHub review on the analysed head. Drafts are
+// ai-drafts never) as one GitHub review on the head the drafts' lines
+// describe (draftHead: the stored units' head, which moves with them in
+// stage 1, before the run finishes). A draft whose CommitSHA is another
+// commit is skipped, never posted with mismatched lines. Drafts are
 // pending while the request runs, posted (GHID, ReviewID) after it, and
 // back to drafts if it fails: a failed submission never loses a draft.
 // On success the item records the review commit (and the approval), and a
@@ -27,6 +30,10 @@ func (c *InProcess) SubmitReview(ctx context.Context, p proto.SubmitParams) (pro
 	if err != nil {
 		return proto.SubmitResult{}, err
 	}
+	// Lock before reading the item, so its UnitsSHA matches the drafts'
+	// positions (the pipeline moves both under this lock).
+	unlock := c.lockComments(p.ItemID)
+	defer unlock()
 	it, err := c.d.Store.Item(ctx, p.ItemID)
 	if err != nil {
 		return proto.SubmitResult{}, fmt.Errorf("daemon: submit review %s: %w", p.ItemID, err)
@@ -34,21 +41,35 @@ func (c *InProcess) SubmitReview(ctx context.Context, p proto.SubmitParams) (pro
 	if err := c.requirePR(it, "submit review"); err != nil {
 		return proto.SubmitResult{}, err
 	}
-	unlock := c.lockComments(it.ID)
-	defer unlock()
 	cs, err := c.d.Store.Comments(ctx, it.ID)
 	if err != nil {
 		return proto.SubmitResult{}, fmt.Errorf("daemon: submit review %s: %w", it.ID, err)
 	}
+	commit := draftHead(it)
 	send, skipped := comments.ForSubmit(cs, p.CommentIDs)
+	send, elsewhere := onCommit(send, commit)
+	skipped = append(skipped, elsewhere...)
 	if ev != gh.EventApprove && len(send) == 0 && strings.TrimSpace(p.Body) == "" {
 		return proto.SubmitResult{Skipped: skipped}, fmt.Errorf("daemon: submit review %s: %s needs a summary or at least one draft", it.ID, ev)
 	}
 	res := proto.SubmitResult{Skipped: skipped}
-	sub, posted, err := c.submit(ctx, it, analysedHead(it), ev, p.Body, send)
+	sub, posted, err := c.submit(ctx, it, commit, ev, p.Body, send)
 	res.ReviewID, res.URL, res.Posted = sub.ID, sub.URL, posted
 	c.patch(it.ID)
 	return res, err
+}
+
+// onCommit splits drafts into those whose lines describe commit (CommitSHA
+// commit, or unset on older stored drafts) and the rest.
+func onCommit(cs []model.Comment, commit string) (on, off []model.Comment) {
+	for _, d := range cs {
+		if d.CommitSHA == "" || d.CommitSHA == commit {
+			on = append(on, d)
+		} else {
+			off = append(off, d)
+		}
+	}
+	return on, off
 }
 
 // reviewEvent maps a wire review event to GitHub's.
@@ -86,7 +107,7 @@ func (c *InProcess) submit(ctx context.Context, it model.Item, commit string, ev
 		}
 	}
 	if _, _, err := c.updateItem(ctx, it.ID, func(it *model.Item) {
-		it.ViewerReviewedSHA = commit
+		it.ViewerReviewedSHA, it.ViewerReviewedAt = commit, c.now()
 		if ev == gh.EventApprove {
 			it.ViewerApproved = true
 		}
@@ -181,6 +202,9 @@ func (c *InProcess) newPRFor(ctx context.Context, br model.Item, p proto.CreateP
 	if err := c.requireGitHub("create PR"); err != nil {
 		return gh.NewPR{}, err
 	}
+	if n := c.unpushed(ctx, br); n > 0 {
+		return gh.NewPR{}, fmt.Errorf("daemon: create PR: push %s first: %s not on its upstream (GitHub opens a PR on the pushed branch only)", br.Ref, plural(n, "commit"))
+	}
 	if n, ok, err := c.prForRef(ctx, br.Ref); err != nil {
 		return gh.NewPR{}, err
 	} else if ok {
@@ -198,6 +222,42 @@ func (c *InProcess) newPRFor(ctx context.Context, br model.Item, p proto.CreateP
 		return gh.NewPR{}, fmt.Errorf("daemon: create PR: head and base are both %s", base)
 	}
 	return gh.NewPR{Title: title, Body: p.Body, Head: br.Ref, Base: base, Draft: p.Draft}, nil
+}
+
+// unpushed counts branch item br's commits that are not on its upstream:
+// re-counted from git when the branch has an upstream (the user may have
+// pushed since discovery), else discovery's count (Item.Unpushed, which is
+// every commit ahead of the base for a branch that was never pushed).
+func (c *InProcess) unpushed(ctx context.Context, br model.Item) int {
+	refs, err := c.d.Git.Refs(ctx, false)
+	if err != nil {
+		return br.Unpushed
+	}
+	for _, r := range refs {
+		if r.Remote || r.Name != br.Ref || r.Upstream == "" {
+			continue
+		}
+		if n, err := c.d.Git.CountAhead(ctx, r.Upstream, r.Name); err == nil {
+			return n
+		}
+	}
+	return br.Unpushed
+}
+
+// shortSHA is the first 7 characters of a SHA.
+func shortSHA(sha string) string {
+	if len(sha) > 7 {
+		return sha[:7]
+	}
+	return sha
+}
+
+// plural is "1 commit" / "n commits".
+func plural(n int, noun string) string {
+	if n == 1 {
+		return "1 " + noun
+	}
+	return fmt.Sprintf("%d %ss", n, noun)
 }
 
 // prForRef returns the number of a stored same-repo PR item whose head ref
@@ -257,9 +317,12 @@ func (c *InProcess) storeCreatedPR(ctx context.Context, pr gh.PR, br model.Item)
 	return it, nil
 }
 
-// attachDrafts moves the branch's user drafts to the new PR item (made on
-// the branch head) and posts them as one COMMENT review. It returns how
-// many were posted; on failure they stay drafts on the PR item.
+// attachDrafts moves the branch's user drafts to the new PR item and posts
+// them as one COMMENT review on the commit their lines describe (the
+// branch's draftHead). When that is not the PR's head on GitHub (the
+// branch moved since its analysis), nothing is posted: they stay drafts on
+// the PR item, and its analysis re-anchors them onto the PR's head. It
+// returns how many were posted; on failure they stay drafts on the PR item.
 func (c *InProcess) attachDrafts(ctx context.Context, br, prIt model.Item) (int, error) {
 	unlock := c.lockComments(prIt.ID)
 	defer unlock()
@@ -267,21 +330,26 @@ func (c *InProcess) attachDrafts(ctx context.Context, br, prIt model.Item) (int,
 	if err != nil {
 		return 0, fmt.Errorf("daemon: PR #%d created, but the drafts of %s could not be read: %w", prIt.Number, br.ID, err)
 	}
-	commit := cmp.Or(br.HeadSHA, prIt.HeadSHA)
+	commit := draftHead(br)
 	var moved []model.Comment
 	for _, d := range cs {
 		if !isUserDraft(d) {
 			continue
 		}
-		d.ItemID, d.CommitSHA = prIt.ID, commit
+		d.ItemID, d.CommitSHA = prIt.ID, cmp.Or(d.CommitSHA, commit)
 		if err := c.d.Store.PutComment(ctx, d); err != nil {
 			return 0, fmt.Errorf("daemon: PR #%d created, but draft %s could not be moved to it: %w", prIt.Number, d.ID, err)
 		}
 		moved = append(moved, d)
 	}
 	send, _ := comments.ForSubmit(moved, nil)
+	send, _ = onCommit(send, commit)
 	if len(send) == 0 {
 		return 0, nil
+	}
+	if prIt.HeadSHA != "" && prIt.HeadSHA != commit {
+		return 0, fmt.Errorf("daemon: PR #%d created, but its %d draft(s) describe %s, not the PR's head %s: they stay drafts on it until it is analysed",
+			prIt.Number, len(send), shortSHA(commit), shortSHA(prIt.HeadSHA))
 	}
 	_, posted, err := c.submit(ctx, prIt, commit, gh.EventComment, "", send)
 	switch {

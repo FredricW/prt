@@ -2,11 +2,13 @@ package pipeline
 
 import (
 	"context"
+	"errors"
 	"sync"
 
 	"github.com/fredricw/prt/internal/comments"
 	"github.com/fredricw/prt/internal/gh"
 	"github.com/fredricw/prt/internal/model"
+	"github.com/fredricw/prt/internal/store"
 )
 
 // NewKeyedLock returns a lock function for Deps.CommentLock: one mutex per
@@ -101,6 +103,9 @@ func normaliseThreadComment(itemID string, t gh.Thread, c model.Comment) model.C
 	if c.StartLine == 0 {
 		c.StartLine = t.StartLine
 	}
+	if c.OriginalLine == 0 {
+		c.OriginalLine = t.OriginalLine
+	}
 	c.State = model.CommentPosted
 	if t.Resolved {
 		c.State = model.CommentResolved
@@ -110,18 +115,45 @@ func normaliseThreadComment(itemID string, t gh.Thread, c model.Comment) model.C
 }
 
 // reanchorComments moves the item's stored comments onto the units stage 1
-// just stored (comments.Reanchor) and stores the ones that changed, under
-// the item's comment lock. Store errors are logged only: comments never
-// fail the parse stage.
-func (p *Pipeline) reanchorComments(ctx context.Context, itemID string, units []model.ChangeUnit) {
-	unlock := p.d.CommentLock(itemID)
+// just stored for head (comments.ReanchorAt: moved drafts get CommitSHA =
+// head) and stores the ones that changed, then records head as the item's
+// UnitsSHA, all under the item's comment lock, so a review submitted at any
+// point pairs the drafts' lines with the commit they describe. Store errors
+// are logged only: comments never fail the parse stage.
+func (p *Pipeline) reanchorComments(ctx context.Context, it model.Item, head string, units []model.ChangeUnit) {
+	unlock := p.d.CommentLock(it.ID)
 	defer unlock()
-	stored, err := p.d.Store.Comments(ctx, itemID)
+	stored, err := p.d.Store.Comments(ctx, it.ID)
 	if err != nil {
-		p.d.Log.Warn("load comments failed; not re-anchored", "item", itemID, "err", err)
+		p.d.Log.Warn("load comments failed; not re-anchored", "item", it.ID, "err", err)
 		return
 	}
-	p.writeComments(ctx, itemID, comments.Reanchor(stored, units), nil)
+	p.writeComments(ctx, it.ID, comments.ReanchorAt(stored, units, head), nil)
+	if err := p.setUnitsSHA(ctx, it.ID, head); err != nil {
+		p.d.Log.Warn("record units head failed", "item", it.ID, "err", err)
+	}
+}
+
+// setUnitsSHA stores head as the item's UnitsSHA (a no-op for an item that
+// is not stored or already has it).
+func (p *Pipeline) setUnitsSHA(ctx context.Context, itemID, head string) error {
+	if head == "" {
+		return nil
+	}
+	p.d.ItemLock.Lock()
+	defer p.d.ItemLock.Unlock()
+	cur, err := p.d.Store.Item(ctx, itemID)
+	if errors.Is(err, store.ErrNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if cur.UnitsSHA == head {
+		return nil
+	}
+	cur.UnitsSHA = head
+	return p.d.Store.UpsertItem(ctx, cur)
 }
 
 // syncAIDrafts materialises one ai-draft per finding of the routing rows
@@ -129,7 +161,7 @@ func (p *Pipeline) reanchorComments(ctx context.Context, itemID string, units []
 // and deletes the ai-drafts whose finding is gone (comments.SyncAIDrafts).
 // It holds the item's comment lock, so an accept or dismiss (mark written,
 // ai row deleted) is never undone by a stale re-put. Errors are logged only.
-func (p *Pipeline) syncAIDrafts(ctx context.Context, itemID string, rows []model.Review, units []model.ChangeUnit) {
+func (p *Pipeline) syncAIDrafts(ctx context.Context, itemID, head string, rows []model.Review, units []model.ChangeUnit) {
 	unlock := p.d.CommentLock(itemID)
 	defer unlock()
 	marks, err := p.d.Store.FindingMarks(ctx, itemID)
@@ -142,7 +174,11 @@ func (p *Pipeline) syncAIDrafts(ctx context.Context, itemID string, rows []model
 		p.d.Log.Warn("load comments failed; ai-drafts not synced", "item", itemID, "err", err)
 		return
 	}
-	put, del := comments.SyncAIDrafts(stored, comments.AIDrafts(itemID, rows, units, marks, p.d.Now()))
+	want := comments.AIDrafts(itemID, rows, units, marks, p.d.Now())
+	for i := range want {
+		want[i].CommitSHA = head // the head units (and so these lines) describe
+	}
+	put, del := comments.SyncAIDrafts(stored, want)
 	p.writeComments(ctx, itemID, put, del)
 }
 

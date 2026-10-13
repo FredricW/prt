@@ -20,7 +20,7 @@
         "changedFiles": 12,
         "createdAt": "2026-10-05T09:00:00Z",
         "updatedAt": "2026-10-06T09:00:00Z",
-        "viewerLatestReview": {"state": "COMMENTED", "commit": {"oid": "7777777777777777777777777777777777777777"}},
+        "viewerLatestReview": {"state": "COMMENTED", "submittedAt": "2026-10-12T09:00:00Z", "commit": {"oid": "7777777777777777777777777777777777777777"}},
         "comments": {"nodes": [{"viewerDidAuthor": false, "body": "@fredric ping"}, {"viewerDidAuthor": true, "body": "done"}]},
         "commits": {"nodes": [{"commit": {"statusCheckRollup": {"state": "PENDING"}}}]}
       }

@@ -439,8 +439,14 @@ func TestDraftReanchoredAfterPush(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := draft
-	if ch := comments.Reanchor([]model.Comment{draft}, headUnits); len(ch) == 1 {
+	if ch := comments.ReanchorAt([]model.Comment{draft}, headUnits, headItem.HeadSHA); len(ch) == 1 {
 		want = ch[0]
+	}
+	if want.CommitSHA != headItem.HeadSHA {
+		t.Errorf("draft commit = %s, want the head its line now describes %s", want.CommitSHA, headItem.HeadSHA)
+	}
+	if it, err := e.st.Item(ctx, e.item.ID); err != nil || it.UnitsSHA != headItem.HeadSHA {
+		t.Errorf("item units head = %q (%v), want %s", it.UnitsSHA, err, headItem.HeadSHA)
 	}
 	cs, err := e.st.Comments(ctx, e.item.ID)
 	if err != nil {

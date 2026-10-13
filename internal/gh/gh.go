@@ -50,6 +50,9 @@ type PR struct {
 	// was made on ("" when the viewer has not reviewed). A head that moved
 	// past it means "re-review after a push".
 	ViewerReviewedSHA string `json:"viewerReviewedSha,omitempty"`
+	// ViewerReviewedAt is when that review was submitted (zero when
+	// unknown).
+	ViewerReviewedAt time.Time `json:"viewerReviewedAt,omitzero"`
 	// ViewerAddressed is true when a recent comment by someone else
 	// @-mentions the viewer and the viewer has not commented since.
 	ViewerAddressed bool `json:"viewerAddressed,omitempty"`

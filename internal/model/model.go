@@ -146,6 +146,15 @@ type Item struct {
 	// the viewer never reviewed). "Since you looked" falls back to it when
 	// prt has no ViewMark for the item (M4).
 	ViewerReviewedSHA string `json:"viewerReviewedSha,omitempty"`
+	// ViewerReviewedAt is when that review was submitted (zero when
+	// unknown); comments.SinceBase prefers the review over an older view
+	// mark.
+	ViewerReviewedAt time.Time `json:"viewerReviewedAt,omitzero"`
+	// UnitsSHA is the head the stored units, and so the line numbers of the
+	// item's local drafts, describe. Stage 1 sets it when it stores units
+	// and re-anchors the comments, which is before AnalysedSHA moves (at the
+	// end of the run); a review is posted on this commit.
+	UnitsSHA string `json:"unitsSha,omitempty"`
 }
 
 // FileRole is the Jev-assigned role of a changed file.
@@ -677,8 +686,13 @@ type Comment struct {
 	// Outdated is set when the anchor no longer exists in the analysed diff.
 	Outdated bool `json:"outdated,omitempty"`
 	// CommitSHA is the commit the comment was made on (GitHub
-	// originalCommit; for local drafts the analysed head when saved).
+	// originalCommit; for local drafts the head their Line describes:
+	// Item.UnitsSHA when saved, moved with them by re-anchoring).
 	CommitSHA string `json:"commitSha,omitempty"`
+	// OriginalLine is a GitHub comment's line on CommitSHA (the thread's
+	// originalLine; Line is on the PR's current head). 0 when unknown or
+	// for local comments, whose Line is already on CommitSHA.
+	OriginalLine int `json:"originalLine,omitempty"`
 	// FindingKey ties an ai-draft (and the user draft accepted from it) to
 	// its review finding (comments.FindingKey).
 	FindingKey string `json:"findingKey,omitempty"`
@@ -721,7 +735,9 @@ type ViewMark struct {
 	ItemID      string    `json:"itemId"`
 	HeadSHA     string    `json:"headSha"`
 	PrevHeadSHA string    `json:"prevHeadSha,omitempty"`
-	At          time.Time `json:"at"`
+	At          time.Time `json:"at"` // when HeadSHA was first looked at
+	// PrevAt is when PrevHeadSHA was first looked at (zero when unknown).
+	PrevAt time.Time `json:"prevAt,omitzero"`
 }
 
 // Override is a user correction of a label.

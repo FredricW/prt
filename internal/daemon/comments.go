@@ -32,12 +32,14 @@ func (c *InProcess) SaveComment(ctx context.Context, p proto.CommentParams) (mod
 	if in.ItemID != p.ItemID {
 		return model.Comment{}, fmt.Errorf("daemon: comment: comment for %q sent for item %q", in.ItemID, p.ItemID)
 	}
+	// Lock before reading the item: its UnitsSHA must match the units the
+	// draft is placed on (the pipeline moves both under this lock).
+	unlock := c.lockComments(p.ItemID)
+	defer unlock()
 	it, err := c.d.Store.Item(ctx, p.ItemID)
 	if err != nil {
 		return model.Comment{}, fmt.Errorf("daemon: comment %s: %w", p.ItemID, err)
 	}
-	unlock := c.lockComments(it.ID)
-	defer unlock()
 	var out model.Comment
 	switch {
 	case p.Delete:
@@ -76,7 +78,7 @@ func (c *InProcess) newDraft(ctx context.Context, it model.Item, in model.Commen
 		ID: c.newDraftID(it.ID), ItemID: it.ID,
 		Path: in.Path, Line: in.Line, StartLine: in.StartLine, Side: in.Side, StartSide: in.StartSide,
 		Body: in.Body, Author: c.author(ctx), Source: model.CommentUser, State: model.CommentDraft,
-		CommitSHA: analysedHead(it), CreatedAt: now, UpdatedAt: now,
+		CommitSHA: draftHead(it), CreatedAt: now, UpdatedAt: now,
 	}
 	return c.placeDraft(ctx, d)
 }
@@ -97,7 +99,7 @@ func (c *InProcess) editDraft(ctx context.Context, it model.Item, in model.Comme
 	if in.Line > 0 {
 		d.Line, d.StartLine, d.Side, d.StartSide = in.Line, in.StartLine, in.Side, in.StartSide
 	}
-	d.CommitSHA, d.UpdatedAt = analysedHead(it), c.now()
+	d.CommitSHA, d.UpdatedAt = draftHead(it), c.now()
 	return c.placeDraft(ctx, d)
 }
 
@@ -182,12 +184,12 @@ func normaliseDraft(d model.Comment) (model.Comment, error) {
 // CommentAction implements Client: accept or dismiss an ai-draft, or reply
 // to or resolve a GitHub review thread. Every action emits a patch event.
 func (c *InProcess) CommentAction(ctx context.Context, p proto.CommentActionParams) (model.Comment, error) {
+	unlock := c.lockComments(p.ItemID)
+	defer unlock()
 	it, err := c.d.Store.Item(ctx, p.ItemID)
 	if err != nil {
 		return model.Comment{}, fmt.Errorf("daemon: comment %s %s: %w", p.Action, p.ItemID, err)
 	}
-	unlock := c.lockComments(it.ID)
-	defer unlock()
 	var out model.Comment
 	switch p.Action {
 	case proto.CommentAccept:
@@ -218,7 +220,17 @@ func (c *InProcess) acceptDraft(ctx context.Context, it model.Item, id string) (
 	now := c.now()
 	d := comments.Accept(ai, c.newDraftID(it.ID), c.author(ctx), now)
 	if d.CommitSHA == "" {
-		d.CommitSHA = analysedHead(it)
+		d.CommitSHA = draftHead(it)
+	}
+	// A finding on a line outside the diff cannot be posted there: the draft
+	// is kept (the user can edit it) but outdated, so a submit skips it
+	// instead of GitHub rejecting the whole review.
+	if units, err := c.d.Store.Units(ctx, it.ID); err == nil {
+		if a := comments.Anchor(d, units); a.UnitID != "" {
+			d = a
+		} else {
+			d.UnitID, d.Outdated = "", true
+		}
 	}
 	// Draft first, then the mark, then the ai row: a failure part-way never
 	// loses the finding.
@@ -520,9 +532,10 @@ func (c *InProcess) patch(itemID string) {
 	c.send(proto.Event{Type: proto.EventPatch, ItemID: itemID})
 }
 
-// analysedHead is the head the stored analysis (and so a new draft's
-// position) describes: AnalysedSHA, else HeadSHA.
-func analysedHead(it model.Item) string { return cmp.Or(it.AnalysedSHA, it.HeadSHA) }
+// draftHead is the head the stored units, and so the item's draft
+// positions, describe: UnitsSHA (set by stage 1 with the units), else
+// AnalysedSHA, else HeadSHA. Reviews are posted on it.
+func draftHead(it model.Item) string { return cmp.Or(it.UnitsSHA, it.AnalysedSHA, it.HeadSHA) }
 
 // sortComments orders comments by path, line, start line, then id (the
 // Comments strip's stable order).

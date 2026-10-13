@@ -39,8 +39,9 @@ type prNode struct {
 	CreatedAt          githubv4.DateTime
 	UpdatedAt          githubv4.DateTime
 	ViewerLatestReview *struct {
-		State  string
-		Commit *struct{ Oid string }
+		State       string
+		SubmittedAt *githubv4.DateTime
+		Commit      *struct{ Oid string }
 	}
 	Comments struct {
 		Nodes []struct {
@@ -121,6 +122,9 @@ func prFromNode(n prNode, viewer string) PR {
 		p.ViewerCommented = true
 		if r.State != "DISMISSED" && r.Commit != nil {
 			p.ViewerReviewedSHA = r.Commit.Oid
+			if r.SubmittedAt != nil {
+				p.ViewerReviewedAt = r.SubmittedAt.Time
+			}
 		}
 	}
 	for _, c := range n.Comments.Nodes {

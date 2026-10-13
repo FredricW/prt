@@ -249,7 +249,7 @@ func (p *Pipeline) runAfterFetch(ctx context.Context, r *run) error {
 	parsed, err := runStage(ctx, p, it.ID, model.StageParse, func(rl *model.RunLog) (parseOut, error) {
 		out, err := p.parse(ctx, it.ID, f, files, rl)
 		if err == nil {
-			p.reanchorComments(ctx, it.ID, out.units)
+			p.reanchorComments(ctx, it, f.HeadSHA, out.units)
 		}
 		return out, err
 	})
@@ -335,7 +335,7 @@ func (p *Pipeline) runReviewStages(ctx context.Context, r *run, a analysis) erro
 		if rows == nil {
 			rows = ro.rows
 		}
-		p.syncAIDrafts(ctx, itemID, rows, a.parsed.units)
+		p.syncAIDrafts(ctx, itemID, r.f.HeadSHA, rows, a.parsed.units)
 	}
 	_, err = runStage(ctx, p, itemID, model.StageAggregate, func(rl *model.RunLog) (model.ItemAgg, error) {
 		return p.aggregate(ctx, r, a, ro, rv, rl)
