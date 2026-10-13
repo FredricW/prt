@@ -3,15 +3,21 @@ package gh
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 
 	"github.com/fredricw/prt/internal/model"
 )
 
-// Fake is an in-memory Client for tests. SearchPRs returns every PR whose
-// title, head ref or number contains a non-qualifier search term (qualifiers
-// such as "is:open" are ignored), or all PRs for a query of only qualifiers.
+// Fake is an in-memory Client for tests and `--fixtures` runs.
+//
+// SearchPRs returns, in number order, every PR whose number, title, head ref
+// or author contains each non-qualifier search term. The state qualifiers
+// is:open, is:closed (closed or merged, as on GitHub) and is:merged filter on
+// PR.State, where an empty State counts as open; every other qualifier
+// (repo:, is:pr, involves:@me, ...) is ignored. All methods are safe for
+// concurrent use once the Fake is shared; set fields before sharing it.
 type Fake struct {
 	mu sync.Mutex
 
@@ -30,23 +36,24 @@ type Fake struct {
 var _ Client = (*Fake)(nil)
 
 // Viewer implements Client.
-func (f *Fake) Viewer(context.Context) (string, error) { return f.Login, f.Err }
+func (f *Fake) Viewer(context.Context) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.Login, f.Err
+}
 
 // SearchPRs implements Client.
 func (f *Fake) SearchPRs(_ context.Context, query string, limit int) ([]PR, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	if f.Err != nil {
 		return nil, f.Err
 	}
-	var terms []string
-	for _, w := range strings.Fields(query) {
-		if !strings.Contains(w, ":") {
-			terms = append(terms, strings.ToLower(w))
-		}
-	}
+	terms, state := parseFakeQuery(query)
 	var out []PR
-	for n := 1; n <= maxKey(f.PRs); n++ {
-		p, ok := f.PRs[n]
-		if !ok || !matches(p, terms) {
+	for _, n := range sortedKeys(f.PRs) {
+		p := f.PRs[n]
+		if !stateMatches(p.State, state) || !matches(p, terms) {
 			continue
 		}
 		out = append(out, p)
@@ -55,6 +62,48 @@ func (f *Fake) SearchPRs(_ context.Context, query string, limit int) ([]PR, erro
 		}
 	}
 	return out, nil
+}
+
+// parseFakeQuery splits a search query into lower-cased free-text terms and
+// the last is:open/closed/merged qualifier ("" when absent).
+func parseFakeQuery(query string) (terms []string, state string) {
+	for _, w := range strings.Fields(query) {
+		lw := strings.ToLower(w)
+		switch {
+		case lw == "is:open" || lw == "is:closed" || lw == "is:merged":
+			state = strings.TrimPrefix(lw, "is:")
+		case strings.Contains(lw, ":"):
+			// other qualifiers are ignored
+		default:
+			terms = append(terms, lw)
+		}
+	}
+	return terms, state
+}
+
+// stateMatches applies an is: state qualifier to a PR state.
+func stateMatches(prState, want string) bool {
+	s := strings.ToLower(prState)
+	if s == "" {
+		s = "open"
+	}
+	switch want {
+	case "":
+		return true
+	case "closed":
+		return s == "closed" || s == "merged"
+	default:
+		return s == want
+	}
+}
+
+func sortedKeys(m map[int]PR) []int {
+	keys := make([]int, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	slices.Sort(keys)
+	return keys
 }
 
 func maxKey(m map[int]PR) int {
@@ -77,6 +126,8 @@ func matches(p PR, terms []string) bool {
 
 // PR implements Client.
 func (f *Fake) PR(_ context.Context, number int) (PR, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	if f.Err != nil {
 		return PR{}, f.Err
 	}
@@ -89,6 +140,8 @@ func (f *Fake) PR(_ context.Context, number int) (PR, error) {
 
 // PRDiff implements Client.
 func (f *Fake) PRDiff(_ context.Context, number int) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	if f.Err != nil {
 		return "", f.Err
 	}
@@ -101,16 +154,18 @@ func (f *Fake) PRDiff(_ context.Context, number int) (string, error) {
 
 // Threads implements Client.
 func (f *Fake) Threads(_ context.Context, number int) ([]Thread, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	return f.ThreadMap[number], f.Err
 }
 
 // SubmitReview implements Client.
 func (f *Fake) SubmitReview(_ context.Context, _ int, r ReviewSubmission) ([]model.Comment, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	if f.Err != nil {
 		return nil, f.Err
 	}
-	f.mu.Lock()
-	defer f.mu.Unlock()
 	f.Submitted = append(f.Submitted, r)
 	out := make([]model.Comment, len(r.Comments))
 	for i, c := range r.Comments {
@@ -123,6 +178,8 @@ func (f *Fake) SubmitReview(_ context.Context, _ int, r ReviewSubmission) ([]mod
 
 // Reply implements Client.
 func (f *Fake) Reply(_ context.Context, _ int, inReplyTo int64, body string) (model.Comment, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	return model.Comment{Body: body, InReplyTo: inReplyTo, Source: model.CommentUser, State: model.CommentPosted}, f.Err
 }
 
@@ -136,11 +193,11 @@ func (f *Fake) ResolveThread(_ context.Context, id string) error {
 
 // CreatePR implements Client.
 func (f *Fake) CreatePR(_ context.Context, p NewPR) (PR, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	if f.Err != nil {
 		return PR{}, f.Err
 	}
-	f.mu.Lock()
-	defer f.mu.Unlock()
 	f.Created = append(f.Created, p)
 	n := maxKey(f.PRs) + 1
 	pr := PR{Number: n, Title: p.Title, Body: p.Body, HeadRef: p.Head, BaseRef: p.Base, Draft: p.Draft, State: "open"}
@@ -152,4 +209,8 @@ func (f *Fake) CreatePR(_ context.Context, p NewPR) (PR, error) {
 }
 
 // CODEOWNERS implements Client.
-func (f *Fake) CODEOWNERS(context.Context, string) (string, error) { return f.Owners, f.Err }
+func (f *Fake) CODEOWNERS(context.Context, string) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.Owners, f.Err
+}

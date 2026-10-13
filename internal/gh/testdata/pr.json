@@ -1,0 +1,29 @@
+{
+  "data": {
+    "repository": {
+      "pullRequest": {
+        "number": 7,
+        "title": "Refactor parser",
+        "body": "Splits the parser.",
+        "author": {"login": "fredric"},
+        "state": "CLOSED",
+        "isDraft": false,
+        "headRefName": "refactor/parser",
+        "headRefOid": "7777777777777777777777777777777777777777",
+        "baseRefName": "main",
+        "baseRefOid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "url": "https://github.com/acme/widgets/pull/7",
+        "labels": {"nodes": [{"name": "refactor"}]},
+        "reviewRequests": {"nodes": [{"requestedReviewer": {"login": "dave"}}]},
+        "additions": 400,
+        "deletions": 210,
+        "changedFiles": 12,
+        "createdAt": "2026-10-05T09:00:00Z",
+        "updatedAt": "2026-10-06T09:00:00Z",
+        "viewerLatestReview": {"state": "COMMENTED"},
+        "comments": {"nodes": []},
+        "commits": {"nodes": [{"commit": {"statusCheckRollup": {"state": "PENDING"}}}]}
+      }
+    }
+  }
+}

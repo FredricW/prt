@@ -90,6 +90,24 @@ type Item struct {
 	Unpushed int `json:"unpushed,omitempty"`
 	// Ahead is the number of commits not on the default branch.
 	Ahead int `json:"ahead,omitempty"`
+
+	// Draft is true for draft PRs.
+	Draft bool `json:"draft,omitempty"`
+	// ViewerApproved is true when the current user has approved this PR
+	// (feeds "CI red on something you approved").
+	ViewerApproved bool `json:"viewerApproved,omitempty"`
+	// Additions and Deletions are line counts (from GitHub, or from the
+	// aggregate stage once the diff is parsed).
+	Additions int `json:"additions,omitempty"`
+	Deletions int `json:"deletions,omitempty"`
+	// Urgency is the picker sort key, copied from ItemAgg.Urgency by the
+	// pipeline (M0: placeholder terms only; full formula in M3).
+	Urgency float64 `json:"urgency,omitempty"`
+	// UrgencyQuartile is 0–4: filled cells of the picker's urgency bar,
+	// relative to the other items (computed by the daemon on Items()).
+	UrgencyQuartile int `json:"urgencyQuartile,omitempty"`
+	// Why is the top three urgency terms in words ("asked you · release · age").
+	Why string `json:"why,omitempty"`
 }
 
 // FileRole is the Jev-assigned role of a changed file.

@@ -1,0 +1,59 @@
+{
+  "data": {
+    "search": {
+      "pageInfo": {"endCursor": "Y3Vyc29yOjI=", "hasNextPage": true},
+      "nodes": [
+        {
+          "number": 1,
+          "title": "Add login flow",
+          "body": "Adds the login page.",
+          "author": {"login": "alice"},
+          "state": "OPEN",
+          "isDraft": false,
+          "headRefName": "feat/login",
+          "headRefOid": "1111111111111111111111111111111111111111",
+          "baseRefName": "main",
+          "baseRefOid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "url": "https://github.com/acme/widgets/pull/1",
+          "labels": {"nodes": [{"name": "feature"}, {"name": "auth"}]},
+          "reviewRequests": {"nodes": [
+            {"requestedReviewer": {"login": "fredric"}},
+            {"requestedReviewer": {}},
+            {"requestedReviewer": {"login": "bob"}}
+          ]},
+          "additions": 120,
+          "deletions": 8,
+          "changedFiles": 6,
+          "createdAt": "2026-10-01T09:00:00Z",
+          "updatedAt": "2026-10-12T15:30:00Z",
+          "viewerLatestReview": null,
+          "comments": {"nodes": [{"viewerDidAuthor": false}]},
+          "commits": {"nodes": [{"commit": {"statusCheckRollup": {"state": "SUCCESS"}}}]}
+        },
+        {
+          "number": 2,
+          "title": "Bump deps",
+          "body": "",
+          "author": {"login": "renovate"},
+          "state": "OPEN",
+          "isDraft": true,
+          "headRefName": "deps",
+          "headRefOid": "2222222222222222222222222222222222222222",
+          "baseRefName": "main",
+          "baseRefOid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "url": "https://github.com/acme/widgets/pull/2",
+          "labels": {"nodes": []},
+          "reviewRequests": {"nodes": []},
+          "additions": 10,
+          "deletions": 10,
+          "changedFiles": 2,
+          "createdAt": "2026-10-02T09:00:00Z",
+          "updatedAt": "2026-10-03T09:00:00Z",
+          "viewerLatestReview": {"state": "APPROVED"},
+          "comments": {"nodes": []},
+          "commits": {"nodes": [{"commit": {"statusCheckRollup": {"state": "FAILURE"}}}]}
+        }
+      ]
+    }
+  }
+}

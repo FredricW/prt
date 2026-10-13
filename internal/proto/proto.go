@@ -30,7 +30,9 @@ const (
 
 // Methods.
 const (
+	MethodDiscover  = "discover"  // {} → {}; refresh picker sources
 	MethodItems     = "items"     // → []model.Item
+	MethodCheckout  = "checkout"  // CheckoutParams → CheckoutResult
 	MethodDetail    = "detail"    // {itemId} → Detail
 	MethodRefresh   = "refresh"   // {itemId, fromStage?, force?} → {}
 	MethodAdd       = "add"       // {query} → model.Item
@@ -78,6 +80,20 @@ type ItemParams struct {
 	ItemID    string      `json:"itemId"`
 	FromStage model.Stage `json:"fromStage,omitempty"`
 	Force     bool        `json:"force,omitempty"`
+}
+
+// CheckoutParams is the params of MethodCheckout. Without Force, a dirty work
+// tree is not touched and CheckoutResult.Dirty is set so the UI can prompt.
+type CheckoutParams struct {
+	ItemID string `json:"itemId"`
+	Force  bool   `json:"force,omitempty"`
+}
+
+// CheckoutResult is the result of MethodCheckout.
+type CheckoutResult struct {
+	Ref        string `json:"ref,omitempty"`        // the ref checked out (or that would be)
+	Dirty      bool   `json:"dirty,omitempty"`      // work tree dirty; nothing done
+	CheckedOut bool   `json:"checkedOut,omitempty"` // checkout performed
 }
 
 // AddParams is the params of MethodAdd.

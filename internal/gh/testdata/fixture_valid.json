@@ -1,0 +1,11 @@
+{
+  "viewer": "fredric",
+  "repo": "acme/fixture",
+  "prs": [
+    {"number": 2, "title": "Bump deps", "state": "open", "headRef": "deps"},
+    {"number": 1, "title": "Add login", "state": "open", "headRef": "feat/login"}
+  ],
+  "diffs": {"1": "diff --git a/x b/x\n"},
+  "threads": {"1": [{"id": "T1", "path": "x", "line": 1, "side": "new", "resolved": false, "outdated": false, "comments": []}]},
+  "codeowners": "* @fredric\n"
+}

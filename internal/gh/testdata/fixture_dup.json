@@ -1,0 +1,8 @@
+{
+  "viewer": "fredric",
+  "repo": "acme/fixture",
+  "prs": [
+    {"number": 1, "title": "Add login"},
+    {"number": 1, "title": "Add login again"}
+  ]
+}

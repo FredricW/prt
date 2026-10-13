@@ -1,0 +1,6 @@
+{
+  "viewer": "fredric",
+  "repo": "acme/fixture",
+  "prs": [{"number": 1, "title": "Add login"}],
+  "diffs": {"one": "diff --git a/x b/x\n"}
+}

@@ -54,6 +54,17 @@ func FixtureRepo(t testing.TB) string {
 	return p
 }
 
+// FixturePRs returns testdata/fixtures/prs.json (the offline GitHub fixture
+// read by gh.LoadFixture), skipping the test if it does not exist yet.
+func FixturePRs(t testing.TB) string {
+	t.Helper()
+	p := Testdata(t, "fixtures", "prs.json")
+	if _, err := os.Stat(p); err != nil {
+		t.Skip("testdata/fixtures/prs.json not present")
+	}
+	return p
+}
+
 // RecordingsDir returns testdata/recordings/<kind> (e.g. "jev", "review").
 func RecordingsDir(t testing.TB, kind string) string {
 	t.Helper()

@@ -1,0 +1,33 @@
+{
+  "data": {
+    "search": {
+      "pageInfo": {"endCursor": "Y3Vyc29yOjM=", "hasNextPage": false},
+      "nodes": [
+        {
+          "number": 3,
+          "title": "Remove legacy exporter",
+          "body": "Deletes dead code.",
+          "author": {"login": "carol"},
+          "state": "MERGED",
+          "isDraft": false,
+          "headRefName": "chore/remove-exporter",
+          "headRefOid": "3333333333333333333333333333333333333333",
+          "baseRefName": "main",
+          "baseRefOid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "url": "https://github.com/acme/widgets/pull/3",
+          "labels": {"nodes": [{"name": "cleanup"}]},
+          "reviewRequests": {"nodes": []},
+          "additions": 0,
+          "deletions": 340,
+          "changedFiles": 4,
+          "createdAt": "2026-09-20T09:00:00Z",
+          "updatedAt": "2026-09-21T09:00:00Z",
+          "viewerLatestReview": null,
+          "comments": {"nodes": [{"viewerDidAuthor": false}, {"viewerDidAuthor": true}]},
+          "commits": {"nodes": [{"commit": {"statusCheckRollup": null}}]}
+        },
+        {}
+      ]
+    }
+  }
+}
