@@ -75,8 +75,12 @@ type UnitAgg struct {
 	EffectiveLines int       `json:"effectiveLines"`
 	Attention      Attention `json:"attention"`
 	Minutes        float64   `json:"minutes"`
-	// Unsure is true when any of the unit's labels has confidence below
-	// pipeline.unsure_below; such a unit is never skip and stays expanded.
+	// Unsure is true when any of the labels that drive the unit's attention
+	// and risk (depth, kind, behaviour, breaking, risk, covered) has a
+	// decision confidence below pipeline.unsure_below; such a unit is never
+	// skip and stays expanded. MinConfidence is the lowest of those
+	// confidences (M5.2: depth by the mass of its attention bucket, risk by
+	// the smaller side at thresholds 3 and 4; it feeds hot spots).
 	Unsure        bool    `json:"unsure"`
 	MinConfidence float64 `json:"minConfidence"`
 
@@ -369,7 +373,12 @@ type ItemAgg struct {
 	UnitsEyes      int                `json:"unitsEyes"`
 	UnitsSkim      int                `json:"unitsSkim"`
 	UnitsSkip      int                `json:"unitsSkip"`
-	Headlines      []Headline         `json:"headlines"`
+	// Headlines are the headline claims (breaking, contract, pii, weakened
+	// tests) at P ≥ 0.60 of their own question (M5.2): at most one
+	// breaking-or-contract row per unit, and
+	// external-contract rows (API shape, schema/migration, env/flag, event
+	// format) merged to one per file and kind.
+	Headlines []Headline `json:"headlines"`
 	// HeadlinesUnsure counts headline candidates left out of Headlines
 	// because their probability is below the headline threshold (M5.2:
 	// only P ≥ 0.60 claims are listed); the Overview says how many.
@@ -385,7 +394,7 @@ type ItemAgg struct {
 	Undocumented    []string       `json:"undocumented"`    // unit ids
 	Shape           string         `json:"shape,omitempty"` // item "shape" label, when answered
 	ShapeP          float64        `json:"shapeP,omitempty"`
-	Unsure          int            `json:"unsure"`                // labels with confidence < unsure_below
+	Unsure          int            `json:"unsure"`                // attention/risk labels with decision confidence < unsure_below (M5.2)
 	UnsureUnits     []string       `json:"unsureUnits,omitempty"` // unit ids kept expanded
 	Files           []FileAgg      `json:"files,omitempty"`       // owned first, then by attention
 	Slice           []SliceRow     `json:"slice,omitempty"`       // owned modules first, then the rest

@@ -13,8 +13,9 @@ every number on screen traces back to a label, a rule or a git fact.
 > submission, create PR, "Since you looked") and M5 (search-and-add,
 > command line, branch states, Architecture tab, side-by-side diffs, syntax
 > colour, the design canvas look) and M5.1 (auto-review strategy, stop and
-> resume, settings page, command-line completion) are done; M6 (overlap view) is not
-> started. See
+> resume, settings page, command-line completion) and M5.2 (measured label
+> quality, instant open, capped Overview blocks, API / Database / Flags change
+> blocks) are done; M6 (overlap view) is not started. See
 > [`docs/spec.md`](docs/spec.md) for the design and
 > [`CHANGELOG.md`](CHANGELOG.md) for what works today.
 
@@ -56,6 +57,14 @@ prt                 # picker on the left, the selected PR/branch on the right
 
 - `j`/`k` move through the picker, `enter` focuses the diff, `esc` goes back.
 - `1` overview, `2` code; `]`/`[` jump between files in the diff.
+- The Overview is a summary: every block shows a few rows and "+N more".
+  `J`/`K` (or `]`/`[`) focus a block, `enter`/`space` (or a click on
+  "+N more") open its full list, `enter` there jumps to the unit and `esc`
+  closes. Headlines list only claims with P ≥ .60 ("+N below .60 (unsure)").
+  The API endpoints, Database and Feature flags & config blocks list routes,
+  schema changes, flags, env vars and config keys added, changed or removed.
+  An item you opened before shows at once; while it is re-analysed the old
+  analysis stays up with `↻ updating review · <stage>`.
 - `o` opens the PR on GitHub, `c` checks it out (asks first if your tree is dirty).
 - On the Code page: `n`/`p` next/previous unit, `J`/`K` next/previous file,
   `f` opens the filters bar (then `1`–`9`, `0` toggle filters; needs eyes,
@@ -175,11 +184,12 @@ Both run with `--offline` and replay the answers recorded in
 `testdata/recordings` (`--jev-replay`, `--embed-replay`, `--review-replay`),
 so no model is called but the fixture PRs show real labels, groups, reviews
 and TL;DRs. They also pass `--drafts testdata/fixtures/drafts.json`, which
-seeds a few local draft comments (drafts you already have are kept). Anything not recorded (the local branch) shows the `labels
-unavailable` mode; most deep groups of the larger PRs stay queued over the
-default $0.40 per-item cost cap. `make demo` runs under the default
-`needs-you` strategy: PRs in Needs you are analysed automatically, while
-#102 (Yours) and the fixture branch show `not analysed` until you press `r`.
+seeds a few local draft comments (drafts you already have are kept). Every
+fixture item, the local branch included, has recorded answers, and every
+routed group fits the default $0.40 per-item cost cap. `make demo` runs under
+the default `needs-you` strategy: PRs in Needs you are analysed
+automatically, while #102 (Yours), #106 (Involved) and the fixture branch
+show `not analysed` until you press `r`.
 `make snapshot` renders through a synchronous run that ignores the strategy,
 so it analyses every item. In this replay mode only `.git/prt/` is read, so
 the settings page saves to the repo scope only, and its GitHub line says the
@@ -197,6 +207,7 @@ make test       # go test ./...
 make lint       # golangci-lint v2
 make check      # vet + test + lint; must pass before every commit
 make fixtures   # regenerate testdata/fixture-repo
+make quality    # label-quality scoreboard against testdata/groundtruth (docs/QUALITY.md)
 make record-jev-dry  # count the Jev requests a recording would send (free)
 make record-jev      # record Jev answers for the fixtures (JEV_API_KEY, $1 cap)
 make record-review-dry  # count the review requests and their upper-bound cost (free)

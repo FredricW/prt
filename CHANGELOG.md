@@ -429,6 +429,91 @@ exercised against `gh.Fake`.
   demo/snapshot shows it as "labels unavailable" (replay miss degrades, by
   design).
 
+### M5.2 — label quality, instant open and overview blocks (2026-10-13)
+
+User-requested changes beyond the spec (recorded in DECISIONS as user
+decisions). Gate: `make check` (vet, also `-tags live`; all tests; lint
+0 issues) green on every commit, each checked in a separate worktree before
+it was made; `make snapshot` renders all six items. Model spend this
+milestone: Jev 330 calls $0.0333, Anthropic 44 calls $0.5731, Ollama 25
+embeddings $0; cumulative $1.4941 of the $5.00 cap (Anthropic $1.4301 of
+$3.00, Jev $0.0640 of $1.00). No GitHub writes.
+
+#### Added
+
+- **Label-quality scoreboard** (`make quality`, `internal/quality`,
+  `tools/quality`): runs the pipeline offline over the six fixture items with
+  strict replay and scores it against the hand-written ground truth in
+  `testdata/groundtruth/` (needs-eyes precision/recall, headline count and
+  precision, hot spots in top 3, fidelity, unsure share, lines to read).
+  Baseline and after boards, per-item deltas and remaining gaps are in
+  `docs/QUALITY.md`; `TestScoreboardRegression` pins the board.
+- **Structured change blocks** on the Overview: API endpoints, Database and
+  Feature flags & config, from the new `internal/surface` detectors (Go,
+  TS/JS and Python web frameworks with router prefixes; SQL DDL, ORM
+  migrations and schema files; flag SDKs, custom flag helpers, env vars and
+  config keys) plus Jev `contract` labels. Explicit empty states; enter jumps
+  to the unit.
+- **Sixth fixture PR #106** (user preferences API: SQL migration, added and
+  removed endpoints, a breaking route signature, a feature flag, env vars)
+  with blind ground truth and recorded Jev answers, embeddings and reviews.
+- **Overview as an overview:** every list block is capped with a "+N more"
+  line; `J`/`K` (or `]`/`[`) focus a block, enter/space or a click on
+  "+N more" opens its full list in an overlay; Headlines adds
+  "+N below .60 (unsure)".
+- **Coloured composition bar and minimap legends** (kind colours from the v2
+  design); without colour the output is byte-identical to before.
+- **Instant open:** the TUI keeps the last 16 Details, paints a re-opened item
+  from the cache, revalidates in the background and loads labels on demand.
+  During a re-run the previous analysis stays on screen with
+  `↻ updating review · <stage>` until the new aggregate lands.
+- `daemon.Client.DetailOf` (lean Detail without labels, `Detail.Run`) and
+  `Labels`; `recordjev --unused [--prune]`.
+
+#### Changed
+
+- **Label tuning** (no item's firm metric worse than its baseline):
+  headlines only at P ≥ 0.60 (one row per unit, external contracts merged per
+  file; headline rows 118 → 10 over the five baseline items, precision
+  0.17 → 0.60), "unsure" over the attention and risk labels only (unsure
+  units 1.00 → 0.78), attention mapping (eyes recall 5/8 → 7/8; lines to read
+  0.50 → 0.39), and reworded `breaking`, `contract`, `depth` and
+  `pii_or_secret` questions (Jev re-recorded).
+- **Review output caps** fast 1024 → 4096, deep 2048 → 4096, TL;DR
+  1024 → 2048; a review cut off at `max_tokens` is retried once with the cap
+  doubled (replayable). All reviews re-recorded.
+- **Faster Detail:** an indexed per-item label query (store migration 3),
+  4 read-only store connections, a lean Detail (#101: 0.97 ms in-process,
+  206 KB, was 8.8 ms and 811 KB), label pruning, run-log pruning (5 runs),
+  and discovery no longer rewrites unchanged items every tick.
+- **Reloads are coalesced:** one `r` on #101 makes 3 Detail calls (was 70),
+  never more than 1 in flight (was 38). Numbers in
+  `docs/m52-open-latency.md`.
+- `make snapshot` renders six items so #106 is shown.
+
+#### Fixed
+
+- Clicking a tab opened the Code tab whatever was clicked; the tab bar is now
+  hit-tested from what it draws, with a regression test per tab at several
+  widths.
+- `Resume` after a stopped Pipeline-page `r` (or a forced `r`) keeps its
+  `FromStage`/`Force` and re-reviews only the groups it had not reached
+  (M5.1 known limit).
+- The branch's fast review no longer truncates; `TestRecordedBranchReviewReplay`
+  passes and `docs/BLOCKED.md` is gone.
+- The $0.40 cost cap does not leave deep groups queued: every routed group of
+  every fixture item runs under the cap (the old note predated the confirmed
+  prices); the default is unchanged.
+
+#### Known limits
+
+- Lines to read is above the spec's 1/3 on #101 (0.56), #106 (0.51) and the
+  branch (0.50); hot spots hit 3 of 13 top-three slots; see `docs/QUALITY.md`.
+- Change-surface gaps (mounts outside the changed files, GraphQL/gRPC/OpenAPI,
+  YAML config keys and others) are listed in DECISIONS.
+- During a re-run on a new head, comments may not line up with the
+  snapshot's old diff until the switch.
+
 ### M5.1 — user-requested changes (released 2026-10-13)
 
 Release gate: `make check` (vet, tests, lint: 0 issues) and `make snapshot`

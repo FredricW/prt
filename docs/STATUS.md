@@ -2,13 +2,11 @@
 
 ## Summary
 
-M0–M5 are built per `docs/spec.md`. On top of that is the M5.1 you asked for:
-- an auto-review strategy, default `needs-you`. Branches are never auto-reviewed unless the strategy is `all`.
-- stop/resume
-- a settings page
-- command-line completion
+M0–M5 are built per `docs/spec.md`. On top of that is the M5.1 and M5.2 you asked for:
+- M5.1: an auto-review strategy, default `needs-you` (branches are never auto-reviewed unless the strategy is `all`); stop/resume; a settings page; command-line completion.
+- M5.2: measured and tuned label quality (`make quality`), instant open of analysed items with stale-while-revalidate, the tab-click fix, capped Overview blocks with a full-list overlay, a coloured composition bar, API / Database / Flags change blocks, a sixth fixture PR, and the truncated fast review fixed and re-recorded.
 
-M6 (overlap) is deliberately deferred because the spec marks it "later". The repo is `github.com/fredricw/prt` (`main`, pushed). `make check` (vet, also `-tags live`; tests; golangci-lint v2) is green at HEAD. Real model spend so far is **$0.8847 of the $5.00 cap**. One item is blocked: recording the Anthropic calls for the fixture branch (see Blocked).
+M6 (overlap) is deliberately deferred because the spec marks it "later". The repo is `github.com/fredricw/prt` (`main`, pushed). `make check` (vet, also `-tags live`; tests; golangci-lint v2) is green at HEAD. Real model spend so far is **$1.4941 of the $5.00 cap**. Nothing is blocked.
 
 Details: `CHANGELOG.md` (per milestone), `docs/DECISIONS.md` (every call made), `docs/ARCHITECTURE.md` (packages).
 
@@ -38,7 +36,7 @@ Details: `CHANGELOG.md` (per milestone), `docs/DECISIONS.md` (every call made), 
   - Jev recorder with a $1 cap.
 - Partial:
   - Some catalogue questions are marked `deferred` and never sent.
-  - With real answers, Headlines lists about 85 rows on #101 and nearly every unit is "unsure". This follows the spec literally; see DECISIONS "Spec consequences seen with real labels".
+  - With real answers, Headlines listed about 85 rows on #101 and nearly every unit was "unsure" (spec followed literally). M5.2 tuned this: 6 rows on #101, unsure units 0.72 overall (see `docs/QUALITY.md`).
 
 ### M2: groups
 - Done:
@@ -62,8 +60,8 @@ Details: `CHANGELOG.md` (per milestone), `docs/DECISIONS.md` (every call made), 
   - Findings on the Code page, TL;DR, AI group titles.
   - Urgency ranking with the `w` weights overlay; picker `s` sort.
 - Partial:
-  - The cap bounds *expected* cost, not worst case. It can overshoot by about $0.03 per deep call.
-  - In the demo, most deep groups of the larger PRs stay queued over the $0.40 cap.
+  - The cap bounds *expected* cost, not worst case. One deep call can cost more than its reservation.
+  - (Resolved in M5.2: the old "most deep groups stay queued" note predated the confirmed prices. Every routed group of every fixture item now runs under the $0.40 cap.)
 
 ### M4: comments
 - Done:
@@ -90,7 +88,7 @@ Details: `CHANGELOG.md` (per milestone), `docs/DECISIONS.md` (every call made), 
 - Deferred:
   - The overlap view: `space` only marks items (M6).
   - Colour cycling on the Architecture tab.
-  - Branch review recordings are blocked.
+  - (Branch review recordings: done in M5.2.)
 
 ### M5.1: your requested changes
 - Done:
@@ -102,23 +100,35 @@ Details: `CHANGELOG.md` (per milestone), `docs/DECISIONS.md` (every call made), 
   - `:auto`, `:stop [all]`, `:resume [all]`, `:settings` with tab completion.
   - Two rounds of review fixes.
 - Partial:
-  - Resuming after a stopped Pipeline-page `r` on a stage (or a forced `r`) loses `FromStage`/`Force`. It continues from the caches instead.
+  - (Fixed in M5.2: resuming after a stopped Pipeline-page `r` keeps `FromStage`/`Force`.)
   - `prt.questions.toml` edits apply only at the next daemon start.
   - `stopped at <stage> · r to resume` is cut short in the 36-column picker.
 - No model spend, no GitHub writes.
 
+### M5.2: your requested changes
+- Done:
+  - **Label quality, measured.** `make quality` runs the pipeline offline over the six fixture items and scores it against hand-written, blind ground truth (`testdata/groundtruth/`). Tuning: headlines only at P ≥ 0.60 (118 → 10 headline rows over the five baseline items; precision 0.17 → 0.60), "unsure" over the attention and risk labels only (unsure units 1.00 → 0.78 on the baseline items), attention mapping (eyes recall 5/8 → 7/8), four reworded questions. No item's firm metric is worse than its baseline. Method and boards: `docs/QUALITY.md`.
+  - **Instant open.** The TUI paints a re-opened item from a 16-item cache (about 1.7 ms p50) and never shows "loading…" for it; labels load on demand. One `r` on #101 now makes 3 Detail calls instead of 70. During a re-run the old analysis stays up with `↻ updating review · <stage>`. The daemon serves a lean Detail (#101: 0.97 ms, was 8.8 ms), with an indexed label query, a read pool, label and run-log pruning, and no discovery churn. Numbers: `docs/m52-open-latency.md`.
+  - **Tab clicks** hit the tab you click, tested per tab at five widths.
+  - **Overview blocks** are capped with "+N more"; `J`/`K` (or `]`/`[`) focus a block and enter opens its full list.
+  - **Coloured composition bar and minimap legend**; plain output unchanged without colour.
+  - **API endpoints, Database, Feature flags & config** blocks from a new detector package (`internal/surface`) plus Jev contract labels.
+  - **Fixture PR #106** with a migration, endpoints and a flag; all its answers recorded.
+  - **Truncated fast review** fixed: higher output caps plus one retry with a doubled cap; all reviews re-recorded; the branch replay test passes.
+  - Resume keeps `FromStage`/`Force`.
+- Partial:
+  - Lines to read is above the spec's 1/3 on #101 (0.56), #106 (0.51) and the branch (0.50). Hot spots hit 3 of 13 top-three slots. #101 keeps 3 false headline rows; #106 misses its flag headline.
+  - The $0.40 cap is unchanged: it does not leave deep groups queued on the fixtures.
+- Spend: Jev $0.0333, Anthropic $0.5731, Ollama $0. No GitHub writes.
+
 ### Not done
 - **M6: overlap.** Deferred per the spec. The data model leaves room for it: content-based unit ids, and `semantic_conflict` is reserved. A design exists in `docs/design/Overlap.dc.html` and `docs/design/v2/Overlap.dc.html`.
 - **ONNX embedder.** Still a stub that returns `ErrUnavailable`. `onnx:` specs fall back to Ollama.
-- **Spec "Done means" targets.** These are not measured: labels under 2 s and reviews under 10 s on a 400-line PR, and "reads under 1/3 of lines". There is no benchmark or latency test in the repo.
+- **Spec "Done means" timing targets.** Labels under 2 s and reviews under 10 s on a 400-line PR are not measured. "Reads under 1/3 of lines" is now measured by `make quality` against hand-written ground truth, and is not met on #101, #106 or the branch (see M5.2).
 
 ## Blocked
 
-From `docs/BLOCKED.md`, one open item:
-- **Branch review recordings (M5).** The 8 Anthropic calls for `05-spike-dark-mode` were never recorded: titles, a fast review, TL;DR and PR title, with an upper bound of $0.1983.
-  - **Cause:** Anthropic returned HTTP 400 "credit balance is too low". This happened twice: at the M5 build and again at the release gate. Nothing was spent.
-  - **Effect:** the demo/snapshot show "title failed: review: no recording …" and one failed fast review on that branch. The branch replay test skips.
-  - **Fix:** top up the account behind `PRT_ANTHROPIC_API_KEY`, then run `make record-review` and `make snapshot`. Commit `testdata/recordings/review/` and `SPEND.md`.
+Nothing. The M5 branch-review blocker was resolved in M5.2 and `docs/BLOCKED.md` is deleted.
 
 Also not a blocker but missing: the ONNX embedder is a stub, and Ollama is used instead.
 
@@ -126,10 +136,10 @@ Also not a blocker but missing: the ONNX embedder is a stub, and Ollama is used 
 
 | Service | Calls | Spend | Service cap |
 | --- | --- | --- | --- |
-| Jev (AI Gateway) | 515 | $0.0307 | $1.00 |
-| Anthropic | 54 | $0.8540 | $3.00 |
-| Ollama (local) | 5 | $0.0000 | — |
-| **Total** | | **$0.8847** | **$5.00 overall** |
+| Jev (AI Gateway) | 845 | $0.0640 | $1.00 |
+| Anthropic | 105 | $1.4301 | $3.00 |
+| Ollama (local) | 6 | $0.0000 | — |
+| **Total** | | **$1.4941** | **$5.00 overall** |
 
 The early Anthropic rows were priced at assumed rates and over-count somewhat (CHANGELOG M3).
 
@@ -149,7 +159,8 @@ The early Anthropic rows were priced at assumed rates and over-count somewhat (C
 - `make lint`.
 - `make check`: vet, tests and lint; must pass before every commit.
 - `make demo`: interactive, offline, replays the recordings.
-- `make snapshot`: prints screens to stdout.
+- `make snapshot`: prints screens to stdout (six items).
+- `make quality`: prints the label-quality scoreboard.
 - `make fixtures`.
 - `make record-{jev,review,embed}[-dry]`.
 
@@ -168,6 +179,7 @@ The early Anthropic rows were priced at assumed rates and over-count somewhat (C
 
 **Key commands** (from README and the keymap; `?` lists them all):
 - Navigation: `j`/`k` move the picker, `enter`/`esc`, `1`/`2`/`3` switch Overview/Code/Architecture, `P` opens the Pipeline page, `r` re-runs or resumes, `q` quits.
+- Overview: `J`/`K` (or `]`/`[`) focus a block, `enter`/`space` open its full list, `esc` closes; `L` shows raw labels.
 - Code page: `g` switches by file / by change, `n`/`p` and `J`/`K` move, `f` filters, `z` expands noise, `L` shows labels, `u` toggles side-by-side, `C` comments, `S` submits.
 - Stop/resume:
   - `ctrl+x` stops the selected item.
@@ -190,22 +202,19 @@ The early Anthropic rows were priced at assumed rates and over-count somewhat (C
 2. **Jev goes through Vercel AI Gateway** (`/v1/evaluate`, model `typesafe-ai/jev`). The spec's `models.jev_endpoint` became `models.jev_base_url`.
 3. **The Anthropic key is `PRT_ANTHROPIC_API_KEY` only**, with no fallback to `ANTHROPIC_API_KEY`, because of the billing switch.
 4. **`auto_review` defaults to `needs-you`.** This overrides the spec's "analyse everything in urgency order", and branches are reviewed only under `all`. It is recorded as your override in DECISIONS.
-5. **M6 is deferred.** The scope was M0–M5 plus M5.1.
+5. **M6 is deferred.** The scope was M0–M5 plus M5.1 and M5.2.
 6. **Embeddings use Ollama `embeddinggemma-2`, with ONNX stubbed.** Because this model's cosines are compressed, `embed_min_cosine` is 0.88 for the fixtures (spec default 0.72).
-7. **Spec followed despite poor results with real labels.** Headlines list every breaking/contract unit, and almost every unit is "unsure". Candidate fixes are in DECISIONS.
-8. **Per-item cost cap stays at $0.40 and is charged at expected output length.** Most deep groups on the big fixture PRs stay queued.
+7. **Label tuning narrows the spec (your M5.2 request).** Headlines need P ≥ 0.60 and give one row per unit; "unsure" reads only the attention and risk labels. The ground truth was written blind before tuning, but it covers six fixture items only, so the tuning may still fit them too closely.
+8. **Per-item cost cap stays at $0.40 and is charged at expected output length.** Every routed group runs on the fixtures; a single deep call can cost more than its reservation.
+9. **Change blocks merge code detection with Jev.** A Jev-only entry needs P ≥ 0.60; test files never count; client calls (`fetch`, axios) are not endpoints.
 
 ## Three things I would do next
 
 1. **Validate end-to-end on a real repo and measure "Done means".** Run it on a real repo with real PRs and both keys set, and time a 400-line mixed PR: labels under 2 s and reviews under 10 s. Add a benchmark or timing log for this.
-   - Do a reading study for the "under 1/3 of lines" claim.
+   - Write ground truth for a few real PRs and run `make quality`-style scoring on them, to check the tuning beyond the fixtures.
    - Make the first real GitHub review submission on a test PR, since only `gh.Fake` was exercised.
-   - This is the biggest unknown: everything so far ran on a five-branch fixture.
-2. **Fix the label-signal problems seen with real Jev answers.** These are probably what decides whether the product feels useful:
-   - Show only headlines with P ≥ 0.60 or grouped counts.
-   - Compute "unsure" over the attention-driving labels only.
-   - Revisit the $0.40 cap so deep reviews actually complete.
+   - This is the biggest unknown: everything so far ran on a six-item fixture.
+2. **Bring lines to read under 1/3 and fix hot-spot ranking.** #101, #106 and the branch are at 0.50–0.56 lines to read, mostly feature code Jev calls `read`; the attention mapping is the lever. Hot spots hit 3 of 13 slots because the spec's formula multiplies by (1 − covered), which ranks covered but risky units low; that needs a spec-level call.
 3. **Implement the ONNX embedder, then M6 overlap.**
    - Pick a licence-compatible ~130M code model (a spec open question) to remove the Ollama dependency and get sub-second batches.
    - Then build the overlap view from `docs/design/v2/Overlap.dc.html` on the existing content-based unit ids: multi-select is already marked with `space`, plus cross-item embeddings, `semantic_conflict` pairs and merge order.
-   - Small first step: top up Anthropic credit and record the missing branch reviews.
