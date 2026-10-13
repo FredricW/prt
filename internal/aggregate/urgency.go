@@ -28,15 +28,25 @@ type labelTerms struct {
 // labelTermsOf reads the label factors from an aggregate record; a nil
 // record (no stored aggregate) yields zeros. Unknown labels already read as
 // 0 in the record, so they contribute nothing.
+//
+// The breaking term counts the record's breaking headline rows, the units
+// the Overview lists as breaking and the picker counts (⚠N): P(breaking) ≥
+// 0.60 on a unit that can carry a contract (not a test, noise or a
+// dependency bump; unitHeadlines). So "why: breaking" never rests on a
+// breaking answer the Overview does not show. UnitAgg.Breaking (P ≥ 0.5,
+// any unit) still drives GroupAgg.Breaking for routing and the callers
+// context, which err on the side of a closer look.
 func labelTermsOf(a *model.ItemAgg) labelTerms {
 	if a == nil {
 		return labelTerms{}
 	}
 	breaking, relevance := 0, 0.0
-	for _, u := range a.Units {
-		if u.Breaking {
+	for _, h := range a.Headlines {
+		if h.Kind == headlineBreaking {
 			breaking++
 		}
+	}
+	for _, u := range a.Units {
 		if !u.Noise {
 			relevance = max(relevance, u.Relevance)
 		}

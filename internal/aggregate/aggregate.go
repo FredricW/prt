@@ -19,7 +19,8 @@
 //
 // M5.2 (measured with internal/quality, docs/QUALITY.md):
 //   - headlines list a claim only when its own question is at least 0.60
-//     likely (candidates down to 0.50 count in HeadlinesUnsure), at most
+//     likely (candidates down to 0.50 are kept in HeadlineCandidates, one
+//     per unit without a row, and counted in HeadlinesUnsure), at most
 //     one breaking-or-contract row per unit, never for tests, noise or
 //     dependency units, no row for a non-breaking signature change, and one
 //     external-contract row per file and kind (unitHeadlines,
@@ -134,7 +135,8 @@ func Item(in Input) model.ItemAgg {
 		LabelsMissing:  in.LabelsMissing,
 		Branch:         in.Branch,
 	}
-	agg.Headlines, agg.HeadlinesUnsure = headlines(us)
+	agg.Headlines, agg.HeadlineCandidates = headlines(us)
+	agg.HeadlinesUnsure = len(agg.HeadlineCandidates)
 	for _, f := range us {
 		countUnit(&agg, f)
 	}

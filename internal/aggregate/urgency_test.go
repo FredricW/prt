@@ -18,11 +18,11 @@ func termValue(terms []model.UrgencyTerm, name string) (float64, bool) {
 	return 0, false
 }
 
-// breakingUnits returns n units labelled breaking.
-func breakingUnits(n int) []model.UnitAgg {
-	out := make([]model.UnitAgg, n)
+// breakingRows returns n breaking headline rows.
+func breakingRows(n int) []model.Headline {
+	out := make([]model.Headline, n)
 	for i := range out {
-		out[i] = model.UnitAgg{Breaking: true}
+		out[i] = model.Headline{Kind: headlineBreaking}
 	}
 	return out
 }
@@ -36,9 +36,11 @@ func TestUrgencyLabelTerms(t *testing.T) {
 		Units: []model.UnitAgg{
 			{Breaking: true, Relevance: 2.5},
 			{Relevance: 3.5},
-			{Noise: true, Breaking: true, Relevance: 5}, // noise: relevance ignored, breaking counted
+			{Noise: true, Breaking: true, Relevance: 5}, // noise: relevance ignored, not a breaking row
 			{BreakingUnknown: true},                     // unknown: claims nothing
 		},
+		// The breaking term counts the breaking headline rows only.
+		Headlines: []model.Headline{{Kind: headlineBreaking}, {Kind: "api shape"}, {Kind: headlineBreaking}},
 	}
 	type want struct{ breaking, risk, testGap, relevance float64 }
 	tests := []struct {
@@ -53,8 +55,9 @@ func TestUrgencyLabelTerms(t *testing.T) {
 		{"branch with prior", branch, prior, want{2, 4, 2, 3.5}, []string{"w_requested", "w_release", "w_ci_red"}, []string{"w_unpushed"}},
 		{"no prior", pr, nil, want{}, nil, nil},
 		{"unknown labels", pr, &model.ItemAgg{Units: []model.UnitAgg{{BreakingUnknown: true, CoveredUnknown: true}}}, want{}, nil, nil},
-		{"breaking bound", pr, &model.ItemAgg{Units: breakingUnits(35)}, want{breaking: maxBreakingTerm}, nil, nil},
-		{"breaking below bound", pr, &model.ItemAgg{Units: breakingUnits(2)}, want{breaking: 2}, nil, nil},
+		{"breaking bound", pr, &model.ItemAgg{Headlines: breakingRows(35)}, want{breaking: maxBreakingTerm}, nil, nil},
+		{"breaking below bound", pr, &model.ItemAgg{Headlines: breakingRows(2)}, want{breaking: 2}, nil, nil},
+		{"breaking units without rows", pr, &model.ItemAgg{Units: []model.UnitAgg{{Breaking: true}, {Breaking: true}}}, want{}, nil, nil},
 		{"only noise relevance", branch, &model.ItemAgg{Units: []model.UnitAgg{{Noise: true, Relevance: 4}}}, want{}, nil, nil},
 	}
 	for _, tc := range tests {

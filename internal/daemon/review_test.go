@@ -430,7 +430,10 @@ func TestDiscoveryKeepsLabelUrgencyTerms(t *testing.T) {
 	it := branchItem("a", 0)
 	it.State, it.AnalysedSHA = model.StateReady, it.HeadSHA
 	put(t, st, it)
-	agg := model.ItemAgg{ItemID: it.ID, Minutes: 2, RiskMax: 5, TestGap: 2, Units: []model.UnitAgg{{UnitID: "u1", Breaking: true, Relevance: 4}}}
+	// The breaking term counts breaking headline rows (aggregate
+	// labelTermsOf), as an aggregate the pipeline writes carries them.
+	agg := model.ItemAgg{ItemID: it.ID, Minutes: 2, RiskMax: 5, TestGap: 2, Units: []model.UnitAgg{{UnitID: "u1", Breaking: true, BreakingP: 0.8, Relevance: 4}},
+		Headlines: []model.Headline{{UnitID: "u1", Kind: "breaking", P: 0.8}}}
 	if err := st.PutAgg(ctx, agg); err != nil {
 		t.Fatal(err)
 	}
