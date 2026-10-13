@@ -6,7 +6,23 @@ on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); milestones follow
 
 ## [Unreleased]
 
-### M0 — skeleton
+### M0 — skeleton (released 2026-10-13)
+
+Release gate: `go build ./...`, `go vet ./...`, `make lint` (0 issues),
+`make test` and `make snapshot` all green on `a3062d3`+; `make demo` runs the
+TUI offline against `testdata/fixture-repo` with `testdata/fixtures/prs.json`.
+
+- **Shipped:** module and tooling, boundary interfaces with fakes (git,
+  GitHub, Jev, embeddings, reviewer, store), diff parser, daemon + socket
+  protocol, discovery and urgency placeholder, picker / Overview / Code TUI,
+  fixture repo with the four synthetic PRs plus a local branch.
+- **Deferred:** Jev/LLM recordings under `testdata/recordings/` move to the
+  first M1 step (request shape is defined by M1; see DECISIONS.md). ONNX
+  embedder is a stub with a TODO; the Ollama adapter is the working path.
+- **Blocked:** nothing.
+- **Tag note:** the `m0` tag was created (and pushed) at `7d27b45`, before
+  the round-2 review fixes below. It was not moved; `main` at the
+  "docs: changelog for M0" commit is the complete M0.
 
 #### Added
 
