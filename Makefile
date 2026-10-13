@@ -7,7 +7,7 @@ FIXTURE_PRS  := testdata/fixtures/prs.json
 # Fixed clock for snapshots so ages are byte-stable.
 SNAPSHOT_NOW := 2026-10-13T12:00:00Z
 
-.PHONY: build test lint check demo fixtures snapshot record-jev record-jev-dry record-embed
+.PHONY: build test lint check demo fixtures snapshot record-jev record-jev-dry record-review record-review-dry record-embed
 
 build:
 	CGO_ENABLED=1 go build -o bin/prt ./cmd/prt
@@ -38,9 +38,10 @@ $(FIXTURE_REPO)/.git: $(FIXTURE_DEPS)
 	touch $@
 
 RECORDINGS := testdata/recordings
-# Offline demo/snapshot replay the recorded Jev answers and embeddings; a
-# replay miss degrades to "labels unavailable" / "no embeddings".
-REPLAY := --jev-replay $(RECORDINGS)/jev --embed-replay $(RECORDINGS)/embed
+# Offline demo/snapshot replay the recorded Jev answers, embeddings and
+# reviews; a replay miss degrades to "labels unavailable" / "no embeddings" /
+# an unreviewed group.
+REPLAY := --jev-replay $(RECORDINGS)/jev --embed-replay $(RECORDINGS)/embed --review-replay $(RECORDINGS)/review
 
 # Interactive TUI against the fixture repo, fully offline.
 demo: build $(FIXTURE_REPO)/.git
@@ -55,6 +56,17 @@ record-jev:
 # Free dry run: counts the requests record-jev would send; no network.
 record-jev-dry:
 	go run ./tools/recordjev --embed replay
+
+# Record real Anthropic reviews, TL;DRs and group titles for the fixture PRs
+# into testdata/recordings/review (needs PRT_ANTHROPIC_API_KEY; spend capped
+# at $3.00 for anthropic, $5.00 project-wide; ledger in SPEND.md). Jev answers
+# and embeddings come from the existing recordings.
+record-review:
+	go run ./tools/recordjev --live --review --embed replay
+
+# Free dry run: counts the review requests and their upper-bound cost; no network.
+record-review-dry:
+	go run ./tools/recordjev --review --embed replay
 
 # Record Ollama embeddings for every fixture unit into testdata/recordings/embed
 # (local and free; needs Ollama with embeddinggemma-2).

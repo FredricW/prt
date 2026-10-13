@@ -2,8 +2,8 @@
 //
 // Usage:
 //
-//	prt [--repo DIR] [--no-daemon] [--offline] [--fixtures FILE] [--jev-replay DIR] [--embed-replay DIR] [--snapshot [--width N --height N --now TIME]]
-//	prt daemon [--repo DIR] [--offline] [--fixtures FILE] [--jev-replay DIR] [--embed-replay DIR]
+//	prt [--repo DIR] [--no-daemon] [--offline] [--fixtures FILE] [--jev-replay DIR] [--embed-replay DIR] [--review-replay DIR] [--snapshot [--width N --height N --now TIME]]
+//	prt daemon [--repo DIR] [--offline] [--fixtures FILE] [--jev-replay DIR] [--embed-replay DIR] [--review-replay DIR]
 package main
 
 import (
@@ -56,8 +56,9 @@ type options struct {
 	maxItems int
 	// jevReplay / embedReplay replace Jev and the embedder with recorded
 	// answers (make demo / make snapshot); see replayDeps.
-	jevReplay   string
-	embedReplay string
+	jevReplay    string
+	embedReplay  string
+	reviewReplay string
 	// nowFn is the parsed --now clock (nil: wall clock). setup hands it to
 	// the pipeline too, so urgency (age term), quartiles and order use the
 	// same clock as the TUI and snapshots do not drift.
@@ -84,6 +85,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	fs.StringVar(&o.now, "now", "", "snapshot: fixed current time (RFC 3339) so ages are stable")
 	fs.StringVar(&o.jevReplay, "jev-replay", "", "answer Jev from recordings in this directory (works with --offline; a miss means labels unavailable)")
 	fs.StringVar(&o.embedReplay, "embed-replay", "", "embed from recordings in this directory (works with --offline; a miss skips embeddings)")
+	fs.StringVar(&o.reviewReplay, "review-replay", "", "answer the fast/deep reviewers from recordings in this directory (works with --offline; a miss leaves the group unreviewed)")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
@@ -219,7 +221,7 @@ func setup(ctx context.Context, o options) (*environment, error) {
 	env.closers = append(env.closers, func() { _ = st.Close() })
 
 	dirs := config.Dirs(gitDir)
-	if o.jevReplay != "" || o.embedReplay != "" {
+	if o.jevReplay != "" || o.embedReplay != "" || o.reviewReplay != "" {
 		// Recorded request keys depend on config and questions: read only
 		// the repo's own .git/prt (as the recorder does), never XDG.
 		dirs = []string{prtDir}
@@ -248,7 +250,7 @@ func setup(ctx context.Context, o options) (*environment, error) {
 		logger.Warn("config", "warning", w)
 	}
 
-	d := pipeline.Deps{Git: g, Store: st, Config: cfg, Routing: routing, Questions: cat, Log: logger, Now: o.nowFn}
+	d := pipeline.Deps{Git: g, Store: st, Config: cfg, Routing: routing, Questions: cat, Log: logger, Now: o.nowFn, ConfigDirs: dirs}
 	if o.fixtures != "" {
 		fake, err := gh.LoadFixture(o.fixtures)
 		if err != nil {
@@ -314,6 +316,13 @@ func replayDeps(d *pipeline.Deps, o options) string {
 	if o.embedReplay != "" {
 		d.Embedder = &embed.Replay{Dir: o.embedReplay}
 		notes = append(notes, "embeddings: replay of "+o.embedReplay)
+	}
+	if o.reviewReplay != "" {
+		// One Replay per tier: recording keys include the model spec. A miss
+		// is unavailable, so an unrecorded group degrades instead of failing loudly.
+		d.Reviewers.Fast = &review.Replay{Name: d.Config.Models.Fast, Dir: o.reviewReplay, MissUnavailable: true}
+		d.Reviewers.Deep = &review.Replay{Name: d.Config.Models.Deep, Dir: o.reviewReplay, MissUnavailable: true}
+		notes = append(notes, "reviews: replay of "+o.reviewReplay)
 	}
 	if len(notes) == 0 {
 		return ""
