@@ -121,10 +121,12 @@ func scanWhile(s string, i int, ok func(rune) bool) int {
 	return i
 }
 
-// changedLine is one +/- line of a unit with its tokens.
+// changedLine is one +/- line of a unit with its tokens. block numbers the
+// runs of adjacent +/- lines in the unit (a context line ends a run).
 type changedLine struct {
-	line diff.Line
-	toks []token
+	line  diff.Line
+	toks  []token
+	block int
 }
 
 // shapeHash hashes the unit's changed lines with identifiers renamed by
@@ -165,29 +167,62 @@ func shapeText(t token, names map[string]string) string {
 	return t.text
 }
 
-// isFormat reports a layout-only change: the unit deletes and adds lines
-// whose token streams are equal. Comments are tokens, so a comment edit is
-// not formatting. In Python, where indentation is syntax, every non-blank
-// line must keep its indentation and its tokens (no reflow across lines).
+// isFormat reports a layout-only change: within every run of adjacent +/-
+// lines (context lines separate runs), the deleted and added lines have equal
+// token streams, and at least one run changes tokens at all. Comparing run
+// by run means code moved past a context line (a reordered statement) is
+// never formatting. Comments are tokens, so a comment edit is not
+// formatting. In Python, where indentation is syntax, every non-blank line
+// must keep its indentation and its tokens (no reflow across lines). In
+// JS/TS an added line ending in a restricted keyword (return, throw, …) is
+// never formatting, since automatic semicolon insertion changes its meaning.
 func isFormat(lines []changedLine, lang string) bool {
-	var dels, adds []changedLine
+	var blocks [][2][]changedLine // per run: dels, adds
 	for _, cl := range lines {
+		for len(blocks) <= cl.block {
+			blocks = append(blocks, [2][]changedLine{})
+		}
 		if len(cl.toks) == 0 {
 			continue
 		}
+		side := 1
 		if cl.line.Op == diff.Del {
-			dels = append(dels, cl)
-		} else {
-			adds = append(adds, cl)
+			side = 0
+		}
+		blocks[cl.block][side] = append(blocks[cl.block][side], cl)
+		if side == 1 && asiHazard(cl.toks, lang) {
+			return false
 		}
 	}
-	if len(dels) == 0 || len(adds) == 0 {
+	relaid := false
+	for _, b := range blocks {
+		dels, adds := b[0], b[1]
+		switch {
+		case len(dels) == 0 && len(adds) == 0:
+			continue // blank lines only
+		case len(dels) == 0 || len(adds) == 0:
+			return false
+		case lang == "python" && !sameLines(dels, adds):
+			return false
+		case streamText(dels) != streamText(adds):
+			return false
+		}
+		relaid = true
+	}
+	return relaid
+}
+
+// asiHazard reports a JS/TS line whose last token is a keyword after which
+// a line break ends the statement (return, throw, break, continue, yield).
+func asiHazard(toks []token, lang string) bool {
+	if lang != "js" && lang != "ts" && lang != "tsx" || len(toks) == 0 {
 		return false
 	}
-	if lang == "python" {
-		return sameLines(dels, adds)
+	switch toks[len(toks)-1].text {
+	case "return", "throw", "break", "continue", "yield":
+		return true
 	}
-	return streamText(dels) == streamText(adds)
+	return false
 }
 
 func streamText(lines []changedLine) string {

@@ -241,6 +241,13 @@ func TestFormat(t *testing.T) {
 		{"python reindent", "a.py", "def f():\n    if a:\n        b()\n    c()\n", "def f():\n    if a:\n        b()\n        c()\n", false},
 		{"unknown language", "a.txt", "a  b\n", "a b\n", true},
 		{"pure addition", "a.ts", "function f() {\n}\n", "function f() {\n  y();\n}\n", false},
+		// Regression: a statement moved past context lines is a reorder, not
+		// layout, even though both token streams are equal.
+		{"go reordered statement", "a.go",
+			"package x\n\nfunc Save() error {\n\tif err := validate(); err != nil {\n\t\treturn err\n\t}\n\twrite()\n\treturn nil\n}\n",
+			"package x\n\nfunc Save() error {\n\twrite()\n\tif err := validate(); err != nil {\n\t\treturn err\n\t}\n\treturn nil\n}\n", false},
+		{"ts swapped calls", "a.ts", "function f() {\n  lock();\n  work();\n  unlock();\n}\n", "function f() {\n  unlock();\n  work();\n  lock();\n}\n", false},
+		{"js return reflow (ASI)", "a.js", "function f() {\n  return x;\n}\n", "function f() {\n  return\n  x;\n}\n", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

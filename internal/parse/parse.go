@@ -176,9 +176,13 @@ func (fc *fileCtx) unit(lines []diff.Line, cur *cursor, sym, sig string) model.C
 		rng       model.Range
 		adds, del int
 		changed   []changedLine
+		block     int // index of the current run of adjacent +/- lines
 	)
 	rng.Old.Start, rng.New.Start = cur.old, cur.new
 	for i, l := range lines {
+		if l.Op == diff.Context && i > 0 && lines[i-1].Op != diff.Context {
+			block++
+		}
 		if i > 0 {
 			body.WriteByte('\n')
 		}
@@ -199,7 +203,7 @@ func (fc *fileCtx) unit(lines []diff.Line, cur *cursor, sym, sig string) model.C
 			del++
 		}
 		if l.Op != diff.Context {
-			changed = append(changed, changedLine{line: l, toks: fc.tokens(l)})
+			changed = append(changed, changedLine{line: l, toks: fc.tokens(l), block: block})
 		}
 	}
 	text := body.String()
