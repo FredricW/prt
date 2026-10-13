@@ -214,6 +214,11 @@ func (c *InProcess) onStage(rl model.RunLog) {
 		}
 		return
 	case model.StageRunning:
+	case model.StageStopped:
+		// A stop between stages records the stage about to start with no
+		// Running row first: the item's "stopped at" note names it too.
+		c.noteStage(rl.ItemID, rl.Stage)
+		return
 	default:
 		return
 	}
@@ -608,7 +613,7 @@ func (c *InProcess) analyse(j job) {
 		cancel(nil)
 	}()
 	if c.q.stoppedBefore(j) {
-		c.setStopped(j.itemID, stopQueued)
+		c.setStoppedUnlessAnalysed(j.itemID, stopQueued)
 		return
 	}
 	it, err := c.d.Store.Item(c.ctx, j.itemID)
@@ -623,7 +628,8 @@ func (c *InProcess) analyse(j job) {
 	}
 	c.setState(it.ID, model.StateFetching, "")
 	head, err := c.run(runCtx, it, pl.opts)
-	c.finish(runCtx, it.ID, outcome{head: head, err: err, explicit: j.explicit, notAnalysed: pl.notAnalysed, stage: c.runStage(entry)})
+	c.finish(runCtx, it.ID, outcome{head: head, err: err, explicit: j.explicit, notAnalysed: pl.notAnalysed,
+		aggOnly: pl.opts.AggregateOnly, stage: c.runStage(entry)})
 }
 
 // plan is how a job runs once the strategy has been applied (gate).
@@ -713,6 +719,8 @@ type outcome struct {
 	explicit bool
 	// notAnalysed: a free-only run of an item without an analysis (plan).
 	notAnalysed bool
+	// aggOnly: the run only re-aggregated (a stop keeps a stored analysis).
+	aggOnly bool
 	// stage is the stage in flight when the run ended (for a user stop).
 	stage model.Stage
 }
@@ -736,7 +744,11 @@ func (c *InProcess) finish(runCtx context.Context, id string, o outcome) {
 	// after it (before this point): its result is recorded.
 	if o.err != nil && stoppedByUser(runCtx, o.err) {
 		c.log.Info("analysis stopped", "item", id, "stage", o.stage)
-		c.setStopped(id, string(o.stage))
+		if o.aggOnly {
+			c.setStoppedUnlessAnalysed(id, string(o.stage))
+		} else {
+			c.setStopped(id, string(o.stage))
+		}
 		return
 	}
 	if o.err != nil && runCtx.Err() != nil {
@@ -788,6 +800,27 @@ func markNotAnalysed(it *model.Item) {
 // had not started).
 func (c *InProcess) setStopped(id, stage string) {
 	c.setState(id, model.StateStopped, stage)
+}
+
+// setStoppedUnlessAnalysed is setStopped for work that would not have
+// produced the item's analysis: a dropped waiting job, or a stopped
+// aggregate-only run. An item with a stored analysis keeps it and shows it
+// as Ready (or Stale when its head moved), so later automatic jobs
+// (re-aggregations, re-routes) still reach it; only an item with no
+// analysis becomes StateStopped (DECISIONS "M5.1 review fixes 2").
+func (c *InProcess) setStoppedUnlessAnalysed(id, stage string) {
+	if _, _, err := c.updateItem(context.Background(), id, func(it *model.Item) {
+		switch it.AnalysedSHA {
+		case "":
+			it.State, it.StateNote = model.StateStopped, stage
+		case it.HeadSHA:
+			it.State, it.StateNote = model.StateReady, ""
+		default:
+			it.State, it.StateNote = model.StateStale, staleNote
+		}
+	}); err != nil {
+		c.log.Warn("set item state", "item", id, "err", err)
+	}
 }
 
 // resetState marks an interrupted item as not analysed, or Stale when an
@@ -884,6 +917,18 @@ func (c *InProcess) pendingIDs(items []model.Item) []string {
 	var ids []string
 	for _, it := range items {
 		if it.State == "" || (it.State == model.StateNotAnalysed && auto.Allows(it)) {
+			ids = append(ids, it.ID)
+		}
+	}
+	return ids
+}
+
+// newlyAllowed are the not-analysed items the strategy now allows.
+func (c *InProcess) newlyAllowed(items []model.Item) []string {
+	auto := c.strategy()
+	var ids []string
+	for _, it := range items {
+		if it.State == model.StateNotAnalysed && it.Source != model.SourcePreview && auto.Allows(it) {
 			ids = append(ids, it.ID)
 		}
 	}

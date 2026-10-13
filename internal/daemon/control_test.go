@@ -555,6 +555,10 @@ func TestSaveSettingsModels(t *testing.T) {
 	if built != 1 || e.c.p.CurrentModels().Reviewers.Fast != fast || !strings.Contains(info.Applied, "models") {
 		t.Errorf("factory calls %d, applied %q", built, info.Applied)
 	}
+	// The factory's notes (a tier it disabled) reach the page.
+	if !slices.Contains(info.Warnings, "deep review tier disabled") {
+		t.Errorf("warnings = %q, want the factory note", info.Warnings)
+	}
 }
 
 // Growing the slots starts waiting jobs; shrinking never kills a run.

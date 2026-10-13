@@ -80,7 +80,7 @@ func (c *InProcess) Stop(ctx context.Context, p proto.StopParams) (proto.StopRes
 	case busy || cancelled:
 		// finish (or analyse's stop-mark check) records the stage.
 	case waiting:
-		c.setStopped(p.ItemID, stopQueued)
+		c.setStoppedUnlessAnalysed(p.ItemID, stopQueued)
 	default:
 		return proto.StopResult{}, nil
 	}
@@ -94,7 +94,7 @@ func (c *InProcess) stopAll() proto.StopResult {
 		c.cancelRunCause(id, pipeline.ErrStopped)
 	}
 	for _, id := range waiting {
-		c.setStopped(id, stopQueued)
+		c.setStoppedUnlessAnalysed(id, stopQueued)
 	}
 	ids := append(append([]string(nil), busy...), waiting...)
 	slices.Sort(ids)
@@ -235,14 +235,18 @@ func (c *InProcess) questionsPath() string {
 func (c *InProcess) SaveSettings(ctx context.Context, p proto.SaveSettingsParams) (proto.SettingsInfo, error) {
 	c.saveMu.Lock()
 	defer c.saveMu.Unlock()
-	if err := settings.Validate(p.Values); err != nil {
+	oldCfg, oldRt := c.cfg(), c.p.Routing().Config
+	// Only the keys the save changes are validated: a value config.Load
+	// accepts (concurrency = 0, a blank model spec) that the save writes
+	// back unchanged never blocks it (DECISIONS "M5.1 review fixes 2").
+	oldVals := settings.FromConfig(oldCfg, oldRt)
+	if err := settings.ValidateChanged(oldVals, p.Values); err != nil {
 		return c.settingsInfo(ctx), err
 	}
 	dir, err := c.scopeDir(p.Scope)
 	if err != nil {
 		return c.settingsInfo(ctx), err
 	}
-	oldCfg, oldRt := c.cfg(), c.p.Routing().Config
 	// A new repo prt.toml shadows the active (global) one, so it starts as a
 	// copy of it. A new global file is shadowed by the repo one instead, so
 	// it never copies repo-only keys such as [github] repo.
@@ -250,7 +254,7 @@ func (c *InProcess) SaveSettings(ctx context.Context, p proto.SaveSettingsParams
 	if dir == c.repoDir() {
 		seedMain = oldCfg.Source
 	}
-	if err := settings.SaveSeeded(dir, p.Values, seedMain, oldRt.Source); err != nil {
+	if err := settings.SaveSeededChanged(dir, oldVals, p.Values, seedMain, oldRt.Source); err != nil {
 		return c.settingsInfo(ctx), fmt.Errorf("daemon: save settings: %w", err)
 	}
 	notes := c.shadowWarnings(p.Scope)
@@ -262,7 +266,7 @@ func (c *InProcess) SaveSettings(ctx context.Context, p proto.SaveSettingsParams
 	if err != nil {
 		return c.settingsInfo(ctx), fmt.Errorf("daemon: reload prt.routing.toml (previous settings kept): %w", err)
 	}
-	ch := settings.Diff(settings.FromConfig(oldCfg, oldRt), settings.FromConfig(newCfg, newRt))
+	ch := settings.Diff(oldVals, settings.FromConfig(newCfg, newRt))
 	applied, warns, err := c.apply(ctx, ch, newCfg, newRt)
 	info := c.settingsInfo(ctx)
 	info.Warnings = append(append(info.Warnings, notes...), warns...)
@@ -322,6 +326,9 @@ func (c *InProcess) apply(ctx context.Context, ch settings.Changes, cfg config.C
 			for _, n := range notes {
 				c.log.Info("models reloaded", "note", n)
 			}
+			// The page shows them: a tier disabled by a typo in its spec is
+			// a degradation the user must see (spec: failure handling).
+			warns = append(warns, notes...)
 			parts = append(parts, "models swapped")
 		} else {
 			warns = append(warns, "model changes apply after restart")

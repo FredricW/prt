@@ -66,7 +66,27 @@ func (c *InProcess) Discover(ctx context.Context) error {
 	} else if err := c.discoverBranches(ctx, def, prHeads, prRefs, seen); err != nil {
 		return err
 	}
-	return c.prune(ctx, seen, ghOK, branchesOK)
+	if err := c.prune(ctx, seen, ghOK, branchesOK); err != nil {
+		return err
+	}
+	return c.queueNewlyAllowed(ctx)
+}
+
+// queueNewlyAllowed queues, as automatic (gated) jobs, the not-analysed
+// items the strategy now allows (a PR moved into Needs you, the strategy
+// widened between sessions). Discovery does it itself, so a TUI with no
+// daemon (--no-daemon), whose ticks call only Discover, picks them up too
+// (DECISIONS "M5.1 review fixes 2").
+func (c *InProcess) queueNewlyAllowed(ctx context.Context) error {
+	items, err := c.d.Store.Items(ctx)
+	if err != nil {
+		return fmt.Errorf("daemon: items: %w", err)
+	}
+	ids := c.newlyAllowed(items)
+	if len(ids) == 0 {
+		return nil
+	}
+	return c.queueAuto(ctx, ids...)
 }
 
 // discoverPRs runs the GitHub sources and upserts PR items. It reports
@@ -222,14 +242,23 @@ func applyPR(it *model.Item, pr gh.PR, head string) {
 }
 
 // markStale flags an analysed item whose head moved since its analysis.
-// Items in flight are left alone here; the run itself notices the moved
-// head when it finishes (see InProcess.finish).
+// A not-analysed item (free stages only, no analysis to keep) whose head
+// moved goes back to never-run (State ""), so the next automatic pass
+// (AnalysePending, the TUI's first load) re-runs its free stages for the
+// new head instead of serving the old head's files and units (DECISIONS
+// "M5.1 review fixes 2"). Items in flight are left alone here; the run
+// itself notices the moved head when it finishes (see InProcess.finish).
 func markStale(it *model.Item, head string) {
 	if it.HeadSHA == "" || head == "" || it.HeadSHA == head {
 		return
 	}
-	if it.State == model.StateReady || it.State == model.StateError {
+	switch it.State {
+	case model.StateReady, model.StateError:
 		it.State, it.StateNote = model.StateStale, staleNote
+	case model.StateNotAnalysed:
+		if it.AnalysedSHA == "" {
+			it.State, it.StateNote = "", ""
+		}
 	}
 }
 
