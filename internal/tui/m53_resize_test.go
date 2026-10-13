@@ -73,7 +73,11 @@ func TestSideWidthClamp(t *testing.T) {
 		{120, 100, 78}, // the main pane keeps 40 columns
 		{200, 100, 80}, // the maximum
 		{80, 60, 38},
-		{62, 30, 20},  // just room for the minimum
+		{62, 30, 24},  // just room for the minimum; the automatic 24 is the limit
+		{62, 21, 21},  // a user width below the automatic one
+		{65, 30, 26},  // never clamped below the automatic width
+		{69, 40, 27},  // width − 42 and the automatic width agree
+		{75, 40, 33},  // the main pane keeps 40 (automatic 30)
 		{61, 30, 24},  // no room: automatic
 		{40, 25, 16},  // tiny: automatic
 		{100, -5, 36}, // a bad stored value is automatic
@@ -208,17 +212,98 @@ func TestSidebarDragTakesEveryMouseMessage(t *testing.T) {
 	for _, msg := range []tea.MouseMsg{
 		leftMotion(sw+30, 10),
 		{X: sw + 40, Y: 10, Button: tea.MouseButtonWheelDown, Action: tea.MouseActionPress},
-		mouseClick(3, 5),
-		mouseClick(sw+20, 1),
+		{X: sw + 50, Y: 10, Button: tea.MouseButtonRight, Action: tea.MouseActionPress},
 	} {
 		m = update(t, m, msg)
 	}
-	if len(rig.code.mice) != 0 || selectedID(m) != sel || m.tab != TabCode {
-		t.Errorf("during the drag: code got %d messages, selected %s, tab %v", len(rig.code.mice), selectedID(m), m.tab)
+	if len(rig.code.mice) != 0 || selectedID(m) != sel || m.tab != TabCode || !m.sideDrag {
+		t.Errorf("during the drag: code got %d messages, selected %s, tab %v, drag %v", len(rig.code.mice), selectedID(m), m.tab, m.sideDrag)
 	}
 	m = update(t, m, release(sw+30, 10))
 	if m.sideDrag || m.sideWidth() != clampWant(140, sw+30) {
 		t.Errorf("release: drag %v width %d", m.sideDrag, m.sideWidth())
+	}
+}
+
+// A lost release (let go outside the window) does not leave the drag
+// stuck: the next left press ends it where it is (saved) and is handled as
+// a press, so it selects the row it lands on instead of resizing the
+// picker to it; motion without a button ends it too.
+func TestSidebarDragLostRelease(t *testing.T) {
+	m, rig := resizeModel(t, 120)
+	sw := m.sideWidth()
+	m = update(t, m, mouseClick(sw, 4))
+	m = update(t, m, leftMotion(sw+10, 9))
+	wide := m.sideWidth()
+	m = applyAll(t, m, mouseClick(3, 5)) // rows 5–6 are pr:2
+	if m.sideDrag || m.sideWidth() != wide || selectedID(m) != "pr:2" {
+		t.Errorf("press after a lost release: drag %v width %d (want %d) selected %s", m.sideDrag, m.sideWidth(), wide, selectedID(m))
+	}
+	if fmt.Sprint(rig.saved) != fmt.Sprint([]uistate.Layout{{SidebarWidth: wide}}) {
+		t.Errorf("saved %v", rig.saved)
+	}
+	m = applyAll(t, m, release(3, 5))
+	if m.sideWidth() != wide {
+		t.Errorf("the press's own release resized the picker to %d", m.sideWidth())
+	}
+	// Motion with no button.
+	m = update(t, m, mouseClick(wide, 4))
+	m = update(t, m, leftMotion(wide+4, 9))
+	m = applyAll(t, m, tea.MouseMsg{X: wide + 20, Y: 9, Button: tea.MouseButtonNone, Action: tea.MouseActionMotion})
+	if m.sideDrag || m.sideWidth() != wide+4 || len(rig.saved) != 2 {
+		t.Errorf("buttonless motion: drag %v width %d saves %v", m.sideDrag, m.sideWidth(), rig.saved)
+	}
+}
+
+// On 62–69 columns the automatic width is wider than width − 42: `>` and a
+// drag that does not move the border never shrink the picker.
+func TestResizeNeverShrinksBelowAutomatic(t *testing.T) {
+	m, _ := resizeModel(t, 65)
+	auto := m.sideWidth()
+	if auto != 26 {
+		t.Fatalf("automatic width on 65 columns = %d", auto)
+	}
+	m = applyAll(t, m, keyMsg(">"))
+	if m.sideWidth() < auto || m.note != fmt.Sprintf("picker: %d cols", m.sideWidth()) {
+		t.Errorf("> on 65 columns: width %d (automatic %d) note %q", m.sideWidth(), auto, m.note)
+	}
+	m, _ = resizeModel(t, 65)
+	m = update(t, m, mouseClick(auto, 4))
+	m = update(t, m, leftMotion(auto, 9))
+	if m.sideWidth() != auto {
+		t.Errorf("a drag held on the border moved it to %d (automatic %d)", m.sideWidth(), auto)
+	}
+	m = applyAll(t, m, keyMsg("<"))
+	if m.sideWidth() != auto-2 {
+		t.Errorf("< on 65 columns: width %d", m.sideWidth())
+	}
+}
+
+// Saves run on command goroutines in any order: one older than the last
+// written does nothing, so the file ends with the newest widths; a save
+// still pending when the program ends is written by FlushLayout.
+func TestLayoutSavesOrdered(t *testing.T) {
+	m, rig := resizeModel(t, 120)
+	var cmds []tea.Cmd
+	for range 3 {
+		var cmd tea.Cmd
+		m, cmd = updateCmd(t, m, keyMsg(">"))
+		cmds = append(cmds, cmd)
+	}
+	// The newest first, then the older ones.
+	for i := len(cmds) - 1; i >= 0; i-- {
+		run(cmds[i])
+	}
+	if fmt.Sprint(rig.saved) != fmt.Sprint([]uistate.Layout{{SidebarWidth: 42}}) {
+		t.Errorf("saved %v, want only the newest width", rig.saved)
+	}
+	if err := m.FlushLayout(); err != nil || len(rig.saved) != 1 {
+		t.Errorf("flush with nothing pending: %v, saves %v", err, rig.saved)
+	}
+	// A press whose save never ran is flushed.
+	m, _ = updateCmd(t, m, keyMsg("<"))
+	if err := m.FlushLayout(); err != nil || fmt.Sprint(rig.saved[len(rig.saved)-1]) != fmt.Sprint(uistate.Layout{SidebarWidth: 40}) {
+		t.Errorf("flush: %v, saves %v", err, rig.saved)
 	}
 }
 

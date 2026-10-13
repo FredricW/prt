@@ -262,6 +262,8 @@ type Model struct {
 	// border is dragged (resize.go).
 	sideUser, codeListUser int
 	sideDrag, dragMoved    bool
+	// saves orders the layout saves (shared by the model's copies).
+	saves *layoutSaves
 
 	width, height int
 }
@@ -321,6 +323,7 @@ func NewWithOptions(c daemon.Client, r *lipgloss.Renderer, o Options) Model {
 		strip:      pipeview.StageStrip,
 		repos:      newRepoCache(),
 		home:       homeDir(),
+		saves:      &layoutSaves{},
 		width:      120,
 		height:     40,
 	}

@@ -3,6 +3,8 @@ package tui
 import (
 	"fmt"
 	"strings"
+	"sync"
+	"sync/atomic"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
@@ -46,16 +48,23 @@ func sidebarWidth(total int) int {
 // sideWidth is the picker's width now: the user's, clamped, else automatic.
 func (m Model) sideWidth() int { return m.clampSide(m.sideUser) }
 
-// sideLimit is the widest the picker may be at this terminal width.
-func (m Model) sideLimit() int { return min(sideMax, m.width-mainKeep) }
+// mainLimit is the widest the picker may be while the main pane keeps 40
+// columns: min(sideMax, width − mainKeep).
+func (m Model) mainLimit() int { return min(sideMax, m.width-mainKeep) }
+
+// sideLimit is the widest the picker may be at this terminal width:
+// mainLimit, but never narrower than the automatic width (on 62–69 columns
+// the automatic width is the wider, and `>` or a drag from it must not
+// shrink the picker).
+func (m Model) sideLimit() int { return max(m.mainLimit(), sidebarWidth(m.width)) }
 
 // sideResizable reports whether the terminal leaves room to resize the
 // picker (below sideMin+mainKeep columns the width is automatic).
-func (m Model) sideResizable() bool { return m.sideLimit() >= sideMin }
+func (m Model) sideResizable() bool { return m.mainLimit() >= sideMin }
 
 // clampSide clamps a requested picker width (0: automatic) to
-// [sideMin, min(sideMax, width − mainKeep)]; the automatic width when the
-// terminal is too narrow for that.
+// [sideMin, sideLimit]; the automatic width when the terminal is too
+// narrow to resize.
 func (m Model) clampSide(w int) int {
 	if w <= 0 || !m.sideResizable() {
 		return sidebarWidth(m.width)
@@ -102,8 +111,11 @@ func (m Model) startsSideDrag(msg tea.MouseMsg) bool {
 
 // sideDragMouse takes every mouse message while the picker's border is
 // dragged: motion with the left button moves the border to the pointer's
-// column, a release ends the drag and saves the widths; anything else is
-// swallowed.
+// column, a release ends the drag and saves the widths. A lost release
+// (the button let go outside the window, under tmux) is recovered as the
+// Code list's drag does: a left press ends the drag where it is (saved) and
+// is then handled as a press, and motion with no button ends it too.
+// Anything else (the wheel) is swallowed.
 func (m Model) sideDragMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case msg.Action == tea.MouseActionMotion && msg.Button == tea.MouseButtonLeft:
@@ -113,11 +125,22 @@ func (m Model) sideDragMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		if m.dragMoved {
 			m.resizeSide(msg.X)
 		}
-		m.sideDrag, m.dragMoved = false, false
-		m.splitNote()
-		return m, m.saveLayout()
+		return m.endSideDrag()
+	case msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft:
+		ended, save := m.endSideDrag()
+		next, cmd := ended.(Model).handleMouse(msg)
+		return next, batch(save, cmd)
+	case msg.Action == tea.MouseActionMotion && msg.Button == tea.MouseButtonNone:
+		return m.endSideDrag()
 	}
 	return m, nil
+}
+
+// endSideDrag ends a picker drag at the current width and saves the widths.
+func (m Model) endSideDrag() (tea.Model, tea.Cmd) {
+	m.sideDrag, m.dragMoved = false, false
+	m.splitNote()
+	return m, m.saveLayout()
 }
 
 // resizeSide puts the picker's right border at column x (clamped).
@@ -174,14 +197,67 @@ func (m Model) resizeKey(wider bool) (Model, tea.Cmd) {
 	return m, m.saveLayout()
 }
 
-// saveLayout persists both widths through Options.SaveLayout (nil: none).
+// layoutSaves orders the layout saves. Bubble Tea runs every command on its
+// own goroutine, so the saves of a burst of `<`/`>` presses (key repeat)
+// run concurrently and could land in any order. Each save command carries
+// the generation it was made with (in Update order); writes are serialised
+// and a command older than the last one written does nothing, so the file
+// always ends with the newest widths.
+type layoutSaves struct {
+	gen     atomic.Uint64 // the last generation handed out
+	mu      sync.Mutex
+	written uint64 // the generation last written (guarded by mu)
+}
+
+// write saves l as generation g unless a newer generation was written.
+func (s *layoutSaves) write(g uint64, l uistate.Layout, save func(uistate.Layout) error) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if g <= s.written {
+		return nil
+	}
+	s.written = g
+	return save(l)
+}
+
+// pending reports whether a save was asked for and not written yet.
+func (s *layoutSaves) pending() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.written < s.gen.Load()
+}
+
+// layoutState is the widths to persist.
+func (m Model) layoutState() uistate.Layout {
+	return uistate.Layout{SidebarWidth: m.sideUser, CodeListWidth: m.codeListUser}
+}
+
+// saveLayout persists both widths through Options.SaveLayout (nil: none),
+// ordered by layoutSaves.
 func (m Model) saveLayout() tea.Cmd {
-	save := m.opts.SaveLayout
+	save, s := m.opts.SaveLayout, m.saves
 	if save == nil {
 		return nil
 	}
-	l := uistate.Layout{SidebarWidth: m.sideUser, CodeListWidth: m.codeListUser}
-	return func() tea.Msg { return layoutSavedMsg{err: save(l)} }
+	l := m.layoutState()
+	if s == nil {
+		return func() tea.Msg { return layoutSavedMsg{err: save(l)} }
+	}
+	g := s.gen.Add(1)
+	return func() tea.Msg { return layoutSavedMsg{err: s.write(g, l, save)} }
+}
+
+// FlushLayout writes the current widths now when a save is still pending
+// (Bubble Tea does not wait for running commands when the program ends, so
+// a resize just before quitting could be lost or half written); call it
+// on the final model after the program returns. Nothing is written when
+// every save already landed or without Options.SaveLayout.
+func (m Model) FlushLayout() error {
+	save, s := m.opts.SaveLayout, m.saves
+	if save == nil || s == nil || !s.pending() {
+		return nil
+	}
+	return s.write(s.gen.Add(1), m.layoutState(), save)
 }
 
 // heavyBorder redraws the sidebar box's right border column heavy (┓ ┃ ┛)

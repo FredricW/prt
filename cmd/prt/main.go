@@ -318,7 +318,15 @@ func runTUI(ctx context.Context, client daemon.Client, topts tui.Options, keys m
 	}
 	topts.SaveLayout = func(l uistate.Layout) error { return uistate.Save(layoutPath, l) }
 	p := tea.NewProgram(tui.NewWithOptions(client, nil, topts), tea.WithAltScreen(), tea.WithContext(ctx), tea.WithMouseCellMotion())
-	if _, err := p.Run(); err != nil && !errors.Is(err, tea.ErrProgramKilled) {
+	final, err := p.Run()
+	// A resize just before quitting may still be saving on a command
+	// goroutine that the program does not wait for.
+	if fm, ok := final.(tui.Model); ok {
+		if ferr := fm.FlushLayout(); ferr != nil {
+			logger.Warn("pane widths not saved", "err", ferr)
+		}
+	}
+	if err != nil && !errors.Is(err, tea.ErrProgramKilled) {
 		_, _ = fmt.Fprintln(stderr, "prt:", err)
 		return 1
 	}
