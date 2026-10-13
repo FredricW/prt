@@ -1,0 +1,35 @@
+#482 Rework session refresh and add device list · alice · 1d · main ← feat/sess…
+
+Composition
+analysing…
+
+Headlines
+analysing…
+
+Check before approving
+analysing…
+
+Risk
+analysing…
+
+Description fidelity
+analysing…
+
+Minimap
+analysing…
+
+Your slice
+analysing…
+
+Since you looked
+analysing…
+
+Confidence
+analysing…
+
+Description
+  Refresh sessions before they expire.
+
+  • Refresh tokens before expiry
+  • Add a device list page
+  • Log out other devices

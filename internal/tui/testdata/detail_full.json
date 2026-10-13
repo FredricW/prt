@@ -1,0 +1,117 @@
+{
+  "item": {
+    "id": "pr:482",
+    "kind": "pr",
+    "number": 482,
+    "ref": "feat/session-refresh",
+    "baseRef": "main",
+    "headSha": "h482",
+    "baseSha": "b482",
+    "title": "Rework session refresh and add device list",
+    "body": "Refresh sessions before they expire.\n\n- Refresh tokens before expiry\n- Add a device list page\n- Log out other devices\n",
+    "author": "alice",
+    "source": "ranked",
+    "section": "needs-you",
+    "state": "ready",
+    "updatedAt": "2026-10-12T10:00:00Z",
+    "additions": 312,
+    "deletions": 88
+  },
+  "files": [
+    {"itemId": "pr:482", "path": "web/src/session.ts", "owned": true, "lang": "ts", "adds": 120, "dels": 40},
+    {"itemId": "pr:482", "path": "web/src/devices.tsx", "owned": true, "added": true, "lang": "tsx", "adds": 90, "dels": 0},
+    {"itemId": "pr:482", "path": "web/src/session.test.ts", "owned": true, "lang": "ts", "adds": 30, "dels": 8},
+    {"itemId": "pr:482", "path": "server/api/session.go", "lang": "go", "adds": 52, "dels": 20},
+    {"itemId": "pr:482", "path": "server/api/format.go", "lang": "go", "adds": 20, "dels": 20}
+  ],
+  "units": [
+    {"id": "u-refresh", "itemId": "pr:482", "fileId": "web/src/session.ts", "path": "web/src/session.ts",
+     "range": {"old": {"start": 10, "count": 20}, "new": {"start": 12, "count": 40}}, "symbol": "refresh",
+     "diff": "", "kind": "modified", "adds": 30, "dels": 10, "order": 0},
+    {"id": "u-expired", "itemId": "pr:482", "fileId": "web/src/session.ts", "path": "web/src/session.ts",
+     "range": {"old": {"start": 38, "count": 5}, "new": {"start": 60, "count": 8}}, "symbol": "isExpired",
+     "diff": "", "kind": "modified", "adds": 5, "dels": 2, "order": 1},
+    {"id": "u-devices", "itemId": "pr:482", "fileId": "web/src/devices.tsx", "path": "web/src/devices.tsx",
+     "range": {"old": {"start": 0, "count": 0}, "new": {"start": 5, "count": 90}}, "symbol": "DeviceList",
+     "diff": "", "kind": "added", "adds": 90, "dels": 0, "order": 2},
+    {"id": "u-test", "itemId": "pr:482", "fileId": "web/src/session.test.ts", "path": "web/src/session.test.ts",
+     "range": {"old": {"start": 1, "count": 8}, "new": {"start": 3, "count": 30}},
+     "diff": "", "kind": "modified", "adds": 30, "dels": 8, "order": 3},
+    {"id": "u-server", "itemId": "pr:482", "fileId": "server/api/session.go", "path": "server/api/session.go",
+     "range": {"old": {"start": 18, "count": 20}, "new": {"start": 20, "count": 52}}, "symbol": "Refresh",
+     "diff": "", "kind": "modified", "adds": 52, "dels": 20, "order": 4},
+    {"id": "u-format", "itemId": "pr:482", "fileId": "server/api/format.go", "path": "server/api/format.go",
+     "range": {"old": {"start": 1, "count": 20}, "new": {"start": 1, "count": 20}},
+     "diff": "", "kind": "modified", "format": true, "adds": 20, "dels": 20, "order": 5}
+  ],
+  "labels": [
+    {"unitId": "u-refresh", "question": "kind", "value": "refactor", "p": 0.81, "confidence": 0.81, "model": "typesafe-ai/jev"},
+    {"unitId": "u-refresh", "question": "breaking", "value": "yes", "p": 0.86, "confidence": 0.86, "model": "typesafe-ai/jev"},
+    {"unitId": "u-refresh", "question": "risk", "value": "4", "p": 0.62, "confidence": 0.62, "score": 4.1, "model": "typesafe-ai/jev"},
+    {"unitId": "u-refresh", "question": "risk_tags.auth", "value": "yes", "p": 0.93, "confidence": 0.93, "model": "typesafe-ai/jev"},
+    {"unitId": "u-refresh", "question": "suspicious", "line": 14, "value": "yes", "p": 0.71, "confidence": 0.71, "model": "typesafe-ai/jev"},
+    {"unitId": "u-devices", "question": "kind", "value": "feature", "p": 0.52, "confidence": 0.52, "model": "typesafe-ai/jev"}
+  ],
+  "agg": {
+    "itemId": "pr:482",
+    "composition": {"refactor": 0.55, "feature": 0.35, "test": 0.10},
+    "noiseLines": 20,
+    "added": 312,
+    "removed": 88,
+    "effectiveLines": 180,
+    "minutes": 23.6,
+    "unitsTotal": 6,
+    "unitsEyes": 3,
+    "unitsSkim": 2,
+    "unitsSkip": 1,
+    "headlines": [
+      {"unitId": "u-refresh", "path": "web/src/session.ts", "line": 12, "kind": "breaking", "text": "refresh(token) — breaks existing callers", "p": 0.86, "confidence": 0.86},
+      {"unitId": "u-server", "path": "server/api/session.go", "line": 20, "kind": "signature", "text": "Refresh(ctx, id) adds a parameter", "p": 0.55, "confidence": 0.55}
+    ],
+    "hotSpots": [
+      {"unitId": "u-refresh", "path": "web/src/session.ts", "line": 14, "score": 9.4, "reason": "token reused after refresh"},
+      {"unitId": "u-server", "path": "server/api/session.go", "line": 31, "score": 4.25, "reason": "writes session without lock"},
+      {"unitId": "u-devices", "path": "web/src/devices.tsx", "line": 40, "score": 1.1, "reason": "unhandled fetch error path"},
+      {"unitId": "u-expired", "path": "web/src/session.ts", "line": 61, "score": 0.4, "reason": "clock skew not handled"}
+    ],
+    "riskMax": 4,
+    "riskAny": 0.7,
+    "riskTags": {"auth": 2, "data_write": 1, "error_path": 1},
+    "testGap": 1,
+    "riskyUnits": 2,
+    "bullets": [
+      {"index": 1, "text": "Refresh tokens before expiry", "implemented": true, "unitIds": ["u-refresh"], "p": 0.91},
+      {"index": 2, "text": "Add a device list page", "implemented": true, "unitIds": ["u-devices"], "p": 0.58},
+      {"index": 3, "text": "Log out other devices", "implemented": false}
+    ],
+    "fidelity": 0.67,
+    "undocumented": ["u-server"],
+    "shape": "mixed",
+    "shapeP": 0.72,
+    "unsure": 3,
+    "unsureUnits": ["u-devices"],
+    "files": [
+      {"path": "web/src/session.ts", "owned": true, "attention": 1, "eyes": 1, "skim": 1, "unitIds": ["u-refresh", "u-expired"]},
+      {"path": "web/src/devices.tsx", "owned": true, "attention": 1, "eyes": 1, "unitIds": ["u-devices"]},
+      {"path": "web/src/session.test.ts", "owned": true, "attention": 0, "skim": 1, "unitIds": ["u-test"]},
+      {"path": "server/api/session.go", "owned": false, "attention": 1, "eyes": 1, "unitIds": ["u-server"]},
+      {"path": "server/api/format.go", "owned": false, "attention": 0, "skip": 1, "unitIds": ["u-format"]}
+    ],
+    "slice": [
+      {"module": "web/**", "owned": true, "units": 4, "eyes": 2},
+      {"module": "server/*", "owned": false, "units": 2, "eyes": 1}
+    ],
+    "urgency": 9,
+    "urgencyTerms": [],
+    "why": "asked you · CI red · age",
+    "units": [
+      {"unitId": "u-refresh", "path": "web/src/session.ts", "owned": true, "kind": "refactor", "noise": false, "effectiveLines": 40, "attention": "eyes", "minutes": 8, "unsure": false, "minConfidence": 0.62, "breaking": true, "breakingP": 0.86, "risk": 4.1, "riskLevel": 4, "riskTags": ["auth"], "untested": true},
+      {"unitId": "u-expired", "path": "web/src/session.ts", "owned": true, "kind": "refactor", "noise": false, "effectiveLines": 7, "attention": "skim", "minutes": 1, "unsure": false, "minConfidence": 0.8},
+      {"unitId": "u-devices", "path": "web/src/devices.tsx", "owned": true, "kind": "feature", "noise": false, "effectiveLines": 63, "attention": "eyes", "minutes": 7, "unsure": true, "minConfidence": 0.52, "riskTags": ["error_path"]},
+      {"unitId": "u-test", "path": "web/src/session.test.ts", "owned": true, "kind": "test", "noise": false, "effectiveLines": 18, "attention": "skim", "minutes": 2, "unsure": false, "minConfidence": 0.9},
+      {"unitId": "u-server", "path": "server/api/session.go", "kind": "refactor", "noise": false, "effectiveLines": 52, "attention": "eyes", "minutes": 5.6, "unsure": false, "minConfidence": 0.55, "risk": 3.2, "riskLevel": 3, "riskTags": ["auth", "data_write"], "covered": true, "undocumented": true},
+      {"unitId": "u-format", "path": "server/api/format.go", "kind": "formatting", "noise": true, "noiseReason": "formatting", "effectiveLines": 0, "attention": "skip", "minutes": 0, "unsure": false, "minConfidence": 0.95}
+    ],
+    "groups": []
+  }
+}

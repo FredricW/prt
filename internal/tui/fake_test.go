@@ -8,9 +8,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/fredricw/prt/internal/codeview"
 	"github.com/fredricw/prt/internal/daemon"
 	"github.com/fredricw/prt/internal/model"
 	"github.com/fredricw/prt/internal/proto"
@@ -102,6 +104,64 @@ func (f *fakeClient) Events() <-chan proto.Event {
 }
 func (f *fakeClient) Close() error { return nil }
 
+// fakePane is a recording codePane: it handles NextUnit/PrevUnit, opens a
+// "filters bar" on Filters (capturing every key until Close) and records
+// every key it was offered and every FocusUnit call.
+type fakePane struct {
+	keys      codeview.Keys
+	offered   []string // every key passed to HandleKey
+	captured  []string // keys received while capturing
+	capturing bool
+	focused   []string
+	details   []string // item ids passed to SetDetail
+	clears    int
+	focusOK   bool
+}
+
+var _ codePane = (*fakePane)(nil)
+
+func (p *fakePane) SetKeys(k codeview.Keys)       { p.keys = k }
+func (p *fakePane) SetSize(int, int)              {}
+func (p *fakePane) SetDetail(d proto.Detail)      { p.details = append(p.details, d.Item.ID) }
+func (p *fakePane) Clear()                        { p.clears++ }
+func (p *fakePane) Update(tea.Msg) tea.Cmd        { return nil }
+func (p *fakePane) Capturing() bool               { return p.capturing }
+func (p *fakePane) HelpBindings() [][]key.Binding { return [][]key.Binding{{p.keys.NextUnit}} }
+func (p *fakePane) ShortBindings() []key.Binding  { return []key.Binding{p.keys.NextUnit} }
+func (p *fakePane) View() string                  { return "fake code pane" }
+
+func (p *fakePane) FocusUnit(id string) bool {
+	p.focused = append(p.focused, id)
+	return p.focusOK
+}
+
+func (p *fakePane) HandleKey(k tea.KeyMsg) bool {
+	p.offered = append(p.offered, k.String())
+	if p.capturing {
+		p.captured = append(p.captured, k.String())
+		if key.Matches(k, p.keys.Close) {
+			p.capturing = false
+		}
+		return true
+	}
+	switch {
+	case key.Matches(k, p.keys.Filters):
+		p.capturing = true
+		return true
+	case key.Matches(k, p.keys.NextUnit), key.Matches(k, p.keys.PrevUnit):
+		return true
+	}
+	return false
+}
+
+// withFakePane installs a recording Code pane keyed like m.
+func withFakePane(m Model) (Model, *fakePane) {
+	p := &fakePane{}
+	p.SetKeys(m.keys.codeKeys())
+	m.code = p
+	return m, p
+}
+
 // fixedNow is the clock used by every test.
 var fixedNow = time.Date(2026, 10, 13, 12, 0, 0, 0, time.UTC)
 
@@ -188,6 +248,11 @@ func feed[T any](t *testing.T, m Model, cmd tea.Cmd) Model {
 		}
 	}
 	return m
+}
+
+// mouseClick is a left-button press at cell (x, y).
+func mouseClick(x, y int) tea.MouseMsg {
+	return tea.MouseMsg{X: x, Y: y, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress}
 }
 
 // keyMsg builds a key message from its bubbles/key name.

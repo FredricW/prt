@@ -1,6 +1,7 @@
 // Package tui is the Bubble Tea front end. The root Model holds the picker
-// (sidebar, always visible on the left), the main pane (Overview and Code
-// tabs in M0) and a one-line status bar. It talks to the analysis side only
+// (sidebar, always visible on the left), the main pane (the label-driven
+// Overview and the Code tab, which wraps internal/codeview) and a one-line
+// status bar. It talks to the analysis side only
 // through daemon.Client; long operations are tea.Cmds returning messages and
 // never run in Update.
 package tui
@@ -120,7 +121,7 @@ type Model struct {
 	// flight, so a burst of item events causes one reload, not one each.
 	reloadPending, reloadAgain bool
 	overview                   overview
-	code                       code
+	code                       codePane
 
 	requested map[string]string      // item id → head SHA auto-refreshed
 	stages    map[string]model.Stage // item id → latest stage seen
@@ -159,12 +160,13 @@ func NewWithOptions(c daemon.Client, r *lipgloss.Renderer, o Options) Model {
 		help:      h,
 		spin:      spinner.New(spinner.WithSpinner(spinner.MiniDot), spinner.WithStyle(r.NewStyle())),
 		overview:  newOverview(),
-		code:      newCode(r),
+		code:      newCodePane(r),
 		requested: map[string]string{},
 		stages:    map[string]model.Stage{},
 		width:     120,
 		height:    40,
 	}
+	m.code.SetKeys(km.codeKeys())
 	m.layout()
 	return m
 }
@@ -403,7 +405,20 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	case inPicker:
 		return m, nil
 	case m.tab == TabCode:
-		return m, m.code.update(msg)
+		return m, m.code.Update(msg)
+	case msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress && !m.overview.raw:
+		// Row 0 of the main pane is the tab bar; a click on an anchored
+		// Overview line (minimap row, headline, …) opens that unit in Code.
+		if id, ok := m.overview.anchorAt(m.overview.vp.YOffset + msg.Y - 1); ok && m.detail != nil {
+			m.focus = FocusMain
+			m.jumpToUnit(id)
+		}
+	case wheel && m.overview.raw:
+		if msg.Button == tea.MouseButtonWheelUp {
+			m.overview.rawVP.ScrollUp(3)
+		} else {
+			m.overview.rawVP.ScrollDown(3)
+		}
 	case wheel:
 		if msg.Button == tea.MouseButtonWheelUp {
 			m.overview.vp.ScrollUp(3)
@@ -496,8 +511,9 @@ func (m *Model) ensureSpin() tea.Cmd {
 func (m *Model) selectionChanged() tea.Cmd {
 	m.detail = nil
 	m.detailSeq++
-	m.code.setDiff("")
-	m.overview.setContent("")
+	m.code.Clear()
+	m.overview.setContent("", nil)
+	m.overview.closeRaw()
 	it, ok := m.picker.selected()
 	if !ok {
 		m.detailPending = false
@@ -508,12 +524,11 @@ func (m *Model) selectionChanged() tea.Cmd {
 }
 
 // applyDetail shows d in the main pane. A reload of the same item keeps the
-// scroll positions unless the content changed.
+// Overview scroll position; the Code page keeps its own state (codeview
+// SetDetail contract).
 func (m *Model) applyDetail(d proto.Detail) {
 	same := m.detail != nil && m.detail.Item.ID == d.Item.ID
-	if !same || m.detail.Diff != d.Diff {
-		m.code.setDiff(d.Diff)
-	}
+	m.code.SetDetail(d)
 	m.detail = &d
 	m.detailPending = false
 	y := m.overview.vp.YOffset
@@ -527,12 +542,16 @@ func (m *Model) renderOverview() {
 	if m.detail == nil {
 		return
 	}
-	files := statsFromDetail(m.detail.Files)
-	if len(files) == 0 {
-		files = m.code.files()
-	}
 	_, mw, _ := m.dims()
-	m.overview.setContent(overviewText(m.st, m.md, *m.detail, files, m.now(), mw-2))
+	m.overview.setContent(overviewText(m.st, m.md, *m.detail, m.now(), mw-2))
+}
+
+// jumpToUnit switches to the Code tab and focuses unit id there.
+func (m *Model) jumpToUnit(id string) {
+	m.tab = TabCode
+	if !m.code.FocusUnit(id) {
+		m.note = "unit not found in Code"
+	}
 }
 
 // ---- keys -----------------------------------------------------------------
@@ -543,6 +562,14 @@ func (m Model) handleKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	m.note = ""
 	km := m.keys
+	if k.String() == "ctrl+c" {
+		return m, tea.Quit
+	}
+	if !m.showHelp && m.focus == FocusMain {
+		if next, ok := m.routeMain(k); ok {
+			return next, nil
+		}
+	}
 	if key.Matches(k, km.Quit) {
 		return m, tea.Quit
 	}
@@ -559,6 +586,47 @@ func (m Model) handleKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handlePickerKey(k)
 	}
 	return m.handleMainKey(k), nil
+}
+
+// routeMain gives the focused main pane the first look at k. The Code page
+// takes every key while it captures (filters bar, raw labels: so 1–9 toggle
+// filters instead of switching tabs) and otherwise any key it handles; the
+// Overview's raw-labels overlay captures every key. ok is false when k
+// falls through to the global and pane keys.
+func (m Model) routeMain(k tea.KeyMsg) (Model, bool) {
+	switch {
+	case m.tab == TabCode && m.code.Capturing():
+		m.code.HandleKey(k)
+		return m, true
+	case m.tab == TabCode:
+		return m, m.code.HandleKey(k)
+	case m.overview.raw:
+		m.handleRawKey(k)
+		return m, true
+	}
+	return m, false
+}
+
+// handleRawKey drives the Overview's raw-labels overlay: L or esc closes it,
+// scroll keys scroll it, anything else is ignored.
+func (m *Model) handleRawKey(k tea.KeyMsg) {
+	km, vp := m.keys, &m.overview.rawVP
+	switch {
+	case key.Matches(k, km.RawLabels), key.Matches(k, km.Back):
+		m.overview.closeRaw()
+	case key.Matches(k, km.Down):
+		vp.ScrollDown(1)
+	case key.Matches(k, km.Up):
+		vp.ScrollUp(1)
+	case key.Matches(k, km.PageDown):
+		vp.PageDown()
+	case key.Matches(k, km.PageUp):
+		vp.PageUp()
+	case key.Matches(k, km.Top):
+		vp.GotoTop()
+	case key.Matches(k, km.Bottom):
+		vp.GotoBottom()
+	}
 }
 
 // handleGlobalKey handles keys that work in any pane; ok is false when k is
@@ -652,13 +720,30 @@ func (m Model) handlePickerKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// handleMainKey handles Overview keys (Code keys went to the component in
+// routeMain).
 func (m Model) handleMainKey(k tea.KeyMsg) Model {
 	if m.tab == TabCode {
-		m.code.handleKey(m.keys, k)
 		return m
 	}
 	km, vp := m.keys, &m.overview.vp
 	switch {
+	case key.Matches(k, km.Focus):
+		id, ok := m.overview.anchor()
+		if !ok || m.detail == nil {
+			m.note = "no unit here"
+			return m
+		}
+		m.jumpToUnit(id)
+	case key.Matches(k, km.RawLabels):
+		id, ok := m.overview.anchor()
+		if !ok || m.detail == nil {
+			m.note = "no unit here"
+			return m
+		}
+		_, mw, _ := m.dims()
+		m.overview.openRaw(m.st.title.Render("Raw labels") + "  " + m.st.dim.Render("esc or L closes") + "\n\n" +
+			rawLabelsFor(*m.detail, id, mw-2))
 	case key.Matches(k, km.Down):
 		vp.ScrollDown(1)
 	case key.Matches(k, km.Up):
@@ -700,7 +785,7 @@ func (m Model) dims() (side, main, body int) {
 func (m *Model) layout() {
 	sw, mw, bh := m.dims()
 	m.picker.setSize(sw, bh)
-	m.code.setSize(mw, bh-1)
+	m.code.SetSize(mw, bh-1)
 	m.overview.setSize(mw, bh-1)
 	m.renderOverview()
 }
@@ -727,7 +812,7 @@ func (m Model) viewMain(w int) string {
 	case m.detail == nil:
 		return head + "\n" + m.st.title.Render(itemLabel(it)) + "\n" + m.st.dim.Render("loading…")
 	case m.tab == TabCode:
-		return head + "\n" + m.code.view()
+		return head + "\n" + m.code.View()
 	}
 	return head + "\n" + m.overview.view()
 }
@@ -759,10 +844,13 @@ func (m Model) viewStatus() string {
 	default:
 		h := m.help
 		h.Width = avail
-		if m.focus == FocusPicker {
+		switch {
+		case m.focus == FocusPicker:
 			left = h.ShortHelpView(m.keys.pickerShort())
-		} else {
-			left = h.ShortHelpView(m.keys.mainShort(m.tab))
+		case m.tab == TabOverview && m.overview.raw:
+			left = m.st.dim.Render("raw labels · esc or L closes")
+		default:
+			left = h.ShortHelpView(m.keys.mainShort(m.tab, m.code.ShortBindings()))
 		}
 	}
 	left = truncate(left, avail)

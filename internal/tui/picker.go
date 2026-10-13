@@ -287,6 +287,9 @@ func secondaryLine(it model.Item, rc rowCtx) string {
 	if s := stateText(it, rc); s != "" {
 		parts = append(parts, s)
 	}
+	if it.LabelsUnavailable {
+		parts = append(parts, "labels unavailable")
+	}
 	switch {
 	case it.Section == model.SectionYours:
 		parts = append(parts, yoursFacts(it, rc.now)...)
@@ -331,6 +334,12 @@ func needsYouFacts(it model.Item) []string {
 	if ci := ciText(it.CI); ci != "" {
 		parts = append(parts, ci)
 	}
+	if it.Breaking > 0 {
+		parts = append(parts, fmt.Sprintf("%d breaking", it.Breaking))
+	}
+	if it.NeedsEyes > 0 {
+		parts = append(parts, needEyes(it.NeedsEyes))
+	}
 	if it.Minutes > 0 {
 		parts = append(parts, fmt.Sprintf("~%d min", max(1, int(it.Minutes+0.5))))
 	}
@@ -338,6 +347,14 @@ func needsYouFacts(it model.Item) []string {
 		parts = append(parts, it.Why)
 	}
 	return parts
+}
+
+// needEyes formats a needs-eyes count ("1 needs eyes", "5 need eyes").
+func needEyes(n int) string {
+	if n == 1 {
+		return "1 needs eyes"
+	}
+	return fmt.Sprintf("%d need eyes", n)
 }
 
 func yoursFacts(it model.Item, now time.Time) []string {

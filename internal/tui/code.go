@@ -5,74 +5,55 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/fredricw/prt/internal/diffview"
+	"github.com/fredricw/prt/internal/codeview"
+	"github.com/fredricw/prt/internal/proto"
 )
 
-// code is the Code tab: in M0 the plain unified diff viewer.
-type code struct {
-	dv     diffview.Model
-	height int
+// codePane is what the root model needs from the Code tab. The real pane
+// wraps codeview.Model; tests substitute a recording fake, so key routing
+// is checked on tui state without depending on codeview's rendering.
+type codePane interface {
+	SetKeys(k codeview.Keys)
+	SetSize(w, h int)
+	SetDetail(d proto.Detail)
+	Clear()
+	// HandleKey reports whether the key was consumed.
+	HandleKey(k tea.KeyMsg) bool
+	// Update handles non-key messages (mouse).
+	Update(msg tea.Msg) tea.Cmd
+	// Capturing is true while the filters bar or raw-labels overlay is open:
+	// every key except ctrl+c then goes to the pane.
+	Capturing() bool
+	FocusUnit(unitID string) bool
+	HelpBindings() [][]key.Binding
+	ShortBindings() []key.Binding
+	View() string
 }
 
-func newCode(r *lipgloss.Renderer) code {
-	return code{dv: diffview.New(r), height: 20}
+// codeviewPane adapts codeview.Model (value-returning Update) to codePane.
+// The root model holds it by pointer, so copies of the root model share one
+// Code page; Bubble Tea only ever uses the latest copy.
+type codeviewPane struct{ m codeview.Model }
+
+var _ codePane = (*codeviewPane)(nil)
+
+func newCodePane(r *lipgloss.Renderer) *codeviewPane {
+	return &codeviewPane{m: codeview.New(r)}
 }
 
-func (c *code) setSize(w, h int) {
-	c.height = max(1, h)
-	c.dv.SetSize(w, c.height)
-}
+func (p *codeviewPane) SetKeys(k codeview.Keys)       { p.m.SetKeys(k) }
+func (p *codeviewPane) SetSize(w, h int)              { p.m.SetSize(w, h) }
+func (p *codeviewPane) SetDetail(d proto.Detail)      { p.m.SetDetail(d) }
+func (p *codeviewPane) Clear()                        { p.m.Clear() }
+func (p *codeviewPane) HandleKey(k tea.KeyMsg) bool   { return p.m.HandleKey(k) }
+func (p *codeviewPane) Capturing() bool               { return p.m.Capturing() }
+func (p *codeviewPane) FocusUnit(id string) bool      { return p.m.FocusUnit(id) }
+func (p *codeviewPane) HelpBindings() [][]key.Binding { return p.m.HelpBindings() }
+func (p *codeviewPane) ShortBindings() []key.Binding  { return p.m.ShortBindings() }
+func (p *codeviewPane) View() string                  { return p.m.View() }
 
-func (c *code) setDiff(raw string) { c.dv.SetDiff(raw) }
-
-// files returns per-file counts parsed from the diff (fallback for the
-// overview when the pipeline has not stored files yet).
-func (c code) files() []fileStat {
-	fs := c.dv.Files()
-	out := make([]fileStat, 0, len(fs))
-	for _, f := range fs {
-		a, d := f.Counts()
-		p := f.Path()
-		if f.Renamed && f.OldPath != "" && f.NewPath != "" {
-			p = f.OldPath + " → " + f.NewPath
-		}
-		out = append(out, fileStat{path: p, adds: a, dels: d})
-	}
-	return out
-}
-
-// handleKey maps the (rebindable) key map onto the viewer's API. Mouse and
-// other messages go to the viewer's own Update.
-func (c *code) handleKey(km KeyMap, msg tea.KeyMsg) {
-	switch {
-	case key.Matches(msg, km.Down):
-		c.dv.ScrollBy(1)
-	case key.Matches(msg, km.Up):
-		c.dv.ScrollBy(-1)
-	case key.Matches(msg, km.PageDown):
-		c.dv.ScrollBy(max(1, c.height))
-	case key.Matches(msg, km.PageUp):
-		c.dv.ScrollBy(-max(1, c.height))
-	case key.Matches(msg, km.HalfPageDown):
-		c.dv.ScrollBy(max(1, c.height/2))
-	case key.Matches(msg, km.HalfPageUp):
-		c.dv.ScrollBy(-max(1, c.height/2))
-	case key.Matches(msg, km.Top):
-		c.dv.GotoTop()
-	case key.Matches(msg, km.Bottom):
-		c.dv.GotoBottom()
-	case key.Matches(msg, km.NextFile):
-		c.dv.NextFile()
-	case key.Matches(msg, km.PrevFile):
-		c.dv.PrevFile()
-	}
-}
-
-// update forwards non-key messages (mouse wheel) to the viewer.
-func (c *code) update(msg tea.Msg) tea.Cmd {
+func (p *codeviewPane) Update(msg tea.Msg) tea.Cmd {
 	var cmd tea.Cmd
-	c.dv, cmd = c.dv.Update(msg)
+	p.m, cmd = p.m.Update(msg)
 	return cmd
 }
-
-func (c code) view() string { return c.dv.View() }

@@ -376,65 +376,108 @@ func TestCheckout(t *testing.T) {
 	}
 }
 
-func TestCodeTabRoutesKeysToDiffview(t *testing.T) {
+// codeFocused returns a model on pr:1 with its detail loaded, the Code tab
+// open and the main pane focused, and the recording pane behind it.
+func codeFocused(t *testing.T) (Model, *fakePane) {
+	t.Helper()
 	items := threeItems()
 	f := newFake(items...)
 	f.details["pr:1"] = proto.Detail{Item: items[0], Diff: longDiff(200)}
-	m := newTestModel(t, f, Options{})
+	m, p := withFakePane(newTestModel(t, f, Options{}))
 	m = feed[detailMsg](t, m, m.selectionChanged())
 	if m.detail == nil {
 		t.Fatal("detail not loaded")
 	}
 	m = update(t, m, keyMsg("2"))
 	m = update(t, m, keyMsg("enter"))
+	if m.tab != TabCode || m.focus != FocusMain {
+		t.Fatalf("tab %v focus %v, want Code and main", m.tab, m.focus)
+	}
+	return m, p
+}
+
+func isQuit(cmd tea.Cmd) bool {
+	if cmd == nil {
+		return false
+	}
+	_, ok := cmd().(tea.QuitMsg)
+	return ok
+}
+
+func TestCodeTabRoutesKeysToComponent(t *testing.T) {
+	m, p := codeFocused(t)
+	if fmt.Sprint(p.details) != "[pr:1]" || p.clears == 0 {
+		t.Errorf("SetDetail calls %v, Clear calls %d", p.details, p.clears)
+	}
+	m = update(t, m, keyMsg("n"))
 	m = update(t, m, keyMsg("j"))
-	m = update(t, m, keyMsg("j"))
-	if got := m.code.dv.Offset(); got != 2 {
-		t.Errorf("diff offset = %d, want 2", got)
+	if got := strings.Join(p.offered, " "); got != "n j" {
+		t.Errorf("keys offered to the code pane = %q, want \"n j\"", got)
 	}
 	if selectedID(m) != "pr:1" {
-		t.Error("picker cursor moved while main pane focused")
+		t.Error("picker cursor moved while the main pane is focused")
 	}
-	m = update(t, m, keyMsg("G"))
-	if m.code.dv.Offset() == 0 {
-		t.Error("G did not scroll the diff")
+
+	// f opens the filters bar: 3 toggles a filter, 1 does not switch tabs,
+	// q does not quit; esc closes the bar.
+	m = update(t, m, keyMsg("f"))
+	for _, k := range []string{"3", "1", "q"} {
+		var cmd tea.Cmd
+		m, cmd = updateCmd(t, m, keyMsg(k))
+		if m.tab != TabCode {
+			t.Fatalf("%s switched tabs while the filters bar is open", k)
+		}
+		if isQuit(cmd) {
+			t.Fatalf("%s quit while the filters bar is open", k)
+		}
 	}
 	m = update(t, m, keyMsg("esc"))
+	if got := strings.Join(p.captured, " "); got != "3 1 q esc" {
+		t.Errorf("captured keys = %q", got)
+	}
+	if m.focus != FocusMain {
+		t.Error("esc closing the bar also left the main pane")
+	}
+
+	// Bar closed: unhandled keys fall through to the global keys.
+	m = update(t, m, keyMsg("1"))
+	if m.tab != TabOverview {
+		t.Fatalf("1 with the bar closed: tab %v", m.tab)
+	}
+	m = update(t, m, keyMsg("2"))
+	if m.tab != TabCode {
+		t.Fatalf("2 with the bar closed: tab %v", m.tab)
+	}
+	if _, cmd := updateCmd(t, m, keyMsg("q")); !isQuit(cmd) {
+		t.Error("q with the bar closed did not quit")
+	}
+	m = update(t, m, keyMsg("f"))
+	if _, cmd := updateCmd(t, m, keyMsg("ctrl+c")); !isQuit(cmd) {
+		t.Error("ctrl+c must quit even while the bar captures keys")
+	}
+	m = update(t, m, keyMsg("esc"))
+	m = update(t, m, keyMsg("esc"))
 	m = update(t, m, keyMsg("j"))
-	if selectedID(m) != "pr:2" {
-		t.Error("after esc, j should move the picker")
+	if m.focus != FocusPicker || selectedID(m) != "pr:2" {
+		t.Errorf("after esc, j should move the picker (focus %v, selected %s)", m.focus, selectedID(m))
 	}
 }
 
-// pgdown and space scroll a full page, ctrl+d half a page (DECISIONS: Diff
-// viewer).
-func TestCodeTabPaging(t *testing.T) {
+func TestCodeTabUsesKeyMap(t *testing.T) {
+	km, err := KeyMapFromConfig(map[string]string{"next_unit": "N", "filters": "F"})
+	if err != nil {
+		t.Fatal(err)
+	}
 	items := threeItems()
-	f := newFake(items...)
-	f.details["pr:1"] = proto.Detail{Item: items[0], Diff: longDiff(400)}
-	m := newTestModel(t, f, Options{})
-	m = feed[detailMsg](t, m, m.selectionChanged())
+	m, p := withFakePane(newTestModel(t, newFake(items...), Options{Keys: &km}))
 	m = update(t, m, keyMsg("2"))
 	m = update(t, m, keyMsg("enter"))
-	page := m.code.height
-	if page < 4 {
-		t.Fatalf("code height = %d, too small for the test", page)
+	m = update(t, m, keyMsg("F"))
+	if !p.capturing {
+		t.Error("rebound filters key did not reach the pane as Filters")
 	}
-	steps := []struct {
-		msg  tea.KeyMsg
-		want int
-	}{
-		{tea.KeyMsg{Type: tea.KeyPgDown}, page},
-		{tea.KeyMsg{Type: tea.KeySpace, Runes: []rune{' '}}, 2 * page},
-		{tea.KeyMsg{Type: tea.KeyPgUp}, page},
-		{tea.KeyMsg{Type: tea.KeyCtrlD}, page + page/2},
-		{tea.KeyMsg{Type: tea.KeyCtrlU}, page},
-	}
-	for _, s := range steps {
-		m = update(t, m, s.msg)
-		if got := m.code.dv.Offset(); got != s.want {
-			t.Fatalf("after %q: offset %d, want %d", s.msg.String(), got, s.want)
-		}
+	if got := m.keys.codeKeys().NextUnit.Keys(); fmt.Sprint(got) != "[N]" {
+		t.Errorf("codeKeys NextUnit = %v", got)
 	}
 }
 
@@ -487,8 +530,25 @@ func TestOverviewContent(t *testing.T) {
 	v := m.View()
 	for _, want := range []string{
 		"1 Overview", "2 Code", "3 Architecture (later)",
-		"#1 one · alice · 2d · main ← feat/one", "GitHub labels: bug", "Reviewers: bob",
-		"+4 −1 · 2 files", "labels arrive in M1", "f.go", "old.go → new.go", "• first point",
+		"#1 one · alice · 2d · main ← feat/one", "Composition", "analysing…",
+	} {
+		if !strings.Contains(v, want) {
+			t.Errorf("overview missing %q:\n%s", want, v)
+		}
+	}
+	m = update(t, m, keyMsg("enter"))
+	m = update(t, m, keyMsg("G"))
+	if v := m.View(); !strings.Contains(v, "• first point") {
+		t.Errorf("description not at the bottom of the overview:\n%s", v)
+	}
+	// Jev unreachable: git facts (files, counts) instead of labels.
+	d := f.details["pr:1"]
+	d.Agg = &model.ItemAgg{LabelsMissing: true, UnitsTotal: 2}
+	m = update(t, m, detailMsg{seq: m.detailSeq, d: d})
+	m = update(t, m, keyMsg("g"))
+	v = m.View()
+	for _, want := range []string{
+		"labels unavailable (Jev unreachable)", "+4 −1 · 2 files · 2 chunks", "f.go", "old.go → new.go",
 	} {
 		if !strings.Contains(v, want) {
 			t.Errorf("overview missing %q:\n%s", want, v)

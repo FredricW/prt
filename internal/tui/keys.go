@@ -6,9 +6,11 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/bubbles/key"
+
+	"github.com/fredricw/prt/internal/codeview"
 )
 
-// KeyMap holds every M0 binding (spec: Keybindings and navigation). Fields
+// KeyMap holds every binding (spec: Keybindings and navigation). Fields
 // are exported so callers can tweak them; KeyMapFromConfig applies the
 // `[keys]` table of prt.toml.
 type KeyMap struct {
@@ -20,6 +22,8 @@ type KeyMap struct {
 	Refresh, Overview, Code, Open, Checkout key.Binding
 	// Main pane scrolling (Code and Overview tabs).
 	PageDown, PageUp, HalfPageDown, HalfPageUp, NextFile, PrevFile key.Binding
+	// Code page (handed to codeview) and Overview (RawLabels).
+	NextUnit, PrevUnit, Filters, Expand, RawLabels key.Binding
 	// Global.
 	Help, Quit key.Binding
 	// Confirm prompts.
@@ -49,8 +53,13 @@ func DefaultKeyMap() KeyMap {
 		PageUp:       b("page up", "pgup"),
 		HalfPageDown: b("half page down", "ctrl+d"),
 		HalfPageUp:   b("half page up", "ctrl+u"),
-		NextFile:     b("next file", "]"),
-		PrevFile:     b("previous file", "["),
+		NextFile:     b("next file", "J", "]"),
+		PrevFile:     b("previous file", "K", "["),
+		NextUnit:     b("next unit", "n"),
+		PrevUnit:     b("previous unit", "p"),
+		Filters:      b("filters", "f"),
+		Expand:       b("expand noise", "z"),
+		RawLabels:    b("raw labels", "L"),
 		Help:         b("help", "?"),
 		Quit:         b("quit", "q", "ctrl+c"),
 		Yes:          b("yes", "y", "Y"),
@@ -74,7 +83,27 @@ func (k *KeyMap) actions() map[string]*key.Binding {
 		"checkout": &k.Checkout, "page_down": &k.PageDown, "page_up": &k.PageUp,
 		"half_page_down": &k.HalfPageDown, "half_page_up": &k.HalfPageUp,
 		"next_file": &k.NextFile, "prev_file": &k.PrevFile, "help": &k.Help, "quit": &k.Quit,
+		"next_unit": &k.NextUnit, "prev_unit": &k.PrevUnit, "filters": &k.Filters,
+		"expand": &k.Expand, "raw_labels": &k.RawLabels,
 	}
+}
+
+// codeKeys builds the codeview bindings from the key map, so the Code page
+// follows prt.toml [keys]. The filter toggles keep codeview's defaults
+// (1–9); they are only live while the filters bar captures keys, so they
+// never clash with the tab keys. Close reuses Back (esc).
+func (k KeyMap) codeKeys() codeview.Keys {
+	ck := codeview.DefaultKeys()
+	ck.Down, ck.Up, ck.Top, ck.Bottom = k.Down, k.Up, k.Top, k.Bottom
+	ck.PageDown, ck.PageUp, ck.HalfPageDown, ck.HalfPageUp = k.PageDown, k.PageUp, k.HalfPageDown, k.HalfPageUp
+	ck.NextUnit, ck.PrevUnit, ck.NextFile, ck.PrevFile = k.NextUnit, k.PrevUnit, k.NextFile, k.PrevFile
+	ck.Filters, ck.Expand, ck.RawLabels, ck.Close = k.Filters, k.Expand, k.RawLabels, k.Back
+	return ck
+}
+
+// jump is the Overview's enter binding: the Focus keys, described as a jump.
+func (k KeyMap) jump() key.Binding {
+	return key.NewBinding(key.WithKeys(k.Focus.Keys()...), key.WithHelp(k.Focus.Help().Key, "jump to unit"))
 }
 
 // KeyActions lists the action names accepted by KeyMapFromConfig, sorted.
@@ -135,20 +164,21 @@ func (k KeyMap) pickerHelp() [][]key.Binding {
 	}
 }
 
-// codeHelp is the help shown when the Code tab has focus.
-func (k KeyMap) codeHelp() [][]key.Binding {
-	return [][]key.Binding{
-		{k.Down, k.Up, k.PageDown, k.PageUp, k.HalfPageDown, k.HalfPageUp, k.Top, k.Bottom},
-		{k.NextFile, k.PrevFile},
-		{k.Back, k.NextFocus, k.Overview, k.Code},
-		{k.Refresh, k.Open, k.Checkout, k.Help, k.Quit},
-	}
+// codeHelp is the help shown when the Code tab has focus: the component's
+// own groups, then the root model's.
+func (k KeyMap) codeHelp(component [][]key.Binding) [][]key.Binding {
+	out := append([][]key.Binding(nil), component...)
+	return append(out,
+		[]key.Binding{k.Back, k.NextFocus, k.Overview, k.Code},
+		[]key.Binding{k.Refresh, k.Open, k.Checkout, k.Help, k.Quit},
+	)
 }
 
 // overviewHelp is the help shown when the Overview tab has focus.
 func (k KeyMap) overviewHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Down, k.Up, k.PageDown, k.PageUp, k.HalfPageDown, k.HalfPageUp, k.Top, k.Bottom},
+		{k.jump(), k.RawLabels},
 		{k.Back, k.NextFocus, k.Overview, k.Code},
 		{k.Refresh, k.Open, k.Checkout, k.Help, k.Quit},
 	}
@@ -159,10 +189,12 @@ func (k KeyMap) pickerShort() []key.Binding {
 	return []key.Binding{k.Down, k.Up, k.Focus, k.Overview, k.Code, k.Refresh, k.Checkout, k.Open, k.Help, k.Quit}
 }
 
-// mainShort is the status-line hint list for the main pane.
-func (k KeyMap) mainShort(tab Tab) []key.Binding {
+// mainShort is the status-line hint list for the main pane; component holds
+// the Code page's own hints.
+func (k KeyMap) mainShort(tab Tab, component []key.Binding) []key.Binding {
 	if tab == TabCode {
-		return []key.Binding{k.Down, k.Up, k.NextFile, k.PrevFile, k.Back, k.Overview, k.Help, k.Quit}
+		out := append([]key.Binding(nil), component...)
+		return append(out, k.Back, k.Overview, k.Help, k.Quit)
 	}
-	return []key.Binding{k.Down, k.Up, k.Back, k.Code, k.Help, k.Quit}
+	return []key.Binding{k.Down, k.Up, k.jump(), k.RawLabels, k.Back, k.Code, k.Help, k.Quit}
 }

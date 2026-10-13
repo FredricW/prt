@@ -14,7 +14,7 @@ func (m Model) helpGroups() (string, [][]key.Binding) {
 		return "picker", m.keys.pickerHelp()
 	}
 	if m.tab == TabCode {
-		return "code", m.keys.codeHelp()
+		return "code", m.keys.codeHelp(m.code.HelpBindings())
 	}
 	return "overview", m.keys.overviewHelp()
 }

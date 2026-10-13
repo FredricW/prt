@@ -41,7 +41,7 @@ func pickerItems() []model.Item {
 	return []model.Item{
 		{ID: "pr:482", Kind: model.KindPR, Number: 482, Title: "Rework session refresh and add device list", Section: model.SectionNeedsYou,
 			Author: "alice", Additions: 312, Deletions: 88, CI: model.CIRed, Why: "asked you · CI red · age", Urgency: 9, UrgencyQuartile: 4,
-			State: model.StateReady, UpdatedAt: ago(26 * time.Hour)},
+			Breaking: 2, NeedsEyes: 5, Minutes: 23.6, State: model.StateReady, UpdatedAt: ago(26 * time.Hour)},
 		{ID: "pr:490", Kind: model.KindPR, Number: 490, Title: "Rename fetchUser to loadUser", Section: model.SectionNeedsYou,
 			Author: "bob", Additions: 40, Deletions: 40, CI: model.CIGreen, Urgency: 5, UrgencyQuartile: 3,
 			State: model.StateAnalysing, StateNote: "parse", UpdatedAt: ago(3 * time.Hour)},
@@ -55,7 +55,7 @@ func pickerItems() []model.Item {
 			Ref: "feat/a-very-long-branch-name-that-will-not-fit-in-the-sidebar", Section: model.SectionBranches,
 			Ahead: 1, UrgencyQuartile: 1, Urgency: 0.5, UpdatedAt: ago(5 * time.Hour)},
 		{ID: "pr:12", Kind: model.KindPR, Number: 12, Title: "Old context PR", Section: model.SectionAdded,
-			Author: "carol", CI: model.CIGreen, UrgencyQuartile: 0, State: model.StateReady},
+			Author: "carol", CI: model.CIGreen, UrgencyQuartile: 0, State: model.StateReady, LabelsUnavailable: true},
 	}
 }
 
@@ -139,6 +139,15 @@ func TestSecondaryLine(t *testing.T) {
 		{"needs you minutes", model.Item{Section: model.SectionNeedsYou, Kind: model.KindPR, Author: "alice", Minutes: 39.8, Why: "asked you"},
 			"alice · ~40 min · asked you"},
 		{"needs you tiny", model.Item{Section: model.SectionNeedsYou, Kind: model.KindPR, Minutes: 0.2}, "~1 min"},
+		{"needs you labels", model.Item{Section: model.SectionNeedsYou, Kind: model.KindPR, Breaking: 2, NeedsEyes: 5, Minutes: 12, Why: "asked you"},
+			"2 breaking · 5 need eyes · ~12 min · asked you"},
+		{"needs you one eye", model.Item{Section: model.SectionNeedsYou, Kind: model.KindPR, NeedsEyes: 1}, "1 needs eyes"},
+		{"labels unavailable", model.Item{Section: model.SectionNeedsYou, Kind: model.KindPR, LabelsUnavailable: true, Author: "a"},
+			"labels unavailable · a"},
+		{"labels unavailable yours", model.Item{Section: model.SectionYours, Kind: model.KindPR, LabelsUnavailable: true, CI: model.CIGreen},
+			"labels unavailable · CI ✓"},
+		{"labels unavailable branch", model.Item{Section: model.SectionBranches, Kind: model.KindBranch, LabelsUnavailable: true, State: model.StateStale},
+			"stale · r to refresh · labels unavailable"},
 		{"yours", model.Item{Section: model.SectionYours, Kind: model.KindPR, CI: model.CIGreen, Draft: true, UpdatedAt: ago(3 * 24 * time.Hour)},
 			"CI ✓ · draft · 3d"},
 		{"yours threads", model.Item{Section: model.SectionYours, Kind: model.KindPR, OpenThreads: 2, CI: model.CIGreen},
