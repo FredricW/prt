@@ -1,0 +1,89 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Fredric <fredric@acme.example>
+Date: Sun, 11 Oct 2026 14:10:00 +0000
+Subject: [PATCH] fix(api): reject unknown currency codes
+
+POST /invoices stored whatever currency it was sent, including an empty
+one, and finance could not reconcile those invoices. Trim and upper-case
+the code and answer 422 unless it is one we invoice in.
+---
+ internal/api/handlers.go      |  7 ++++++-
+ internal/api/handlers_test.go | 32 ++++++++++++++++++++++++++++++++
+ internal/invoice/currency.go  | 10 ++++++++++
+ 3 files changed, 48 insertions(+), 1 deletion(-)
+ create mode 100644 internal/api/handlers_test.go
+ create mode 100644 internal/invoice/currency.go
+
+diff --git a/internal/api/handlers.go b/internal/api/handlers.go
+index 06ed19f..3dd90fc 100644
+--- a/internal/api/handlers.go
++++ b/internal/api/handlers.go
+@@ -50,8 +50,13 @@ func (s *Server) createInvoice(w http.ResponseWriter, r *http.Request) {
+ 		http.Error(w, "customer_id and a positive amount_cents are required", http.StatusBadRequest)
+ 		return
+ 	}
++	currency := strings.ToUpper(strings.TrimSpace(req.Currency))
++	if !invoice.ValidCurrency(currency) {
++		http.Error(w, fmt.Sprintf("unsupported currency %q", req.Currency), http.StatusUnprocessableEntity)
++		return
++	}
+ 	id := fmt.Sprintf("inv_%04d", s.seq.Add(1))
+-	inv := invoice.New(id, req.CustomerID, strings.ToUpper(req.Currency), req.AmountCents, s.now())
++	inv := invoice.New(id, req.CustomerID, currency, req.AmountCents, s.now())
+ 	s.store.Put(inv)
+ 	writeJSON(w, http.StatusCreated, inv)
+ }
+diff --git a/internal/api/handlers_test.go b/internal/api/handlers_test.go
+new file mode 100644
+index 0000000..645495c
+--- /dev/null
++++ b/internal/api/handlers_test.go
+@@ -0,0 +1,32 @@
++package api
++
++import (
++	"net/http"
++	"net/http/httptest"
++	"strings"
++	"testing"
++	"time"
++
++	"example.com/billing-svc/internal/invoice"
++)
++
++func TestCreateInvoiceCurrency(t *testing.T) {
++	now := func() time.Time { return time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC) }
++	h := NewServer(invoice.NewStore(), now).Routes()
++	for _, c := range []struct {
++		currency string
++		want     int
++	}{
++		{"eur", http.StatusCreated},
++		{" NOK ", http.StatusCreated},
++		{"", http.StatusUnprocessableEntity},
++		{"XYZ", http.StatusUnprocessableEntity},
++	} {
++		body := `{"customer_id": "cus_1", "amount_cents": 500, "currency": "` + c.currency + `"}`
++		rec := httptest.NewRecorder()
++		h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/invoices", strings.NewReader(body)))
++		if rec.Code != c.want {
++			t.Errorf("currency %q: status %d, want %d", c.currency, rec.Code, c.want)
++		}
++	}
++}
+diff --git a/internal/invoice/currency.go b/internal/invoice/currency.go
+new file mode 100644
+index 0000000..76133c8
+--- /dev/null
++++ b/internal/invoice/currency.go
+@@ -0,0 +1,10 @@
++package invoice
++
++// ValidCurrency reports whether code is an ISO 4217 code billing invoices in.
++func ValidCurrency(code string) bool {
++	switch code {
++	case "EUR", "GBP", "NOK", "SEK", "USD":
++		return true
++	}
++	return false
++}

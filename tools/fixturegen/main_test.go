@@ -111,14 +111,7 @@ func TestFixtureRepo(t *testing.T) {
 
 	for _, b := range branches {
 		t.Run(b.name, func(t *testing.T) {
-			ahead := gitOut(t, repo, "rev-list", "--count", "main.."+b.name)
-			if ahead != strconv.Itoa(b.ahead) {
-				t.Errorf("%s is %s commits ahead of main, want %d", b.name, ahead, b.ahead)
-			}
-			if behind := gitOut(t, repo, "rev-list", "--count", b.name+"..main"); behind != "0" {
-				t.Errorf("%s is %s commits behind main, want 0", b.name, behind)
-			}
-			b.assert(t, repo, diffNumstat(t, repo, b.name))
+			assertBranch(t, repo, b)
 		})
 	}
 
@@ -175,9 +168,32 @@ func assertEarlierHead(t *testing.T, repo string) {
 	}
 }
 
+// assertBranch checks a fixture branch is b.ahead commits ahead of main and
+// not behind it, then runs b.assert on its changed files.
+func assertBranch(t *testing.T, repo string, b branchShape) {
+	t.Helper()
+	ahead := gitOut(t, repo, "rev-list", "--count", "main.."+b.name)
+	if ahead != strconv.Itoa(b.ahead) {
+		t.Errorf("%s is %s commits ahead of main, want %d", b.name, ahead, b.ahead)
+	}
+	if behind := gitOut(t, repo, "rev-list", "--count", b.name+"..main"); behind != "0" {
+		t.Errorf("%s is %s commits behind main, want 0", b.name, behind)
+	}
+	b.assert(t, repo, diffNumstat(t, repo, b.name))
+}
+
 func assertPRFixture(t *testing.T, repo string) {
 	t.Helper()
-	fake, err := gh.LoadFixture(filepath.Join(fixtureSrc, "prs.json"))
+	assertPRsMatchRepo(t, repo, filepath.Join(fixtureSrc, "prs.json"), branches)
+}
+
+// assertPRsMatchRepo checks the gh fixture at prsJSON against the generated
+// repo: viewer fredric, exactly one PR per shape with a PR number (head,
+// base, stats and a "## Changes" body matching git) and none for
+// local-only branches. It returns the loaded fake for further checks.
+func assertPRsMatchRepo(t *testing.T, repo, prsJSON string, shapes []branchShape) *gh.Fake {
+	t.Helper()
+	fake, err := gh.LoadFixture(prsJSON)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -186,7 +202,7 @@ func assertPRFixture(t *testing.T, repo string) {
 	}
 	mainSHA := gitOut(t, repo, "rev-parse", "main")
 	seen := map[int]bool{}
-	for _, b := range branches {
+	for _, b := range shapes {
 		if b.pr == 0 {
 			for n, pr := range fake.PRs {
 				if pr.HeadRef == b.name {
@@ -223,6 +239,7 @@ func assertPRFixture(t *testing.T, repo string) {
 	if len(fake.PRs) != len(seen) {
 		t.Errorf("prs.json has %d PRs, expected exactly %d", len(fake.PRs), len(seen))
 	}
+	return fake
 }
 
 func assertMixedRefactor(t *testing.T, _ string, files []numstat) {

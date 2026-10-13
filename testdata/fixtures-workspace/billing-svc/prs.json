@@ -1,0 +1,65 @@
+{
+  "viewer": "fredric",
+  "repo": "acme/billing-svc",
+  "prs": [
+    {
+      "number": 7,
+      "title": "feat(invoice): late fees on overdue invoices",
+      "body": "Overdue invoices now accrue a late fee, as agreed with finance.\n\n## Changes\n\n- `Invoice.LateFee`: 1.5% of the amount per started 30 days past the due date, capped at six periods\n- `Invoice.AmountDue`: the amount plus the late fee\n- `GET /invoices/{id}` returns `late_fee_cents` and `amount_due_cents`\n- README: document late fees\n",
+      "author": "alice",
+      "state": "open",
+      "draft": false,
+      "headRef": "07-late-fees",
+      "headSha": "a8f07ee4cafd3384c0d154b4fabc377c10fe5810",
+      "baseRef": "main",
+      "baseSha": "ae8c0729f5e37051e9bb3a46eeab52d1efb36aec",
+      "url": "https://github.com/acme/billing-svc/pull/7",
+      "labels": ["feature", "billing"],
+      "reviewers": ["fredric"],
+      "reviewRequested": true,
+      "viewerApproved": false,
+      "viewerCommented": false,
+      "ci": "green",
+      "additions": 64,
+      "deletions": 1,
+      "changedFiles": 4,
+      "files": [
+        "README.md",
+        "internal/api/handlers.go",
+        "internal/invoice/invoice.go",
+        "internal/invoice/invoice_test.go"
+      ],
+      "createdAt": "2026-10-10T09:45:00Z",
+      "updatedAt": "2026-10-11T10:20:00Z"
+    },
+    {
+      "number": 8,
+      "title": "fix(api): reject unknown currency codes",
+      "body": "`POST /invoices` stored whatever currency it was sent, including an empty one, and finance could not reconcile those invoices.\n\n## Changes\n\n- Add `invoice.ValidCurrency` (EUR, GBP, NOK, SEK, USD)\n- `POST /invoices` trims and upper-cases the code and answers 422 for an unsupported one\n- Handler test for valid, empty and unknown codes\n",
+      "author": "fredric",
+      "state": "open",
+      "draft": false,
+      "headRef": "08-currency-validation",
+      "headSha": "8fc70b1623cb6c660d97bc04737a11792c3e578a",
+      "baseRef": "main",
+      "baseSha": "ae8c0729f5e37051e9bb3a46eeab52d1efb36aec",
+      "url": "https://github.com/acme/billing-svc/pull/8",
+      "labels": ["bug", "api"],
+      "reviewers": ["alice"],
+      "reviewRequested": false,
+      "viewerApproved": false,
+      "viewerCommented": false,
+      "ci": "pending",
+      "additions": 48,
+      "deletions": 1,
+      "changedFiles": 3,
+      "files": [
+        "internal/api/handlers.go",
+        "internal/api/handlers_test.go",
+        "internal/invoice/currency.go"
+      ],
+      "createdAt": "2026-10-11T14:25:00Z",
+      "updatedAt": "2026-10-11T14:25:00Z"
+    }
+  ]
+}

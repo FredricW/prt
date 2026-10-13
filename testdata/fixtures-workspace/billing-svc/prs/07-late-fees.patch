@@ -1,0 +1,133 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Alice <alice@acme.example>
+Date: Sat, 10 Oct 2026 09:30:00 +0000
+Subject: [PATCH] feat(invoice): late fees on overdue invoices
+
+Overdue invoices accrue 1.5% per started 30 days past the due date, capped
+at six periods. GET /invoices/{id} returns the fee and the amount due.
+---
+ README.md                        |  4 ++++
+ internal/api/handlers.go         | 14 +++++++++++++-
+ internal/invoice/invoice.go      | 25 +++++++++++++++++++++++++
+ internal/invoice/invoice_test.go | 22 ++++++++++++++++++++++
+ 4 files changed, 64 insertions(+), 1 deletion(-)
+
+diff --git a/README.md b/README.md
+index 4504b48..6b1a491 100644
+--- a/README.md
++++ b/README.md
+@@ -13,3 +13,7 @@ Issues invoices to acme customers and records their payments.
+ 
+ Amounts are integers in the currency's minor unit (cents, øre, pence).
+ Invoices are due 30 days after they are issued.
++
++Overdue invoices accrue a late fee of 1.5% per started 30 days, for at most
++six periods. `GET /invoices/{id}` returns it as `late_fee_cents`, next to
++`amount_due_cents`.
+diff --git a/internal/api/handlers.go b/internal/api/handlers.go
+index 06ed19f..1df1e0b 100644
+--- a/internal/api/handlers.go
++++ b/internal/api/handlers.go
+@@ -56,13 +56,25 @@ func (s *Server) createInvoice(w http.ResponseWriter, r *http.Request) {
+ 	writeJSON(w, http.StatusCreated, inv)
+ }
+ 
++// invoiceView is an invoice with the late fee and amount due right now.
++type invoiceView struct {
++	invoice.Invoice
++	LateFeeCents   int64 `json:"late_fee_cents"`
++	AmountDueCents int64 `json:"amount_due_cents"`
++}
++
+ func (s *Server) getInvoice(w http.ResponseWriter, r *http.Request) {
+ 	inv, err := s.store.Get(r.PathValue("id"))
+ 	if err != nil {
+ 		writeError(w, err)
+ 		return
+ 	}
+-	writeJSON(w, http.StatusOK, inv)
++	now := s.now()
++	writeJSON(w, http.StatusOK, invoiceView{
++		Invoice:        inv,
++		LateFeeCents:   inv.LateFee(now),
++		AmountDueCents: inv.AmountDue(now),
++	})
+ }
+ 
+ func (s *Server) payInvoice(w http.ResponseWriter, r *http.Request) {
+diff --git a/internal/invoice/invoice.go b/internal/invoice/invoice.go
+index e4659e6..fa6d80d 100644
+--- a/internal/invoice/invoice.go
++++ b/internal/invoice/invoice.go
+@@ -19,6 +19,13 @@ const (
+ // PaymentTerms is how long a customer has to pay an invoice.
+ const PaymentTerms = 30 * 24 * time.Hour
+ 
++// Late fees: LateFeeBasisPoints of the amount (150 = 1.5%) for every started
++// PaymentTerms period past the due date, for at most MaxLatePeriods periods.
++const (
++	LateFeeBasisPoints = 150
++	MaxLatePeriods     = 6
++)
++
+ // ErrNotFound is returned for an unknown invoice id.
+ var ErrNotFound = errors.New("invoice not found")
+ 
+@@ -51,6 +58,24 @@ func (inv Invoice) Overdue(now time.Time) bool {
+ 	return inv.Status == StatusOpen && now.After(inv.DueAt)
+ }
+ 
++// LateFee is the late fee owed on inv at now, in minor units; zero unless
++// the invoice is overdue.
++func (inv Invoice) LateFee(now time.Time) int64 {
++	if !inv.Overdue(now) {
++		return 0
++	}
++	periods := int64(now.Sub(inv.DueAt)/PaymentTerms) + 1
++	if periods > MaxLatePeriods {
++		periods = MaxLatePeriods
++	}
++	return inv.AmountCents * LateFeeBasisPoints * periods / 10_000
++}
++
++// AmountDue is the amount plus any late fee at now.
++func (inv Invoice) AmountDue(now time.Time) int64 {
++	return inv.AmountCents + inv.LateFee(now)
++}
++
+ // Store keeps invoices in memory.
+ type Store struct {
+ 	mu   sync.Mutex
+diff --git a/internal/invoice/invoice_test.go b/internal/invoice/invoice_test.go
+index 3a70af0..23383f1 100644
+--- a/internal/invoice/invoice_test.go
++++ b/internal/invoice/invoice_test.go
+@@ -39,6 +39,28 @@ func TestOverdue(t *testing.T) {
+ 	}
+ }
+ 
++func TestLateFee(t *testing.T) {
++	inv := New("inv_0001", "cus_1", "EUR", 10_000, issued)
++	day := 24 * time.Hour
++	for _, c := range []struct {
++		name string
++		now  time.Time
++		want int64
++	}{
++		{"not yet due", inv.DueAt.Add(-day), 0},
++		{"first day late", inv.DueAt.Add(day), 150},
++		{"second period", inv.DueAt.Add(PaymentTerms + day), 300},
++		{"capped", inv.DueAt.Add(20 * PaymentTerms), 900},
++	} {
++		if got := inv.LateFee(c.now); got != c.want {
++			t.Errorf("%s: LateFee = %d, want %d", c.name, got, c.want)
++		}
++	}
++	if got := inv.AmountDue(inv.DueAt.Add(day)); got != 10_150 {
++		t.Errorf("AmountDue = %d, want 10150", got)
++	}
++}
++
+ func TestStoreMarkPaid(t *testing.T) {
+ 	s := NewStore()
+ 	s.Put(New("inv_0001", "cus_1", "EUR", 12_500, issued))

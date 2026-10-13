@@ -1,0 +1,13 @@
+{
+  "repos": [
+    {"dir": "portal", "src": "../fixtures", "origin": "https://github.com/acme/portal.git", "prs": "../fixtures/prs.json"},
+    {"dir": "billing-svc", "src": "billing-svc", "origin": "https://github.com/acme/billing-svc.git", "prs": "billing-svc/prs.json"}
+  ],
+  "plain": [{"dir": "notes", "files": {"README.md": "Team notes. Not a git repository.\n"}}],
+  "decoys": [
+    {"dir": "node_modules/left-pad", "why": "node_modules is never searched"},
+    {"dir": "vendor/old-lib", "why": "vendor is never searched"},
+    {"dir": "archive/2019/legacy-app", "why": "depth 3, below the default depth 2"}
+  ],
+  "symlinks": [{"path": "links/loop", "target": ".."}]
+}

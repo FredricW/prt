@@ -1,3 +1,4 @@
 # Fixture patches must stay byte-exact: fixturegen applies them with `git am`
 # and the generated SHAs are pinned in testdata/fixtures/prs.json.
 testdata/fixtures/prs/*.patch -text
+testdata/fixtures-workspace/*/prs/*.patch -text

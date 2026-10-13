@@ -3,6 +3,7 @@
 // tests, which generate a fresh copy into a temp dir):
 //
 //	testdata/fixtures/base/**             tree of the initial commit on main
+//	testdata/fixtures/base-message.txt    optional message of that commit
 //	testdata/fixtures/prs/NN-name.patch   one branch per patch, off main
 //	testdata/fixtures/history/<branch>.<label>.patch
 //	                                      an earlier head of <branch> (M4)
@@ -22,10 +23,17 @@
 // identity, base commit and plain-diff dates are fixed, so SHAs are stable
 // across machines and runs.
 //
-// The generated repo gets an `origin` remote pointing at the fictional
-// GitHub repo acme/portal so remote parsing works; nothing ever contacts it.
+// The generated repo gets an `origin` remote pointing at a fictional GitHub
+// repo (acme/portal unless Options.OriginURL says otherwise) so remote
+// parsing works; nothing ever contacts it.
 //
-// Usage: go run ./tools/fixturegen -src testdata/fixtures -out testdata/fixture-repo
+// GenerateWorkspace builds a multi-repo fixture workspace (M5.3) from a
+// manifest; see Manifest.
+//
+// Usage:
+//
+//	go run ./tools/fixturegen -src testdata/fixtures -out testdata/fixture-repo
+//	go run ./tools/fixturegen -workspace testdata/fixtures-workspace/manifest.json
 package fixturegen
 
 import (
@@ -47,14 +55,35 @@ const (
 	fixedDate = "2026-10-01T09:00:00Z"
 	// OriginURL is the fictional remote of the fixture repo.
 	OriginURL = "https://github.com/acme/portal.git"
-	// baseMessage is the commit message of the base commit on main.
+	// baseMessage is the commit message of the base commit on main when the
+	// sources have no base-message.txt.
 	baseMessage = "chore: import portal monorepo"
+	// baseMessageFile names the optional file in the sources that holds
+	// the base commit's message.
+	baseMessageFile = "base-message.txt"
 )
 
-// Generate recreates the repository at out from the fixture sources in src.
-// out must be inside a directory named testdata (it is deleted first).
+// Options tunes GenerateWith.
+type Options struct {
+	// OriginURL is the generated repo's origin remote; "" means OriginURL.
+	OriginURL string
+}
+
+// Generate recreates the repository at out from the fixture sources in src
+// with the default Options. out must be inside a directory named testdata
+// (it is deleted first).
 func Generate(ctx context.Context, src, out string) error {
+	return GenerateWith(ctx, src, out, Options{})
+}
+
+// GenerateWith recreates the repository at out from the fixture sources in
+// src. out must be inside a directory named testdata (it is deleted first).
+func GenerateWith(ctx context.Context, src, out string, o Options) error {
 	absOut, err := outputDir(out)
+	if err != nil {
+		return err
+	}
+	msg, err := readBaseMessage(src)
 	if err != nil {
 		return err
 	}
@@ -65,7 +94,7 @@ func Generate(ctx context.Context, src, out string) error {
 	if err := r.git(ctx, "init", "-q", "-b", "main"); err != nil {
 		return err
 	}
-	if err := commitBase(ctx, r, filepath.Join(src, "base")); err != nil {
+	if err := commitBase(ctx, r, filepath.Join(src, "base"), msg); err != nil {
 		return err
 	}
 	if err := applyPatches(ctx, r, filepath.Join(src, "prs")); err != nil {
@@ -77,10 +106,31 @@ func Generate(ctx context.Context, src, out string) error {
 	if err := r.git(ctx, "checkout", "-q", "main"); err != nil {
 		return err
 	}
-	if err := r.git(ctx, "remote", "add", "origin", OriginURL); err != nil {
+	origin := o.OriginURL
+	if origin == "" {
+		origin = OriginURL
+	}
+	if err := r.git(ctx, "remote", "add", "origin", origin); err != nil {
 		return err
 	}
 	return installConfig(filepath.Join(src, "prt.toml"), absOut)
+}
+
+// readBaseMessage returns the base commit's message: the trimmed contents
+// of <src>/base-message.txt, or baseMessage when the file is absent or
+// blank.
+func readBaseMessage(src string) (string, error) {
+	b, err := os.ReadFile(filepath.Join(src, baseMessageFile))
+	if errors.Is(err, fs.ErrNotExist) {
+		return baseMessage, nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("read %s: %w", baseMessageFile, err)
+	}
+	if msg := strings.TrimSpace(string(b)); msg != "" {
+		return msg, nil
+	}
+	return baseMessage, nil
 }
 
 // outputDir resolves out and refuses anything not under a testdata directory,
@@ -106,8 +156,9 @@ func resetDir(dir string) error {
 	return nil
 }
 
-// commitBase copies the base tree (or a stub README when absent) and commits it on main.
-func commitBase(ctx context.Context, r repo, base string) error {
+// commitBase copies the base tree (or a stub README when absent) and
+// commits it on main with message msg.
+func commitBase(ctx context.Context, r repo, base, msg string) error {
 	if _, err := os.Stat(base); err == nil {
 		if err := copyTree(base, r.dir); err != nil {
 			return fmt.Errorf("copy base: %w", err)
@@ -118,7 +169,7 @@ func commitBase(ctx context.Context, r repo, base string) error {
 	if err := r.git(ctx, "add", "-A"); err != nil {
 		return err
 	}
-	return r.git(ctx, "commit", "-q", "-m", baseMessage)
+	return r.git(ctx, "commit", "-q", "-m", msg)
 }
 
 // applyPatches creates one branch off main per patch file, in file-name order.

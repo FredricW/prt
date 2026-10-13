@@ -17,6 +17,9 @@ go.work.sum
 
 # Generated fixture repository (built by `make fixtures` from testdata/fixtures)
 /testdata/fixture-repo/
+# Generated fixture workspace (M5.3; built by `make fixtures` from
+# testdata/fixtures and testdata/fixtures-workspace)
+/testdata/fixture-workspace/
 
 # Logs and local state
 *.log

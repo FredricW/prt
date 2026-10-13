@@ -1,5 +1,13 @@
 // Package testutil wires fixtures and fakes for tests across packages. It
 // must only be imported from _test.go files.
+//
+// Fixtures are generated fresh into t.TempDir() from the committed sources
+// (they need only the git binary): FixtureRepo builds the single portal
+// repo from testdata/fixtures, FixtureWorkspace the M5.3 multi-repo
+// workspace from testdata/fixtures-workspace/manifest.json (portal,
+// billing-svc, a plain directory, decoy repos and a symlink loop). The
+// offline GitHub fixtures are FixturePRs for portal and, per workspace
+// repo, fixturegen.Manifest.PRsFor.
 package testutil
 
 import (
@@ -61,6 +69,34 @@ func FixtureRepo(t testing.TB) string {
 		t.Fatalf("generate fixture repo: %v", err)
 	}
 	return out
+}
+
+// FixtureWorkspace generates a fresh fixture workspace from
+// testdata/fixtures-workspace/manifest.json into a temp dir and returns its
+// root. Its portal repo has the same SHAs as FixtureRepo. It skips the test
+// when git is missing and fails it if generation fails.
+func FixtureWorkspace(t testing.TB) string {
+	t.Helper()
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	out := filepath.Join(t.TempDir(), "testdata", "fixture-workspace")
+	if err := fixturegen.GenerateWorkspace(context.Background(), FixtureWorkspaceManifest(t), out); err != nil {
+		t.Fatalf("generate fixture workspace: %v", err)
+	}
+	return out
+}
+
+// FixtureWorkspaceManifest returns the absolute path of
+// testdata/fixtures-workspace/manifest.json (load it with
+// fixturegen.LoadManifest); it fails the test if the file is missing.
+func FixtureWorkspaceManifest(t testing.TB) string {
+	t.Helper()
+	p := Testdata(t, "fixtures-workspace", "manifest.json")
+	if _, err := os.Stat(p); err != nil {
+		t.Fatalf("testdata/fixtures-workspace/manifest.json: %v", err)
+	}
+	return p
 }
 
 // FixturePRs returns testdata/fixtures/prs.json (the offline GitHub fixture

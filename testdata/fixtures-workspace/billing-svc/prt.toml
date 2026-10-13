@@ -1,0 +1,8 @@
+# Repo-local prt config for the billing-svc fixture repo; fixturegen copies
+# it to <fixture-workspace>/billing-svc/.git/prt/prt.toml.
+[user]
+role = "backend"
+owns = ["internal/**"]
+
+[github]
+repo = "acme/billing-svc"

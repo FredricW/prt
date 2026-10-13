@@ -1,0 +1,119 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Fredric <fredric@acme.example>
+Date: Mon, 12 Oct 2026 16:45:00 +0000
+Subject: [PATCH] wip: usage export as CSV
+
+Spike for finance: GET /exports/usage.csv dumps every invoice. No paging
+or auth yet.
+---
+ internal/api/handlers.go    |  9 +++++++++
+ internal/export/usage.go    | 37 +++++++++++++++++++++++++++++++++++++
+ internal/invoice/invoice.go | 14 ++++++++++++++
+ 3 files changed, 60 insertions(+)
+ create mode 100644 internal/export/usage.go
+
+diff --git a/internal/api/handlers.go b/internal/api/handlers.go
+index 06ed19f..e6d0cb1 100644
+--- a/internal/api/handlers.go
++++ b/internal/api/handlers.go
+@@ -10,6 +10,7 @@ import (
+ 	"sync/atomic"
+ 	"time"
+ 
++	"example.com/billing-svc/internal/export"
+ 	"example.com/billing-svc/internal/invoice"
+ )
+ 
+@@ -31,9 +32,17 @@ func (s *Server) Routes() http.Handler {
+ 	mux.HandleFunc("POST /invoices", s.createInvoice)
+ 	mux.HandleFunc("GET /invoices/{id}", s.getInvoice)
+ 	mux.HandleFunc("POST /invoices/{id}/pay", s.payInvoice)
++	mux.HandleFunc("GET /exports/usage.csv", s.exportUsage)
+ 	return mux
+ }
+ 
++func (s *Server) exportUsage(w http.ResponseWriter, _ *http.Request) {
++	w.Header().Set("Content-Type", "text/csv")
++	if err := export.WriteUsageCSV(w, s.store.All()); err != nil {
++		http.Error(w, "export failed", http.StatusInternalServerError)
++	}
++}
++
+ type createRequest struct {
+ 	CustomerID  string `json:"customer_id"`
+ 	Currency    string `json:"currency"`
+diff --git a/internal/export/usage.go b/internal/export/usage.go
+new file mode 100644
+index 0000000..81f1d3a
+--- /dev/null
++++ b/internal/export/usage.go
+@@ -0,0 +1,37 @@
++// Package export writes billing data for finance.
++//
++// Spike: CSV only, no paging, no auth. Not for merging as is.
++package export
++
++import (
++	"encoding/csv"
++	"io"
++	"strconv"
++	"time"
++
++	"example.com/billing-svc/internal/invoice"
++)
++
++// WriteUsageCSV writes one row per invoice with a header row first.
++func WriteUsageCSV(w io.Writer, invs []invoice.Invoice) error {
++	cw := csv.NewWriter(w)
++	header := []string{"id", "customer_id", "currency", "amount_cents", "status", "issued_at"}
++	if err := cw.Write(header); err != nil {
++		return err
++	}
++	for _, inv := range invs {
++		row := []string{
++			inv.ID,
++			inv.CustomerID,
++			inv.Currency,
++			strconv.FormatInt(inv.AmountCents, 10),
++			string(inv.Status),
++			inv.IssuedAt.Format(time.RFC3339),
++		}
++		if err := cw.Write(row); err != nil {
++			return err
++		}
++	}
++	cw.Flush()
++	return cw.Error()
++}
+diff --git a/internal/invoice/invoice.go b/internal/invoice/invoice.go
+index e4659e6..1d4c8e8 100644
+--- a/internal/invoice/invoice.go
++++ b/internal/invoice/invoice.go
+@@ -3,6 +3,7 @@ package invoice
+ 
+ import (
+ 	"errors"
++	"sort"
+ 	"sync"
+ 	"time"
+ )
+@@ -80,6 +81,19 @@ func (s *Store) Get(id string) (Invoice, error) {
+ 	return inv, nil
+ }
+ 
++// All returns every invoice, ordered by id.
++// TODO: page this before the store grows past a few thousand invoices.
++func (s *Store) All() []Invoice {
++	s.mu.Lock()
++	defer s.mu.Unlock()
++	out := make([]Invoice, 0, len(s.byID))
++	for _, inv := range s.byID {
++		out = append(out, inv)
++	}
++	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
++	return out
++}
++
+ // MarkPaid records the payment of an invoice and returns it.
+ func (s *Store) MarkPaid(id string) (Invoice, error) {
+ 	s.mu.Lock()
