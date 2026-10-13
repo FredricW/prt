@@ -6,7 +6,9 @@ PR is safe instead of all 400. Judgments come from Jev, grouping from a local
 embedding model, reviews from the cheapest LLM tier that can do the job, and
 every number on screen traces back to a label, a rule or a git fact.
 
-> Status: early development (M0 — a fast PR browser — done; labels from M1). See
+> Status: early development. M0 (a fast PR browser) and M1 (change units and
+> Jev labels: Overview page, labelled Code page) are done; grouping comes in
+> M2. See
 > [`docs/spec.md`](docs/spec.md) for the design and
 > [`CHANGELOG.md`](CHANGELOG.md) for what works today.
 
@@ -49,6 +51,13 @@ prt                 # picker on the left, the selected PR/branch on the right
 - `j`/`k` move through the picker, `enter` focuses the diff, `esc` goes back.
 - `1` overview, `2` code; `]`/`[` jump between files in the diff.
 - `o` opens the PR on GitHub, `c` checks it out (asks first if your tree is dirty).
+- On the Code page: `n`/`p` next/previous unit, `J`/`K` next/previous file,
+  `f` opens the filters bar (then `1`–`9`, `0` toggle filters; needs eyes,
+  behaviour and mine are on by default), `z` expands collapsed noise, `L`
+  shows the raw Jev labels of the current unit.
+- Labels need `JEV_API_KEY`. Without it (or when Jev is unreachable) items
+  show `labels unavailable`: the Overview shows git facts only and the Code
+  page shows every unit with its diff, filters off.
 - `r` re-runs analysis for the selected item; `?` shows every key; `q` quits.
 - `prt daemon` keeps analysis warm in the background (one per repo); `prt`
   connects to it automatically, or runs everything in-process with `--no-daemon`.
