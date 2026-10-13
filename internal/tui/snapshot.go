@@ -16,16 +16,24 @@ type Runner interface {
 	RunSync(ctx context.Context, itemID string) error
 }
 
-// Snapshot renders a few screens to w without a TTY, for agents and CI:
-// discovery, analysis of every item (synchronously), then the picker with
-// each item selected in turn (at most maxItems). Output has no colour.
+// Snapshot renders screens to w without a TTY, for agents and CI. See
+// SnapshotWithOptions; ages are relative to the real clock.
 func Snapshot(ctx context.Context, c daemon.Client, w io.Writer, width, height, maxItems int) error {
+	return SnapshotWithOptions(ctx, c, w, width, height, maxItems, Options{})
+}
+
+// SnapshotWithOptions discovers items, analyses every item synchronously
+// (when c is a Runner), then writes, for each of the first maxItems items,
+// the picker with the Overview tab and the picker with the Code tab, plus
+// one help-overlay screen. Screens are separated by "=== screen: … ==="
+// headers. Output has no colour; pass o.Now for deterministic ages.
+func SnapshotWithOptions(ctx context.Context, c daemon.Client, w io.Writer, width, height, maxItems int, o Options) error {
 	if err := c.Discover(ctx); err != nil {
-		return fmt.Errorf("snapshot: discover: %w", err)
+		_, _ = fmt.Fprintf(w, "# discover failed: %v\n", err)
 	}
 	items, err := c.Items(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("snapshot: items: %w", err)
 	}
 	if r, ok := c.(Runner); ok {
 		for _, it := range items {
@@ -34,28 +42,39 @@ func Snapshot(ctx context.Context, c daemon.Client, w io.Writer, width, height, 
 			}
 		}
 		if items, err = c.Items(ctx); err != nil {
-			return err
+			return fmt.Errorf("snapshot: items: %w", err)
 		}
 	}
-	m := New(c, lipgloss.NewRenderer(io.Discard))
+	o.RefreshEvery = 0
+	m := NewWithOptions(c, lipgloss.NewRenderer(io.Discard), o)
 	var tm tea.Model = m
 	tm, _ = tm.Update(tea.WindowSizeMsg{Width: width, Height: height})
-	tm, _ = tm.Update(itemsMsg(items))
-	n := len(tm.(Model).items)
+	tm, _ = tm.Update(itemsMsg{items: items})
+	m = tm.(Model)
+	n := len(m.picker.items)
 	if n == 0 {
-		_, _ = fmt.Fprintf(w, "=== screen: picker (empty) ===\n%s\n", tm.View())
-		return nil
+		_, err := fmt.Fprintf(w, "=== screen: picker (empty) ===\n%s\n", m.View())
+		return err
 	}
 	for i := 0; i < n && i < maxItems; i++ {
-		root := tm.(Model)
-		root.cursor = i
-		it, _ := root.selected()
+		m.picker.moveTo(i)
+		it, _ := m.picker.selected()
 		d, err := c.Detail(ctx, it.ID)
 		if err != nil {
-			return err
+			return fmt.Errorf("snapshot: detail %s: %w", it.ID, err)
 		}
-		tm, _ = root.Update(detailMsg(d))
-		_, _ = fmt.Fprintf(w, "=== screen: picker + diff · %s ===\n%s\n\n", it.ID, tm.View())
+		m.applyDetail(d)
+		for _, tab := range []struct {
+			t    Tab
+			name string
+		}{{TabOverview, "overview"}, {TabCode, "code"}} {
+			m.tab = tab.t
+			if _, err := fmt.Fprintf(w, "=== screen: picker + %s · %s ===\n%s\n\n", tab.name, it.ID, m.View()); err != nil {
+				return err
+			}
+		}
 	}
-	return nil
+	m.tab, m.focus, m.showHelp = TabOverview, FocusPicker, true
+	_, err = fmt.Fprintf(w, "=== screen: help · picker ===\n%s\n", m.View())
+	return err
 }
