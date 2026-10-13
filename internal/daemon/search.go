@@ -266,6 +266,13 @@ func (c *InProcess) RemovePreview(ctx context.Context, id string) error {
 	return c.removePreview(ctx, id)
 }
 
+// RemovePreviews deletes every stored preview and cancels its run, silently
+// (failures are logged). A workspace calls it on its other repos after a
+// preview, so one preview exists per workspace as one exists per repo.
+func (c *InProcess) RemovePreviews(ctx context.Context) {
+	c.removePreviews(ctx, "")
+}
+
 // removePreviews deletes every stored preview except keep, silently (no
 // event: a preview was never listed). Failures are logged.
 func (c *InProcess) removePreviews(ctx context.Context, keep string) {

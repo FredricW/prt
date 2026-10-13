@@ -115,3 +115,37 @@ func TestWorkspaceOverRealClients(t *testing.T) {
 		t.Errorf("repo a = %+v", ws.Repos[0])
 	}
 }
+
+// One preview exists per workspace: previewing a hit of another repo drops
+// the first repo's preview (stored and analysing, never listed), as a second
+// preview in the same repo does.
+func TestWorkspacePreviewAcrossRepos(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	ctx := context.Background()
+	pool, ledger := daemon.NewPool(2), daemon.NewLedger()
+	a, b := realMember(t, "a", pool, ledger), realMember(t, "b", pool, ledger)
+	c := New(t.TempDir(), []Member{a, b}, ClientOptions{Pool: pool, Ledger: ledger})
+	t.Cleanup(func() { _ = c.Close() })
+
+	stored := func(id string) bool {
+		_, err := c.DetailOf(ctx, proto.DetailParams{ItemID: id, NoLabels: true})
+		return err == nil
+	}
+	it, err := c.Preview(ctx, "a#101")
+	if err != nil || it.ID != "a::pr:101" || it.Source != model.SourcePreview {
+		t.Fatalf("Preview(a#101) = %+v, %v", it, err)
+	}
+	if !stored("a::pr:101") {
+		t.Fatal("a's preview is not stored")
+	}
+	if it, err = c.Preview(ctx, "b#102"); err != nil || it.ID != "b::pr:102" {
+		t.Fatalf("Preview(b#102) = %+v, %v", it, err)
+	}
+	if stored("a::pr:101") {
+		t.Error("a's preview is still stored after a preview in b")
+	}
+	if !stored("b::pr:102") {
+		t.Error("b's preview is not stored")
+	}
+}

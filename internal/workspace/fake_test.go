@@ -23,8 +23,8 @@ type call struct {
 
 // fakeMember is a member client with canned results that records every
 // call. Besides daemon.Client it has every optional capability (RunSync,
-// AnalysePending, ReloadSettings, RepoInfo); wrap it in plainMember to
-// hide them.
+// AnalysePending, ReloadSettings, RepoInfo, RemovePreviews); wrap it in
+// plainMember to hide them.
 type fakeMember struct {
 	info proto.RepoInfo
 
@@ -286,6 +286,8 @@ func (f *fakeMember) ReloadSettings(context.Context) (proto.SettingsInfo, error)
 }
 
 func (f *fakeMember) RepoInfo() proto.RepoInfo { return f.live }
+
+func (f *fakeMember) RemovePreviews(context.Context) { f.record("RemovePreviews", nil) }
 
 // newTestClient builds a workspace client over fakes (closed at cleanup).
 func newTestClient(t *testing.T, fakes ...*fakeMember) *Client {

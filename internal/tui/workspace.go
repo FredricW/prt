@@ -406,31 +406,40 @@ func (m Model) repoCommand(arg string) (Model, tea.Cmd) {
 	return m, nil
 }
 
-// resolveRepo finds the repo arg names: a key or label, exactly, then
-// ignoring case, then a unique base name ("billing-svc" for
-// "acme/billing-svc").
+// resolveRepo finds the repo arg names, trying in order: the key exactly; a
+// label or GitHub "owner/name" exactly; a key, label or GitHub name ignoring
+// case; a base name ("billing-svc" for "acme/billing-svc"). The first rule
+// that matches decides, and it is ambiguous when it matches several repos
+// (two clones of one GitHub repo share its name), as workspace.Resolve is.
 func (m Model) resolveRepo(arg string) (string, error) {
-	repos := m.ws.Repos
-	for _, same := range []func(a, b string) bool{func(a, b string) bool { return a == b }, strings.EqualFold} {
-		for _, r := range repos {
-			if same(arg, r.Key) || (r.Label != "" && same(arg, r.Label)) {
-				return r.Key, nil
+	named := func(r proto.RepoInfo, same func(a, b string) bool) bool {
+		return (r.Label != "" && same(arg, r.Label)) || (r.GHRepo != "" && same(arg, r.GHRepo))
+	}
+	exact := func(a, b string) bool { return a == b }
+	rules := []func(r proto.RepoInfo) bool{
+		func(r proto.RepoInfo) bool { return arg == r.Key },
+		func(r proto.RepoInfo) bool { return named(r, exact) },
+		func(r proto.RepoInfo) bool { return strings.EqualFold(arg, r.Key) || named(r, strings.EqualFold) },
+		func(r proto.RepoInfo) bool {
+			return strings.EqualFold(arg, path.Base(r.Key)) || (r.Label != "" && strings.EqualFold(arg, path.Base(r.Label)))
+		},
+	}
+	for _, match := range rules {
+		var hits []string
+		for _, r := range m.ws.Repos {
+			if match(r) {
+				hits = append(hits, r.Key)
 			}
 		}
-	}
-	var hits []string
-	for _, r := range repos {
-		if strings.EqualFold(arg, path.Base(r.Key)) || (r.Label != "" && strings.EqualFold(arg, path.Base(r.Label))) {
-			hits = append(hits, r.Key)
+		switch len(hits) {
+		case 0:
+			continue
+		case 1:
+			return hits[0], nil
 		}
+		return "", fmt.Errorf("repo %q is ambiguous: %s", arg, strings.Join(m.repoLabels(hits), ", "))
 	}
-	switch len(hits) {
-	case 1:
-		return hits[0], nil
-	case 0:
-		return "", fmt.Errorf("unknown repo %q — repos: %s", arg, strings.Join(m.repoLabels(nil), ", "))
-	}
-	return "", fmt.Errorf("repo %q is ambiguous: %s", arg, strings.Join(m.repoLabels(hits), ", "))
+	return "", fmt.Errorf("unknown repo %q — repos: %s", arg, strings.Join(m.repoLabels(nil), ", "))
 }
 
 // repoLabels are the labels of keys (every repo's when keys is nil).

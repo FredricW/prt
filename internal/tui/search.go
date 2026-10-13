@@ -299,8 +299,8 @@ func (m Model) onSearchMsg(msg tea.Msg) (Model, tea.Cmd, bool) {
 		if m.hasNext {
 			// Another tab came while this call ran: this answer is stale. The
 			// next call's daemon cleanup drops its item (one preview at a
-			// time); a stale item left by a failing next call goes at the
-			// next preview or daemon start-up.
+			// time, in a workspace across every repo); a stale item left by a
+			// failing next call goes at the next preview or daemon start-up.
 			q := m.previewNext
 			m.previewNext, m.hasNext = "", false
 			return m, m.previewCmd(q), true

@@ -83,10 +83,12 @@ func (c *Client) Search(ctx context.Context, p proto.SearchParams) (proto.Search
 // explicit qualifier is what the user typed; else p.Repo's repo, else every
 // repo.
 func (c *Client) searchTargets(p proto.SearchParams) ([]Member, string, error) {
-	if repo, local, ok := ParseQualified(p.Query); ok {
-		if m, err := c.Resolve(repo); err == nil {
-			return []Member{m}, local, nil
-		}
+	m, local, ok, err := c.resolveQualified(p.Query)
+	if err != nil {
+		return nil, "", err
+	}
+	if ok {
+		return []Member{m}, local, nil
 	}
 	if p.Repo != "" {
 		m, err := c.Resolve(p.Repo)
@@ -136,14 +138,36 @@ func (c *Client) Add(ctx context.Context, query string) (model.Item, error) {
 	return outItem(m.Info.Key, it), err
 }
 
-// Preview implements daemon.Client, choosing the repo as Add does.
+// Preview implements daemon.Client, choosing the repo as Add does. One
+// preview exists per workspace: a repo drops its own older previews
+// (InProcess.Preview), and after a successful preview every other repo
+// drops all of its previews (removeOtherPreviews), so tabbing through hits
+// of several repos never leaves an unlisted item stored and analysing.
 func (c *Client) Preview(ctx context.Context, query string) (model.Item, error) {
 	m, local, err := c.addTarget(ctx, query)
 	if err != nil {
 		return model.Item{}, err
 	}
 	it, err := m.Client.Preview(ctx, local)
+	if err == nil {
+		c.removeOtherPreviews(ctx, m)
+	}
 	return outItem(m.Info.Key, it), err
+}
+
+// removeOtherPreviews has every member but keep that can (RemovePreviews)
+// drop its previews, in parallel.
+func (c *Client) removeOtherPreviews(ctx context.Context, keep Member) {
+	others := make([]Member, 0, len(c.members))
+	for _, m := range c.members {
+		if _, ok := m.Client.(previewRemover); ok && m.Info.Key != keep.Info.Key {
+			others = append(others, m)
+		}
+	}
+	fanOut(ctx, others, 0, func(ctx context.Context, m Member) (struct{}, error) {
+		m.Client.(previewRemover).RemovePreviews(ctx)
+		return struct{}{}, nil
+	})
 }
 
 // addTarget picks the member an add or preview goes to: the repo of a
@@ -153,10 +177,8 @@ func (c *Client) Preview(ctx context.Context, query string) (model.Item, error) 
 // ref named exactly q. None or several is an error naming the way out.
 func (c *Client) addTarget(ctx context.Context, query string) (Member, string, error) {
 	q := strings.TrimSpace(query)
-	if repo, local, ok := ParseQualified(q); ok {
-		if m, err := c.Resolve(repo); err == nil {
-			return m, local, nil
-		}
+	if m, local, ok, err := c.resolveQualified(q); err != nil || ok {
+		return m, local, err
 	}
 	switch len(c.members) {
 	case 0:

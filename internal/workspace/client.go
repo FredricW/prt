@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"sort"
+	"strings"
 	"sync"
 
 	"github.com/charmbracelet/log"
@@ -66,6 +67,9 @@ type (
 	repoInfoer interface {
 		RepoInfo() proto.RepoInfo
 	}
+	previewRemover interface {
+		RemovePreviews(ctx context.Context)
+	}
 )
 
 // Client multiplexes the members' clients into one daemon.Client (see the
@@ -101,6 +105,7 @@ var _ daemon.Client = (*Client)(nil)
 func New(root string, members []Member, o ClientOptions) *Client {
 	ms := append([]Member(nil), members...)
 	sort.SliceStable(ms, func(i, j int) bool { return ms[i].Info.Key < ms[j].Info.Key })
+	uniqueLabels(ms)
 	c := &Client{
 		root: root, members: ms, byKey: make(map[string]int, len(ms)),
 		pool: o.Pool, ledger: o.Ledger, notes: append([]string(nil), o.Notes...),
@@ -123,8 +128,27 @@ func New(root string, members []Member, o ClientOptions) *Client {
 	return c
 }
 
-// Members returns the members in workspace order.
+// Members returns the members in workspace order (with the labels New made
+// unique).
 func (c *Client) Members() []Member { return append([]Member(nil), c.members...) }
+
+// uniqueLabels makes the members' labels unique, so picker headers, notes
+// and `:repo` can tell repos apart: a label several members share (two
+// clones of one GitHub repo are both "owner/name") becomes "<label>
+// (<key>)" on each of them, except on a member whose label is its own key
+// (keys are unique). Labels compare ignoring case, as Resolve matches them.
+func uniqueLabels(ms []Member) {
+	n := make(map[string]int, len(ms))
+	for _, m := range ms {
+		n[strings.ToLower(m.Info.Label)]++
+	}
+	for i := range ms {
+		l := ms[i].Info.Label
+		if l != "" && l != ms[i].Info.Key && n[strings.ToLower(l)] > 1 {
+			ms[i].Info.Label = l + " (" + ms[i].Info.Key + ")"
+		}
+	}
+}
 
 // label is how messages name a member: its label, else its key.
 func label(m Member) string {
@@ -160,8 +184,9 @@ func (c *Client) memberFor(repo string) (Member, error) {
 }
 
 // info is a member's live description: its client's RepoInfo when it has
-// one (live role and spend), with Key, Label, Status, Note, Root, GitDir and
-// GHRepo taken from Member.Info where the live one is empty.
+// one (live role and spend), with Key, Status, Note, Root, GitDir and
+// GHRepo taken from Member.Info where the live one is empty. The label is
+// always Member.Info's (made unique by New) when set.
 func (c *Client) info(m Member) proto.RepoInfo {
 	ri, ok := m.Client.(repoInfoer)
 	if !ok {
@@ -176,7 +201,9 @@ func (c *Client) info(m Member) proto.RepoInfo {
 		}
 	}
 	fill(&r.Key, m.Info.Key)
-	fill(&r.Label, m.Info.Label)
+	if m.Info.Label != "" {
+		r.Label = m.Info.Label
+	}
 	fill(&r.Note, m.Info.Note)
 	fill(&r.Root, m.Info.Root)
 	fill(&r.GitDir, m.Info.GitDir)

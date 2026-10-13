@@ -535,6 +535,30 @@ func TestAddAndPreview(t *testing.T) {
 			t.Errorf("Add = %+v, %v", it, err)
 		}
 	})
+	t.Run("one preview per workspace", func(t *testing.T) {
+		a, b, n, c := setup()
+		if _, err := c.Preview(ctx, "a#12"); err != nil {
+			t.Fatal(err)
+		}
+		if len(a.argsOf("RemovePreviews")) != 0 || len(b.argsOf("RemovePreviews")) != 1 || len(n.argsOf("RemovePreviews")) != 1 {
+			t.Errorf("after a preview in a: RemovePreviews a=%d b=%d notes=%d, want 0 1 1",
+				len(a.argsOf("RemovePreviews")), len(b.argsOf("RemovePreviews")), len(n.argsOf("RemovePreviews")))
+		}
+		if _, err := c.Preview(ctx, "svc/b#7"); err != nil {
+			t.Fatal(err)
+		}
+		if len(a.argsOf("RemovePreviews")) != 1 || len(b.argsOf("RemovePreviews")) != 1 {
+			t.Errorf("a preview in b did not drop a's previews")
+		}
+		// A failed preview drops nothing.
+		before := len(a.argsOf("RemovePreviews"))
+		if _, err := c.Preview(ctx, "#99"); err == nil {
+			t.Fatal("preview of a PR no repo has: no error")
+		}
+		if len(a.argsOf("RemovePreviews")) != before {
+			t.Error("a failed preview dropped other previews")
+		}
+	})
 	t.Run("a branch named like a qualifier", func(t *testing.T) {
 		a, _, _, c := setup()
 		a.hits = map[proto.SearchSource][]proto.SearchHit{proto.SearchLocal: {branchHit("feat#2")}}

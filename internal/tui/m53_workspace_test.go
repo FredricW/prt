@@ -399,6 +399,27 @@ func TestResolveRepoAmbiguousBaseName(t *testing.T) {
 	}
 }
 
+// Two clones of one GitHub repo: their shared GitHub name is ambiguous (as
+// workspace.Resolve says), their keys and the labels the workspace made
+// unique are not.
+func TestResolveRepoDuplicateGitHubRepo(t *testing.T) {
+	m := Model{ws: proto.WorkspaceInfo{Multi: true, Repos: []proto.RepoInfo{
+		{Key: "portal", Label: "acme/portal (portal)", GHRepo: "acme/portal"},
+		{Key: "portal-2", Label: "acme/portal (portal-2)", GHRepo: "acme/portal"},
+	}}}
+	for _, arg := range []string{"acme/portal", "ACME/portal"} {
+		want := fmt.Sprintf("repo %q is ambiguous: acme/portal (portal), acme/portal (portal-2)", arg)
+		if _, err := m.resolveRepo(arg); err == nil || err.Error() != want {
+			t.Errorf("%s → %v, want %q", arg, err, want)
+		}
+	}
+	for arg, key := range map[string]string{"portal": "portal", "portal-2": "portal-2", "acme/portal (portal-2)": "portal-2"} {
+		if k, err := m.resolveRepo(arg); err != nil || k != key {
+			t.Errorf("%s → %q %v, want %q", arg, k, err, key)
+		}
+	}
+}
+
 func TestWorkspaceKeysRebindableAndInHelp(t *testing.T) {
 	km, err := KeyMapFromConfig(map[string]string{"fold_repo": "ctrl+f", "fold_all": "alt+z", "repo_filter": "R",
 		"narrower": "alt+left", "wider": "alt+right"})
