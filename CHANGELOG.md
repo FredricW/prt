@@ -223,7 +223,9 @@ both strictly and asserts the grouping outcomes over #101–#104.
 
 - embeddinggemma-2 cosines are compressed; the fixture repo uses
   `embed_min_cosine = 0.88` (see DECISIONS). The spec default 0.72 makes
-  nearly every pair a candidate with this model.
+  nearly every pair a candidate with this model; relation requests are
+  capped at `max_pairs_per_unit` (default 3) × units per item, highest
+  cosine first.
 - Large star-shaped groups (one helper and all its updated callers, e.g.
   #102's 17-unit `requestJSON` group) stay whole above `max_group_units`.
 - The snapshot's status bar does not show the replay source note (the

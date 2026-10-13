@@ -62,6 +62,7 @@ Nothing outside those five packages makes a network call or runs `git`.
 | `internal/codeview` | M1/M2 | Code page component: mode A by file (file list, chips, gutter marks, noise collapse, filters, `L` overlay); mode B by change (groups, why links, mechanical example, merge/split) | M2 |
 | `tools/recordjev` | M1 | runs the pipeline over fixture PRs with a recording, budget-guarded Jev client; writes `testdata/recordings/jev/` and `SPEND.md`; shares `pipelinetest.FixtureRun`, `Problems` and `Expectations` with the replay test | M1 |
 | `internal/aggregate` | M1/M3 | spec "Ranking and aggregation" arithmetic, urgency + "why" | M1 arithmetic + M2 wired-unit fidelity rule |
+| `internal/shape` | M2 | mechanical class key: shape hash + literal edit signature (`Key`, `EditSig`), shared by link, pipeline and cluster | M2 |
 | `internal/link` | M2 | structural links (symbol index per base SHA), embed kNN candidates, mechanical candidates, `UnitText` | M2 |
 | `internal/judge` | M2 | non-unit Jev questions: pair `relation` (+ `Confirm`), group `name_bullet` (+ `ApplyNames`), file `separate_pr` (+ `Suggestion`); answers are labels on pair/group/file subjects | M2 |
 | `internal/embed` | M2 | `Embedder`, `Ollama` (`/api/embed`), `ONNX` stub, `Fake`, `Cosine`, `FromSpec`, `Replay`/`Recorder` over `testdata/recordings/embed` | M2 (ONNX TODO) |
