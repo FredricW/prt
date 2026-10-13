@@ -19,7 +19,7 @@ type KeyMap struct {
 	// Item actions (any focus).
 	Refresh, Overview, Code, Open, Checkout key.Binding
 	// Main pane scrolling (Code and Overview tabs).
-	PageDown, PageUp, NextFile, PrevFile key.Binding
+	PageDown, PageUp, HalfPageDown, HalfPageUp, NextFile, PrevFile key.Binding
 	// Global.
 	Help, Quit key.Binding
 	// Confirm prompts.
@@ -32,27 +32,29 @@ func DefaultKeyMap() KeyMap {
 		return key.NewBinding(key.WithKeys(keys...), key.WithHelp(helpKey(keys), desc))
 	}
 	return KeyMap{
-		Up:        b("up", "k", "up"),
-		Down:      b("down", "j", "down"),
-		Top:       b("top", "g", "home"),
-		Bottom:    b("bottom", "G", "end"),
-		Focus:     b("focus main pane", "enter"),
-		Back:      b("back to picker", "esc"),
-		NextFocus: b("next pane", "tab"),
-		PrevFocus: b("previous pane", "shift+tab"),
-		Refresh:   b("refresh item", "r"),
-		Overview:  b("overview tab", "1"),
-		Code:      b("code tab", "2"),
-		Open:      b("open on GitHub", "o"),
-		Checkout:  b("git checkout", "c"),
-		PageDown:  b("page down", "ctrl+d", "pgdown"),
-		PageUp:    b("page up", "ctrl+u", "pgup"),
-		NextFile:  b("next file", "]"),
-		PrevFile:  b("previous file", "["),
-		Help:      b("help", "?"),
-		Quit:      b("quit", "q", "ctrl+c"),
-		Yes:       b("yes", "y", "Y"),
-		No:        b("no", "n", "N", "esc"),
+		Up:           b("up", "k", "up"),
+		Down:         b("down", "j", "down"),
+		Top:          b("top", "g", "home"),
+		Bottom:       b("bottom", "G", "end"),
+		Focus:        b("focus main pane", "enter"),
+		Back:         b("back to picker", "esc"),
+		NextFocus:    b("next pane", "tab"),
+		PrevFocus:    b("previous pane", "shift+tab"),
+		Refresh:      b("refresh item", "r"),
+		Overview:     b("overview tab", "1"),
+		Code:         b("code tab", "2"),
+		Open:         b("open on GitHub", "o"),
+		Checkout:     b("git checkout", "c"),
+		PageDown:     b("page down", "pgdown", " "),
+		PageUp:       b("page up", "pgup"),
+		HalfPageDown: b("half page down", "ctrl+d"),
+		HalfPageUp:   b("half page up", "ctrl+u"),
+		NextFile:     b("next file", "]"),
+		PrevFile:     b("previous file", "["),
+		Help:         b("help", "?"),
+		Quit:         b("quit", "q", "ctrl+c"),
+		Yes:          b("yes", "y", "Y"),
+		No:           b("no", "n", "N", "esc"),
 	}
 }
 
@@ -70,6 +72,7 @@ func (k *KeyMap) actions() map[string]*key.Binding {
 		"focus": &k.Focus, "back": &k.Back, "next_focus": &k.NextFocus, "prev_focus": &k.PrevFocus,
 		"refresh": &k.Refresh, "overview": &k.Overview, "code": &k.Code, "open": &k.Open,
 		"checkout": &k.Checkout, "page_down": &k.PageDown, "page_up": &k.PageUp,
+		"half_page_down": &k.HalfPageDown, "half_page_up": &k.HalfPageUp,
 		"next_file": &k.NextFile, "prev_file": &k.PrevFile, "help": &k.Help, "quit": &k.Quit,
 	}
 }
@@ -135,7 +138,7 @@ func (k KeyMap) pickerHelp() [][]key.Binding {
 // codeHelp is the help shown when the Code tab has focus.
 func (k KeyMap) codeHelp() [][]key.Binding {
 	return [][]key.Binding{
-		{k.Down, k.Up, k.PageDown, k.PageUp, k.Top, k.Bottom},
+		{k.Down, k.Up, k.PageDown, k.PageUp, k.HalfPageDown, k.HalfPageUp, k.Top, k.Bottom},
 		{k.NextFile, k.PrevFile},
 		{k.Back, k.NextFocus, k.Overview, k.Code},
 		{k.Refresh, k.Open, k.Checkout, k.Help, k.Quit},
@@ -145,7 +148,7 @@ func (k KeyMap) codeHelp() [][]key.Binding {
 // overviewHelp is the help shown when the Overview tab has focus.
 func (k KeyMap) overviewHelp() [][]key.Binding {
 	return [][]key.Binding{
-		{k.Down, k.Up, k.PageDown, k.PageUp, k.Top, k.Bottom},
+		{k.Down, k.Up, k.PageDown, k.PageUp, k.HalfPageDown, k.HalfPageUp, k.Top, k.Bottom},
 		{k.Back, k.NextFocus, k.Overview, k.Code},
 		{k.Refresh, k.Open, k.Checkout, k.Help, k.Quit},
 	}

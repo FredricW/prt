@@ -83,6 +83,12 @@ type (
 		err   error
 	}
 	autoRefreshedMsg struct{ errs []error }
+	// reloadedMsg answers the single pending list reload that item events
+	// trigger (see onEvent).
+	reloadedMsg struct {
+		items []model.Item
+		err   error
+	}
 )
 
 // confirmCheckout is a pending "tree is dirty, checkout anyway?" prompt.
@@ -110,8 +116,11 @@ type Model struct {
 	detail        *proto.Detail
 	detailSeq     int
 	detailPending bool
-	overview      overview
-	code          code
+	// reloadPending is set while an event-triggered list reload is in
+	// flight, so a burst of item events causes one reload, not one each.
+	reloadPending, reloadAgain bool
+	overview                   overview
+	code                       code
 
 	requested map[string]string      // item id → head SHA auto-refreshed
 	stages    map[string]model.Stage // item id → latest stage seen
@@ -202,6 +211,27 @@ func (m Model) loadItems() tea.Cmd {
 	}
 }
 
+// reloadItems is loadItems for event-driven reloads; its answer clears
+// reloadPending even on error.
+func (m Model) reloadItems() tea.Cmd {
+	c := m.client
+	return func() tea.Msg {
+		items, err := c.Items(context.Background())
+		return reloadedMsg{items: items, err: err}
+	}
+}
+
+// queueReload starts an event-driven list reload unless one is in flight.
+func (m *Model) queueReload() tea.Cmd {
+	if m.reloadPending {
+		// The in-flight read may predate this event: read once more after.
+		m.reloadAgain = true
+		return nil
+	}
+	m.reloadPending = true
+	return m.reloadItems()
+}
+
 func (m Model) loadDetail(id string, seq int) tea.Cmd {
 	c := m.client
 	return func() tea.Msg {
@@ -214,9 +244,9 @@ func (m Model) loadDetail(id string, seq int) tea.Cmd {
 }
 
 func (m Model) listen() tea.Cmd {
-	ch := m.client.Events()
+	c := m.client
 	return func() tea.Msg {
-		e, ok := <-ch
+		e, ok := <-c.Events()
 		if !ok {
 			return closedMsg{}
 		}
@@ -282,6 +312,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleMouse(msg)
 	case itemsMsg:
 		return m.onItems(msg)
+	case reloadedMsg:
+		m.reloadPending = false
+		var again tea.Cmd
+		if m.reloadAgain {
+			m.reloadAgain = false
+			again = m.queueReload()
+		}
+		if msg.err != nil {
+			m.note = "error: load items: " + msg.err.Error()
+			return m, again
+		}
+		next, cmd := m.onItems(itemsMsg{items: msg.items})
+		return next, tea.Batch(cmd, again)
 	case detailMsg:
 		if msg.seq == m.detailSeq {
 			m.applyDetail(msg.d)
@@ -407,9 +450,9 @@ func (m Model) onEvent(e proto.Event) (tea.Model, tea.Cmd) {
 		if e.Item != nil {
 			m.picker.patch(*e.Item)
 		}
-		cmds = append(cmds, m.loadItems(), m.ensureSpin())
+		cmds = append(cmds, m.queueReload(), m.ensureSpin())
 	case proto.EventRemove:
-		cmds = append(cmds, m.loadItems())
+		cmds = append(cmds, m.queueReload())
 	case proto.EventStage:
 		if e.Stage != "" {
 			m.stages[e.ItemID] = e.Stage
@@ -621,8 +664,12 @@ func (m Model) handleMainKey(k tea.KeyMsg) Model {
 	case key.Matches(k, km.Up):
 		vp.ScrollUp(1)
 	case key.Matches(k, km.PageDown):
-		vp.HalfPageDown()
+		vp.PageDown()
 	case key.Matches(k, km.PageUp):
+		vp.PageUp()
+	case key.Matches(k, km.HalfPageDown):
+		vp.HalfPageDown()
+	case key.Matches(k, km.HalfPageUp):
 		vp.HalfPageUp()
 	case key.Matches(k, km.Top):
 		vp.GotoTop()

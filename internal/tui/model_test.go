@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -402,6 +403,74 @@ func TestCodeTabRoutesKeysToDiffview(t *testing.T) {
 	m = update(t, m, keyMsg("j"))
 	if selectedID(m) != "pr:2" {
 		t.Error("after esc, j should move the picker")
+	}
+}
+
+// pgdown and space scroll a full page, ctrl+d half a page (DECISIONS: Diff
+// viewer).
+func TestCodeTabPaging(t *testing.T) {
+	items := threeItems()
+	f := newFake(items...)
+	f.details["pr:1"] = proto.Detail{Item: items[0], Diff: longDiff(400)}
+	m := newTestModel(t, f, Options{})
+	m = feed[detailMsg](t, m, m.selectionChanged())
+	m = update(t, m, keyMsg("2"))
+	m = update(t, m, keyMsg("enter"))
+	page := m.code.height
+	if page < 4 {
+		t.Fatalf("code height = %d, too small for the test", page)
+	}
+	steps := []struct {
+		msg  tea.KeyMsg
+		want int
+	}{
+		{tea.KeyMsg{Type: tea.KeyPgDown}, page},
+		{tea.KeyMsg{Type: tea.KeySpace, Runes: []rune{' '}}, 2 * page},
+		{tea.KeyMsg{Type: tea.KeyPgUp}, page},
+		{tea.KeyMsg{Type: tea.KeyCtrlD}, page + page/2},
+		{tea.KeyMsg{Type: tea.KeyCtrlU}, page},
+	}
+	for _, s := range steps {
+		m = update(t, m, s.msg)
+		if got := m.code.dv.Offset(); got != s.want {
+			t.Fatalf("after %q: offset %d, want %d", s.msg.String(), got, s.want)
+		}
+	}
+}
+
+// A burst of item events triggers one list reload at a time (plus one more
+// if events arrived while it was in flight), not one per event.
+func TestItemEventsCoalesceReloads(t *testing.T) {
+	f := newFake(threeItems()...)
+	m := newTestModel(t, f, Options{})
+	it := threeItems()[2]
+	var cmds []tea.Cmd
+	for range 5 {
+		var cmd tea.Cmd
+		m, cmd = updateCmd(t, m, eventMsg{Type: proto.EventItem, ItemID: it.ID, Item: &it})
+		cmds = append(cmds, cmd)
+	}
+	reloads := 0
+	for _, c := range cmds {
+		for _, msg := range run(c) {
+			if _, ok := msg.(reloadedMsg); ok {
+				reloads++
+			}
+		}
+	}
+	if reloads != 1 || !m.reloadPending || !m.reloadAgain {
+		t.Fatalf("reloads = %d, pending %v again %v; want 1, true, true", reloads, m.reloadPending, m.reloadAgain)
+	}
+	items, _ := f.Items(context.Background())
+	m, cmd := updateCmd(t, m, reloadedMsg{items: items})
+	again := 0
+	for _, msg := range run(cmd) {
+		if _, ok := msg.(reloadedMsg); ok {
+			again++
+		}
+	}
+	if again != 1 || !m.reloadPending || m.reloadAgain {
+		t.Fatalf("follow-up reloads = %d, pending %v again %v; want 1, true, false", again, m.reloadPending, m.reloadAgain)
 	}
 }
 

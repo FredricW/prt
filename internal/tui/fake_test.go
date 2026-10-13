@@ -89,8 +89,18 @@ func (f *fakeClient) Checkout(_ context.Context, p proto.CheckoutParams) (proto.
 	return res, nil
 }
 
-func (f *fakeClient) Events() <-chan proto.Event { return f.events }
-func (f *fakeClient) Close() error               { return nil }
+// listenerStarted is signalled each time a command asks for the event
+// channel: that command is the (blocking) event listener, so run abandons it.
+var listenerStarted = make(chan struct{}, 64)
+
+func (f *fakeClient) Events() <-chan proto.Event {
+	select {
+	case listenerStarted <- struct{}{}:
+	default:
+	}
+	return f.events
+}
+func (f *fakeClient) Close() error { return nil }
 
 // fixedNow is the clock used by every test.
 var fixedNow = time.Date(2026, 10, 13, 12, 0, 0, 0, time.UTC)
@@ -124,19 +134,37 @@ func updateCmd(t *testing.T, m Model, msg tea.Msg) (Model, tea.Cmd) {
 	return next.(Model), cmd
 }
 
+// cmdTimeout bounds a non-listener command; exceeding it is a test bug.
+const cmdTimeout = 10 * time.Second
+
 // run executes cmd, expanding batches, and returns the produced messages.
-// Commands that block (the event listener) are abandoned after a short wait.
+// The event listener (detected through fakeClient.Events) blocks by design
+// and is abandoned; every other command runs to completion, and one that
+// hangs fails loudly instead of being silently dropped.
 func run(cmd tea.Cmd) []tea.Msg {
 	if cmd == nil {
 		return nil
+	}
+	for drained := false; !drained; {
+		select {
+		case <-listenerStarted:
+		default:
+			drained = true
+		}
 	}
 	ch := make(chan tea.Msg, 1)
 	go func() { ch <- cmd() }()
 	var msg tea.Msg
 	select {
 	case msg = <-ch:
-	case <-time.After(100 * time.Millisecond):
-		return nil
+	case <-listenerStarted:
+		select { // a listener with an event already queued still answers
+		case msg = <-ch:
+		case <-time.After(10 * time.Millisecond):
+			return nil
+		}
+	case <-time.After(cmdTimeout):
+		panic("tui test: command did not finish within " + cmdTimeout.String())
 	}
 	if b, ok := msg.(tea.BatchMsg); ok {
 		var out []tea.Msg

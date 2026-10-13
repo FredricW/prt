@@ -50,8 +50,12 @@ func (c *code) handleKey(km KeyMap, msg tea.KeyMsg) {
 	case key.Matches(msg, km.Up):
 		c.dv.ScrollBy(-1)
 	case key.Matches(msg, km.PageDown):
-		c.dv.ScrollBy(max(1, c.height/2))
+		c.dv.ScrollBy(max(1, c.height))
 	case key.Matches(msg, km.PageUp):
+		c.dv.ScrollBy(-max(1, c.height))
+	case key.Matches(msg, km.HalfPageDown):
+		c.dv.ScrollBy(max(1, c.height/2))
+	case key.Matches(msg, km.HalfPageUp):
 		c.dv.ScrollBy(-max(1, c.height/2))
 	case key.Matches(msg, km.Top):
 		c.dv.GotoTop()
