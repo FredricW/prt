@@ -108,7 +108,7 @@ type Rule struct {
 type Rules struct {
 	Rules    []Rule
 	Config   config.Routing
-	Warnings []string // unknown identifiers, unknown context/prompt names
+	Warnings []string // unknown identifiers (unknown context/prompt names are Compile errors)
 }
 
 // ctxOrder is the canonical order of context kinds.

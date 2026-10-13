@@ -20,12 +20,15 @@ const (
 // MaxTLDR is the TL;DR length cap in characters (runes; spec Overview).
 const MaxTLDR = 160
 
-// Output caps per task.
+// Output caps per task. The configured models spend output tokens on
+// reasoning before any text (a 100-token TL;DR cap ended at max_tokens with
+// no text in the first live recording), so the short tasks get headroom;
+// CleanTLDR and CleanTitle still bound what is shown.
 const (
 	ReviewMaxTokensFast = 1024
 	ReviewMaxTokensDeep = 2048
-	TLDRMaxTokens       = 100
-	TitleMaxTokens      = 20
+	TLDRMaxTokens       = 1024
+	TitleMaxTokens      = 256
 )
 
 // Prompt size caps. MaxReviewDiffBytes is the total numbered-diff budget of

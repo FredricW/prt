@@ -1,0 +1,21 @@
+{
+  "key": "2ce9aa8918a6693a4e86be4c",
+  "model": "anthropic:claude-haiku-5-5",
+  "request": {
+    "task": "tldr",
+    "tier": "fast",
+    "system": "You write the one-sentence TL;DR shown at the top of a pull request overview, for a reviewer deciding how to spend their time. Use only the facts given; they were computed from machine labels and git. Never invent numbers, names or claims that are not in the facts. At most 160 characters. One plain sentence: no markdown, no quotes, no lead-in such as \"TL;DR\".",
+    "prompt": "Facts about this pull request:\n- size: +23 -23 lines, about 46 lines that matter, about 5 min to review\n- units: 6 total, 0 need careful reading\n- composition: dependency 100%\n- highest unit risk: 3 of 5\n- test gap: 3 of 3 risky units untested\n- headlines: no contract changes\n- check before approving:\n  - web/package-lock.json:11 crash, untested\n  - web/package.json:13 crash, untested\n  - web/package-lock.json:49 crash, untested\n- description: 3 of 4 bullets implemented (fidelity 0.75)\n  - implemented: Bump `react` from 18.2.0 to 18.3.1\n  - implemented: Bump `react-dom` from 18.2.0 to 18.3.1\n  - not found: Bump `zod` from 3.22.4 to 3.23.8\n  - implemented: Bump `github.com/go-chi/chi/v5` from 5.0.10 to 5.0.12\n\nWrite the TL;DR sentence.\n",
+    "maxTokens": 1024
+  },
+  "result": {
+    "text": "Bumps react and react-dom to 18.3.1 and chi to 5.0.12, but the zod bump is missing and all 3 risky units are untested.",
+    "confidence": 0,
+    "model": "anthropic:claude-haiku-5-5",
+    "inputTokens": 470,
+    "outputTokens": 309,
+    "cost": 0.002015,
+    "ms": 1926,
+    "stopReason": "end_turn"
+  }
+}

@@ -1,7 +1,7 @@
 TASK: group-title
 TIER: fast
 GROUP: g-misc
-MAX_TOKENS: 20
+MAX_TOKENS: 256
 
 === SYSTEM ===
 You name a group of related code changes for a reviewer's list. Answer with exactly three words saying what the change does, for example: Validate upload size. No punctuation, no quotes, nothing else.

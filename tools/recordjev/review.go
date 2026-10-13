@@ -145,6 +145,13 @@ func reviewLive(ctx context.Context, cfg config, repo, prs string, jc jev.Client
 	for _, w := range st.underEstimates {
 		fmt.Fprintln(stdout, "WARNING: input-token estimate below actual usage:", w)
 	}
+	for _, f := range st.failures {
+		fmt.Fprintln(stdout, "FAILED:", f)
+	}
+	// Refused calls never reach note, so they are not counted here.
+	if n := len(st.failures) + st.moreFailures; n > 0 {
+		runErr = errors.Join(runErr, fmt.Errorf("recordjev: %d review calls failed", n))
+	}
 	if refused > 0 {
 		runErr = errors.Join(runErr, fmt.Errorf("%w: %d review requests not sent", ErrReviewBudget, refused))
 	}
@@ -258,7 +265,16 @@ type guardStats struct {
 	reused         int // requests served from recordings
 	written        int // successful calls (the Recorder wrote them)
 	underEstimates []string
+	// failures are the first maxFailuresShown failed live calls (the
+	// pipeline marks such rows failed and carries on, so without this a
+	// run where every call is rejected would exit 0); moreFailures counts
+	// the rest.
+	failures     []string
+	moreFailures int
 }
+
+// maxFailuresShown bounds the failed calls one guard reports.
+const maxFailuresShown = 5
 
 // add folds o into s.
 func (s *guardStats) add(o guardStats) {
@@ -266,6 +282,8 @@ func (s *guardStats) add(o guardStats) {
 	s.reused += o.reused
 	s.written += o.written
 	s.underEstimates = append(s.underEstimates, o.underEstimates...)
+	s.failures = append(s.failures, o.failures...)
+	s.moreFailures += o.moreFailures
 }
 
 var _ review.Reviewer = (*reviewGuard)(nil)
@@ -311,6 +329,10 @@ func (g *reviewGuard) note(req review.Request, key string, res review.Result, er
 	}
 	if err == nil {
 		g.st.written++
+	} else if len(g.st.failures) < maxFailuresShown {
+		g.st.failures = append(g.st.failures, fmt.Sprintf("%s %s: %v", req.Task, key, err))
+	} else {
+		g.st.moreFailures++
 	}
 	if est := review.EstimateInputTokens(req); res.InputTokens > est {
 		g.st.underEstimates = append(g.st.underEstimates, fmt.Sprintf("%s %s: estimated %d, actual %d", req.Task, key, est, res.InputTokens))
@@ -323,6 +345,7 @@ func (g *reviewGuard) stats() guardStats {
 	defer g.mu.Unlock()
 	s := g.st
 	s.underEstimates = append([]string(nil), g.st.underEstimates...)
+	s.failures = append([]string(nil), g.st.failures...)
 	return s
 }
 

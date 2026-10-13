@@ -1,0 +1,22 @@
+{
+  "key": "01423756c551778ba50032b6",
+  "model": "anthropic:claude-haiku-5-5",
+  "request": {
+    "task": "group-title",
+    "tier": "fast",
+    "groupId": "4508005727a5d3f1a077a60143ad1fee9679d5ef9846c5e594d8756c56e083fb",
+    "system": "You name a group of related code changes for a reviewer's list. Answer with exactly three words saying what the change does, for example: Validate upload size. No punctuation, no quotes, nothing else.",
+    "prompt": "Changes in this group:\n\n## web/src/hooks/useFetch.ts (useFetch)\nsignature: export function useFetch\u003cT\u003e(path: string | null, opts: Omit\u003cRequestOptions, \"signal\"\u003e = {}): FetchState\u003cT\u003e\n```diff\n   loading: boolean;\n }\n \n-// useFetch loads `path` with fetchJSON and aborts the request on unmount or\n+// useFetch loads `path` with requestJSON and aborts the request on unmount or\n // when the path changes.\n export function useFetch\u003cT\u003e(path: string | null, opts: Omit\u003cRequestOptions, \"signal\"\u003e = {}): FetchState\u003cT\u003e {\n   const [state, setState] = useState\u003cFetchState\u003cT\u003e\u003e({ data: null, error: null, loading: path !== null });\n```\n\n## web/src/hooks/useFetch.ts (useFetch)\nsignature: export function useFetch\u003cT\u003e(path: string | null, opts: Omit\u003cRequestOptions, \"signal\"\u003e = {}): FetchState\u003cT\u003e\n```diff\n     }\n     const ctrl = new AbortController();\n     setState((s) =\u003e ({ ...s, loading: true }));\n-    fetchJSON\u003cT\u003e(path, { ...opts, signal: ctrl.signal })\n+    requestJSON\u003cT\u003e(path, { ...opts, signal: ctrl.signal })\n       .then((data) =\u003e setState({ data, error: null, loading: false }))\n       .catch((error: Error) =\u003e {\n         if (error.name !== \"AbortError\") {\n```\n\nAnswer with exactly three words.\n",
+    "maxTokens": 256
+  },
+  "result": {
+    "text": "Switch to requestJSON",
+    "confidence": 0,
+    "model": "anthropic:claude-haiku-5-5",
+    "inputTokens": 569,
+    "outputTokens": 11,
+    "cost": 0.000624,
+    "ms": 1013,
+    "stopReason": "end_turn"
+  }
+}

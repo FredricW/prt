@@ -31,7 +31,8 @@ const maxResponseBytes = 4 << 20
 
 // Anthropic calls the Anthropic Messages API (POST /v1/messages) through a
 // thin HTTP client: one non-streaming call per Review, no retries (the
-// pipeline retries once), temperature 0.
+// pipeline retries once). No temperature is sent: the API rejects it for the
+// configured models ("`temperature` is deprecated for this model").
 type Anthropic struct {
 	Name    string
 	BaseURL string
@@ -83,11 +84,10 @@ func (a *Anthropic) Timeout(t model.Tier) time.Duration {
 
 // messagesRequest is the Messages API request body.
 type messagesRequest struct {
-	Model       string    `json:"model"`
-	MaxTokens   int       `json:"max_tokens"`
-	Temperature float64   `json:"temperature"`
-	System      string    `json:"system,omitempty"`
-	Messages    []message `json:"messages"`
+	Model     string    `json:"model"`
+	MaxTokens int       `json:"max_tokens"`
+	System    string    `json:"system,omitempty"`
+	Messages  []message `json:"messages"`
 }
 
 // message is one conversation turn.

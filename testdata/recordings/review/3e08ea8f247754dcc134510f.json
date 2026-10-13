@@ -1,0 +1,23 @@
+{
+  "key": "3e08ea8f247754dcc134510f",
+  "model": "anthropic:claude-haiku-5-5",
+  "request": {
+    "task": "review",
+    "tier": "fast",
+    "groupId": "9961a02f3bcbc6526df1a94387cdc49946f25dc0861ccbc10ec63868efc8307a",
+    "system": "You are a senior code reviewer. You review one group of related change units from a pull request and report the problems a careful reviewer would raise: bugs, broken contracts, missing error handling, security holes, data loss, races, and risky code without tests.\n\nRules:\n- Report findings only. Never restate, summarise or praise the diff.\n- Anchor every finding to a file path and a line number printed in the diff: the new-side number, or the old-side number for a deleted line.\n- One finding per problem. \"claim\" is one sentence; \"fix\" is a short suggested change.\n- severity: \"high\" breaks callers, loses data or opens a security hole; \"medium\" is a likely bug or missing handling; \"low\" is a minor risk.\n- Never invent numbers, metrics, line numbers or code that is not shown.\n- The hints are machine labels (probabilities 0-1, risk 1-5). Use them to decide where to look, not as facts.\n- The Context section, when present, is unchanged background (callers, types, tests, config). Report a finding there only when the change breaks it, anchored to the changed line that causes it.\n- verdict: \"approve\" when nothing needs changing, \"comment\" for low findings or questions only, \"request_changes\" when a finding must be fixed before merging.\n- confidence: a number from 0 to 1, how sure you are that the findings and the verdict are right given what you were shown.\n\nAnswer with JSON only, no prose and no code fence, in exactly this shape:\n{\"findings\":[{\"file\":\"path/to/file\",\"line\":12,\"severity\":\"low|medium|high\",\"claim\":\"one sentence\",\"fix\":\"suggested fix\"}],\"verdict\":\"approve|comment|request_changes\",\"confidence\":0.8}\nUse \"findings\": [] when there is nothing to report.",
+    "prompt": "# Pull request\nTitle: refactor(web): rename fetchJSON to requestJSON\nDescription bullets:\n- Rename `fetchJSON` to `requestJSON` in `api/client.ts`\n- Update every import and call site (19 files)\n\n# Group\nName: addMember\n\n# Units in review order\nEach diff line starts with its old and new line numbers.\n\n## Unit 1 of 1: web/src/api/teams.ts (modified, new lines 16-21)\nsymbol: addMember\nsignature: export async function addMember(teamId: string, userId: string): Promise\u003cvoid\u003e\nhints: kind=refactor risk=2 tags=data_write breaking=0.17 contract=none covered=0.68 untested=no\n```diff\n   16    16  \n   17    17  export async function addMember(teamId: string, userId: string): Promise\u003cvoid\u003e {\n   18       -  await fetchJSON\u003cvoid\u003e(`/teams/${encodeURIComponent(teamId)}/members`, {\n         18 +  await requestJSON\u003cvoid\u003e(`/teams/${encodeURIComponent(teamId)}/members`, {\n   19    19      method: \"POST\",\n   20    20      body: { userId },\n   21    21    });\n```\n\nReview these units and answer with the JSON object only.\n",
+    "maxTokens": 1024
+  },
+  "result": {
+    "text": "{\"findings\":[],\"verdict\":\"approve\",\"confidence\":0.8}",
+    "verdict": "approve",
+    "confidence": 0.8,
+    "model": "anthropic:claude-haiku-5-5",
+    "inputTokens": 978,
+    "outputTokens": 166,
+    "cost": 0.001808,
+    "ms": 1390,
+    "stopReason": "end_turn"
+  }
+}

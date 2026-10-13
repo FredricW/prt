@@ -81,7 +81,7 @@ func TestAnthropicRequestShape(t *testing.T) {
 	if hdr.Get("Authorization") != "" {
 		t.Error("Authorization header sent")
 	}
-	if got.Model != "claude-haiku-5-5" || got.MaxTokens != 100 || got.Temperature == nil || *got.Temperature != 0 || got.System != "sys" || got.Stream != nil {
+	if got.Model != "claude-haiku-5-5" || got.MaxTokens != 100 || got.Temperature != nil || got.System != "sys" || got.Stream != nil {
 		t.Errorf("body: %+v", got)
 	}
 	if len(got.Messages) != 1 || got.Messages[0].Role != "user" || got.Messages[0].Content != UserContent(req) || !strings.Contains(got.Messages[0].Content, "### callers: x\nbody") {

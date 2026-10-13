@@ -1,0 +1,22 @@
+{
+  "key": "a0521f382af8908dda07ab7b",
+  "model": "anthropic:claude-haiku-5-5",
+  "request": {
+    "task": "group-title",
+    "tier": "fast",
+    "groupId": "1ccb6e501d825e64f58a19faa1f816db320f99ccc8179d2c1c45449333c15e67",
+    "system": "You name a group of related code changes for a reviewer's list. Answer with exactly three words saying what the change does, for example: Validate upload size. No punctuation, no quotes, nothing else.",
+    "prompt": "Changes in this group:\n\n## web/src/api/client.ts\n```diff\n   query?: Record\u003cstring, string | number | boolean | undefined\u003e;\n   body?: unknown;\n   signal?: AbortSignal;\n-}\n-\n```\n\n## web/src/api/client.ts\n```diff\n+  headers?: Record\u003cstring, string\u003e;\n }\n \n export async function fetchJSON\u003cT\u003e(path: string, opts: RequestOptions = {}): Promise\u003cT\u003e {\n```\n\nAnswer with exactly three words.\n",
+    "maxTokens": 256
+  },
+  "result": {
+    "text": "Add request headers option",
+    "confidence": 0,
+    "model": "anthropic:claude-haiku-5-5",
+    "inputTokens": 232,
+    "outputTokens": 8,
+    "cost": 0.000272,
+    "ms": 1202,
+    "stopReason": "end_turn"
+  }
+}

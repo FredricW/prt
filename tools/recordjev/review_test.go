@@ -163,6 +163,26 @@ func TestReviewGuardSettlesFailedSpendAndWarnsOnEstimate(t *testing.T) {
 	if spent != 0.02 || st.calls != 1 || st.written != 0 || len(st.underEstimates) != 1 {
 		t.Fatalf("spent %v stats %+v", spent, st)
 	}
+	if len(st.failures) != 1 || !strings.Contains(st.failures[0], "tldr") {
+		t.Fatalf("failures %q", st.failures)
+	}
+}
+
+// A rejected request (e.g. HTTP 400) costs nothing and writes nothing, but
+// must still be reported so the live run exits non-zero.
+func TestReviewGuardCountsFreeFailures(t *testing.T) {
+	b := &reviewBudget{capUSD: 3, totalCap: 5}
+	failing := &review.Fake{Name: haiku, Respond: func(review.Request) (review.Result, error) {
+		return review.Result{}, errors.New("HTTP 400 invalid_request_error")
+	}}
+	g := &reviewGuard{next: failing, dir: t.TempDir(), budget: b}
+	for i := range maxFailuresShown + 2 {
+		_, _ = g.Review(context.Background(), tldrReq(strings.Repeat("x", i+1)))
+	}
+	st := g.stats()
+	if st.calls != 0 || len(st.failures) != maxFailuresShown || st.moreFailures != 2 {
+		t.Fatalf("stats %+v", st)
+	}
 }
 
 func TestReviewGuardReady(t *testing.T) {

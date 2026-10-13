@@ -1,0 +1,21 @@
+{
+  "key": "9997370bb527d8a9eeeaf5a9",
+  "model": "anthropic:claude-haiku-5-5",
+  "request": {
+    "task": "tldr",
+    "tier": "fast",
+    "system": "You write the one-sentence TL;DR shown at the top of a pull request overview, for a reviewer deciding how to spend their time. Use only the facts given; they were computed from machine labels and git. Never invent numbers, names or claims that are not in the facts. At most 160 characters. One plain sentence: no markdown, no quotes, no lead-in such as \"TL;DR\".",
+    "prompt": "Facts about this pull request:\n- size: +0 -78 lines, about 78 lines that matter, about 8 min to review\n- units: 7 total, 0 need careful reading\n- composition: refactor 100%\n- highest unit risk: 3 of 5\n- risk tags: date_tz (1 unit), money (7 units)\n- test gap: 1 of 1 risky units untested\n- headlines:\n  - signature at server/internal/billing/legacy.go:34: WriteLegacyCSV (p 0.52)\n- check before approving:\n  - server/internal/billing/legacy.go:34 money, crash, untested\n  - server/internal/billing/legacy.go:23 money, crash\n  - server/internal/billing/tax.go:4 money, crash\n- description: 3 of 3 bullets implemented (fidelity 1.00)\n  - implemented: Delete `server/internal/billing/legacy.go` (`LegacyExport`, `WriteLegacyCSV`, `parseLegacyDate`)\n  - implemented: Remove `renumberLegacy` from `invoice.go`\n  - implemented: Remove `legacyTaxCents` and the now-unused `math` import from `tax.go`\n\nWrite the TL;DR sentence.\n",
+    "maxTokens": 1024
+  },
+  "result": {
+    "text": "Removes the legacy billing CSV export, invoice renumbering, and legacy tax helper; the deleted WriteLegacyCSV was untested and touches money paths.",
+    "confidence": 0,
+    "model": "anthropic:claude-haiku-5-5",
+    "inputTokens": 539,
+    "outputTokens": 421,
+    "cost": 0.002644,
+    "ms": 2372,
+    "stopReason": "end_turn"
+  }
+}

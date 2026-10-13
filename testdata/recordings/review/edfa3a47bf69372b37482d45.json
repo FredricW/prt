@@ -1,0 +1,21 @@
+{
+  "key": "edfa3a47bf69372b37482d45",
+  "model": "anthropic:claude-haiku-5-5",
+  "request": {
+    "task": "tldr",
+    "tier": "fast",
+    "system": "You write the one-sentence TL;DR shown at the top of a pull request overview, for a reviewer deciding how to spend their time. Use only the facts given; they were computed from machine labels and git. Never invent numbers, names or claims that are not in the facts. At most 160 characters. One plain sentence: no markdown, no quotes, no lead-in such as \"TL;DR\".",
+    "prompt": "Facts about this pull request:\n- size: +56 -56 lines, about 76 lines that matter, about 8 min to review\n- units: 50 total, 0 need careful reading\n- composition: refactor 100%\n- highest unit risk: 4 of 5\n- risk tags: auth (1 unit), data_write (8 units), error_path (2 units), io_in_loop (1 unit), money (3 units), pii (7 units)\n- test gap: 0 of 23 risky units untested\n- headlines:\n  - breaking at web/src/api/index.ts:1: web/src/api/index.ts (p 0.66)\n  - breaking at web/src/api/client.ts:39: requestJSON (p 0.51)\n  - signature at web/src/api/index.ts:1: web/src/api/index.ts (p 0.90)\n  - signature at web/src/api/client.ts:39: requestJSON (p 0.73)\n  - signature at web/src/__tests__/client.test.ts:3: web/src/__tests__/client.test.ts (p 0.71)\n  - signature at web/src/components/StatusFooter.tsx:3: web/src/components/StatusFooter.tsx (p 0.61)\n  - signature at web/src/__tests__/client.test.ts:14: web/src/__tests__/client.test.ts (p 0.60)\n  - signature at web/src/components/AuditLog.tsx:3: web/src/components/AuditLog.tsx (p 0.60)\n  - and 12 more\n- check before approving:\n  - web/src/api/billing.ts:17 money, crash\n  - web/src/api/notifications.ts:15 data-write, crash\n  - web/src/components/TeamPanel.tsx:16 crash\n- description: 2 of 2 bullets implemented (fidelity 1.00)\n  - implemented: Rename `fetchJSON` to `requestJSON` in `api/client.ts`\n  - implemented: Update every import and call site (19 files)\n\nWrite the TL;DR sentence.\n",
+    "maxTokens": 1024
+  },
+  "result": {
+    "text": "Renames fetchJSON to requestJSON in api/client.ts and updates imports and call sites in 19 files; check billing, notifications and TeamPanel first.",
+    "confidence": 0,
+    "model": "anthropic:claude-haiku-5-5",
+    "inputTokens": 792,
+    "outputTokens": 772,
+    "cost": 0.004652,
+    "ms": 3730,
+    "stopReason": "end_turn"
+  }
+}

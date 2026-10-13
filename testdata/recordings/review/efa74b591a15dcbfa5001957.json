@@ -1,0 +1,22 @@
+{
+  "key": "efa74b591a15dcbfa5001957",
+  "model": "anthropic:claude-haiku-5-5",
+  "request": {
+    "task": "group-title",
+    "tier": "fast",
+    "groupId": "532cdea4167c957e39b4c604bce9b7f8b1876c082b8510729027ff7ef862da94",
+    "system": "You name a group of related code changes for a reviewer's list. Answer with exactly three words saying what the change does, for example: Validate upload size. No punctuation, no quotes, nothing else.",
+    "prompt": "Changes in this group:\n\n## web/src/api/users.ts (listUsers)\nsignature: export async function listUsers(cursor?: string, limit = 50): Promise\u003cUserPage\u003e\n```diff\n }\n \n export async function listUsers(cursor?: string, limit = 50): Promise\u003cUserPage\u003e {\n-  return fetchJSON\u003cUserPage\u003e(\"/users\", { query: { cursor, limit } });\n+  return requestJSON\u003cUserPage\u003e(\"/users\", { query: { cursor, limit } });\n }\n \n export async function getUsers(ids: string[]): Promise\u003cUser[]\u003e {\n```\n\n## web/src/__tests__/users.test.ts\n```diff\n });\n \n describe(\"users api\", () =\u003e {\n-  it(\"passes cursor and limit to fetchJSON\", async () =\u003e {\n-    const spy = vi.spyOn(client, \"fetchJSON\").mockResolvedValue({ users: [], nextCursor: null });\n+  it(\"passes cursor and limit to requestJSON\", async () =\u003e {\n+    const spy = vi.spyOn(client, \"requestJSON\").mockResolvedValue({ users: [], nextCursor: null });\n     await listUsers(\"c1\", 10);\n     expect(spy).toHaveBeenCalledWith(\"/users\", { query: { cursor: \"c1\", limit: 10 } });\n   });\n```\n\nAnswer with exactly three words.\n",
+    "maxTokens": 256
+  },
+  "result": {
+    "text": "Rename fetchJSON to requestJSON",
+    "confidence": 0,
+    "model": "anthropic:claude-haiku-5-5",
+    "inputTokens": 519,
+    "outputTokens": 17,
+    "cost": 0.000604,
+    "ms": 925,
+    "stopReason": "end_turn"
+  }
+}

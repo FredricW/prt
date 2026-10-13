@@ -1,7 +1,7 @@
 TASK: tldr
 TIER: fast
 GROUP: 
-MAX_TOKENS: 100
+MAX_TOKENS: 1024
 
 === SYSTEM ===
 You write the one-sentence TL;DR shown at the top of a pull request overview, for a reviewer deciding how to spend their time. Use only the facts given; they were computed from machine labels and git. Never invent numbers, names or claims that are not in the facts. At most 160 characters. One plain sentence: no markdown, no quotes, no lead-in such as "TL;DR".

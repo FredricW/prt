@@ -1,0 +1,22 @@
+{
+  "key": "8b1ccfa92ea6221e365d5de0",
+  "model": "anthropic:claude-haiku-5-5",
+  "request": {
+    "task": "group-title",
+    "tier": "fast",
+    "groupId": "27930b34b8b9069edd67ed3e1a18d34f5e3ea18d2cba52eded1c8d3a3d2e7d93",
+    "system": "You name a group of related code changes for a reviewer's list. Answer with exactly three words saying what the change does, for example: Validate upload size. No punctuation, no quotes, nothing else.",
+    "prompt": "Changes in this group:\n\n## web/src/components/UserCard.tsx (UserCard)\nsignature: export function UserCard({ userId, compact = false }: Props)\n```diff\n \n   useEffect(() =\u003e {\n     let live = true;\n-    getUser(userId).then((u) =\u003e {\n+    getUser(userId, { include: [\"avatar\"] }).then((u) =\u003e {\n       if (live) setUser(u);\n     });\n     return () =\u003e {\n```\n\n## web/src/components/UserCard.tsx (UserCard)\nsignature: export function UserCard({ userId, compact = false }: Props)\n```diff\n   }\n   return (\n     \u003cdiv className={compact ? \"user-card user-card--compact\" : \"user-card\"}\u003e\n-      \u003cspan className=\"avatar\"\u003e{initials(user.displayName)}\u003c/span\u003e\n+      \u003cAvatar name={user.displayName} url={user.avatarUrl} size={compact ? 24 : 32} /\u003e\n       \u003cdiv\u003e\n         \u003cstrong\u003e{user.displayName}\u003c/strong\u003e\n         {!compact \u0026\u0026 \u003cdiv className=\"muted\"\u003e{user.email}\u003c/div\u003e}\n```\n\nAnswer with exactly three words.\n",
+    "maxTokens": 256
+  },
+  "result": {
+    "text": "Show user avatars",
+    "confidence": 0,
+    "model": "anthropic:claude-haiku-5-5",
+    "inputTokens": 422,
+    "outputTokens": 8,
+    "cost": 0.000462,
+    "ms": 1137,
+    "stopReason": "end_turn"
+  }
+}
