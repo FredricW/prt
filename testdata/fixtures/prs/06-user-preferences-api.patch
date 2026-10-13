@@ -1,0 +1,352 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Dana <dana@acme.example>
+Date: Sat, 10 Oct 2026 15:30:00 +0000
+Subject: [PATCH] feat(server): user preferences API and ops health check
+
+Per-user preferences (theme, email digest) behind PORTAL_PREFERENCES_API,
+a migration for them, and health checks moved to the ops listener.
+---
+ server/cmd/api/main.go                        | 23 +++--
+ server/internal/users/preferences.go          | 89 +++++++++++++++++++
+ server/internal/users/users.go                |  9 +-
+ server/internal/users/users_test.go           | 20 ++++-
+ .../migrations/20261010_user_preferences.sql  | 14 +++
+ web/src/api/index.ts                          |  1 +
+ web/src/api/preferences.ts                    | 16 ++++
+ web/src/components/SettingsForm.tsx           | 27 +++++-
+ web/src/utils/flags.ts                        | 13 +++
+ 9 files changed, 202 insertions(+), 10 deletions(-)
+ create mode 100644 server/internal/users/preferences.go
+ create mode 100644 server/migrations/20261010_user_preferences.sql
+ create mode 100644 web/src/api/preferences.ts
+ create mode 100644 web/src/utils/flags.ts
+
+diff --git a/server/cmd/api/main.go b/server/cmd/api/main.go
+index eaa44eb..1621931 100644
+--- a/server/cmd/api/main.go
++++ b/server/cmd/api/main.go
+@@ -17,19 +17,32 @@ import (
+ func main() {
+ 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+ 	store := users.NewMemoryStore()
++	prefs := users.NewMemoryPreferences()
+ 	invoices := billing.NewService(billing.NewMemoryLedger())
+ 
+ 	r := chi.NewRouter()
+ 	r.Use(auth.Middleware(auth.NewSessionStore(12 * time.Hour)))
+ 	r.Route("/api/v1", func(r chi.Router) {
+-		r.Get("/health", func(w http.ResponseWriter, _ *http.Request) {
+-			w.Header().Set("Content-Type", "application/json")
+-			_, _ = w.Write([]byte(`{"status":"ok","version":"0.14.2"}`))
+-		})
+-		r.Mount("/users", users.Routes(store))
++		r.Mount("/users", users.Routes(store, prefs, os.Getenv("PORTAL_PREFERENCES_API") == "on"))
+ 		r.Mount("/billing", billing.Routes(invoices))
+ 	})
+ 
++	// Health checks moved off the public API to the ops listener, which the
++	// load balancer probes.
++	ops := http.NewServeMux()
++	ops.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
++		w.WriteHeader(http.StatusNoContent)
++	})
++	opsAddr := os.Getenv("PORTAL_OPS_ADDR")
++	if opsAddr == "" {
++		opsAddr = ":9090"
++	}
++	go func() {
++		if err := http.ListenAndServe(opsAddr, ops); err != nil {
++			logger.Error("ops listener stopped", "err", err)
++		}
++	}()
++
+ 	addr := os.Getenv("PORTAL_ADDR")
+ 	if addr == "" {
+ 		addr = ":8080"
+diff --git a/server/internal/users/preferences.go b/server/internal/users/preferences.go
+new file mode 100644
+index 0000000..120b43b
+--- /dev/null
++++ b/server/internal/users/preferences.go
+@@ -0,0 +1,89 @@
++package users
++
++import (
++	"encoding/json"
++	"net/http"
++	"sync"
++	"time"
++
++	"github.com/go-chi/chi/v5"
++)
++
++// Preferences are a user's UI settings (table user_preferences).
++type Preferences struct {
++	UserID      string    `json:"userId"`
++	Theme       string    `json:"theme"`
++	EmailDigest string    `json:"emailDigest"`
++	UpdatedAt   time.Time `json:"updatedAt"`
++}
++
++// PreferencesStore reads and writes preferences.
++type PreferencesStore interface {
++	Get(userID string) (Preferences, error)
++	Put(p Preferences) error
++}
++
++// MemoryPreferences is an in-memory PreferencesStore for development.
++type MemoryPreferences struct {
++	mu    sync.Mutex
++	prefs map[string]Preferences
++}
++
++// NewMemoryPreferences returns an empty MemoryPreferences.
++func NewMemoryPreferences() *MemoryPreferences {
++	return &MemoryPreferences{prefs: map[string]Preferences{}}
++}
++
++// Get returns the stored preferences, or the defaults for a user who never
++// saved any.
++func (m *MemoryPreferences) Get(userID string) (Preferences, error) {
++	m.mu.Lock()
++	defer m.mu.Unlock()
++	p, ok := m.prefs[userID]
++	if !ok {
++		return Preferences{UserID: userID, Theme: "system", EmailDigest: "weekly"}, nil
++	}
++	return p, nil
++}
++
++// Put stores p.
++func (m *MemoryPreferences) Put(p Preferences) error {
++	m.mu.Lock()
++	defer m.mu.Unlock()
++	m.prefs[p.UserID] = p
++	return nil
++}
++
++var themes = map[string]bool{"system": true, "light": true, "dark": true}
++
++func getPreferences(prefs PreferencesStore) http.HandlerFunc {
++	return func(w http.ResponseWriter, req *http.Request) {
++		p, err := prefs.Get(chi.URLParam(req, "id"))
++		if err != nil {
++			writeError(w, http.StatusInternalServerError, "internal", err.Error())
++			return
++		}
++		writeJSON(w, http.StatusOK, p)
++	}
++}
++
++func putPreferences(prefs PreferencesStore) http.HandlerFunc {
++	return func(w http.ResponseWriter, req *http.Request) {
++		var p Preferences
++		if err := json.NewDecoder(req.Body).Decode(&p); err != nil {
++			writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON")
++			return
++		}
++		if !themes[p.Theme] {
++			writeError(w, http.StatusBadRequest, "bad_request", "unknown theme")
++			return
++		}
++		p.UserID = chi.URLParam(req, "id")
++		p.UpdatedAt = time.Now().UTC()
++		if err := prefs.Put(p); err != nil {
++			writeError(w, http.StatusInternalServerError, "internal", err.Error())
++			return
++		}
++		writeJSON(w, http.StatusOK, p)
++	}
++}
+diff --git a/server/internal/users/users.go b/server/internal/users/users.go
+index 635bec6..22d6fe5 100644
+--- a/server/internal/users/users.go
++++ b/server/internal/users/users.go
+@@ -81,8 +81,9 @@ func toResponse(u User) userResponse {
+ 	return r
+ }
+ 
+-// Routes mounts the user endpoints.
+-func Routes(store Store) http.Handler {
++// Routes mounts the user endpoints. withPreferences adds
++// GET and PUT /{id}/preferences (PORTAL_PREFERENCES_API=on).
++func Routes(store Store, prefs PreferencesStore, withPreferences bool) http.Handler {
+ 	r := chi.NewRouter()
+ 	r.Get("/{id}", func(w http.ResponseWriter, req *http.Request) {
+ 		u, err := store.Get(chi.URLParam(req, "id"))
+@@ -96,6 +97,10 @@ func Routes(store Store) http.Handler {
+ 		}
+ 		writeJSON(w, http.StatusOK, toResponse(u))
+ 	})
++	if withPreferences {
++		r.Get("/{id}/preferences", getPreferences(prefs))
++		r.Put("/{id}/preferences", putPreferences(prefs))
++	}
+ 	return r
+ }
+ 
+diff --git a/server/internal/users/users_test.go b/server/internal/users/users_test.go
+index 484ccd8..452176a 100644
+--- a/server/internal/users/users_test.go
++++ b/server/internal/users/users_test.go
+@@ -12,7 +12,7 @@ func TestGetUser(t *testing.T) {
+ 	store := NewMemoryStore()
+ 	created := time.Date(2025, 3, 1, 12, 0, 0, 0, time.UTC)
+ 	_ = store.Put(User{ID: "u1", Email: "ada@example.com", DisplayName: "Ada", CreatedAt: created})
+-	srv := httptest.NewServer(Routes(store))
++	srv := httptest.NewServer(Routes(store, NewMemoryPreferences(), false))
+ 	defer srv.Close()
+ 
+ 	tests := []struct {
+@@ -46,3 +46,21 @@ func TestGetUser(t *testing.T) {
+ 		})
+ 	}
+ }
++
++func TestPreferencesDefaults(t *testing.T) {
++	srv := httptest.NewServer(Routes(NewMemoryStore(), NewMemoryPreferences(), true))
++	defer srv.Close()
++
++	res, err := http.Get(srv.URL + "/u1/preferences")
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer res.Body.Close()
++	var p Preferences
++	if err := json.NewDecoder(res.Body).Decode(&p); err != nil {
++		t.Fatal(err)
++	}
++	if p.UserID != "u1" || p.Theme != "system" || p.EmailDigest != "weekly" {
++		t.Fatalf("unexpected preferences %+v", p)
++	}
++}
+diff --git a/server/migrations/20261010_user_preferences.sql b/server/migrations/20261010_user_preferences.sql
+new file mode 100644
+index 0000000..8afdf53
+--- /dev/null
++++ b/server/migrations/20261010_user_preferences.sql
+@@ -0,0 +1,14 @@
++-- User preferences (theme, email digest) and the profile avatar URL.
++-- users.legacy_theme has not been written since the 2025 redesign.
++
++CREATE TABLE user_preferences (
++    user_id      TEXT PRIMARY KEY REFERENCES users (id) ON DELETE CASCADE,
++    theme        TEXT NOT NULL DEFAULT 'system',
++    email_digest TEXT NOT NULL DEFAULT 'weekly',
++    updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
++);
++
++CREATE INDEX user_preferences_theme_idx ON user_preferences (theme);
++
++ALTER TABLE users ADD COLUMN avatar_url TEXT;
++ALTER TABLE users DROP COLUMN legacy_theme;
+diff --git a/web/src/api/index.ts b/web/src/api/index.ts
+index f5d5289..c7df6ca 100644
+--- a/web/src/api/index.ts
++++ b/web/src/api/index.ts
+@@ -7,4 +7,5 @@ export * from "./orgs";
+ export * from "./search";
+ export * from "./notifications";
+ export * from "./settings";
++export * from "./preferences";
+ export * from "./health";
+diff --git a/web/src/api/preferences.ts b/web/src/api/preferences.ts
+new file mode 100644
+index 0000000..c611074
+--- /dev/null
++++ b/web/src/api/preferences.ts
+@@ -0,0 +1,16 @@
++import { fetchJSON } from "./client";
++
++export interface Preferences {
++  userId: string;
++  theme: "system" | "light" | "dark";
++  emailDigest: "never" | "daily" | "weekly";
++  updatedAt: string;
++}
++
++export async function getPreferences(userId: string): Promise<Preferences> {
++  return fetchJSON<Preferences>(`/users/${encodeURIComponent(userId)}/preferences`);
++}
++
++export async function savePreferences(p: Preferences): Promise<Preferences> {
++  return fetchJSON<Preferences>(`/users/${encodeURIComponent(p.userId)}/preferences`, { method: "PUT", body: p });
++}
+diff --git a/web/src/components/SettingsForm.tsx b/web/src/components/SettingsForm.tsx
+index 12ed260..5bfdff1 100644
+--- a/web/src/components/SettingsForm.tsx
++++ b/web/src/components/SettingsForm.tsx
+@@ -1,15 +1,22 @@
+ import { useEffect, useState } from "react";
+ 
+ import { fetchJSON } from "../api/client";
++import { getPreferences, savePreferences, type Preferences } from "../api/preferences";
+ import { type Settings } from "../api/settings";
++import { isEnabled } from "../utils/flags";
+ 
+-export function SettingsForm() {
++export function SettingsForm({ userId = "me" }: { userId?: string }) {
+   const [settings, setSettings] = useState<Settings | null>(null);
++  const [prefs, setPrefs] = useState<Preferences | null>(null);
+   const [saved, setSaved] = useState(false);
++  const showTheme = isEnabled("user-preferences-v2");
+ 
+   useEffect(() => {
+     fetchJSON<Settings>("/settings").then(setSettings);
+-  }, []);
++    if (showTheme) {
++      getPreferences(userId).then(setPrefs);
++    }
++  }, [userId, showTheme]);
+ 
+   if (!settings) return null;
+ 
+@@ -17,6 +24,9 @@ export function SettingsForm() {
+     e.preventDefault();
+     const next = await fetchJSON<Settings>("/settings", { method: "PUT", body: settings });
+     setSettings(next);
++    if (prefs) {
++      setPrefs(await savePreferences(prefs));
++    }
+     setSaved(true);
+   };
+ 
+@@ -33,6 +43,19 @@ export function SettingsForm() {
+           <option value="weekly">Weekly</option>
+         </select>
+       </label>
++      {showTheme && prefs && (
++        <label>
++          Theme
++          <select
++            value={prefs.theme}
++            onChange={(e) => setPrefs({ ...prefs, theme: e.target.value as Preferences["theme"] })}
++          >
++            <option value="system">System</option>
++            <option value="light">Light</option>
++            <option value="dark">Dark</option>
++          </select>
++        </label>
++      )}
+       <button type="submit">Save</button>
+       {saved && <span role="status">Saved</span>}
+     </form>
+diff --git a/web/src/utils/flags.ts b/web/src/utils/flags.ts
+new file mode 100644
+index 0000000..6fc9896
+--- /dev/null
++++ b/web/src/utils/flags.ts
+@@ -0,0 +1,13 @@
++// Feature flags, injected by the server as window.__PORTAL_FLAGS__.
++type FlagMap = Record<string, boolean>;
++
++function loadFlags(): FlagMap {
++  const injected = (globalThis as { __PORTAL_FLAGS__?: FlagMap }).__PORTAL_FLAGS__;
++  return injected ?? {};
++}
++
++const flags = loadFlags();
++
++export function isEnabled(name: string): boolean {
++  return flags[name] === true;
++}

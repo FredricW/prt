@@ -32,7 +32,7 @@ func TestFixtureRepoDiscoverAndRun(t *testing.T) {
 	}
 	m := itemMap(t, c)
 	want := []string{
-		model.PRItemID(101), model.PRItemID(102), model.PRItemID(103), model.PRItemID(104),
+		model.PRItemID(101), model.PRItemID(102), model.PRItemID(103), model.PRItemID(104), model.PRItemID(106),
 		model.BranchItemID("05-spike-dark-mode"),
 	}
 	for _, id := range want {
@@ -48,6 +48,7 @@ func TestFixtureRepoDiscoverAndRun(t *testing.T) {
 		model.PRItemID(102):                      model.SectionYours,    // authored
 		model.PRItemID(103):                      model.SectionNeedsYou, // review requested
 		model.PRItemID(104):                      model.SectionNeedsYou, // approved, CI red
+		model.PRItemID(106):                      model.SectionInvolved, // commented, nothing asked of you
 		model.BranchItemID("05-spike-dark-mode"): model.SectionBranches,
 	}
 	for id, sec := range sections {

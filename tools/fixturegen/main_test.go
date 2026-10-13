@@ -68,6 +68,7 @@ var branches = []branchShape{
 	{"03-remove-legacy-billing", 1, 103, assertDeletionsOnly},
 	{"04-bump-deps", 1, 104, assertDependencyBump},
 	{"05-spike-dark-mode", 2, 0, func(*testing.T, string, []numstat) {}},
+	{"06-user-preferences-api", 1, 106, assertChangeSurface},
 }
 
 func TestFixtureRepo(t *testing.T) {
@@ -274,6 +275,50 @@ func assertDependencyBump(t *testing.T, _ string, files []numstat) {
 	}
 	if strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Errorf("changed files = %v, want %v", got, want)
+	}
+}
+
+// assertChangeSurface checks #106 carries what the M5.2 change-surface
+// blocks detect: a SQL migration, an endpoint added and one removed, a
+// feature flag lookup and new environment variables.
+func assertChangeSurface(t *testing.T, repo string, files []numstat) {
+	t.Helper()
+	if !anyFile(files, func(p string) bool { return strings.HasPrefix(p, "server/migrations/") && strings.HasSuffix(p, ".sql") }) {
+		t.Error("no SQL migration added")
+	}
+	lines := hunkLines(t, repo, "06-user-preferences-api")
+	has := func(path string, added bool, sub string) bool {
+		h, ok := lines[path]
+		if !ok {
+			return false
+		}
+		set := h.removed
+		if added {
+			set = h.added
+		}
+		for _, l := range set {
+			if strings.Contains(l, sub) {
+				return true
+			}
+		}
+		return false
+	}
+	for _, c := range []struct {
+		path  string
+		added bool
+		sub   string
+	}{
+		{"server/migrations/20261010_user_preferences.sql", true, "CREATE TABLE user_preferences"},
+		{"server/migrations/20261010_user_preferences.sql", true, "DROP COLUMN legacy_theme"},
+		{"server/internal/users/users.go", true, `r.Put("/{id}/preferences"`},
+		{"server/cmd/api/main.go", false, `r.Get("/health"`},
+		{"server/cmd/api/main.go", true, `"GET /healthz"`},
+		{"server/cmd/api/main.go", true, `os.Getenv("PORTAL_OPS_ADDR")`},
+		{"web/src/components/SettingsForm.tsx", true, `isEnabled("user-preferences-v2")`},
+	} {
+		if !has(c.path, c.added, c.sub) {
+			t.Errorf("%s: no %s line containing %q", c.path, map[bool]string{true: "added", false: "removed"}[c.added], c.sub)
+		}
 	}
 }
 

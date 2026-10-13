@@ -100,6 +100,41 @@
       "changedFiles": 4,
       "createdAt": "2026-10-12T05:04:00Z",
       "updatedAt": "2026-10-12T07:31:00Z"
+    },
+    {
+      "number": 106,
+      "title": "feat(server): user preferences API and ops health check",
+      "body": "Per-user preferences (theme and email digest), behind a switch while the settings page catches up.\n\n## Changes\n\n- Migration `20261010_user_preferences.sql`: new `user_preferences` table, `users.avatar_url` column (for #101), drop the unused `users.legacy_theme` column\n- `GET` and `PUT /api/v1/users/{id}/preferences`, enabled with `PORTAL_PREFERENCES_API=on`\n- `users.Routes` takes the preferences store and the switch; `main` and tests updated\n- Health checks move from `GET /api/v1/health` to `GET /healthz` on the ops listener (`PORTAL_OPS_ADDR`, default `:9090`)\n- Settings page: theme picker behind the `user-preferences-v2` flag\n",
+      "author": "dana",
+      "state": "open",
+      "draft": false,
+      "headRef": "06-user-preferences-api",
+      "headSha": "e0d7d8e9db1ba232a11b0a55fdb554053854a03f",
+      "baseRef": "main",
+      "baseSha": "0d0cbb6ef859fde10caf5b3a7ae458559705889b",
+      "url": "https://github.com/acme/portal/pull/106",
+      "labels": ["feature", "server", "web", "database"],
+      "reviewers": ["backend-team"],
+      "reviewRequested": false,
+      "viewerApproved": false,
+      "viewerCommented": true,
+      "ci": "green",
+      "additions": 202,
+      "deletions": 10,
+      "changedFiles": 9,
+      "files": [
+        "server/cmd/api/main.go",
+        "server/internal/users/preferences.go",
+        "server/internal/users/users.go",
+        "server/internal/users/users_test.go",
+        "server/migrations/20261010_user_preferences.sql",
+        "web/src/api/index.ts",
+        "web/src/api/preferences.ts",
+        "web/src/components/SettingsForm.tsx",
+        "web/src/utils/flags.ts"
+      ],
+      "createdAt": "2026-10-10T15:30:00Z",
+      "updatedAt": "2026-10-11T16:20:00Z"
     }
   ],
   "threads": {
