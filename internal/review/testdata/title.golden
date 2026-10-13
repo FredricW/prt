@@ -1,0 +1,35 @@
+TASK: group-title
+TIER: fast
+GROUP: g-misc
+MAX_TOKENS: 20
+
+=== SYSTEM ===
+You name a group of related code changes for a reviewer's list. Answer with exactly three words saying what the change does, for example: Validate upload size. No punctuation, no quotes, nothing else.
+
+=== USER (as sent) ===
+Changes in this group:
+
+## web/src/api/client.ts (getUser)
+signature: export async function getUser(id: string, opts: GetUserOptions)
+```diff
+-export async function getUser(id: string) {
++export async function getUser(id: string, opts: GetUserOptions) {
++  if (opts.cache === false) invalidate(id);
+   return fetchJSON(`/users/${id}`);
+ }
+```
+
+## server/internal/billing/legacy.go (LegacyExport)
+```diff
+-func LegacyExport() {}
+-
+```
+
+## web/src/api/client.test.ts
+```diff
++it("passes opts", async () => {
++  expect(await getUser("1", {})).toBeDefined();
++});
+```
+
+Answer with exactly three words.

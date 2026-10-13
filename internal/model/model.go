@@ -132,6 +132,10 @@ type Item struct {
 	// picker's Needs-you secondary line.
 	Breaking  int `json:"breaking,omitempty"`
 	NeedsEyes int `json:"needsEyes,omitempty"`
+
+	// CapUSD is this item's review cost cap set with `$` on the Pipeline
+	// page (or `:cap`); 0 means prt.routing.toml cost_cap_usd.
+	CapUSD float64 `json:"capUsd,omitempty"`
 }
 
 // FileRole is the Jev-assigned role of a changed file.
@@ -299,6 +303,9 @@ const (
 	// has no bullets, or an ungrouped unit); Name is a code-derived
 	// placeholder until the fast-LLM title lands (M3).
 	NamePlaceholder = "placeholder"
+	// NameAI: the fast LLM wrote a three-word title for a group Jev could
+	// not name from a bullet (M3); shown marked as model-written.
+	NameAI = "ai"
 )
 
 // Group is a set of related units reviewed together.
@@ -435,25 +442,135 @@ type Finding struct {
 }
 
 // Review is the result of reviewing one group.
+//
+// Two uses (DECISIONS "M3 shared contracts"):
+//   - the review cache: Store.PutReview/Review keyed by (GroupID, Tier),
+//     one row per tier that actually ran, reused while group membership is
+//     unchanged ("cached by sorted unit-id list");
+//   - the routing table: Store.PutItemReviews/ItemReviews, exactly one row
+//     per current group of the item in its final state (Tier = final tier,
+//     so an escalated group has Tier deep, EscalatedOf fast and FastConf).
+//     proto.Detail.Reviews carries these rows.
 type Review struct {
-	GroupID     string       `json:"groupId"`
-	ItemID      string       `json:"itemId"`
-	Tier        Tier         `json:"tier"`
-	Rule        string       `json:"rule,omitempty"` // the routing rule that fired, verbatim
+	GroupID string `json:"groupId"`
+	ItemID  string `json:"itemId"`
+	// GroupName is the group's name when the row was written (display only).
+	GroupName string `json:"groupName,omitempty"`
+	Tier      Tier   `json:"tier"`
+	Rule      string `json:"rule,omitempty"` // the routing rule's `when` text that fired, verbatim
+	// RuleIndex is the 1-based index of the rule that fired in
+	// prt.routing.toml; 0 when no rule decided (labels unknown → deep,
+	// forced with D/R, skipped with s).
+	RuleIndex int `json:"ruleIndex,omitempty"`
+	// RuleWords is the decision in words for the routing table
+	// ("if risk >= 4 || tag.auth → deep", "labels unknown → deep",
+	// "forced deep (D)", "skipped by user (s)").
+	RuleWords string `json:"ruleWords,omitempty"`
+	// Prompt names the base prompt template ("review/v1"); the full prompt
+	// text lives in the call log (ReviewCall), not here.
 	Prompt      string       `json:"prompt,omitempty"`
 	Context     []string     `json:"context,omitempty"` // callers, types, tests, config, code_under_test
 	Prompts     []string     `json:"prompts,omitempty"` // specialist prompts appended
 	Findings    []Finding    `json:"findings,omitempty"`
 	Verdict     string       `json:"verdict,omitempty"`
 	Confidence  float64      `json:"confidence"`
+	Model       string       `json:"model,omitempty"` // "provider:model" that answered
 	Status      ReviewStatus `json:"status"`
 	EscalatedOf *Tier        `json:"escalatedOf,omitempty"` // set when fast → deep
 	FastConf    float64      `json:"fastConf,omitempty"`
-	Calibration bool         `json:"calibration,omitempty"` // sampled double review
-	Ms          int64        `json:"ms"`
-	Cost        float64      `json:"cost"`
-	Err         string       `json:"err,omitempty"`
-	Attempts    int          `json:"attempts,omitempty"`
+	// Calibration is set when this fast-routed group was sampled for a
+	// double review (calibration_sample) and the deep run finished.
+	Calibration *Calibration `json:"calibration,omitempty"`
+	// Forced is set by D (Pipeline page) or R (Code page): deep regardless
+	// of rules. UserSkipped is set by s: tier none, logged.
+	Forced      bool `json:"forced,omitempty"`
+	UserSkipped bool `json:"userSkipped,omitempty"`
+	// QueueNote says why a row is still queued ("over cost cap: est $0.14,
+	// $0.05 of $0.40 left") or skipped ("no PRT_ANTHROPIC_API_KEY").
+	QueueNote string `json:"queueNote,omitempty"`
+	// HotSpot is the group's queue key (max unit hot-spot score).
+	HotSpot      float64   `json:"hotSpot,omitempty"`
+	EstCost      float64   `json:"estCost,omitempty"` // pre-call upper-bound estimate (USD)
+	StartedAt    time.Time `json:"startedAt,omitempty"`
+	InputTokens  int       `json:"inputTokens,omitempty"`
+	OutputTokens int       `json:"outputTokens,omitempty"`
+	Ms           int64     `json:"ms"`
+	Cost         float64   `json:"cost"` // all calls for this row (routed + escalation + calibration)
+	Err          string    `json:"err,omitempty"`
+	Attempts     int       `json:"attempts,omitempty"`
+}
+
+// Calibration is the sampled deep double review of a fast-routed group
+// (spec stage 7; Ranking "Calibration metrics").
+type Calibration struct {
+	Findings   []Finding `json:"findings,omitempty"` // deep findings
+	Verdict    string    `json:"verdict,omitempty"`
+	Confidence float64   `json:"confidence"`
+	// Missed counts deep findings of severity ≥ medium that the fast review
+	// did not report (same unit and line ±3, or same path when unanchored);
+	// Agree is Missed == 0.
+	Missed int     `json:"missed"`
+	Agree  bool    `json:"agree"`
+	Cost   float64 `json:"cost"`
+	Ms     int64   `json:"ms"`
+}
+
+// CalibrationSample is one stored double review, kept across items for the
+// trailing-30-day fast-tier miss rate (Store.AppendCalibration).
+type CalibrationSample struct {
+	ItemID  string    `json:"itemId"`
+	GroupID string    `json:"groupId"`
+	At      time.Time `json:"at"`
+	Missed  int       `json:"missed"`
+	Agree   bool      `json:"agree"`
+}
+
+// Context kinds a routing rule may attach (`context = [...]`).
+const (
+	CtxCallers       = "callers"
+	CtxTypes         = "types"
+	CtxTests         = "tests"
+	CtxConfig        = "config"
+	CtxCodeUnderTest = "code_under_test"
+)
+
+// Specialist prompts a routing rule may append (`prompts = [...]`).
+const (
+	PromptSecurity    = "security"
+	PromptPerformance = "performance"
+	PromptTests       = "tests"
+)
+
+// ContextBlock is one rendered piece of review context (route.Gather):
+// a caller, a type/signature, a test, a config unit or the code under test.
+type ContextBlock struct {
+	Kind   string `json:"kind"`             // one of the Ctx* kinds
+	Title  string `json:"title"`            // e.g. "caller web/src/ProfilePage.tsx ProfilePage"
+	UnitID string `json:"unitId,omitempty"` // the unit it was taken from, if any
+	Body   string `json:"body"`
+}
+
+// ReviewCall is one raw LLM call, for the Pipeline page's call log (`c`):
+// prompt, context, response and tokens.
+type ReviewCall struct {
+	ItemID  string `json:"itemId"`
+	GroupID string `json:"groupId,omitempty"` // "" for the TL;DR
+	Task    string `json:"task"`              // review | tldr | group-title
+	Tier    Tier   `json:"tier"`
+	// Purpose is routed | escalation | calibration | retry | tldr | title.
+	Purpose      string    `json:"purpose"`
+	Model        string    `json:"model"`
+	System       string    `json:"system"`
+	Prompt       string    `json:"prompt"`
+	Context      []string  `json:"context,omitempty"`
+	Response     string    `json:"response,omitempty"`
+	InputTokens  int       `json:"inputTokens"`
+	OutputTokens int       `json:"outputTokens"`
+	Cost         float64   `json:"cost"`
+	Ms           int64     `json:"ms"`
+	Cached       bool      `json:"cached,omitempty"`
+	Err          string    `json:"err,omitempty"`
+	At           time.Time `json:"at"`
 }
 
 // Side is the side of a diff a comment is on.

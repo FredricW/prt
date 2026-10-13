@@ -131,6 +131,12 @@ const (
 	// kGroupEdit holds user merge/split edits, parent = item id, id =
 	// itemID/<8-digit sequence> so listDocs returns them in append order.
 	kGroupEdit = "groupedit"
+	// kItemReviews holds an item's routing table: one doc per item (id =
+	// parent = item id) whose body is the []model.Review.
+	kItemReviews = "itemreviews"
+	// kCalibration holds calibration samples, id = RFC3339Nano time +
+	// item + group so listDocs returns them oldest first.
+	kCalibration = "calibration"
 )
 
 type execer interface {
@@ -251,8 +257,8 @@ func (s *SQLite) RemoveItem(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM docs WHERE (kind=? AND id=?) OR (kind IN (?,?,?,?,?,?,?) AND parent=?)`,
-		kItem, id, kFetch, kFile, kUnit, kLink, kGroup, kAgg, kGroupEdit, id); err != nil {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM docs WHERE (kind=? AND id=?) OR (kind IN (?,?,?,?,?,?,?,?) AND parent=?)`,
+		kItem, id, kFetch, kFile, kUnit, kLink, kGroup, kAgg, kGroupEdit, kItemReviews, id); err != nil {
 		_ = tx.Rollback()
 		return err
 	}
@@ -422,6 +428,41 @@ func (s *SQLite) Review(ctx context.Context, groupID string, tier model.Tier) (m
 // Reviews implements Store.
 func (s *SQLite) Reviews(ctx context.Context, itemID string) ([]model.Review, error) {
 	return listDocs[model.Review](ctx, s, kReview, []string{itemID})
+}
+
+// PutItemReviews implements Store.
+func (s *SQLite) PutItemReviews(ctx context.Context, itemID string, rs []model.Review) error {
+	if rs == nil {
+		rs = []model.Review{}
+	}
+	return putDoc(ctx, s.db, kItemReviews, itemID, itemID, rs)
+}
+
+// ItemReviews implements Store (nil when none stored).
+func (s *SQLite) ItemReviews(ctx context.Context, itemID string) ([]model.Review, error) {
+	rs, _, err := getDoc[[]model.Review](ctx, s, kItemReviews, itemID)
+	return rs, err
+}
+
+// AppendCalibration implements Store.
+func (s *SQLite) AppendCalibration(ctx context.Context, c model.CalibrationSample) error {
+	id := c.At.UTC().Format("2006-01-02T15:04:05.000000000Z") + "|" + c.ItemID + "|" + c.GroupID
+	return putDoc(ctx, s.db, kCalibration, id, "", c)
+}
+
+// Calibrations implements Store.
+func (s *SQLite) Calibrations(ctx context.Context, since time.Time) ([]model.CalibrationSample, error) {
+	all, err := listDocs[model.CalibrationSample](ctx, s, kCalibration, nil)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]model.CalibrationSample, 0, len(all))
+	for _, c := range all {
+		if !c.At.Before(since) {
+			out = append(out, c)
+		}
+	}
+	return out, nil
 }
 
 // PutComment implements Store.

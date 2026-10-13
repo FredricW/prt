@@ -19,6 +19,30 @@ import (
 // ErrUnavailable means the reviewer cannot run (no key, network, 5xx).
 var ErrUnavailable = errors.New("review: unavailable")
 
+// ErrNoKey means the provider key is not set. Errors wrapping it also wrap
+// ErrUnavailable. The pipeline then skips reviews with a status note
+// ("reviews skipped: PRT_ANTHROPIC_API_KEY not set"); nothing blocks.
+var ErrNoKey = errors.New("review: no API key")
+
+// Checker is optionally implemented by a Reviewer that can tell, without a
+// call, that it cannot run (Anthropic without a key returns an error
+// wrapping ErrNoKey and ErrUnavailable). The pipeline checks it once per run.
+type Checker interface {
+	Ready() error
+}
+
+// Ready returns r.Ready() when r implements Checker, ErrUnavailable for a
+// nil reviewer, and nil otherwise.
+func Ready(r Reviewer) error {
+	if r == nil {
+		return fmt.Errorf("%w: no reviewer configured", ErrUnavailable)
+	}
+	if c, ok := r.(Checker); ok {
+		return c.Ready()
+	}
+	return nil
+}
+
 // Default per-tier timeouts (spec: failure handling).
 const (
 	FastTimeout = 30 * time.Second
@@ -45,10 +69,17 @@ type Request struct {
 	Prompt    string     `json:"prompt"`
 	Context   []string   `json:"context,omitempty"` // attached context blocks, already rendered
 	MaxTokens int        `json:"maxTokens,omitempty"`
+	// Units are the group's units for TaskReview (set by BuildReview).
+	// They are not sent and not part of RequestKey: the prompt already
+	// carries their content. Reviewers use them to anchor findings
+	// (ParseReview), so a replayed response anchors to the current units.
+	Units []model.ChangeUnit `json:"-"`
 }
 
-// Result is a parsed LLM response. For TaskReview, Findings/Verdict/Confidence
-// are filled from the model's JSON; for prose tasks only Text is set.
+// Result is a parsed LLM response. Text is always the raw response text
+// (the call log shows it). For TaskReview, Findings/Verdict/Confidence are
+// filled from the model's JSON (ParseReview); for prose tasks Text is the
+// cleaned prose (CleanTLDR / CleanTitle are applied by the caller).
 type Result struct {
 	Text         string          `json:"text,omitempty"`
 	Findings     []model.Finding `json:"findings,omitempty"`
@@ -59,6 +90,8 @@ type Result struct {
 	OutputTokens int             `json:"outputTokens"`
 	Cost         float64         `json:"cost"`
 	Ms           int64           `json:"ms"`
+	// StopReason is the provider's stop reason ("end_turn", "max_tokens").
+	StopReason string `json:"stopReason,omitempty"`
 }
 
 // Reviewer runs one LLM request.

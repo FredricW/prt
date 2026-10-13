@@ -1,0 +1,28 @@
+TASK: tldr
+TIER: fast
+GROUP: 
+MAX_TOKENS: 100
+
+=== SYSTEM ===
+You write the one-sentence TL;DR shown at the top of a pull request overview, for a reviewer deciding how to spend their time. Use only the facts given; they were computed from machine labels and git. Never invent numbers, names or claims that are not in the facts. At most 160 characters. One plain sentence: no markdown, no quotes, no lead-in such as "TL;DR".
+
+=== USER (as sent) ===
+Facts about this pull request:
+- size: +120 -40 lines, about 96 lines that matter, about 8 min to review
+- noise: 14 changed lines are formatting, generated or moved code
+- units: 9 total, 3 need careful reading
+- composition: feature 62%, refactor 30%, test 8%
+- shape: mixed
+- highest unit risk: 4 of 5
+- risk tags: auth (2 units), data_write (1 unit)
+- test gap: 1 of 2 risky units untested
+- headlines:
+  - breaking at web/src/api/client.ts:10: getUser(id, opts) — breaks existing callers (p 0.86)
+- check before approving:
+  - web/src/api/client.ts:11 cache invalidation skips auth check
+- description: 1 of 2 bullets implemented (fidelity 0.50)
+  - implemented: `getUser` takes options
+  - not found: Invalidate cache on logout
+- undocumented changes: 1 unit not described
+
+Write the TL;DR sentence.

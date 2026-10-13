@@ -11,6 +11,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"time"
 
 	"github.com/fredricw/prt/internal/model"
 )
@@ -58,10 +59,23 @@ type Store interface {
 	PutEmbedding(ctx context.Context, unitID, embedModel string, vec []float32) error
 	Embedding(ctx context.Context, unitID, embedModel string) ([]float32, bool, error)
 
-	// Reviews are keyed by group id (sorted unit ids) and tier.
+	// Review cache: one row per (group id, tier) that ran, keyed by the
+	// sorted unit ids, so a group whose membership did not change keeps its
+	// reviews. Reviews lists the cache rows written with that item id.
 	PutReview(ctx context.Context, r model.Review) error
 	Review(ctx context.Context, groupID string, tier model.Tier) (model.Review, bool, error)
 	Reviews(ctx context.Context, itemID string) ([]model.Review, error)
+	// Routing table: exactly one row per current group of the item, in its
+	// final state (replaces the item's previous set; removed with the
+	// item). proto.Detail.Reviews serves these rows.
+	PutItemReviews(ctx context.Context, itemID string, rs []model.Review) error
+	ItemReviews(ctx context.Context, itemID string) ([]model.Review, error)
+
+	// Calibration samples (sampled fast+deep double reviews), append-only
+	// across items, for the trailing-30-day miss rate. Calibrations returns
+	// samples with At >= since, oldest first.
+	AppendCalibration(ctx context.Context, c model.CalibrationSample) error
+	Calibrations(ctx context.Context, since time.Time) ([]model.CalibrationSample, error)
 
 	// Comments: local drafts and loaded GitHub comments.
 	PutComment(ctx context.Context, c model.Comment) error

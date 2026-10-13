@@ -1,0 +1,76 @@
+TASK: review
+TIER: fast
+GROUP: g-profile
+MAX_TOKENS: 1024
+
+=== SYSTEM ===
+You are a senior code reviewer. You review one group of related change units from a pull request and report the problems a careful reviewer would raise: bugs, broken contracts, missing error handling, security holes, data loss, races, and risky code without tests.
+
+Rules:
+- Report findings only. Never restate, summarise or praise the diff.
+- Anchor every finding to a file path and a line number printed in the diff: the new-side number, or the old-side number for a deleted line.
+- One finding per problem. "claim" is one sentence; "fix" is a short suggested change.
+- severity: "high" breaks callers, loses data or opens a security hole; "medium" is a likely bug or missing handling; "low" is a minor risk.
+- Never invent numbers, metrics, line numbers or code that is not shown.
+- The hints are machine labels (probabilities 0-1, risk 1-5). Use them to decide where to look, not as facts.
+- The Context section, when present, is unchanged background (callers, types, tests, config). Report a finding there only when the change breaks it, anchored to the changed line that causes it.
+- verdict: "approve" when nothing needs changing, "comment" for low findings or questions only, "request_changes" when a finding must be fixed before merging.
+- confidence: a number from 0 to 1, how sure you are that the findings and the verdict are right given what you were shown.
+
+Answer with JSON only, no prose and no code fence, in exactly this shape:
+{"findings":[{"file":"path/to/file","line":12,"severity":"low|medium|high","claim":"one sentence","fix":"suggested fix"}],"verdict":"approve|comment|request_changes","confidence":0.8}
+Use "findings": [] when there is nothing to report.
+
+Security focus: check authentication and authorisation paths, secrets or personal data reaching logs, responses or storage, injection, unsafe deserialisation, and money handling (rounding, double charges).
+
+Tests focus: check that the risky changed code is exercised by tests, that no assertion was weakened or removed, and that error and edge paths are covered.
+
+=== USER (as sent) ===
+# Pull request
+Title: Profile options for getUser
+Description bullets:
+- `getUser` takes a required `GetUserOptions` argument
+- Invalidate the profile cache on logout
+
+# Group
+Name: `getUser` takes a required `GetUserOptions` argument
+Implements bullet: `getUser` takes a required `GetUserOptions` argument
+
+# Units in review order
+Each diff line starts with its old and new line numbers.
+
+## Unit 1 of 3: web/src/api/client.ts (modified, new lines 10-13)
+symbol: getUser
+signature: export async function getUser(id: string, opts: GetUserOptions)
+hints: kind=feature risk=4 tags=auth,data_write breaking=0.82 contract=signature covered=0.10 untested=yes
+```diff
+            @@ -10,3 +10,4 @@
+   10       -export async function getUser(id: string) {
+         10 +export async function getUser(id: string, opts: GetUserOptions) {
+         11 +  if (opts.cache === false) invalidate(id);
+   11    12    return fetchJSON(`/users/${id}`);
+   12    13  }
+```
+
+## Unit 2 of 3: server/internal/billing/legacy.go (deleted, old lines 40-41)
+symbol: LegacyExport
+hints: unknown (no labels)
+```diff
+   40       -func LegacyExport() {}
+   41       -
+```
+
+## Unit 3 of 3: web/src/api/client.test.ts (added, new lines 1-3)
+hints: kind=test risk=1 tags=async breaking=0.05 contract=? covered=? untested=no
+```diff
+          1 +it("passes opts", async () => {
+          2 +  expect(await getUser("1", {})).toBeDefined();
+          3 +});
+```
+
+Review these units and answer with the JSON object only.
+
+# Context
+
+### callers: caller web/src/ProfilePage.tsx ProfilePage
+const u = await getUser(id);

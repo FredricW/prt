@@ -131,6 +131,14 @@ type SliceRow struct {
 	Eyes   int    `json:"eyes"`
 }
 
+// UnitHotSpot is the spec's hot-spot score of one unit:
+// risk × relevance × (1 − covered) × min(confidence), using the
+// interpolated Risk/Relevance, CoveredP and MinConfidence. Aggregate (hot
+// spots) and route (queue order) share it.
+func UnitHotSpot(a UnitAgg) float64 {
+	return a.Risk * a.Relevance * (1 - a.CoveredP) * a.MinConfidence
+}
+
 // GroupAgg is computed from labels for one group; never stored as truth.
 type GroupAgg struct {
 	GroupID        string             `json:"groupId"`
@@ -142,6 +150,61 @@ type GroupAgg struct {
 	TestGap        int                `json:"testGap"`
 	Breaking       []string           `json:"breaking"` // unit ids
 	Unsure         int                `json:"unsure"`
+	// Kind is the group's kind for routing and display: the Jev kind
+	// shared by every unit ("moved" when every unit is git-moved,
+	// "formatting" for ChangeUnit.Format units), "unknown" when any unit's
+	// kind is unknown, else "mixed" (M3; see route package doc).
+	Kind string `json:"kind,omitempty"`
+	// HotSpot is the max UnitHotSpot over the group's units (queue order
+	// for deep slots and the cost cap).
+	HotSpot float64 `json:"hotSpot,omitempty"`
+	// Findings counts review findings on the group (from the routing row).
+	Findings int `json:"findings,omitempty"`
+}
+
+// ReviewStats is the Pipeline page's totals block (spec Pipeline page 3),
+// computed by the pipeline after stage 7; nil before M3 analysis.
+type ReviewStats struct {
+	Groups int `json:"groups"`
+	// Tiers counts routing rows by final tier ("none", "fast", "deep").
+	Tiers map[Tier]int `json:"tiers"`
+	// Status counts rows by status.
+	Status       map[ReviewStatus]int `json:"status"`
+	Escalations  int                  `json:"escalations"`
+	Calibrations int                  `json:"calibrations"`
+	Findings     int                  `json:"findings"`
+	// ElapsedMs is the review stage's wall time; AllDeepEstMs estimates
+	// running every routed (non-none) group on the deep tier one after
+	// another.
+	ElapsedMs    int64 `json:"elapsedMs"`
+	AllDeepEstMs int64 `json:"allDeepEstMs"`
+	// Cost is the LLM cost of the item's current reviews, TL;DR and group
+	// titles (cache hits count what they cost when they ran); CapUSD is
+	// the effective cap (Item.CapUSD or cost_cap_usd).
+	Cost    float64 `json:"cost"`
+	CapUSD  float64 `json:"capUsd"`
+	OverCap int     `json:"overCap"` // rows queued over the cap
+	// JevCalls and JevCost sum the item's Jev stage rows.
+	JevCalls int     `json:"jevCalls"`
+	JevCost  float64 `json:"jevCost"`
+	// Note explains a degraded review stage ("reviews skipped:
+	// PRT_ANTHROPIC_API_KEY not set").
+	Note string `json:"note,omitempty"`
+}
+
+// CalibrationStats is the Pipeline page's calibration panel.
+type CalibrationStats struct {
+	// Samples and Misses are sampled double reviews in the trailing 30
+	// days, and those where deep found a severity ≥ medium finding fast
+	// did not; MissRate = Misses ÷ Samples (0 when no samples).
+	Samples  int     `json:"samples"`
+	Misses   int     `json:"misses"`
+	MissRate float64 `json:"missRate"`
+	// Overrides counts label overrides by question id (all items).
+	Overrides map[string]int `json:"overrides,omitempty"`
+	// LastAgree is the last sample's agreement (nil when none).
+	LastAgree *bool  `json:"lastAgree,omitempty"`
+	LastAt    string `json:"lastAt,omitempty"` // RFC3339
 }
 
 // UrgencyTerm is one weighted term of the urgency score.
@@ -185,16 +248,25 @@ type ItemAgg struct {
 	UnsureUnits    []string           `json:"unsureUnits,omitempty"` // unit ids kept expanded
 	Files          []FileAgg          `json:"files,omitempty"`       // owned first, then by attention
 	Slice          []SliceRow         `json:"slice,omitempty"`       // owned modules first, then the rest
-	TLDR           string             `json:"tldr,omitempty"`
-	Urgency        float64            `json:"urgency"`
-	UrgencyTerms   []UrgencyTerm      `json:"urgencyTerms"`
-	Why            string             `json:"why"` // top three terms, in words
-	Units          []UnitAgg          `json:"units"`
-	Groups         []GroupAgg         `json:"groups"`
-	LabelsMissing  bool               `json:"labelsMissing,omitempty"` // Jev unavailable
+	// TLDR is the fast tier's one sentence (≤160 chars) written from this
+	// record only (shown "ai·from labels"); TLDRKey is the key of the
+	// request it came from, so it is regenerated only when the record's
+	// TL;DR inputs change. Both empty when no reviewer ran.
+	TLDR          string        `json:"tldr,omitempty"`
+	TLDRKey       string        `json:"tldrKey,omitempty"`
+	Urgency       float64       `json:"urgency"`
+	UrgencyTerms  []UrgencyTerm `json:"urgencyTerms"`
+	Why           string        `json:"why"` // top three terms, in words
+	Units         []UnitAgg     `json:"units"`
+	Groups        []GroupAgg    `json:"groups"`
+	LabelsMissing bool          `json:"labelsMissing,omitempty"` // Jev unavailable
 	// Grouping is the grouping panel record and Split the split suggestion;
 	// both are set by the pipeline from the cluster stage (not by
 	// aggregate.Item). Nil before M2 analysis.
 	Grouping *GroupingStats   `json:"grouping,omitempty"`
 	Split    *SplitSuggestion `json:"split,omitempty"`
+	// Review and Calibration are the Pipeline page's totals and
+	// calibration panel, set by the pipeline after stage 7 (M3).
+	Review      *ReviewStats      `json:"review,omitempty"`
+	Calibration *CalibrationStats `json:"calibration,omitempty"`
 }
