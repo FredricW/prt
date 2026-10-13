@@ -9,7 +9,7 @@ FIXTURE_DRAFTS := testdata/fixtures/drafts.json
 # Fixed clock for snapshots so ages are byte-stable.
 SNAPSHOT_NOW := 2026-10-13T12:00:00Z
 
-.PHONY: build test lint check demo fixtures snapshot record-jev record-jev-dry record-review record-review-dry record-embed
+.PHONY: build test lint check demo fixtures snapshot quality record-jev record-jev-dry record-review record-review-dry record-embed
 
 build:
 	CGO_ENABLED=1 go build -o bin/prt ./cmd/prt
@@ -75,8 +75,14 @@ record-review-dry:
 record-embed:
 	go run ./tools/recordjev --embed live
 
+# Label-quality scoreboard (M5.2): runs the pipeline offline over the fixture
+# items with the recorded answers and scores it against testdata/groundtruth/
+# (method and baseline in docs/QUALITY.md). Flags: -json, -explain.
+quality:
+	CGO_ENABLED=1 go run ./tools/quality
+
 # Non-interactive: render a few screens to stdout (for agents and CI).
-# Five items so the fixture branch (05-spike-dark-mode, ranked last) shows
-# its branch-state block too.
+# Six items so the fixture branch (05-spike-dark-mode) shows its branch-state
+# block and #106 (Involved section, ranked last) renders too.
 snapshot: build $(FIXTURE_REPO)/.git
-	./bin/prt --no-daemon --offline $(REPLAY) --snapshot --width 120 --height 30 --max-items 5 --now $(SNAPSHOT_NOW) --repo $(FIXTURE_REPO) --fixtures $(FIXTURE_PRS) --drafts $(FIXTURE_DRAFTS)
+	./bin/prt --no-daemon --offline $(REPLAY) --snapshot --width 120 --height 30 --max-items 6 --now $(SNAPSHOT_NOW) --repo $(FIXTURE_REPO) --fixtures $(FIXTURE_PRS) --drafts $(FIXTURE_DRAFTS)
