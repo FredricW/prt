@@ -19,10 +19,12 @@ import (
 	"github.com/fredricw/prt/internal/testutil"
 )
 
-// isolate keeps tests away from the user's config, keys and GitHub login.
+// isolate keeps tests away from the user's config, state (workspace logs
+// and sockets, pane widths), keys and GitHub login.
 func isolate(t *testing.T) {
 	t.Helper()
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	t.Setenv("JEV_API_KEY", "")
 	t.Setenv("PRT_ANTHROPIC_API_KEY", "")
 	t.Setenv("OLLAMA_HOST", "http://127.0.0.1:1")
@@ -34,10 +36,18 @@ func isolate(t *testing.T) {
 // gitRepo creates an empty-history git repo with an optional GitHub origin.
 func gitRepo(t *testing.T, origin string) string {
 	t.Helper()
+	return gitRepoAt(t, t.TempDir(), origin)
+}
+
+// gitRepoAt initialises dir (created when missing) as gitRepo does.
+func gitRepoAt(t *testing.T, dir, origin string) string {
+	t.Helper()
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not installed")
 	}
-	dir := t.TempDir()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
 	for _, args := range [][]string{{"init", "-q", "-b", "main"}, {"remote", "add", "origin", origin}} {
 		if args[0] == "remote" && origin == "" {
 			continue
@@ -84,10 +94,17 @@ func TestBadFlags(t *testing.T) {
 	}
 }
 
+// A directory outside any repository is a workspace root (M5.3); with no
+// repository under it prt fails and says so. A missing directory is still a
+// plain error.
 func TestNotARepo(t *testing.T) {
 	isolate(t)
-	if code, _, errOut := runPrt("--offline", "--snapshot", "--repo", t.TempDir()); code != 1 || errOut == "" {
+	if code, _, errOut := runPrt("--offline", "--snapshot", "--repo", t.TempDir()); code != 1 || !strings.Contains(errOut, "no git repositories under") {
 		t.Fatalf("code %d err %q", code, errOut)
+	}
+	missing := filepath.Join(t.TempDir(), "missing")
+	if code, _, errOut := runPrt("--offline", "--snapshot", "--repo", missing); code != 1 || errOut == "" || strings.Contains(errOut, "no git repositories") {
+		t.Fatalf("missing dir: code %d err %q", code, errOut)
 	}
 }
 

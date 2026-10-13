@@ -2,8 +2,12 @@
 //
 // Usage:
 //
-//	prt [--repo DIR] [--no-daemon] [--offline] [--fixtures FILE] [--jev-replay DIR] [--embed-replay DIR] [--review-replay DIR] [--drafts FILE] [--snapshot [--width N --height N --now TIME]]
-//	prt daemon [--repo DIR] [--offline] [--fixtures FILE] [--jev-replay DIR] [--embed-replay DIR] [--review-replay DIR] [--drafts FILE]
+//	prt [--repo DIR | --root DIR [--depth N]] [--no-daemon] [--offline] [--fixtures FILE] [--jev-replay DIR] [--embed-replay DIR] [--review-replay DIR] [--drafts FILE] [--snapshot [--width N --height N --now TIME]]
+//	prt daemon [--repo DIR | --root DIR [--depth N]] [--offline] [--fixtures FILE] [--jev-replay DIR] [--embed-replay DIR] [--review-replay DIR] [--drafts FILE]
+//
+// Inside a git repository prt triages that repository. With --root, or when
+// started in a directory that is not inside a git repository, it serves every
+// repository under the directory as one workspace (M5.3; see workspace.go).
 package main
 
 import (
@@ -38,6 +42,7 @@ import (
 	"github.com/fredricw/prt/internal/settings"
 	"github.com/fredricw/prt/internal/store"
 	"github.com/fredricw/prt/internal/tui"
+	"github.com/fredricw/prt/internal/uistate"
 )
 
 var version = "dev"
@@ -48,7 +53,12 @@ var ghToken = gh.TokenFromGH
 func main() { os.Exit(run(os.Args[1:], os.Stdout, os.Stderr)) }
 
 type options struct {
-	repo     string
+	repo string
+	// root is the workspace root (--root, or the --repo directory when it
+	// is not inside a git repository); "" in single-repo mode. depth is
+	// --depth (0: [workspace] depth).
+	root     string
+	depth    int
 	fixtures string
 	now      string
 	noDaemon bool
@@ -69,6 +79,27 @@ type options struct {
 	// the pipeline too, so urgency (age term), quartiles and order use the
 	// same clock as the TUI and snapshots do not drift.
 	nowFn func() time.Time
+	// token reads the GitHub token (nil: ghToken). A workspace passes one
+	// that runs `gh auth token` once for every repo.
+	token func(context.Context) (string, error)
+	// noGitHub, when set, keeps GitHub disabled with this note instead of
+	// wiring gh auth (a workspace repo the --fixtures manifest has no
+	// fixture for).
+	noGitHub string
+}
+
+// replaying reports whether a replay flag is set: config is then read
+// from the repo's own .git/prt only, never from XDG.
+func (o options) replaying() bool {
+	return o.jevReplay != "" || o.embedReplay != "" || o.reviewReplay != ""
+}
+
+// tokenFunc is the GitHub token reader setup uses.
+func (o options) tokenFunc() func(context.Context) (string, error) {
+	if o.token != nil {
+		return o.token
+	}
+	return ghToken
 }
 
 func run(args []string, stdout, stderr io.Writer) int {
@@ -80,7 +111,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 	fs.SetOutput(stderr)
 	var o options
 	showVersion := fs.Bool("version", false, "print version and exit")
-	fs.StringVar(&o.repo, "repo", ".", "path inside the git repository to triage")
+	fs.StringVar(&o.repo, "repo", ".", "path inside the git repository to triage (a directory outside any repository is a workspace root)")
+	fs.StringVar(&o.root, "root", "", "triage every git repository under this directory in one picker (a workspace)")
+	fs.IntVar(&o.depth, "depth", 0, "workspace: directory levels below the root searched for repositories (0: [workspace] depth, default 2)")
 	fs.BoolVar(&o.noDaemon, "no-daemon", false, "run the pipeline in-process instead of connecting to prt daemon")
 	fs.BoolVar(&o.offline, "offline", false, "do not contact GitHub, Jev, LLMs or embedding servers")
 	fs.BoolVar(&o.snapshot, "snapshot", false, "render a few screens to stdout without a TTY and exit")
@@ -103,6 +136,16 @@ func run(args []string, stdout, stderr io.Writer) int {
 		_, _ = fmt.Fprintln(stdout, "prt", version)
 		return 0
 	}
+	if o.depth < 0 {
+		_, _ = fmt.Fprintln(stderr, "prt: --depth must be 0 or more")
+		return 2
+	}
+	repoSet := false
+	fs.Visit(func(f *flag.Flag) { repoSet = repoSet || f.Name == "repo" })
+	if o.root != "" && repoSet {
+		_, _ = fmt.Fprintln(stderr, "prt: --root and --repo cannot be used together")
+		return 2
+	}
 
 	var nowFn func() time.Time
 	if o.now != "" {
@@ -117,6 +160,17 @@ func run(args []string, stdout, stderr io.Writer) int {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	if o.root == "" && outsideRepo(ctx, o.repo) {
+		o.root = o.repo
+	}
+	if o.root != "" {
+		if o.drafts != "" {
+			_, _ = fmt.Fprintln(stderr, "prt: --drafts needs a single repository (--repo), not a workspace")
+			return 2
+		}
+		return runWorkspace(ctx, o, daemonMode, stdout, stderr)
+	}
 
 	env, err := setup(ctx, o)
 	if err != nil {
@@ -185,17 +239,43 @@ func run(args []string, stdout, stderr io.Writer) int {
 		Root:         env.root,
 		ReloadOnTick: attached,
 	}
-	if km, err := tui.KeyMapFromConfig(env.cfg.Keys); err != nil {
-		env.deps.Log.Warn("bad [keys] in prt.toml; using defaults", "err", err)
+	return runTUI(ctx, client, topts, env.cfg.Keys, env.deps.Log, stderr)
+}
+
+// runTUI runs the interactive TUI on client until the user quits: keys from
+// the [keys] table, and the pane widths restored from and saved to the
+// per-user layout file (M5.3, internal/uistate). A layout file that does
+// not decode is logged and the automatic widths apply.
+func runTUI(ctx context.Context, client daemon.Client, topts tui.Options, keys map[string]string, logger *log.Logger, stderr io.Writer) int {
+	if km, err := tui.KeyMapFromConfig(keys); err != nil {
+		logger.Warn("bad [keys] in prt.toml; using defaults", "err", err)
 	} else {
 		topts.Keys = &km
 	}
+	layoutPath := uistate.DefaultPath()
+	if l, err := uistate.Load(layoutPath); err != nil {
+		logger.Warn("pane widths not restored", "err", err)
+	} else {
+		topts.Layout = l
+	}
+	topts.SaveLayout = func(l uistate.Layout) error { return uistate.Save(layoutPath, l) }
 	p := tea.NewProgram(tui.NewWithOptions(client, nil, topts), tea.WithAltScreen(), tea.WithContext(ctx), tea.WithMouseCellMotion())
 	if _, err := p.Run(); err != nil && !errors.Is(err, tea.ErrProgramKilled) {
 		_, _ = fmt.Fprintln(stderr, "prt:", err)
 		return 1
 	}
 	return 0
+}
+
+// outsideRepo reports whether dir is an existing directory that is not
+// inside a git work tree: prt then serves it as a workspace root (M5.3).
+// Any other failure (a missing directory) is left for setup to report.
+func outsideRepo(ctx context.Context, dir string) bool {
+	if _, err := gitx.Open(ctx, dir); err == nil || !errors.Is(err, gitx.ErrNotWorkTree) {
+		return false
+	}
+	fi, err := os.Stat(dir)
+	return err == nil && fi.IsDir()
 }
 
 type environment struct {
@@ -211,7 +291,10 @@ type environment struct {
 	// root (the work tree) feed the TUI header and the Code page's `e`.
 	repoLabel string
 	root      string
-	closers   []func()
+	// origin is the origin remote's URL ("" without one); a workspace
+	// describes the repo with it.
+	origin  string
+	closers []func()
 }
 
 // repoLabel names the repo for the header: github.repo from config, else
@@ -268,7 +351,7 @@ func setup(ctx context.Context, o options) (*environment, error) {
 	env.closers = append(env.closers, func() { _ = st.Close() })
 
 	dirs := config.Dirs(gitDir)
-	if o.jevReplay != "" || o.embedReplay != "" || o.reviewReplay != "" {
+	if o.replaying() {
 		// Recorded request keys depend on config and questions: read only
 		// the repo's own .git/prt (as the recorder does), never XDG.
 		dirs = []string{prtDir}
@@ -308,16 +391,17 @@ func setup(ctx context.Context, o options) (*environment, error) {
 		env.ghNote = "GitHub fixture " + filepath.Base(o.fixtures) + " (gh auth not checked)"
 		logger.Info("using GitHub fixture", "path", o.fixtures)
 	}
-	if o.offline && d.GH == nil {
+	switch {
+	case d.GH != nil:
+	case o.noGitHub != "":
+		env.ghNote = o.noGitHub
+	case o.offline:
 		env.ghNote = "offline: GitHub disabled; local branches only"
-	}
-	if !o.offline {
+	default:
+		var reason string
+		d.GH, reason = githubClient(ctx, g, cfg, logger, o.tokenFunc())
 		if d.GH == nil {
-			var reason string
-			d.GH, reason = githubClient(ctx, g, cfg, logger)
-			if d.GH == nil {
-				env.ghNote = "GitHub disabled (" + reason + "); local branches only"
-			}
+			env.ghNote = "GitHub disabled (" + reason + "); local branches only"
 		}
 	}
 	m, notes := buildModels(cfg, o)
@@ -330,6 +414,9 @@ func setup(ctx context.Context, o options) (*environment, error) {
 	env.cfg = cfg
 	env.repoLabel = repoLabel(ctx, g, cfg)
 	env.root = g.Root()
+	if url, err := g.RemoteURL(ctx, "origin"); err == nil {
+		env.origin = url
+	}
 	return env, nil
 }
 
@@ -523,8 +610,8 @@ func openURL(url string) error {
 }
 
 // githubClient returns nil and a short user-facing reason when the repo is
-// not on GitHub or gh has no token.
-func githubClient(ctx context.Context, g gitx.Git, cfg config.Config, logger *log.Logger) (gh.Client, string) {
+// not on GitHub or token (`gh auth token`) has none.
+func githubClient(ctx context.Context, g gitx.Git, cfg config.Config, logger *log.Logger, token func(context.Context) (string, error)) (gh.Client, string) {
 	var repo gh.Repo
 	if cfg.GitHub.Repo != "" {
 		r, ok := gh.ParseRemote("github.com/" + cfg.GitHub.Repo)
@@ -546,7 +633,7 @@ func githubClient(ctx context.Context, g gitx.Git, cfg config.Config, logger *lo
 		}
 		repo = r
 	}
-	tok, err := ghToken(ctx)
+	tok, err := token(ctx)
 	if err != nil {
 		logger.Warn("GitHub disabled", "err", err)
 		return nil, "no token from `gh auth token`"
