@@ -65,6 +65,8 @@ func TestCleanRepoKey(t *testing.T) {
 		"team/portal/":  "team/portal",
 		`team\portal`:   "team/portal",
 		"odd:name":      "odd_name",
+		"My Project":    "My_Project",
+		"team/a\tb":     "team/a_b",
 	}
 	for in, want := range tests {
 		if got := CleanRepoKey(in); got != want {

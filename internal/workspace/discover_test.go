@@ -323,6 +323,55 @@ func TestDiscoverKeysSortedAndCleaned(t *testing.T) {
 	wantKeys(t, discover(t, root, Options{}), "alpha", "team/api", "team/portal", "we_ird", "zeta")
 }
 
+// Directories whose cleaned paths clash get distinct keys: the one whose
+// path is its key keeps it, the others get "~2", "~3" with a note. Keys
+// never hold whitespace, so a repo-qualified query can name them.
+func TestDiscoverKeysAreUnique(t *testing.T) {
+	root := t.TempDir()
+	for _, p := range []string{"a:b", "a_b", "a b", "My Project"} {
+		mkRepo(t, filepath.Join(root, p))
+	}
+	res := discover(t, root, Options{})
+	wantKeys(t, res, "My_Project", "a_b", "a_b~2", "a_b~3")
+	if r := res.Repos[1]; r.Root != filepath.Join(res.Root, "a_b") {
+		t.Errorf("a_b is %s, want the directory named a_b", r.Root)
+	}
+	for _, n := range []string{"a b is keyed a_b~2 (a_b is taken)", "a:b is keyed a_b~3 (a_b is taken)"} {
+		if !hasNote(res.Notes, n) {
+			t.Errorf("notes = %q, want %q", res.Notes, n)
+		}
+	}
+}
+
+// A symlink at the depth limit that points at a directory searched from a
+// shallower level does not hide that directory's repositories: the walk is
+// breadth first, so the real directory is reached (and searched) first.
+func TestDiscoverSymlinkAtDepthLimit(t *testing.T) {
+	t.Run("sibling", func(t *testing.T) {
+		root := t.TempDir()
+		mkRepo(t, filepath.Join(root, "a", "repo"))
+		mkRepo(t, filepath.Join(root, "c", "repo"))
+		symlink(t, filepath.Join("..", "c"), filepath.Join(root, "b", "link"))
+		res := discover(t, root, Options{Depth: 2})
+		wantKeys(t, res, "a/repo", "c/repo")
+		if len(res.Notes) != 0 {
+			t.Errorf("notes = %q", res.Notes)
+		}
+	})
+	t.Run("link sorts first", func(t *testing.T) {
+		root := t.TempDir()
+		mkRepo(t, filepath.Join(root, "z", "r1"))
+		symlink(t, filepath.Join(root, "z"), filepath.Join(root, "a", "link"))
+		wantKeys(t, discover(t, root, Options{Depth: 2}), "z/r1")
+	})
+	t.Run("the shallower path keys a repo", func(t *testing.T) {
+		root := t.TempDir()
+		mkRepo(t, filepath.Join(root, "proj", "x"))
+		symlink(t, filepath.Join(root, "proj"), filepath.Join(root, "a", "b", "link"))
+		wantKeys(t, discover(t, root, Options{Depth: 4}), "proj/x")
+	})
+}
+
 func TestDiscoverUnreadableDirectory(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("root reads every directory")

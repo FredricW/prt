@@ -70,10 +70,14 @@ type Result struct {
 // looked for at levels 1..Depth below root, never inside a repository's
 // work tree (nested repositories and submodules belong to their
 // superproject), never inside .git, node_modules, vendor, other
-// dot-directories or excluded directories. Directory symlinks are followed
-// once per resolved directory (loops end with a note). Linked worktrees of
-// one repository are listed once: the main work tree wins, else the first
-// by key. Bare repositories are ignored.
+// dot-directories or excluded directories. The walk is breadth first (each
+// level in lexical order), so a directory reached by several paths
+// (directory symlinks) is reached first at its shallowest level, searched
+// from there and keyed by that path; later paths to it are skipped (a loop
+// back to an ancestor with a note). Linked worktrees of one repository are
+// listed once: the main work tree wins, else the first by key. Bare
+// repositories are ignored. Keys that clash after cleaning get a "~2", "~3"
+// suffix (with a note).
 //
 // The error is non-nil only when root is not a readable directory.
 func Discover(root string, o Options) (Result, error) {
@@ -88,7 +92,8 @@ func Discover(root string, o Options) (Result, error) {
 			return Result{}, fmt.Errorf("workspace: read root %s: %w", root, err)
 		}
 		w.visited[dir] = true
-		w.walkEntries(dir, "", dir, entries, 0)
+		w.visitEntries(queued{dir: dir, real: dir}, entries)
+		w.walk()
 	}
 	return w.result(), nil
 }
@@ -117,7 +122,16 @@ func realDir(root string) (string, error) {
 // found is a repository seen by the walk, before deduplication.
 type found struct {
 	repo Repo
-	main bool // .git is a directory (not a linked worktree)
+	main bool   // .git is a directory (not a linked worktree)
+	rel  string // the walked path relative to the root, before cleaning
+}
+
+// queued is a directory whose entries the walk visits next: dir (the walked
+// path), rel (relative to the root), real (symlinks resolved) and its level
+// (the root is 0).
+type queued struct {
+	dir, rel, real string
+	level          int
 }
 
 // walker holds one Discover walk's state.
@@ -125,7 +139,11 @@ type walker struct {
 	root    string
 	depth   int
 	exclude []string
-	visited map[string]bool // resolved paths of the directories walked
+	// visited are the resolved paths of the directories reached (searched,
+	// queued or found to be a repository). The walk is breadth first, so a
+	// directory is reached first at its shallowest level.
+	visited map[string]bool
+	queue   []queued
 	found   []found
 	notes   []string
 }
@@ -169,20 +187,35 @@ func (w *walker) walkRoot() bool {
 	if key == "" {
 		key = "root"
 	}
-	w.found = append(w.found, found{repo: ge.repo(key, w.root), main: ge.main})
+	w.found = append(w.found, found{repo: ge.repo(key, w.root), main: ge.main, rel: key})
 	return true
 }
 
-// walkEntries visits the subdirectories of dir (at level), in lexical
-// order. dirReal is dir with symlinks resolved.
-func (w *walker) walkEntries(dir, rel, dirReal string, entries []fs.DirEntry, level int) {
+// walk searches the queued directories, level by level (breadth first).
+func (w *walker) walk() {
+	for len(w.queue) > 0 {
+		d := w.queue[0]
+		w.queue = w.queue[1:]
+		entries, err := os.ReadDir(d.dir)
+		if err != nil {
+			w.note("cannot read %s: %v", d.rel, err)
+			continue
+		}
+		w.visitEntries(d, entries)
+	}
+}
+
+// visitEntries visits the entries of d, in lexical order, one level below
+// it.
+func (w *walker) visitEntries(d queued, entries []fs.DirEntry) {
 	for _, e := range entries {
-		w.visit(filepath.Join(dir, e.Name()), path.Join(rel, e.Name()), dirReal, e, level+1)
+		w.visit(filepath.Join(d.dir, e.Name()), path.Join(d.rel, e.Name()), d.real, e, d.level+1)
 	}
 }
 
 // visit looks at one directory entry at level (≥ 1): a repository is
-// recorded, any other directory is searched while level < depth.
+// recorded, any other directory is queued to be searched while level <
+// depth.
 func (w *walker) visit(p, rel, parentReal string, e fs.DirEntry, level int) {
 	if skipName(e.Name()) || w.excluded(rel) {
 		return
@@ -212,17 +245,12 @@ func (w *walker) visit(p, rel, parentReal string, e fs.DirEntry, level int) {
 		w.note("skipped %s: %v", rel, err)
 		return
 	case present:
-		w.found = append(w.found, found{repo: ge.repo(model.CleanRepoKey(rel), p), main: ge.main})
+		w.found = append(w.found, found{repo: ge.repo(model.CleanRepoKey(rel), p), main: ge.main, rel: rel})
 		return
 	case isBare(p) || level >= w.depth:
 		return
 	}
-	entries, err := os.ReadDir(p)
-	if err != nil {
-		w.note("cannot read %s: %v", rel, err)
-		return
-	}
-	w.walkEntries(p, rel, resolved, entries, level)
+	w.queue = append(w.queue, queued{dir: p, rel: rel, real: resolved, level: level})
 }
 
 // display is a resolved path relative to the root when it is inside it.
@@ -272,12 +300,45 @@ func (w *walker) result() Result {
 		}
 		w.note("skipped worktree %s (same repository as %s)", f.repo.Key, kept[j].repo.Key)
 	}
-	repos := make([]Repo, 0, len(kept))
-	for _, f := range kept {
-		repos = append(repos, f.repo)
-	}
+	repos := w.uniqueKeys(kept)
 	sort.Slice(repos, func(i, j int) bool { return repos[i].Key < repos[j].Key })
 	return Result{Root: w.root, Repos: repos, Notes: w.notes}
+}
+
+// uniqueKeys makes the keys of kept (sorted by key) unique: directories
+// whose cleaned paths clash ("we:ird" and "we_ird", "my repo" and
+// "my_repo") would share item ids and routing. The one whose path is its
+// key keeps it, else the first walked; the others get "<key>~2", "<key>~3"
+// (the first free) and a note.
+func (w *walker) uniqueKeys(kept []found) []Repo {
+	sort.SliceStable(kept, func(i, j int) bool {
+		a, b := kept[i], kept[j]
+		if a.repo.Key != b.repo.Key {
+			return a.repo.Key < b.repo.Key
+		}
+		return a.rel == a.repo.Key && b.rel != b.repo.Key
+	})
+	taken := make(map[string]bool, len(kept))
+	for _, f := range kept {
+		taken[f.repo.Key] = true
+	}
+	repos := make([]Repo, 0, len(kept))
+	for i, f := range kept {
+		r := f.repo
+		if i > 0 && kept[i-1].repo.Key == r.Key {
+			key := r.Key
+			for n := 2; ; n++ {
+				if k := fmt.Sprintf("%s~%d", key, n); !taken[k] {
+					r.Key = k
+					break
+				}
+			}
+			taken[r.Key] = true
+			w.note("%s is keyed %s (%s is taken)", f.rel, r.Key, key)
+		}
+		repos = append(repos, r)
+	}
+	return repos
 }
 
 // skipName reports directories never searched: dot-directories (.git,

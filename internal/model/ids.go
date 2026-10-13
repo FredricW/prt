@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode"
 )
 
 // PRItemID returns the item id of a PR.
@@ -21,10 +22,18 @@ const RepoIDSep = "::"
 
 // CleanRepoKey makes s usable as a workspace repo key: slash-separated,
 // no leading "./" or trailing "/", and ':' (which would clash with
-// RepoIDSep and the "repo:branch" qualifier) replaced by '_'. "" stays "".
+// RepoIDSep and the "repo:branch" qualifier) and whitespace (which a
+// repo-qualified query cannot hold: "my repo#12" is free text) each
+// replaced by '_'. "" stays "". Two paths can clean to one key; workspace
+// discovery makes the keys unique.
 func CleanRepoKey(s string) string {
 	s = strings.ReplaceAll(s, "\\", "/")
-	s = strings.ReplaceAll(s, ":", "_")
+	s = strings.Map(func(r rune) rune {
+		if r == ':' || unicode.IsSpace(r) {
+			return '_'
+		}
+		return r
+	}, s)
 	for strings.HasPrefix(s, "./") {
 		s = s[2:]
 	}
