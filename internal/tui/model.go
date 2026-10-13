@@ -409,7 +409,9 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	case msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress && !m.overview.raw:
 		// Row 0 of the main pane is the tab bar; a click on an anchored
 		// Overview line (minimap row, headline, …) opens that unit in Code.
-		if id, ok := m.overview.anchorAt(m.overview.vp.YOffset + msg.Y - 1); ok && m.detail != nil {
+		// The main pane starts after the sidebar, its right border and a
+		// one-cell gap (View).
+		if id, ok := m.overview.clickAt(m.overview.vp.YOffset+msg.Y-1, msg.X-sw-2); ok && m.detail != nil {
 			m.focus = FocusMain
 			m.jumpToUnit(id)
 		}
@@ -543,7 +545,7 @@ func (m *Model) renderOverview() {
 		return
 	}
 	_, mw, _ := m.dims()
-	m.overview.setContent(overviewText(m.st, m.md, *m.detail, m.now(), mw-2))
+	m.overview.setPage(overviewPage(m.st, m.md, *m.detail, m.now(), mw-2))
 }
 
 // jumpToUnit switches to the Code tab and focuses unit id there.

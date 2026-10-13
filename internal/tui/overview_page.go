@@ -38,6 +38,25 @@ type page struct {
 	width   int
 	lines   []string
 	anchors []string
+	// cells maps a line index to its one-cell-per-unit run (minimap rows),
+	// so a click on a cell opens that cell's unit, not the row anchor.
+	cells map[int]cellRow
+}
+
+// cellRow is a run of single-cell glyphs starting at display column col,
+// one per unit id.
+type cellRow struct {
+	col int
+	ids []string
+}
+
+// at returns the unit under display column x, if any.
+func (c cellRow) at(x int) (string, bool) {
+	i := x - c.col
+	if i < 0 || i >= len(c.ids) {
+		return "", false
+	}
+	return c.ids[i], true
 }
 
 // add appends one row (truncated to the page width) anchored to unit ("" for
@@ -87,7 +106,13 @@ func gutter(pr float64) string {
 // page and its per-line anchors (unit ids). Every number comes from d.Agg;
 // the page only formats and sizes bars.
 func overviewText(st styles, md *markdown, d proto.Detail, now time.Time, width int) (string, []string) {
-	p := &page{st: st, width: max(10, width)}
+	p := overviewPage(st, md, d, now, width)
+	return strings.Join(p.lines, "\n"), p.anchors
+}
+
+// overviewPage renders the Overview as a page (lines, anchors, cell runs).
+func overviewPage(st styles, md *markdown, d proto.Detail, now time.Time, width int) *page {
+	p := &page{st: st, width: max(10, width), cells: map[int]cellRow{}}
 	p.add(st.title.Render(titleLine(d.Item, now)), "")
 	switch {
 	case d.Agg == nil:
@@ -103,7 +128,7 @@ func overviewText(st styles, md *markdown, d proto.Detail, now time.Time, width 
 	} else {
 		p.text(md.render(d.Item.Body, width))
 	}
-	return strings.Join(p.lines, "\n"), p.anchors
+	return p
 }
 
 // pendingBlocks draws every block as a dim one-liner while no aggregate
@@ -506,6 +531,15 @@ func minimapBlock(p *page, a *model.ItemAgg, ix unitIndex) {
 			unit = f.UnitIDs[0]
 		}
 		p.add("  "+padRight(truncate(f.Path, pw), pw)+"  "+cells.String(), unit)
+		if col := 2 + pw + 2; col < p.width {
+			// Cells cut off by add (the last visible cell then shows "…")
+			// stay out of reach; a click there falls back to the row anchor.
+			n := len(f.UnitIDs)
+			if col+n > p.width {
+				n = p.width - col - 1
+			}
+			p.cells[len(p.lines)-1] = cellRow{col: col, ids: f.UnitIDs[:max(0, n)]}
+		}
 	}
 	p.dim("  █ eyes ▒ skim · skip □ unsure")
 }

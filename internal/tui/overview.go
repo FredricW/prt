@@ -66,7 +66,8 @@ func (md *markdown) render(body string, width int) string {
 // block at the viewport top refers to. raw is the `L` overlay.
 type overview struct {
 	vp      viewport.Model
-	anchors []string // per content line; "" when the line has no unit
+	anchors []string        // per content line; "" when the line has no unit
+	cells   map[int]cellRow // per content line with unit cells (minimap)
 
 	raw   bool // raw-labels overlay open
 	rawVP viewport.Model
@@ -84,8 +85,25 @@ func (o *overview) setSize(w, h int) {
 // setContent replaces the page and its anchors and scrolls to the top.
 func (o *overview) setContent(s string, anchors []string) {
 	o.vp.SetContent(s)
-	o.anchors = anchors
+	o.anchors, o.cells = anchors, nil
 	o.vp.GotoTop()
+}
+
+// setPage is setContent for a rendered page, keeping its cell runs.
+func (o *overview) setPage(p *page) {
+	o.setContent(strings.Join(p.lines, "\n"), p.anchors)
+	o.cells = p.cells
+}
+
+// clickAt returns the unit behind a click on content line i at display
+// column x: the cell's unit on a minimap row, else the line's anchor.
+func (o overview) clickAt(i, x int) (string, bool) {
+	if c, ok := o.cells[i]; ok {
+		if id, ok := c.at(x); ok {
+			return id, true
+		}
+	}
+	return o.anchorAt(i)
 }
 
 // anchor returns the unit behind the first anchored line at or after the

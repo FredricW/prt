@@ -274,6 +274,25 @@ func TestOverviewClickOpensUnit(t *testing.T) {
 	}
 }
 
+// Spec: "Clicking or enter on a cell opens that unit in Code" — a click on
+// the second cell of a row opens the second unit, not the row's first.
+func TestOverviewClickOnMinimapCell(t *testing.T) {
+	d := loadDetail(t, "detail_full.json")
+	m, p := overviewFocused(t, d)
+	row := lineOf(t, m, "web/src/session.ts  ")
+	c, ok := m.overview.cells[row]
+	if !ok || len(c.ids) != 2 {
+		t.Fatalf("minimap row %d cells = %+v", row, c)
+	}
+	m.overview.vp.SetYOffset(row)
+	sw, _, _ := m.dims()
+	y := row - m.overview.vp.YOffset + 1
+	m = update(t, m, mouseClick(sw+2+c.col+1, y))
+	if m.tab != TabCode || fmt.Sprint(p.focused) != "[u-expired]" {
+		t.Errorf("click on the second cell: tab %v focused %v, want u-expired", m.tab, p.focused)
+	}
+}
+
 func TestKeyMapFromConfigM1Actions(t *testing.T) {
 	def := DefaultKeyMap()
 	if fmt.Sprint(def.NextFile.Keys(), def.PrevFile.Keys()) != "[J ]] [K []" {
