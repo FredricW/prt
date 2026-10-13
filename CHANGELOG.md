@@ -340,6 +340,59 @@ findings".
 - Group titles are only as good as three words allow ("Switch to
   requestJSON").
 
-### M4 — comments
+### M4 — comments (integrated 2026-10-13; review pending)
+
+Integration gate: `go build ./...`, `go vet ./...` (also `-tags live`),
+`make lint` (0 issues), `make test` and `make snapshot` green. Two real Jev
+`comment_addressed` answers were recorded ($0.0001; Jev ledger $0.0294 of
+$1.00). No GitHub write was made against real GitHub: every write is
+exercised against `gh.Fake`.
+
+- **Shipped:** local drafts (SQLite, anchored to path/line/side and unit id,
+  re-anchored after pushes), the Code page comments layer (line cursor, `C`
+  composer, `V` ranges, Glamour bodies, ai-drafts with `a`/`d`/`!`, GitHub
+  threads with `❱` and the `t` panel to reply/resolve, Comments strip), `S`
+  submit form producing one GitHub review, create-PR on branches (`S`),
+  GitHub review threads loaded with the item, and "Since you looked" with
+  Jev `comment_addressed`.
+- **Deferred:** re-aggregation after a label override is a re-run only (full
+  wiring M5); a comment lock shared by pipeline and daemon (see DECISIONS
+  "Pipeline: threads, AI drafts and Since you looked").
+- **Blocked:** nothing.
+
+#### Added
+
+- `internal/comments`: ids, anchoring and re-anchoring, GitHub merge,
+  ai-drafts and their sync, accept, submission selection, view marks, Since
+  helpers. `judge.CommentAddressed`; `comment_addressed` is a live question.
+- `internal/gh`: real `Threads` (GraphQL, paginated), `SubmitReview` (REST,
+  exact payload), `Reply`/`ResolveThread` (GraphQL), `CreatePR`;
+  `ErrRejected`, `ErrBadPR`; the fake records every write.
+- Store: finding marks and view marks. Model: comment lifecycle fields,
+  `Finding.Side`, `Item.ViewerReviewedSHA`, `ItemAgg.Since`.
+- Pipeline: threads in the fetch stage, re-anchoring after stage 1, ai-draft
+  sync after stage 7, Since in stage 8 (`since-units` cache); old-side
+  findings get `Side` old and rebase by the old span.
+- Daemon methods `comment`, `comment_action`, `submit_review`, `create_pr`,
+  `viewed`, `override`; Detail carries the item's finding marks.
+- TUI: Huh submit and create-PR forms (`S`, `a`, `A`), tab cycle through the
+  Comments strip, `MarkViewed`, Overview "Since you looked", draft count.
+- `prt --drafts FILE`; `make demo`/`make snapshot` seed
+  `testdata/fixtures/drafts.json`. The snapshot adds `overview-since`,
+  `code-draft`, `code-ai-draft` and `code-thread` screens.
+- Fixtures: #101's earlier head (`refs/fixture/…/v1`), three review threads,
+  `viewerReviewedSha`; two local drafts.
+
+#### Fixed (integration)
+
+- A finding with an ai-draft (or accepted/dismissed) is no longer also drawn
+  as an inline finding row by file.
+
+#### Known limitations
+
+- Without colour Glamour shows bold as literal `**` (ai-draft bodies start
+  with "**low**").
+- Over the socket a partly failed create-PR returns only the error; the TUI
+  re-reads items.
 
 ### M5 — polish

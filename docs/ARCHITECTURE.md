@@ -70,8 +70,9 @@ Nothing outside those five packages makes a network call or runs `git`.
 | `internal/cluster` | M2 | components, splitting (weakest Jev links, then structural bridges), mechanical groups, review order, placeholder names, user edits | M2 |
 | `internal/route` | M3 | `when` lexer/parser and Kleene evaluator, `Compile`, lazy group `Env`, `Route` (first match, prompts, automatic context), `Gather` (24 KiB context blocks), `Plan`/`Budget` (hot-spot order under the cost cap) | done |
 | `internal/review` | M3 | `Reviewer`, `Tiers`, `Anthropic` Messages adapter (`PRT_ANTHROPIC_API_KEY`), prompt builders (review, TL;DR, title), `ParseReview`/`AnchorFindings`/`CleanTLDR`/`CleanTitle`, price table and estimates, `Replay`/`Recorder` over `testdata/recordings/review`, `Fake` | done (prices assumed) |
+| `internal/comments` | M4 | pure comment logic: anchor/re-anchor by unit id, merge GitHub threads, findings → ai-drafts, submission selection, view marks and "Since you looked" arithmetic | done (M4 lead) |
 | `internal/testutil` | all | `RepoRoot`, `Testdata`, `FixtureRepo` (generates a fresh copy into `t.TempDir()`), `RecordingsDir` | done |
-| `internal/fixturegen` | pre-M1 | `Generate`: builds a fixture repo from `testdata/fixtures/{base,prs/*.patch}` with fixed dates | done |
+| `internal/fixturegen` | pre-M1/M4 | `Generate`: builds a fixture repo from `testdata/fixtures/{base,prs/*.patch}` with fixed dates; earlier heads from `history/<branch>.<label>.patch` at `refs/fixture/<branch>/<label>` | done |
 | `tools/fixturegen` | pre-M1 | CLI over `internal/fixturegen` for `testdata/fixture-repo` | done |
 
 ## Core interfaces (abridged; see code for docs)
@@ -102,8 +103,8 @@ type Client interface {
     PR(ctx, number int) (PR, error)
     PRDiff(ctx, number int) (string, error)
     Threads(ctx, number int) ([]Thread, error)
-    SubmitReview(ctx, number int, r ReviewSubmission) ([]model.Comment, error)
-    Reply(ctx, number int, inReplyTo int64, body string) (model.Comment, error)
+    SubmitReview(ctx, number int, r ReviewSubmission) (SubmittedReview, error)
+    Reply(ctx, threadID, body string) (model.Comment, error)
     ResolveThread(ctx, threadID string) error
     CreatePR(ctx, p NewPR) (PR, error)
     CODEOWNERS(ctx, ref string) (string, error)
@@ -142,6 +143,12 @@ type Client interface {
     Routing(ctx, proto.RoutingParams) (proto.RoutingInfo, error)
     CallLog(ctx, proto.CallLogParams) ([]model.ReviewCall, error)
     SetCap(ctx, proto.CapParams) error
+    SaveComment(ctx, proto.CommentParams) (model.Comment, error)
+    CommentAction(ctx, proto.CommentActionParams) (model.Comment, error)
+    SubmitReview(ctx, proto.SubmitParams) (proto.SubmitResult, error)
+    CreatePR(ctx, proto.CreatePRParams) (proto.CreatePRResult, error)
+    MarkViewed(ctx, proto.ViewedParams) error
+    Override(ctx, proto.OverrideParams) error
     Events() <-chan proto.Event
     Close() error
 }
