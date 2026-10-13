@@ -527,6 +527,50 @@ func TestSaveSettingsGlobalShadowed(t *testing.T) {
 	}
 }
 
+// A global save from a repo whose own prt.toml the page shows writes only
+// the key the user changed over the global file: the repo's role, owns,
+// weights and routing never reach the file every other repo reads, and a
+// new global routing file does not copy the repo's rules.
+func TestSaveSettingsGlobalWritesOnlyChanges(t *testing.T) {
+	ctx := context.Background()
+	e := newSettingsEnv(t, nil, nil)
+	e.c.SetSettingsDeps(SettingsDeps{GlobalDir: e.glb})
+	writeFile(t, e.repo, config.MainFile, allTOML+"[user]\nrole = \"frontend\"\nowns = [\"web/**\"]\n[rank]\nw_age = 0.375\n")
+	writeFile(t, e.repo, config.RoutingFile, "cost_cap_usd = 9.5\n[[rule]]\nwhen = \"risk >= 3\"\ntier = \"deep\"\n")
+	glbMain := writeFile(t, e.glb, config.MainFile, "# mine\n[user]\nrole = \"backend\"\n[pipeline]\nconcurrency = 4\n")
+	if _, err := e.c.ReloadSettings(ctx); err != nil {
+		t.Fatal(err)
+	}
+	v := settingsValues(e.c)
+	if v.Role != "frontend" || v.Rank.WAge != 0.375 || v.CostCapUSD != 9.5 {
+		t.Fatalf("live values %+v, want the repo files'", v)
+	}
+	v.Concurrency = 6
+	if _, err := e.c.SaveSettings(ctx, proto.SaveSettingsParams{Scope: proto.ScopeGlobal, Values: v}); err != nil {
+		t.Fatal(err)
+	}
+	g, err := config.Load([]string{e.glb})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if g.Pipeline.Concurrency != 6 {
+		t.Errorf("global concurrency %d, want the change (6)", g.Pipeline.Concurrency)
+	}
+	if g.User.Role != "backend" || len(g.User.Owns) != 0 || g.Rank.WAge == 0.375 || g.Pipeline.Strategy() == model.AutoAll {
+		t.Errorf("global file took the repo's values: role %q owns %v w_age %v auto_review %q", g.User.Role, g.User.Owns, g.Rank.WAge, g.Pipeline.AutoReview)
+	}
+	if !strings.HasPrefix(readFile(t, glbMain), "# mine\n") {
+		t.Error("the global file's comment was lost")
+	}
+	rt, err := config.LoadRouting([]string{e.glb})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rt.CostCapUSD == 9.5 || strings.Contains(readFile(t, filepath.Join(e.glb, config.RoutingFile)), "risk >= 3") {
+		t.Errorf("global routing took the repo's: cap %v\n%s", rt.CostCapUSD, readFile(t, filepath.Join(e.glb, config.RoutingFile)))
+	}
+}
+
 // Without a model factory a model change is saved but applies after a
 // restart (with a warning); with one, the new clients are installed.
 func TestSaveSettingsModels(t *testing.T) {

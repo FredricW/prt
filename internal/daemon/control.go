@@ -272,14 +272,37 @@ func (c *InProcess) SaveSettings(ctx context.Context, p proto.SaveSettingsParams
 	// A new repo prt.toml shadows the active (global) one, so it starts as a
 	// copy of it. A new global file is shadowed by the repo one instead, so
 	// it never copies repo-only keys such as [github] repo.
-	seedMain := ""
+	seedMain, base, vals, seedRt := "", oldVals, p.Values, oldRt.Source
 	if dir == c.repoDir() {
 		seedMain = oldCfg.Source
+	} else if base, vals, seedRt, err = globalSave(dir, oldVals, p.Values); err != nil {
+		return c.settingsInfo(ctx), err
 	}
-	if err := settings.SaveSeededChanged(dir, oldVals, p.Values, seedMain, oldRt.Source); err != nil {
+	if err := settings.SaveSeededChanged(dir, base, vals, seedMain, seedRt); err != nil {
 		return c.settingsInfo(ctx), fmt.Errorf("daemon: save settings: %w", err)
 	}
 	return c.reloadLocked(ctx, oldVals, c.shadowWarnings(p.Scope))
+}
+
+// globalSave is what a global save writes to dir: the page shows this repo's
+// live values (old, edited to v), which come from the repo's own prt.toml
+// when it has one, so only the keys the user changed are written, over the
+// values the global files hold now (base); the repo's other values (role,
+// owns, weights, models) never reach the file every repo without its own
+// prt.toml reads (in a workspace, at once). A new global routing file
+// starts from what the global scope reads (seedRt), never from this
+// repo's routing file. DECISIONS "M5.3 review fixes 2".
+func globalSave(dir string, old, v proto.SettingsValues) (base, vals proto.SettingsValues, seedRt string, err error) {
+	cfg, err := config.Load([]string{dir})
+	if err != nil {
+		return base, vals, "", fmt.Errorf("daemon: save settings: read the global %s: %w", config.MainFile, err)
+	}
+	rt, err := config.LoadRouting([]string{dir})
+	if err != nil {
+		return base, vals, "", fmt.Errorf("daemon: save settings: read the global %s: %w", config.RoutingFile, err)
+	}
+	base = settings.FromConfig(cfg, rt)
+	return base, settings.ApplyChanged(base, old, v), rt.Source, nil
 }
 
 // reloadLocked is the tail of SaveSettings and ReloadSettings (c.saveMu

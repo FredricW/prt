@@ -35,3 +35,24 @@ func TestValidateChanged(t *testing.T) {
 		}
 	}
 }
+
+// ApplyChanged takes from v only the keys that differ from old; every other
+// key keeps base's value.
+func TestApplyChanged(t *testing.T) {
+	base := FromConfig(config.Defaults(), config.DefaultRouting())
+	base.Role, base.Owns, base.Rank.WAge, base.CostCapUSD = "backend", []string{"api/**"}, 0.5, 2
+	old := base
+	old.Role, old.Owns, old.Rank.WAge, old.Rank.WRisk, old.CostCapUSD = "frontend", []string{"web/**"}, 0.25, 7, 9
+	v := old
+	v.Concurrency, v.Rank.WRisk, v.Fast = base.Concurrency+3, 8, "anthropic:x"
+	got := ApplyChanged(base, old, v)
+	want := base
+	want.Concurrency, want.Rank.WRisk, want.Fast = v.Concurrency, 8, "anthropic:x"
+	if err := compare(got, want); err != nil || got.CostCapUSD != want.CostCapUSD || got.DeepSlots != want.DeepSlots {
+		t.Errorf("ApplyChanged = %+v, want %+v (%v)", got, want, err)
+	}
+	v.Owns = []string{"docs/**"}
+	if got := ApplyChanged(base, old, v); len(got.Owns) != 1 || got.Owns[0] != "docs/**" || base.Owns[0] != "api/**" {
+		t.Errorf("owns = %v (base %v)", got.Owns, base.Owns)
+	}
+}

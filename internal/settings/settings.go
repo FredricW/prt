@@ -137,6 +137,50 @@ func changedKeys(a, b proto.SettingsValues) map[string]bool {
 	return ch
 }
 
+// ApplyChanged returns base with every key whose value differs between old
+// and v set to v's value: what to save when the page's values (v, edited
+// from old) did not come from the file being written. A global save from a
+// repo whose own prt.toml the page shows writes only what the user changed
+// over the global file's values, never the repo's role, owns or weights
+// (DECISIONS "M5.3 review fixes 2").
+func ApplyChanged(base, old, v proto.SettingsValues) proto.SettingsValues {
+	ch := changedKeys(old, v)
+	out := base
+	out.Owns = slices.Clone(base.Owns)
+	take := func(key string, dst *string, src string) {
+		if ch[key] {
+			*dst = src
+		}
+	}
+	takeF := func(key string, dst *float64, src float64) {
+		if ch[key] {
+			*dst = src
+		}
+	}
+	takeI := func(key string, dst *int, src int) {
+		if ch[key] {
+			*dst = src
+		}
+	}
+	take("auto_review", &out.AutoReview, v.AutoReview)
+	take("role", &out.Role, v.Role)
+	if ch["owns"] {
+		out.Owns = slices.Clone(v.Owns)
+	}
+	takeF("unsure_below", &out.UnsureBelow, v.UnsureBelow)
+	takeF("keep_pair_p", &out.KeepPairP, v.KeepPairP)
+	takeF("embed_min_cosine", &out.EmbedMinCosine, v.EmbedMinCosine)
+	takeI("max_group_units", &out.MaxGroupUnits, v.MaxGroupUnits)
+	takeI("concurrency", &out.Concurrency, v.Concurrency)
+	takeI("deep_slots", &out.DeepSlots, v.DeepSlots)
+	takeF("cost_cap_usd", &out.CostCapUSD, v.CostCapUSD)
+	take("fast", &out.Fast, v.Fast)
+	take("deep", &out.Deep, v.Deep)
+	take("embed", &out.Embed, v.Embed)
+	out.Rank = mergeWeights(out.Rank, v.Rank, ch)
+	return out
+}
+
 // Save writes v into dir/prt.toml and dir/prt.routing.toml (dir is a scope
 // directory: config.RepoDir or config.GlobalDir; created 0o755 if needed),
 // editing only the keys SettingsValues covers and keeping every other line

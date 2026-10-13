@@ -137,3 +137,20 @@ func rankWeights(r config.Rank) []weight {
 	}
 	return out
 }
+
+// mergeWeights returns base with the w_* weights whose key changed[key]
+// marks set to v's (the same toml tags as rankWeights).
+func mergeWeights(base, v config.Rank, changed map[string]bool) config.Rank {
+	out := base
+	ov, vv := reflect.ValueOf(&out).Elem(), reflect.ValueOf(v)
+	rt := ov.Type()
+	for i := range rt.NumField() {
+		f := rt.Field(i)
+		key, _, _ := strings.Cut(f.Tag.Get("toml"), ",")
+		if key == "" || key == "-" || f.Type.Kind() != reflect.Float64 || !changed[key] {
+			continue
+		}
+		ov.Field(i).SetFloat(vv.Field(i).Float())
+	}
+	return out
+}
