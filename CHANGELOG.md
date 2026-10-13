@@ -251,15 +251,18 @@ both strictly and asserts the grouping outcomes over #101–#104.
 - The snapshot's status bar does not show the replay source note (the
   interactive TUI does).
 
-### M3 — review pipeline (integrated 2026-10-13; not tagged yet)
+### M3 — review pipeline (released 2026-10-13)
 
-Gate: `make check` (vet, live-tag vet, tests, lint with 0 issues) and
-`make snapshot` green on `main`; `make demo` runs the TUI offline replaying
-`testdata/recordings/{jev,embed,review}`. Reviews recorded once against the
-real Anthropic API (16 calls, $0.2365 for the kept recordings, $0.4682 of the
-$3.00 Anthropic cap including an earlier run whose TL;DRs came back empty;
-all services $0.4975 of $5.00). `TestRecordedReviewReplay` replays them
-strictly and `ReviewExpectations` hold.
+Release gate: `go build ./...`, `go vet ./...` (also `-tags live`),
+`make lint` (0 issues), `make test` and `make snapshot` all green on
+`606d86e`; `make demo` runs the TUI offline against `testdata/fixture-repo`
+with `testdata/fixtures/prs.json`, replaying
+`testdata/recordings/{jev,embed,review}`. Reviews were recorded against the
+real Anthropic API (latest run 22 calls, $0.3858; Anthropic ledger $0.8540 of
+the $3.00 cap, all services $0.8833 of $5.00; earlier rows were priced at the
+old assumed rates and over-count). `TestRecordedReviewReplay` replays them
+strictly and `ReviewExpectations` hold, including "#101 mostly reviewed with
+findings".
 
 - **Shipped:** stage 6 routing (`prt.routing.toml`, the `when` language,
   first match, context decisions, hot-spot queueing under `deep_slots` and
@@ -267,12 +270,16 @@ strictly and `ReviewExpectations` hold.
   prompts, escalation, calibration, retry once, review cache, call log),
   stage 8 aggregate (urgency label terms, TL;DR, AI group titles, review
   totals), the Pipeline page, findings on the Code page, the Overview TL;DR
-  line and `w` weights overlay.
+  line and `w` weights overlay, the picker `s` sort cycle and the Pipeline
+  page's Urgency panel.
 - **Deferred:** the calibration panel's per-question override-rate flag
   (needs per-question counts in `CalibrationStats`); `:cap` (no command line
-  yet; `$` on the Pipeline page covers it); confirmed model prices.
-- **Blocked:** price confirmation — the claude-api skill was denied in this
-  run, so prices stay assumed ($1/$5 fast, $15/$75 deep per MTok).
+  yet; `$` on the Pipeline page covers it); old-side (deleted-line) findings
+  anchor against new-side numbers (needs a side on `model.Finding`, M4);
+  callers of a breaking symbol from the repo symbol index as review context
+  (M4/M5); the ONNX embedder (still a stub).
+- **Blocked:** nothing. (Model prices, blocked earlier in M3, were confirmed
+  from the published pricing page; see DECISIONS "M3 review fixes, round 2".)
 
 #### Added
 
@@ -310,11 +317,26 @@ strictly and `ReviewExpectations` hold.
   their cost, so a refresh no longer reviews groups the cap had queued and
   replays do not depend on the store's history.
 
+#### Fixed (M3 review, rounds 1 and 2; details in DECISIONS)
+
+- A rules reload re-routes only unreviewed groups; reviewed groups keep their
+  decision and findings.
+- Retries are charged to the cost cap; the cap is charged at an expected
+  output length with confirmed prices, so all 15 of #101's deep groups fit the
+  default $0.40 cap.
+- Cached findings follow their unit after a push; the review cache misses on
+  a different model, prompt version or specialist prompts.
+- `D`/`R` re-review on deep with a fresh call instead of a cache hit.
+- Routing: a known max settles comparisons despite unknown units; choice
+  labels are `mixed` on known disagreement; specialist prompts follow their
+  triggers; a none-routed group forced deep gets the stage-6 context.
+- Mechanical groups send only their example unit; cached TL;DR and titles are
+  served without a key; Pipeline page `r` re-fetches only on the fetch stage.
+
 #### Known limitations
 
-- With the assumed deep price and the spec's default `cost_cap_usd = 0.40`,
-  most of #101's and #102's deep groups stay queued "over cost cap" until
-  `$` raises the cap; the demo shows that state.
+- The cap bounds expected, not worst-case, cost: a response that runs to
+  max_tokens can overshoot it by up to ~$0.031 per deep call.
 - Group titles are only as good as three words allow ("Switch to
   requestJSON").
 
