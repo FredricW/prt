@@ -669,6 +669,11 @@ type Comment struct {
 	// UnitOffset is Line minus the first line of UnitID's span on Side
 	// (valid when UnitID is set).
 	UnitOffset int `json:"unitOffset,omitempty"`
+	// StartOffset is StartLine minus the first line of UnitID's span on the
+	// start side (StartSide, "" = Side); set for ranges (StartLine > 0) when
+	// UnitID is set. Re-anchoring uses it for ranges whose ends lie on
+	// different sides (the two spans move independently).
+	StartOffset int `json:"startOffset,omitempty"`
 	// Outdated is set when the anchor no longer exists in the analysed diff.
 	Outdated bool `json:"outdated,omitempty"`
 	// CommitSHA is the commit the comment was made on (GitHub

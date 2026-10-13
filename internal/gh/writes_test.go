@@ -2,6 +2,7 @@ package gh
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -252,6 +253,32 @@ func TestAPISubmitReviewInvalid(t *testing.T) {
 				t.Errorf("%d requests sent for an invalid review", n)
 			}
 		})
+	}
+}
+
+// A range from a deleted line (LEFT) to an added line (RIGHT) is sent with
+// start_line/start_side LEFT whatever the two numbers are (regression: it
+// was refused or sent as a single line).
+func TestBuildReviewRequestCrossSideRange(t *testing.T) {
+	for _, start := range []int{50, 46, 40} {
+		req, err := BuildReviewRequest(ReviewSubmission{CommitSHA: "c", Event: EventComment, Comments: []model.Comment{
+			{Path: "a.go", Line: 46, Side: model.SideNew, StartLine: start, StartSide: model.SideOld, Body: "x"},
+		}})
+		if err != nil {
+			t.Fatalf("start %d: %v", start, err)
+		}
+		b, _ := json.Marshal(req.Comments[0])
+		want := fmt.Sprintf(`{"path":"a.go","line":46,"side":"RIGHT","start_line":%d,"start_side":"LEFT","body":"x"}`, start)
+		if string(b) != want {
+			t.Errorf("start %d: payload %s, want %s", start, b, want)
+		}
+	}
+	// Same side: a start after the line is still refused.
+	_, err := BuildReviewRequest(ReviewSubmission{Event: EventComment, Comments: []model.Comment{
+		{Path: "a.go", Line: 46, Side: model.SideOld, StartLine: 50, StartSide: model.SideOld, Body: "x"},
+	}})
+	if !errors.Is(err, ErrBadReview) {
+		t.Errorf("same-side start after line: err = %v", err)
 	}
 }
 

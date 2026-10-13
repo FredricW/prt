@@ -67,11 +67,37 @@ func Anchor(c model.Comment, units []model.ChangeUnit) model.Comment {
 		}
 	}
 	if best == nil {
-		c.UnitID, c.UnitOffset = "", 0
+		c.UnitID, c.UnitOffset, c.StartOffset = "", 0, 0
 		return c
 	}
 	c.UnitID, c.UnitOffset, c.Outdated = best.ID, c.Line-span(*best, c.Side).Start, false
+	c.StartOffset = 0
+	if c.StartLine > 0 {
+		c.StartOffset = c.StartLine - span(*best, StartSide(c)).Start
+	}
 	return c
+}
+
+// StartSide is the side of c.StartLine: c.StartSide, else c.Side ("" stays
+// "", which counts as new).
+func StartSide(c model.Comment) model.Side {
+	return cmp.Or(c.StartSide, c.Side)
+}
+
+// CrossSide reports whether c is a range whose start and end lie on
+// different sides (e.g. from a deleted line down to an added one). GitHub
+// accepts such ranges (start_side LEFT, side RIGHT); their two line numbers
+// are not comparable.
+func CrossSide(c model.Comment) bool {
+	return c.StartLine > 0 && normSide(StartSide(c)) != normSide(c.Side)
+}
+
+// normSide maps "" to new.
+func normSide(s model.Side) model.Side {
+	if s == model.SideOld {
+		return model.SideOld
+	}
+	return model.SideNew
 }
 
 // movable reports whether Reanchor moves c: local comments that are not
@@ -83,11 +109,14 @@ func movable(c model.Comment) bool {
 // Reanchor moves comments onto the current units after a push or rebase
 // (spec Identity rules): a comment whose UnitID is still present gets Line
 // = that unit's start on Side + UnitOffset (and StartLine shifted by the
-// same amount); otherwise it is re-anchored by Path + Line (Anchor); a
-// comment that neither finds is marked Outdated (its Path/Line kept). Only
+// same amount, or, for a CrossSide range, the unit's start on the start
+// side + StartOffset); otherwise it is re-anchored by Path + Line (Anchor);
+// a comment that neither finds is marked Outdated (its Path/Line kept). Only
 // local comments that are not posted (user drafts and pending, ai-drafts)
 // move; github and posted comments keep their position and only get
-// UnitID/UnitOffset. It returns the comments that changed, in input order.
+// UnitID/UnitOffset, except outdated github comments, whose line belongs to
+// an older commit: they get no unit. It returns the comments that changed,
+// in input order.
 func Reanchor(cs []model.Comment, units []model.ChangeUnit) []model.Comment {
 	byID := make(map[string]model.ChangeUnit, len(units))
 	for _, u := range units {
@@ -107,6 +136,13 @@ func Reanchor(cs []model.Comment, units []model.ChangeUnit) []model.Comment {
 
 func reanchorOne(c model.Comment, units []model.ChangeUnit, byID map[string]model.ChangeUnit) model.Comment {
 	if !movable(c) {
+		if c.Source == model.CommentGitHub && c.Outdated {
+			// Its line is on the commit the thread was made on (OriginalLine),
+			// not on the current head: no current unit holds it, so it is
+			// listed in the strip only.
+			c.UnitID, c.UnitOffset = "", 0
+			return c
+		}
 		a := Anchor(c, units)
 		c.UnitID, c.UnitOffset = a.UnitID, a.UnitOffset
 		return c
@@ -114,7 +150,12 @@ func reanchorOne(c model.Comment, units []model.ChangeUnit, byID map[string]mode
 	if u, ok := byID[c.UnitID]; ok && c.UnitID != "" {
 		if s := span(u, c.Side); s.Count > 0 {
 			line := s.Start + c.UnitOffset
-			if c.StartLine > 0 {
+			switch {
+			case CrossSide(c):
+				// The start's span moves on its own: place it by its offset in
+				// the unit's span on the start side.
+				c.StartLine = span(u, StartSide(c)).Start + c.StartOffset
+			case c.StartLine > 0:
 				c.StartLine += line - c.Line
 			}
 			c.Path, c.Line, c.Outdated = u.Path, line, false
@@ -173,12 +214,7 @@ func MergeGitHub(stored, loaded []model.Comment) (put []model.Comment, del []str
 }
 
 // findingSide is the finding's side ("" counts as new).
-func findingSide(f model.Finding) model.Side {
-	if f.Side == model.SideOld {
-		return model.SideOld
-	}
-	return model.SideNew
-}
+func findingSide(f model.Finding) model.Side { return normSide(f.Side) }
 
 // FindingKey identifies a review finding across runs: a content hash of
 // the item, the group, the finding's unit, path, side, severity and claim

@@ -109,6 +109,51 @@ func TestReanchor(t *testing.T) {
 	}
 }
 
+// A range from a deleted (old) line to an added (new) line keeps its start
+// on the old side when only the new span moves (regression: StartLine was
+// shifted by the new side's delta).
+func TestReanchorCrossSideRange(t *testing.T) {
+	before := []model.ChangeUnit{unit("u1", "a.go", 0, 50, 2, 50, 2)}
+	after := []model.ChangeUnit{unit("u1", "a.go", 0, 50, 2, 55, 2)} // only New.Start moved
+	d := draft("d1", "a.go", 51, model.SideNew)
+	d.StartLine, d.StartSide = 50, model.SideOld
+	d = Anchor(d, before)
+	if d.UnitID != "u1" || d.StartOffset != 0 || d.UnitOffset != 1 {
+		t.Fatalf("anchor = %+v", d)
+	}
+	changed := Reanchor([]model.Comment{d}, after)
+	if len(changed) != 1 {
+		t.Fatalf("changed = %+v", changed)
+	}
+	if c := changed[0]; c.Line != 56 || c.StartLine != 50 || c.StartSide != model.SideOld {
+		t.Errorf("moved = line %d start %d (%s), want 56 / old 50", c.Line, c.StartLine, c.StartSide)
+	}
+	// And the old side moving alone moves only the start.
+	after2 := []model.ChangeUnit{unit("u1", "a.go", 0, 60, 2, 50, 2)}
+	d2 := draft("d2", "a.go", 51, model.SideNew)
+	d2.StartLine, d2.StartSide = 51, model.SideOld
+	d2 = Anchor(d2, before)
+	if c := Reanchor([]model.Comment{d2}, after2); len(c) != 1 || c[0].Line != 51 || c[0].StartLine != 61 {
+		t.Errorf("old side moved = %+v, want line 51 start 61", c)
+	}
+}
+
+// An outdated GitHub thread's line is an OriginalLine on an older commit:
+// it must not be anchored to whatever current unit covers that number.
+func TestReanchorOutdatedGitHubUnanchored(t *testing.T) {
+	units := []model.ChangeUnit{unit("u1", "a.go", 0, 100, 40, 100, 40)}
+	gh := model.Comment{ID: "gh-9", Path: "a.go", Line: 120, Side: model.SideNew, Source: model.CommentGitHub,
+		State: model.CommentPosted, Outdated: true, UnitID: "u-old", UnitOffset: 3}
+	changed := Reanchor([]model.Comment{gh}, units)
+	if len(changed) != 1 || changed[0].UnitID != "" || changed[0].UnitOffset != 0 || !changed[0].Outdated || changed[0].Line != 120 {
+		t.Errorf("outdated github = %+v, want unanchored, still outdated at 120", changed)
+	}
+	gh.UnitID, gh.UnitOffset = "", 0
+	if c := Reanchor([]model.Comment{gh}, units); len(c) != 0 {
+		t.Errorf("unanchored outdated comment must be unchanged: %+v", c)
+	}
+}
+
 func TestMergeGitHub(t *testing.T) {
 	ghc := func(id int64, line int) model.Comment {
 		return model.Comment{ID: GitHubID(id), GHID: id, Path: "a.go", Line: line, Source: model.CommentGitHub, State: model.CommentPosted}

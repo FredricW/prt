@@ -21,7 +21,7 @@ type ReviewRequest struct {
 
 // ReviewComment is one line comment of a ReviewRequest. Side is "LEFT"
 // (old) or "RIGHT" (new); StartLine/StartSide are set only for multi-line
-// ranges (StartLine < Line).
+// ranges (StartLine < Line on one side, or a start on the other side).
 type ReviewComment struct {
 	Path      string `json:"path"`
 	Line      int    `json:"line"`
@@ -46,8 +46,9 @@ func RESTSide(s model.Side) string {
 // BuildReviewRequest validates r and returns its REST body. The event must
 // be APPROVE, REQUEST_CHANGES or COMMENT; REQUEST_CHANGES and COMMENT need
 // a body or at least one comment. Every comment needs a path, a line > 0 and
-// a non-blank body; a StartLine above Line is an error, a StartLine equal to
-// Line (or 0) is a single-line comment. StartSide "" means Side.
+// a non-blank body. StartSide "" means Side. On one side, a StartLine above
+// Line is an error and a StartLine equal to Line (or 0) is a single-line
+// comment; a range whose start side differs from its side is sent as is.
 func BuildReviewRequest(r ReviewSubmission) (ReviewRequest, error) {
 	req := ReviewRequest{CommitID: r.CommitSHA, Body: r.Body, Event: string(r.Event)}
 	switch r.Event {
@@ -67,15 +68,21 @@ func BuildReviewRequest(r ReviewSubmission) (ReviewRequest, error) {
 			return ReviewRequest{}, fmt.Errorf("%w: comment %d on %s has no line", ErrBadReview, i+1, c.Path)
 		case strings.TrimSpace(c.Body) == "":
 			return ReviewRequest{}, fmt.Errorf("%w: comment %d on %s:%d is empty", ErrBadReview, i+1, c.Path, c.Line)
-		case c.StartLine > c.Line:
-			return ReviewRequest{}, fmt.Errorf("%w: comment %d on %s starts at %d after its line %d", ErrBadReview, i+1, c.Path, c.StartLine, c.Line)
 		}
 		rc := ReviewComment{Path: c.Path, Line: c.Line, Side: RESTSide(c.Side), Body: c.Body}
-		if c.StartLine > 0 && c.StartLine < c.Line {
-			ss := c.StartSide
-			if ss == "" {
-				ss = c.Side
-			}
+		ss := c.StartSide
+		if ss == "" {
+			ss = c.Side
+		}
+		cross := c.StartLine > 0 && RESTSide(ss) != rc.Side
+		switch {
+		case cross:
+			// Start and end on different sides (LEFT→RIGHT): the numbers are
+			// not comparable, GitHub takes the range as is.
+			rc.StartLine, rc.StartSide = c.StartLine, RESTSide(ss)
+		case c.StartLine > c.Line:
+			return ReviewRequest{}, fmt.Errorf("%w: comment %d on %s starts at %d after its line %d", ErrBadReview, i+1, c.Path, c.StartLine, c.Line)
+		case c.StartLine > 0 && c.StartLine < c.Line:
 			rc.StartLine, rc.StartSide = c.StartLine, RESTSide(ss)
 		}
 		req.Comments = append(req.Comments, rc)
