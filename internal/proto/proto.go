@@ -343,9 +343,9 @@ type SearchParams struct {
 	Source SearchSource `json:"source"`
 	Limit  int          `json:"limit,omitempty"`
 	// Repo limits a workspace search to one repo key (M5.3: the picker's
-	// repo filter). "" searches every repo (and a repo-qualified Query,
-	// "acme/billing-svc#12" or "billing-svc:feat/x", only its repo). Ignored
-	// in single-repo mode.
+	// repo filter). "" searches every repo. A repo-qualified Query
+	// ("acme/billing-svc#12", "billing-svc:feat/x") searches only the repo it
+	// names, whatever Repo says. Ignored in single-repo mode.
 	Repo string `json:"repo,omitempty"`
 }
 

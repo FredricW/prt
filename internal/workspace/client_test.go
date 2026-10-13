@@ -372,6 +372,15 @@ func TestSearch(t *testing.T) {
 		if p := b.last(t, "Search").(proto.SearchParams); p.Query != "#12" {
 			t.Errorf("query = %q", p.Query)
 		}
+		// A qualifier naming another repo wins over the filter: that repo is
+		// searched with the local part.
+		r, err = c.Search(ctx, proto.SearchParams{Query: "a:feat", Source: proto.SearchLocal, Repo: "b"})
+		if err != nil || len(r.Hits) != 1 || r.Hits[0].Repo != "a" || r.Hits[0].Query != "a:feat/x" {
+			t.Fatalf("qualified search under another filter = %+v, %v", r, err)
+		}
+		if p := a.last(t, "Search").(proto.SearchParams); p.Query != "feat" {
+			t.Errorf("a searched for %q, want the local part", p.Query)
+		}
 		if _, err := c.Search(ctx, proto.SearchParams{Query: "x", Source: proto.SearchLocal, Repo: "nope"}); err == nil {
 			t.Error("unknown repo filter: no error")
 		}

@@ -20,10 +20,9 @@ const (
 	refCandidateLimit = 500
 )
 
-// Search implements daemon.Client. It searches p.Repo's repo when set
-// (stripping a qualifier that names the same repo), else the repo a
-// qualified query names (with the local part), else every repo in
-// parallel. The GitHub sources skip repos without GitHub. Hits come in
+// Search implements daemon.Client. It searches the repo a qualified query
+// names (with the local part; the qualifier wins over p.Repo), else
+// p.Repo's repo when set, else every repo in parallel. The GitHub sources skip repos without GitHub. Hits come in
 // workspace order with Repo set, ItemID prefixed and Query qualified
 // ("<key>#N", "<key>:<ref>"), so adding or previewing a hit is never
 // ambiguous; the limit applies per repo. Notes read "<label>: <note>",
@@ -78,24 +77,23 @@ func (c *Client) Search(ctx context.Context, p proto.SearchParams) (proto.Search
 	return res, nil
 }
 
-// searchTargets picks the members a search asks and the query they get.
+// searchTargets picks the members a search asks and the query they get: a
+// qualified query that resolves goes to the repo it names with its local
+// part, even when p.Repo (the picker's filter) names another, since the
+// explicit qualifier is what the user typed; else p.Repo's repo, else every
+// repo.
 func (c *Client) searchTargets(p proto.SearchParams) ([]Member, string, error) {
+	if repo, local, ok := ParseQualified(p.Query); ok {
+		if m, err := c.Resolve(repo); err == nil {
+			return []Member{m}, local, nil
+		}
+	}
 	if p.Repo != "" {
 		m, err := c.Resolve(p.Repo)
 		if err != nil {
 			return nil, "", err
 		}
-		if repo, local, ok := ParseQualified(p.Query); ok {
-			if named, err := c.Resolve(repo); err == nil && named.Info.Key == m.Info.Key {
-				return []Member{m}, local, nil
-			}
-		}
 		return []Member{m}, p.Query, nil
-	}
-	if repo, local, ok := ParseQualified(p.Query); ok {
-		if m, err := c.Resolve(repo); err == nil {
-			return []Member{m}, local, nil
-		}
 	}
 	return c.members, p.Query, nil
 }
