@@ -70,6 +70,25 @@ on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); milestones follow
 - Tests: the fixture pipeline test generates its own repo (never skips);
   `cmd/prt` has tests; live-tagged tests are vetted and linted.
 
+#### Fixed (M0 review, round 2)
+
+- Quitting (or killing) prt mid-analysis no longer leaves items in `error`
+  or spinning forever: interrupted runs reset, and busy states are recovered
+  at start.
+- `prt daemon` analyses never-analysed items itself, so the cache fills with
+  no TUI attached.
+- A stale item's Code tab keeps the analysed diff (new `Item.AnalysedSHA`)
+  instead of "(no diff yet)".
+- The status bar says why GitHub is disabled (no token, not a GitHub remote,
+  `--offline`).
+- `--now` also fixes the pipeline's clock, so `make snapshot` is stable.
+- pgdown/space scroll a full page and ctrl+d/ctrl+u half a page.
+- Discovery emits item events only for changed items, and the TUI coalesces
+  list reloads.
+- `go install github.com/fredricw/prt/cmd/prt@latest` works (no `exclude` in
+  go.mod).
+- Jev/LLM recordings are scheduled for the start of M1 (see DECISIONS.md).
+
 ### M1 — units and labels
 
 ### M2 — groups

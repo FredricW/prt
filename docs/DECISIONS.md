@@ -61,7 +61,7 @@ Each entry: date, decision, why, alternatives considered.
   - Globs for `owns`: `github.com/bmatcuk/doublestar/v4` (`**` support).
   - Intra-line diff: `github.com/sergi/go-diff/diffmatchpatch` (character diff + semantic cleanup).
   - TUI tests: `github.com/charmbracelet/x/exp/teatest` available; `tui.Snapshot` is the primary no-TTY check.
-  - go-tree-sitter: `github.com/smacker/go-tree-sitter` pinned at `v0.0.0-20240827094217-dd81d9e9be82`; `go.mod` excludes the stray `github.com/smacker/go-tree-sitter/javascript v0.0.1` module, which otherwise makes the import path ambiguous.
+  - go-tree-sitter: `github.com/smacker/go-tree-sitter` pinned at `v0.0.0-20240827094217-dd81d9e9be82`. `go.mod` has no `exclude` (see "M0 review fixes, round 2"): the stray `github.com/smacker/go-tree-sitter/javascript v0.0.1` module is not in the build list, so the import path is not ambiguous, and an `exclude` would break `go install …@latest`.
   - All third-party modules are pinned via `internal/deps/deps.go` (`//go:build tools`) so parallel agents never run `go get`.
 
 ## 2026-10-13 — Store layout: JSON documents in SQLite
@@ -130,13 +130,13 @@ Each entry: date, decision, why, alternatives considered.
 ## 2026-10-13 — Daemon and discovery (M0)
 
 - **Adding an existing item** returns it in its current section and queues analysis; it does not move a ranked item into Added. Alternative: convert it to source=added.
-- **Staleness without a new field:** an item becomes Stale if it was Ready or Error and its head SHA changed (note "new push since analysis"). Discovery leaves in-flight items alone, but when a run finishes it compares the head it analysed with the stored head and sets Stale instead of Ready if they differ.
+- **Staleness** (revised: items now also record `AnalysedSHA`, see "M0 review fixes, round 2"): an item becomes Stale if it was Ready or Error and its head SHA changed (note "new push since analysis"). Discovery leaves in-flight items alone, but when a run finishes it compares the head it analysed with the stored head and sets Stale instead of Ready if they differ.
 - **Discovery computes urgency from metadata** with the M0 formula and GitHub's Additions/Deletions (when non-zero) so the picker can rank and queue before analysis. M3 must merge label terms from the stored ItemAgg (TODO in `setUrgency`).
 - **Urgency terms by kind:** PR-only terms (requested, release, CI red) are omitted for branches; unpushed is omitted for PRs (spec: "Branches replace the PR-only terms"). Label terms are stored with value 0.
 - **GitHub failure keeps cached PR items** (not pruned); their head ref/SHA still hide matching local branches.
 - **Owned-path source** (revised, see "M0 review fixes"): issue search has no `path:` qualifier, so discovery lists up to 100 open PRs with their first 100 changed paths (`gh.Client.ListOpenPRs`, GraphQL `pullRequests(states: OPEN)` + `files`) and matches `user.owns` with doublestar locally. Errors are logged only.
 - **Socket:** requests on one connection run concurrently (responses may be out of order, correlated by ID). Each subscriber has a 256-event buffer; events drop on overflow, as InProcess does. A live socket gives `ErrDaemonRunning`; a dead socket file is removed.
-- **Periodic discovery:** `prt daemon` runs `Discover` at start and every `pipeline.refresh_seconds`; the TUI also runs it on the same interval (`tui.Options.RefreshEvery`), so a TUI on an in-process client stays fresh too. `Discover` runs are serialised by a mutex, so overlapping callers (daemon loop, TUI ticks, TUI start) never prune each other's results; a duplicate run is then cheap and idempotent. Alternative: only the daemon refreshes and pushes events (the TUI would then need a separate path for `--no-daemon`).
+- **Periodic discovery:** `prt daemon` runs `Discover` at start and every `pipeline.refresh_seconds`, and after each pass queues every never-analysed item (`InProcess.AnalysePending`, urgency order) so the cache fills with no TUI attached; the TUI also runs it on the same interval (`tui.Options.RefreshEvery`), so a TUI on an in-process client stays fresh too. `Discover` runs are serialised by a mutex, so overlapping callers (daemon loop, TUI ticks, TUI start) never prune each other's results; a duplicate run is then cheap and idempotent. Alternative: only the daemon refreshes and pushes events (the TUI would then need a separate path for `--no-daemon`).
 
 ## 2026-10-13 — Diff viewer (M0)
 
@@ -155,7 +155,7 @@ Each entry: date, decision, why, alternatives considered.
 - **Notes clear on the next key press**, not a timer (deterministic, no tick commands).
 - **Detail loads:** only the newest load is applied (sequence number); no debounce delay.
 - **Analysis start** runs in daemon order in one command, at most once per (item, head SHA), and only for never-analysed items (empty state). A Stale item waits for `r`, as the spec's state list says; `r` always forces.
-- **Rebinding:** `[keys]` in `prt.toml` maps action → comma-separated keys (`down = "j,down"`). Actions: up, down, top, bottom, focus, back, next_focus, prev_focus, refresh, overview, code, open, checkout, page_down, page_up, next_file, prev_file, help, quit. An unknown action logs a warning and the defaults are used.
+- **Rebinding:** `[keys]` in `prt.toml` maps action → comma-separated keys (`down = "j,down"`). Actions: up, down, top, bottom, focus, back, next_focus, prev_focus, refresh, overview, code, open, checkout, page_down, page_up, half_page_down, half_page_up, next_file, prev_file, help, quit. An unknown action logs a warning and the defaults are used.
 - **Branches secondary line:** "<n> unpushed · <n> ahead · age"; branch state arrives in M5.
 - **Markdown without colour** uses glamour's "notty" style; with colour it picks dark/light from `HasDarkBackground()` read before the program starts.
 - **tab / shift+tab** both toggle picker ↔ main pane until the bottom strip exists.
@@ -164,7 +164,7 @@ Each entry: date, decision, why, alternatives considered.
 ## 2026-10-13 — CLI wiring (M0)
 
 - **`--fixtures FILE`** loads `gh.LoadFixture` as `Deps.GH` and wins over the real client; it works with `--offline` (offline still disables Jev, LLMs and embeddings). `make demo` and `make snapshot` use `testdata/fixtures/prs.json`.
-- **`--now RFC3339`** fixes the clock for ages; `make snapshot` passes `2026-10-13T12:00:00Z` so output is byte-stable. Alternative: a `PRT_NOW` env var (flags are more visible in the Makefile).
+- **`--now RFC3339`** fixes the clock for ages, both in the TUI and in the pipeline (`Deps.Now`: urgency age term, quartiles, order); `make snapshot` passes `2026-10-13T12:00:00Z` so output is byte-stable. Alternative: a `PRT_NOW` env var (flags are more visible in the Makefile).
 - **Opener for `o`:** `open` on macOS, `xdg-open` elsewhere, started without a shell and not waited on.
 
 ## 2026-10-13 — M0 review fixes
@@ -183,3 +183,15 @@ Each entry: date, decision, why, alternatives considered.
 - **Socket path length.** When `<gitDir>/prt/prtd.sock` is longer than 100 bytes, the socket lives at `$TMPDIR/prt-<sha256(gitDir)[:16 hex]>/prtd.sock`; the daemon refuses a socket directory owned by another user.
 - **Checkout** runs `git checkout <ref> --` and refuses refs starting with `-`, so a ref is never read as a pathspec or option.
 - **Lint and vet cover `//go:build live` tests** (`build-tags: [live]`, `go vet -tags live` in `make check`); they are compiled, never run.
+
+## 2026-10-13 — M0 review fixes, round 2
+
+- **Interrupted runs are not errors.** When a run fails because its context was cancelled (quit, daemon stop), `finish` resets the item instead of storing Error: back to "not analysed" (so it is queued again), or Ready/Stale when an earlier analysis is stored (`AnalysedSHA` equal to / different from the head). At start, `NewInProcess` applies the same reset to items left Fetching/Analysing by a killed process (SIGKILL, closed terminal), so no spinner runs forever. Why: an interruption says nothing about the item; Error would need `r` on each one. Alternatives: keep Error with a "cancelled" note (still needs `r`); catch SIGHUP (does not cover SIGKILL).
+- **`Item.AnalysedSHA`** records the head the stored files, units and overview describe (set when a run finishes). `Detail` serves that head's cached diff first and falls back to `HeadSHA`, so a Stale item's Code tab keeps matching its Overview until `r`. Alternative: a per-item "latest fetch" pointer (same effect, one more document kind).
+- **The daemon analyses on its own.** After each discovery pass `prt daemon` queues never-analysed items (`AnalysePending`, urgency order, deduplicated with TUI requests by the queue), matching the spec's "daemon fetches, analyses and caches". The TUI still starts never-analysed items itself, which also covers `--no-daemon`.
+- **GitHub-disabled note.** `setup` records why there is no GitHub client (no token from `gh auth token`, no origin, origin not on GitHub, bad `github.repo`, `--offline`); each discovery without a client sends it as an EventLog note, so the status bar explains why only branches are listed.
+- **Fewer item events.** Discovery stores and emits an item only when its stored form changed (times compared in UTC). Urgency drifts with the clock (age term), so in practice most items still change; the TUI therefore coalesces item/remove events into one list reload in flight plus at most one follow-up, instead of one full `Items()` per event.
+- **Paging keys split.** `page_down` = pgdown/space and `page_up` = pgup scroll a full page; new actions `half_page_down` = ctrl+d and `half_page_up` = ctrl+u scroll half a page, in both the Code and Overview tabs (as the "Diff viewer (M0)" entry already said).
+- **No `exclude` in go.mod**, so `go install github.com/fredricw/prt/cmd/prt@latest` works (`go install pkg@version` rejects modules with `exclude`/`replace`). `go mod tidy` and the build resolve the javascript grammar from the main go-tree-sitter module without it.
+- **Jev/LLM recordings deferred to the start of M1 (deviation from the brief's "before M1").** Recordings are keyed by the exact request bytes (`jev.RequestKey`), and the request shape (state rendering, question catalogue wiring) is defined by M1's Jev integration; recording now would produce files no M1 request matches and spend part of the $5 budget twice. The first M1 step, before any label test, is to run the `//go:build live` recorder once against fixture PRs #101–#104 and commit `testdata/recordings/jev/*.json`; review recordings follow in M3 once the Reviewer request shape exists. Alternative: record a provisional shape now (rejected: wasted spend, stale files).
+- **TUI test helper.** `run` abandons only the event listener (detected through the fake's `Events()` call) and fails after 10 s on any other command, instead of silently dropping commands slower than 100 ms.

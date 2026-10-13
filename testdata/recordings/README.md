@@ -2,7 +2,8 @@
 
 Recorded responses from real external services, replayed by tests so nothing
 touches the network. M0 makes no real API calls and ships no recordings; the
-directories below are filled in by later milestones.
+directories below are filled in by later milestones (Jev at the start of M1,
+before any label test; see docs/DECISIONS.md, "M0 review fixes, round 2").
 
 - `jev/<key>.json` (M1) — `jev.Recording` (request + response); `<key>` is
   `jev.RequestKey(request)`, so a recording is found again only if the request
