@@ -270,7 +270,7 @@ func (p *Pipeline) routeStage(ctx context.Context, r *run, a analysis, rl *model
 	}
 	ro.plan = p.fn.plan(route.PlanInput{
 		Decisions: decs, CapUSD: ro.capUSD, Spent: r.titleCost,
-		Estimate: func(d route.Decision) float64 { return p.estimate(ro, d.GroupID, d.Tier) },
+		Estimate: func(d route.Decision) float64 { return estimate(r.snapshot, ro, d.GroupID, d.Tier) },
 	})
 	ro.reserved = r.titleCost
 	for _, pl := range ro.plan {
@@ -338,24 +338,24 @@ func (p *Pipeline) keepReviewed(ctx context.Context, itemID string, decs []route
 // that filled the cache: a refresh does not quietly review the over-cap
 // groups (only `$` does), and replays do not depend on the store's history
 // (DECISIONS "M3 integration").
-func (p *Pipeline) estimate(ro *routeOut, groupID string, tier model.Tier) float64 {
+func estimate(s snapshot, ro *routeOut, groupID string, tier model.Tier) float64 {
 	req, ok := ro.reqs[groupID]
 	if !ok || tier == model.TierNone {
 		return 0
 	}
-	return review.PlanCost(p.tierModel(tier), req)
+	return review.PlanCost(s.tierModel(tier), req)
 }
 
 // cachedReview returns the finished cached review of a group on a tier
-// when it was produced the way this run would ask: the tier's current
+// when it was produced the way this run (snapshot s) would ask: the tier's
 // model, the current review prompt version and the same specialist
 // prompts. Anything else is a miss (a new call replaces it).
-func (p *Pipeline) cachedReview(ctx context.Context, groupID string, tier model.Tier, prompts []string) (model.Review, bool) {
+func (p *Pipeline) cachedReview(ctx context.Context, s snapshot, groupID string, tier model.Tier, prompts []string) (model.Review, bool) {
 	rv, ok, err := p.d.Store.Review(ctx, groupID, tier)
 	if err != nil || !ok || rv.Status != model.ReviewDone {
 		return model.Review{}, false
 	}
-	if rv.Prompt != review.PromptReviewV1 || !sameModel(rv.Model, p.tierModel(tier)) || !slices.Equal(sortedCopy(rv.Prompts), sortedCopy(prompts)) {
+	if rv.Prompt != review.PromptReviewV1 || !sameModel(rv.Model, s.tierModel(tier)) || !slices.Equal(sortedCopy(rv.Prompts), sortedCopy(prompts)) {
 		return model.Review{}, false
 	}
 	return rv, true

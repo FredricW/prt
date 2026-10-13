@@ -90,15 +90,16 @@ type embedOut struct {
 // and the rest are embedded in one call and stored; kNN candidates follow.
 // No embedder or embed.ErrUnavailable skips the stage with a note; any other
 // error is returned (soft: the caller continues without candidates).
-func (p *Pipeline) embedStage(ctx context.Context, units []model.ChangeUnit, rl *model.RunLog) (embedOut, error) {
+func (p *Pipeline) embedStage(ctx context.Context, r *run, units []model.ChangeUnit, rl *model.RunLog) (embedOut, error) {
 	out := embedOut{mech: p.fn.mechanical(units)}
 	rl.In = len(units)
-	if p.d.Embedder == nil {
+	emb := r.m.Embedder
+	if emb == nil {
 		out.note = noteNoEmbedder
 		skipStage(rl, out.note)
 		return out, nil
 	}
-	vecs, cached, err := p.unitVectors(ctx, units, rl)
+	vecs, cached, err := p.unitVectors(ctx, emb, units, rl)
 	switch {
 	case err != nil && ctx.Err() != nil:
 		return out, err
@@ -111,7 +112,7 @@ func (p *Pipeline) embedStage(ctx context.Context, units []model.ChangeUnit, rl 
 		rl.Note = out.note
 		return out, err
 	}
-	pc := p.d.Config.Pipeline
+	pc := r.cfg.Pipeline
 	out.cands = p.fn.embedCands(units, vecs, link.EmbedOptions{MinCosine: pc.EmbedMinCosine, TopK: pc.EmbedTopK})
 	rl.CacheHit = cached == len(units)
 	rl.Out = len(out.cands) + len(out.mech)
@@ -121,9 +122,10 @@ func (p *Pipeline) embedStage(ctx context.Context, units []model.ChangeUnit, rl 
 
 // unitVectors returns a vector per unit id: stored ones for the embedder's
 // model, the rest embedded in one call (adapters batch internally) and
-// stored. cached counts the stored hits.
-func (p *Pipeline) unitVectors(ctx context.Context, units []model.ChangeUnit, rl *model.RunLog) (map[string][]float32, int, error) {
-	m := p.d.Embedder.Model()
+// stored. cached counts the stored hits. Vectors are stored only after the
+// whole call returned (never a partial batch).
+func (p *Pipeline) unitVectors(ctx context.Context, emb embed.Embedder, units []model.ChangeUnit, rl *model.RunLog) (map[string][]float32, int, error) {
+	m := emb.Model()
 	vecs := make(map[string][]float32, len(units))
 	var miss []model.ChangeUnit
 	for _, u := range units {
@@ -146,16 +148,20 @@ func (p *Pipeline) unitVectors(ctx context.Context, units []model.ChangeUnit, rl
 		texts[i] = link.UnitText(u)
 	}
 	rl.Calls++
-	got, err := p.d.Embedder.Embed(ctx, texts)
+	got, err := emb.Embed(ctx, texts)
 	if err != nil {
 		return nil, cached, fmt.Errorf("pipeline: embed %d units with %s: %w", len(miss), m, err)
 	}
 	if len(got) != len(miss) {
 		return nil, cached, fmt.Errorf("pipeline: embed: %d vectors for %d units", len(got), len(miss))
 	}
+	sctx := ctx
+	if stopped(ctx) {
+		sctx = context.WithoutCancel(ctx) // the batch completed: keep it for resume
+	}
 	for i, u := range miss {
 		vecs[u.ID] = got[i]
-		if err := p.d.Store.PutEmbedding(ctx, u.ID, m, got[i]); err != nil {
+		if err := p.d.Store.PutEmbedding(sctx, u.ID, m, got[i]); err != nil {
 			return nil, cached, fmt.Errorf("pipeline: store embedding: %w", err)
 		}
 	}

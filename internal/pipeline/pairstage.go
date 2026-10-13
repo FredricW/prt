@@ -27,7 +27,7 @@ type pairOut struct {
 // add up, the pair note is appended to the label note. Only the label pass
 // decides failure and LabelsMissing; a pair-pass failure leaves the pairs
 // unknown (no confirmed links) and is noted.
-func (p *Pipeline) jevStage(ctx context.Context, it model.Item, in parseOut, structural []model.Link, em embedOut, rl *model.RunLog) (jevOut, error) {
+func (p *Pipeline) jevStage(ctx context.Context, r *run, it model.Item, in parseOut, structural []model.Link, em embedOut, rl *model.RunLog) (jevOut, error) {
 	var (
 		wg         sync.WaitGroup
 		lrl, prl   model.RunLog
@@ -38,11 +38,11 @@ func (p *Pipeline) jevStage(ctx context.Context, it model.Item, in parseOut, str
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		jo, lerr = p.labelStage(ctx, it, in.files, in.units, &lrl)
+		jo, lerr = p.labelStage(ctx, r, it, in.files, in.units, &lrl)
 	}()
 	go func() {
 		defer wg.Done()
-		po, perr = p.pairStage(ctx, in.units, structural, em, &prl)
+		po, perr = p.pairStage(ctx, r, in.units, structural, em, &prl)
 	}()
 	wg.Wait()
 	rl.In, rl.Out = lrl.In, lrl.Out+prl.Out
@@ -62,8 +62,8 @@ func (p *Pipeline) jevStage(ctx context.Context, it model.Item, in parseOut, str
 // that are known are cache hits; the rest are asked (when Jev is set) and
 // stored, never replacing a known label with an unknown one. Errors other
 // than cancellation are soft and only noted.
-func (p *Pipeline) pairStage(ctx context.Context, units []model.ChangeUnit, structural []model.Link, em embedOut, rl *model.RunLog) (pairOut, error) {
-	pc := p.d.Config.Pipeline
+func (p *Pipeline) pairStage(ctx context.Context, r *run, units []model.ChangeUnit, structural []model.Link, em embedOut, rl *model.RunLog) (pairOut, error) {
+	pc := r.cfg.Pipeline
 	cands := pairCandidates(units, structural, em.cands, em.mech, pc.MechanicalMin)
 	pairs := judgePairs(units, cands)
 	perUnit := pc.MaxPairsPerUnit
@@ -98,7 +98,7 @@ func (p *Pipeline) pairStage(ctx context.Context, units []model.ChangeUnit, stru
 		rl.Note += fmt.Sprintf(" (%d over the cap not asked)", dropped)
 	}
 	rl.CacheHit = len(need) == 0
-	fresh, note, err := p.askPairs(ctx, need, stored, rl)
+	fresh, note, err := p.askPairs(ctx, r, need, stored, rl)
 	rl.Note += note
 	if err != nil && ctx.Err() != nil {
 		return out, err
@@ -107,22 +107,26 @@ func (p *Pipeline) pairStage(ctx context.Context, units []model.ChangeUnit, stru
 		p.d.Log.Warn("pair pass failed; pairs stay unknown", "err", err)
 		rl.Note += " (failed: " + err.Error() + ")"
 	}
-	out.confirmed, out.rejected = p.fn.confirm(cands, mergeLabels(stored, fresh), p.d.Config.Pipeline.KeepPairP)
+	out.confirmed, out.rejected = p.fn.confirm(cands, mergeLabels(stored, fresh), pc.KeepPairP)
 	return out, nil
 }
 
 // askPairs asks Jev about need and stores the answers (unknowns only where
 // no known label is stored). It returns the stored answers and a note
-// suffix.
-func (p *Pipeline) askPairs(ctx context.Context, need []judge.Pair, stored []model.Label, rl *model.RunLog) ([]model.Label, string, error) {
+// suffix. On a user stop only the known answers are stored.
+func (p *Pipeline) askPairs(ctx context.Context, r *run, need []judge.Pair, stored []model.Label, rl *model.RunLog) ([]model.Label, string, error) {
 	if len(need) == 0 {
 		return nil, "", nil
 	}
-	if p.d.Jev == nil {
+	if r.m.Jev == nil {
 		return nil, " (Jev unavailable)", nil
 	}
-	res, err := p.fn.pairs(ctx, p.d.Jev, judge.PairInput{Pairs: need, Catalogue: p.catalogue(), Concurrency: p.d.Config.Pipeline.Concurrency})
+	res, err := p.fn.pairs(ctx, r.m.Jev, judge.PairInput{Pairs: need, Catalogue: p.catalogue(), Concurrency: r.cfg.Pipeline.Concurrency})
 	rl.Calls, rl.Cost = rl.Calls+res.Calls, rl.Cost+res.Cost
+	if stopped(ctx) {
+		p.putAnswered(ctx, res.Labels)
+		return nil, "", stopErr(ctx, model.StageJev)
+	}
 	note := failedNote(res)
 	fresh := keepKnown(res.Labels, stored)
 	if serr := p.putLabels(ctx, fresh); serr != nil {

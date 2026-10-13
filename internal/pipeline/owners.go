@@ -119,9 +119,10 @@ func codeownersGlob(p string) string {
 	return p
 }
 
-// ownershipFor builds the ownership rules for an item analysed at head.
-func (p *Pipeline) ownershipFor(ctx context.Context, head string) ownership {
-	o := ownership{globs: p.d.Config.User.Owns}
+// ownershipFor builds the ownership rules for an item analysed at head,
+// with globs the run's user.owns.
+func (p *Pipeline) ownershipFor(ctx context.Context, globs []string, head string) ownership {
+	o := ownership{globs: globs}
 	viewer := p.viewer(ctx)
 	if viewer == "" || p.d.Git == nil || head == "" {
 		return o

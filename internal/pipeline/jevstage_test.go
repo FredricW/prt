@@ -729,7 +729,7 @@ func TestLabelContext(t *testing.T) {
 	e := newLabelEnv(t)
 	p := e.pipeline(nil, func(d *Deps) { d.Config.User = config.User{Role: "frontend", Owns: []string{"web/**"}} })
 	files := []model.File{{Path: "web/a.ts"}, {Path: "web/a.test.ts"}, {Path: "server/b_test.go"}}
-	c := p.labelContext(e.item, files)
+	c := p.snapshot(RunOptions{}).labelContext(e.item, files)
 	if c.ItemID != e.item.ID || c.Title != e.item.Title || len(c.Bullets) != 2 || c.Bullets[1] != "Add a limit" ||
 		c.Role != "frontend" || len(c.Owns) != 1 || strings.Join(c.TestsTouched, ",") != "web/a.test.ts,server/b_test.go" {
 		t.Errorf("context = %+v", c)

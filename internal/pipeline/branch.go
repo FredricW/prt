@@ -66,11 +66,11 @@ func (p *Pipeline) branchBlock(ctx context.Context, r *run) (branchOut, error) {
 		ItemID: cur.ID, Ref: cur.Ref, Subjects: commitSubjects(subjects), AgeDays: int(idle),
 		Unpushed: unpushed, OpenPRTitles: prTitles(prs), Catalogue: p.catalogue(),
 	}
-	l, known, calls, cost, err := p.branchLabel(ctx, in)
+	l, known, calls, cost, err := p.branchLabel(ctx, r, in)
 	if err != nil {
 		return branchOut{calls: calls, cost: cost}, err
 	}
-	info := branchInfo(l, known, idle, p.d.Config.Pipeline.AbandonedDays)
+	info := branchInfo(l, known, idle, r.cfg.Pipeline.AbandonedDays)
 	info.LastCommitAt, info.Unpushed, info.Commits = lastAt, unpushed, commits
 	if info.State == model.BranchSuperseded {
 		info.SupersededBy = supersededBy(prs, append(in.Subjects, cur.Ref))
@@ -165,9 +165,10 @@ func prTitles(prs []model.Item) []string {
 // branchLabel returns the current branch.state label: the stored one when
 // it is known and asked with the same inputs, else Jev's answer (stored
 // unless it is unknown and a known answer is stored). known is false when
-// no current known answer exists (Jev unavailable, failed or deferred).
-// Only cancellation is returned.
-func (p *Pipeline) branchLabel(ctx context.Context, in judge.BranchStateInput) (model.Label, bool, int, float64, error) {
+// no current known answer exists (Jev unavailable, failed or deferred, or
+// a FreeOnly run: cache only, nothing asked or written). Only cancellation
+// is returned.
+func (p *Pipeline) branchLabel(ctx context.Context, r *run, in judge.BranchStateInput) (model.Label, bool, int, float64, error) {
 	subj, bctx := model.BranchSubject(in.ItemID), judge.BranchCtx(in)
 	stored, err := p.d.Store.Labels(ctx, []string{subj})
 	if err != nil {
@@ -176,10 +177,10 @@ func (p *Pipeline) branchLabel(ctx context.Context, in judge.BranchStateInput) (
 	if l, ok := stateLabel(stored, bctx); ok {
 		return l, true, 0, 0, nil
 	}
-	if p.d.Jev == nil {
+	if r.m.Jev == nil || r.opt.FreeOnly {
 		return model.Label{}, false, 0, 0, nil
 	}
-	res, err := p.fn.branchState(ctx, p.d.Jev, in)
+	res, err := p.fn.branchState(ctx, r.m.Jev, in)
 	if err != nil {
 		if ctx.Err() != nil {
 			return model.Label{}, false, res.Calls, res.Cost, fmt.Errorf("pipeline: branch state: %w", errors.Join(ctx.Err(), err))
@@ -312,17 +313,18 @@ func jaccard(a, b map[string]bool) float64 {
 // purpose title) and on the aggregate row.
 func (p *Pipeline) suggestTitle(ctx context.Context, r *run, groups []model.Group, b *model.BranchInfo, rl *model.RunLog) {
 	names := titleGroupNames(groups)
+	fast := r.m.Reviewers.Fast
 	switch {
 	case len(names) == 0:
 		b.TitleNote = titleNoGroups
 		return
-	case p.d.Reviewers.Fast == nil:
+	case fast == nil:
 		b.TitleNote = titleNoModel
 		return
 	}
 	bypass := r.opt.Force || r.opt.ignoresCache(model.StageAggregate)
 	req := p.fn.buildPRTitle(names, r.it.Ref)
-	out := p.prose(ctx, nsPRTitle, req, callMeta{itemID: r.it.ID, tier: model.TierFast, purpose: purposeTitle}, bypass, p.fn.cleanPRTitle)
+	out := p.prose(ctx, fast, nsPRTitle, req, callMeta{itemID: r.it.ID, tier: model.TierFast, purpose: purposeTitle}, bypass, p.fn.cleanPRTitle)
 	if out.notReady {
 		b.TitleNote = titleNoModel
 		return

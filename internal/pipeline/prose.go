@@ -46,14 +46,14 @@ func (o proseOut) cost() float64 {
 	return total
 }
 
-// prose answers a fast-tier prose request from the cache namespace ns, or
-// (bypass, or a miss) with one call retried once, then caches the cleaned
-// text. A cache hit is logged as a Cached call with what it cost when it
-// ran. Prose already paid for is served from the cache even when the fast
-// reviewer is not ready (no key); only a miss then returns notReady with
-// the readiness error.
-func (p *Pipeline) prose(ctx context.Context, ns string, req review.Request, m callMeta, bypass bool, clean func(string) string) proseOut {
-	rev := p.d.Reviewers.Fast
+// prose answers a fast-tier prose request (rev, the run's fast reviewer,
+// not nil) from the cache namespace ns, or (bypass, or a miss) with one
+// call retried once, then caches the cleaned text. A cache hit is logged
+// as a Cached call with what it cost when it ran. Prose already paid for
+// is served from the cache even when the fast reviewer is not ready (no
+// key, or a FreeOnly run); only a miss then returns notReady with the
+// readiness error.
+func (p *Pipeline) prose(ctx context.Context, rev review.Reviewer, ns string, req review.Request, m callMeta, bypass bool, clean func(string) string) proseOut {
 	key, err := review.RequestKey(rev.Model(), req)
 	if err != nil {
 		return proseOut{err: fmt.Errorf("pipeline: %s request key: %w", ns, err)}
@@ -103,17 +103,18 @@ func (p *Pipeline) titleGroups(ctx context.Context, r *run, units []model.Change
 	if len(idx) == 0 {
 		return groups, "", nil
 	}
-	if p.d.Reviewers.Fast == nil {
+	fast := r.m.Reviewers.Fast
+	if fast == nil {
 		return groups, fmt.Sprintf("titles: %d placeholders kept (%s)", len(idx), reasonText(review.Ready(nil))), nil
 	}
 	out := append([]model.Group(nil), groups...)
 	byID := unitsByID(units)
 	bypass := r.opt.ignoresCache(model.StageCluster)
 	results := make([]proseOut, len(idx))
-	forEachLimit(len(idx), p.concurrency(), func(k int) {
+	forEachLimit(len(idx), r.concurrency(), func(k int) {
 		g := out[idx[k]]
 		req := p.fn.buildGroupTitle(g, lookupUnits(byID, g.UnitIDs))
-		results[k] = p.prose(ctx, nsTitle, req, callMeta{itemID: r.it.ID, groupID: g.ID, tier: model.TierFast, purpose: purposeTitle}, bypass, p.fn.cleanTitle)
+		results[k] = p.prose(ctx, fast, nsTitle, req, callMeta{itemID: r.it.ID, groupID: g.ID, tier: model.TierFast, purpose: purposeTitle}, bypass, p.fn.cleanTitle)
 	})
 	if err := ctx.Err(); err != nil {
 		return groups, "", err
@@ -152,14 +153,6 @@ func (p *Pipeline) titleGroups(ctx context.Context, r *run, units []model.Change
 		note += fmt.Sprintf("; %d placeholders kept (%s)", kept, reasonText(notReady))
 	}
 	return out, note, nil
-}
-
-// concurrency is pipeline.concurrency (default 4).
-func (p *Pipeline) concurrency() int {
-	if n := p.d.Config.Pipeline.Concurrency; n > 0 {
-		return n
-	}
-	return 4
 }
 
 // forEachLimit calls fn(0..n-1) with at most limit calls in flight and

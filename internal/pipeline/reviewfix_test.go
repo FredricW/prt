@@ -115,21 +115,22 @@ func TestCachedReviewMissesOnModelOrPromptChange(t *testing.T) {
 	if err != nil || !ok {
 		t.Fatalf("cached review: %v %v", ok, err)
 	}
-	if _, hit := p.cachedReview(ctx, groupID, model.TierFast, rv.Prompts); !hit {
+	snap := p.snapshot(RunOptions{})
+	if _, hit := p.cachedReview(ctx, snap, groupID, model.TierFast, rv.Prompts); !hit {
 		t.Fatal("current cached review missed")
 	}
 	rv.Prompt = "review/v0"
 	if err := e.st.PutReview(ctx, rv); err != nil {
 		t.Fatal(err)
 	}
-	if _, hit := p.cachedReview(ctx, groupID, model.TierFast, rv.Prompts); hit {
+	if _, hit := p.cachedReview(ctx, snap, groupID, model.TierFast, rv.Prompts); hit {
 		t.Error("old prompt version served from the cache")
 	}
 	rv.Prompt = review.PromptReviewV1
 	if err := e.st.PutReview(ctx, rv); err != nil {
 		t.Fatal(err)
 	}
-	if _, hit := p.cachedReview(ctx, groupID, model.TierFast, append(rv.Prompts, model.PromptPerformance)); hit {
+	if _, hit := p.cachedReview(ctx, snap, groupID, model.TierFast, append(rv.Prompts, model.PromptPerformance)); hit {
 		t.Error("different specialist prompts served from the cache")
 	}
 }

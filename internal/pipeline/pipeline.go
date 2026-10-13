@@ -37,6 +37,30 @@
 // of overridden groups marked stale-labels, a status later normal runs keep
 // for a cached review).
 //
+// M5.1 adds live settings, the auto-review gate and stop/resume. Every run
+// takes one snapshot of the configuration and the model clients when it
+// starts (Config, CurrentModels); SetConfig and SetModels only affect later
+// runs. RunOptions.FreeOnly (automatic runs of items the auto_review
+// strategy does not cover) runs fetch, parse and link only and returns nil:
+// no embed, Jev, cluster, route, review or aggregate row, and no groups,
+// aggregate or reviews stored (structural links are not stored either: an
+// earlier analysis's links stay with its groups). Its model clients are
+// guards that keep the model names (so cache keys match) but fail every
+// call without contacting anything; with AggregateOnly as well, stage 8
+// reads the TL;DR from its cache only and keeps the stored TL;DR on a miss
+// (the branch block, "Since you looked" and titles are carried from the
+// stored analysis), and no calibration sample is ever taken. A run whose
+// context is cancelled with cause ErrStopped (a user stop) marks the stage
+// in flight StageStopped, emits nothing for later stages, turns review
+// rows that were running or queued in the run into ReviewStopped (stored
+// with a context the stop does not cancel; never put in the review cache)
+// and returns an error wrapping ErrStopped. Outputs are stored only for
+// completed units of work (labels of answered Jev calls, a whole embedding
+// batch, groups, links and the aggregate at stage end), so resuming — a
+// later non-forced run — hits the caches of everything that finished and
+// re-runs the stopped review rows. Any other cancellation (quit, removal)
+// keeps the earlier behaviour (failed stage, queued rows).
+//
 // A stage function marks its row skipped (ran, but had nothing it could do,
 // e.g. no embedding model) with skipStage; runStage keeps that status.
 //
@@ -144,6 +168,16 @@ type RunOptions struct {
 	// stored analysis it falls back to a normal run. The daemon's Override
 	// queues such a run (M5; DECISIONS "M5 shared contracts").
 	AggregateOnly bool
+	// FreeOnly (M5.1) forbids every model-backed call in this run: Jev
+	// (labels, pairs, names, split, branch state, comment_addressed), the
+	// embedder and both reviewer tiers (titles, reviews, calibration, TL;DR,
+	// PR title). The daemon sets it for automatic runs of items the
+	// auto_review strategy does not allow. A full run then does fetch,
+	// parse and link only, emits no rows for the later stages and returns
+	// nil (the daemon marks the item StateNotAnalysed); an AggregateOnly run reads
+	// the TL;DR, title and branch answers from their caches only, keeping
+	// the stored text on a miss. See DECISIONS "M5.1 auto-review strategy".
+	FreeOnly bool
 }
 
 // ignoresCache reports whether stage s must not use its cache in this run.
@@ -187,6 +221,10 @@ type Pipeline struct {
 	// and clearFresh's read-modify-write), so a user's s or :tier is never
 	// overwritten by a run clearing its fresh flag.
 	overrideMu sync.Mutex
+
+	// liveMu guards d.Config, d.Jev, d.Embedder and d.Reviewers against
+	// SetConfig / SetModels (M5.1, control.go).
+	liveMu sync.RWMutex
 }
 
 // New builds a Pipeline. The routing rules are compiled once here; when
@@ -213,8 +251,11 @@ func New(d Deps) *Pipeline {
 	return p
 }
 
-// run is the state one RunHead call shares between the stages after fetch.
+// run is the state one RunHead call shares between its stages.
 type run struct {
+	// snapshot is the configuration and models this run uses, taken when
+	// it started (stages never read Deps.Config or the Deps models).
+	snapshot
 	it    model.Item
 	f     model.Fetch
 	opt   RunOptions
@@ -226,6 +267,9 @@ type run struct {
 	// jevCalls and jevCost are this run's stage-4 totals (ReviewStats).
 	jevCalls int
 	jevCost  float64
+	// prev is the stored aggregate an aggregate-only run recomputes (nil
+	// otherwise): a FreeOnly run keeps its TL;DR on a cache miss.
+	prev *model.ItemAgg
 }
 
 // analysis is what stages 1–5 produced for the later stages.
@@ -250,13 +294,20 @@ func (p *Pipeline) RunWith(ctx context.Context, it model.Item, opt RunOptions) e
 
 // RunHead is RunWith that also returns the head SHA the run analysed ("" if
 // fetch failed), so the caller can tell whether the item moved meanwhile.
+//
+// The run takes one snapshot of the configuration and models when it
+// starts (SetConfig and SetModels affect later runs only). A run cancelled
+// with cause ErrStopped marks the stage in flight model.StageStopped, runs
+// no later stage and returns an error wrapping ErrStopped.
 func (p *Pipeline) RunHead(ctx context.Context, it model.Item, opt RunOptions) (string, error) {
+	s := p.snapshot(opt)
 	if opt.AggregateOnly {
-		if head, ok, err := p.runAggregateOnly(ctx, it, opt); ok {
+		if head, ok, err := p.runAggregateOnly(ctx, it, opt, s); ok {
 			return head, err
 		}
 		opt.AggregateOnly = false
 	}
+	r := &run{snapshot: s, it: it, opt: opt, calls: newCallLog()}
 	f, err := runStage(ctx, p, it.ID, model.StageFetch, func(rl *model.RunLog) (model.Fetch, error) {
 		f, err := p.fetch(ctx, it, opt.Force || opt.ignoresCache(model.StageFetch), rl)
 		if err == nil {
@@ -267,7 +318,7 @@ func (p *Pipeline) RunHead(ctx context.Context, it model.Item, opt RunOptions) (
 	if err != nil {
 		return "", err
 	}
-	r := &run{it: it, f: f, opt: opt, calls: newCallLog()}
+	r.f = f
 	return f.HeadSHA, p.runAfterFetch(ctx, r)
 }
 
@@ -279,7 +330,7 @@ func (p *Pipeline) runAfterFetch(ctx context.Context, r *run) error {
 		return fmt.Errorf("pipeline: parse diff: %w", err)
 	}
 	parsed, err := runStage(ctx, p, it.ID, model.StageParse, func(rl *model.RunLog) (parseOut, error) {
-		out, err := p.parse(ctx, it.ID, f, files, rl)
+		out, err := p.parse(ctx, r, files, rl)
 		if err == nil {
 			p.reanchorComments(ctx, it, f.HeadSHA, out.units)
 		}
@@ -299,8 +350,13 @@ func (p *Pipeline) runAfterFetch(ctx context.Context, r *run) error {
 		p.d.Log.Warn("structural links failed; continuing without them", "item", it.ID, "err", err)
 		in.structural = nil
 	}
+	if r.opt.FreeOnly {
+		// Every later stage is model-backed or reads model output.
+		p.d.Log.Debug("free-only run: stopping after link", "item", it.ID)
+		return nil
+	}
 	in.em, err = runStage(ctx, p, it.ID, model.StageEmbed, func(rl *model.RunLog) (embedOut, error) {
-		return p.embedStage(ctx, parsed.units, rl)
+		return p.embedStage(ctx, r, parsed.units, rl)
 	})
 	if err != nil {
 		if ctx.Err() != nil {
@@ -309,7 +365,7 @@ func (p *Pipeline) runAfterFetch(ctx context.Context, r *run) error {
 		p.d.Log.Warn("embeddings failed; groups from structural links only", "item", it.ID, "err", err)
 	}
 	jo, err := runStage(ctx, p, it.ID, model.StageJev, func(rl *model.RunLog) (jevOut, error) {
-		out, err := p.jevStage(ctx, p.currentItem(ctx, it), parsed, in.structural, in.em, rl)
+		out, err := p.jevStage(ctx, r, p.currentItem(ctx, it), parsed, in.structural, in.em, rl)
 		r.jevCalls, r.jevCost = rl.Calls, rl.Cost
 		return out, err
 	})
@@ -397,14 +453,15 @@ type parseOut struct {
 
 // parse splits the diff into change units, marks owned files and stores
 // files and units.
-func (p *Pipeline) parse(ctx context.Context, itemID string, f model.Fetch, files []diff.File, rl *model.RunLog) (parseOut, error) {
+func (p *Pipeline) parse(ctx context.Context, r *run, files []diff.File, rl *model.RunLog) (parseOut, error) {
+	itemID, f := r.it.ID, r.f
 	us, err := parse.Split(ctx, parse.Input{ItemID: itemID, BaseSHA: f.BaseSHA, HeadSHA: f.HeadSHA, Files: files, Src: p.d.Git})
 	if err != nil {
 		return parseOut{}, fmt.Errorf("pipeline: split %s: %w", itemID, err)
 	}
 	rl.In, rl.Out = len(files), len(us)
 	fs := toFiles(itemID, files)
-	markOwned(fs, p.ownershipFor(ctx, f.HeadSHA))
+	markOwned(fs, p.ownershipFor(ctx, r.cfg.User.Owns, f.HeadSHA))
 	if err := p.d.Store.PutFiles(ctx, itemID, fs); err != nil {
 		return parseOut{}, fmt.Errorf("pipeline: store files: %w", err)
 	}
@@ -419,17 +476,18 @@ func (p *Pipeline) parse(ctx context.Context, itemID string, f model.Fetch, file
 // are left to the caller.
 func (p *Pipeline) aggInput(ctx context.Context, r *run, a analysis) (aggregate.Input, error) {
 	cur := p.currentItem(ctx, r.it)
-	ls, err := p.itemLabels(ctx, cur, a.parsed.files, a.parsed.units)
+	ls, err := p.itemLabels(ctx, r.snapshot, cur, a.parsed.files, a.parsed.units)
 	if err != nil {
 		return aggregate.Input{}, err
 	}
-	age, release, ciRed := aggregate.Facts(cur, p.d.Config.GitHub.ReleaseBranches, p.d.Now())
+	cfg := r.cfg
+	age, release, ciRed := aggregate.Facts(cur, cfg.GitHub.ReleaseBranches, p.d.Now())
 	return aggregate.Input{
 		Item: cur, Files: a.parsed.files, Units: a.parsed.units, Labels: ls,
 		Groups: a.gro.groups, Links: a.gro.aggLinks(),
-		Weights: p.d.Config.Rank, Pipeline: p.d.Config.Pipeline,
+		Weights: cfg.Rank, Pipeline: cfg.Pipeline,
 		AgeDays: age, IdleDays: p.idleNow(cur), Release: release, CIRedAfterApproval: ciRed,
-		Owns: p.d.Config.User.Owns, LabelsMissing: a.jo.missing,
+		Owns: cfg.User.Owns, LabelsMissing: a.jo.missing,
 	}, nil
 }
 
@@ -564,14 +622,14 @@ func groupIDs(groups []model.Group, extra ...string) []string {
 // itemLabels loads every stored label of the item's units and of the item
 // itself (model.ItemSubject), with labels asked under other item-level
 // inputs turned unknown (currentLabels) and the user's overrides applied.
-func (p *Pipeline) itemLabels(ctx context.Context, it model.Item, files []model.File, units []model.ChangeUnit) ([]model.Label, error) {
+func (p *Pipeline) itemLabels(ctx context.Context, s snapshot, it model.Item, files []model.File, units []model.ChangeUnit) ([]model.Label, error) {
 	itemID := it.ID
 	ids := append(unitIDs(units), model.ItemSubject(itemID))
 	ls, err := p.d.Store.Labels(ctx, ids)
 	if err != nil {
 		return nil, fmt.Errorf("pipeline: load labels: %w", err)
 	}
-	ls = currentLabels(ls, labels.InputHashes(p.catalogue(), p.labelContext(it, files)))
+	ls = currentLabels(ls, labels.InputHashes(p.catalogue(), s.labelContext(it, files)))
 	ovs, err := p.d.Store.Overrides(ctx, ids)
 	if err != nil {
 		return nil, fmt.Errorf("pipeline: load overrides: %w", err)
@@ -639,11 +697,24 @@ func (p *Pipeline) applyAgg(ctx context.Context, it model.Item, f model.Fetch, a
 // that returns an error is failed (with Err); one that called skipStage is
 // skipped (with its note); otherwise it is done, or skipped-cache when it
 // set CacheHit.
+//
+// A user stop (context cause ErrStopped) during the stage, or before it
+// starts, makes the row stopped (no Err, note "stopped by user"), stored
+// with a context the stop does not cancel; the returned error wraps
+// ErrStopped and the caller runs no later stage. Any other cancellation
+// keeps the failed row.
 func runStage[T any](ctx context.Context, p *Pipeline, itemID string, s model.Stage, fn func(*model.RunLog) (T, error)) (T, error) {
 	rl := model.RunLog{ItemID: itemID, Stage: s, Status: model.StageRunning, StartedAt: p.d.Now()}
+	if stopped(ctx) {
+		var zero T
+		return zero, p.stopStage(ctx, rl)
+	}
 	p.d.Log.Debug("stage start", "item", itemID, "stage", s)
 	p.emit(rl)
 	v, err := fn(&rl)
+	if stopped(ctx) {
+		return v, p.stopStage(ctx, rl)
+	}
 	rl.Ms = p.d.Now().Sub(rl.StartedAt).Milliseconds()
 	switch {
 	case err != nil:
@@ -662,6 +733,20 @@ func runStage[T any](ctx context.Context, p *Pipeline, itemID string, s model.St
 		err = fmt.Errorf("pipeline: append run log: %w", serr)
 	}
 	return v, err
+}
+
+// stopStage records rl as stopped by the user (emitted, and appended to the
+// run log with a context the stop does not cancel) and returns the stop
+// error.
+func (p *Pipeline) stopStage(ctx context.Context, rl model.RunLog) error {
+	rl.Ms = p.d.Now().Sub(rl.StartedAt).Milliseconds()
+	rl.Status, rl.Err, rl.Note, rl.CacheHit = model.StageStopped, "", noteStopped, false
+	p.d.Log.Info("stage stopped by user", "item", rl.ItemID, "stage", rl.Stage)
+	p.emit(rl)
+	if err := p.d.Store.AppendRunLog(context.WithoutCancel(ctx), rl); err != nil {
+		p.d.Log.Warn("append stopped run log failed", "item", rl.ItemID, "stage", rl.Stage, "err", err)
+	}
+	return stopErr(ctx, rl.Stage)
 }
 
 func (p *Pipeline) emit(rl model.RunLog) {

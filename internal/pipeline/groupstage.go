@@ -66,11 +66,11 @@ func (p *Pipeline) clusterStage(ctx context.Context, r *run, it model.Item, in c
 	if err != nil {
 		return groupOut{}, fmt.Errorf("pipeline: load group edits: %w", err)
 	}
-	ls, err := p.itemLabels(ctx, it, in.parsed.files, units)
+	ls, err := p.itemLabels(ctx, r.snapshot, it, in.parsed.files, units)
 	if err != nil {
 		return groupOut{}, err
 	}
-	pc := p.d.Config.Pipeline
+	pc := r.cfg.Pipeline
 	res, err := p.fn.cluster(ctx, cluster.Input{
 		ItemID: it.ID, Units: units, Links: links, Labels: ls, Edits: edits,
 		Options: cluster.Options{MaxGroupUnits: pc.MaxGroupUnits, MechanicalMin: pc.MechanicalMin},
@@ -78,11 +78,11 @@ func (p *Pipeline) clusterStage(ctx context.Context, r *run, it model.Item, in c
 	if err != nil {
 		return groupOut{}, err
 	}
-	groups, nameNote, err := p.nameGroups(ctx, it, units, res.Groups, rl)
+	groups, nameNote, err := p.nameGroups(ctx, r, it, units, res.Groups, rl)
 	if err != nil {
 		return groupOut{}, err
 	}
-	split, splitNote, err := p.splitSuggestion(ctx, it, units, groups, rl)
+	split, splitNote, err := p.splitSuggestion(ctx, r, it, units, groups, rl)
 	if err != nil {
 		return groupOut{}, err
 	}
@@ -123,7 +123,7 @@ func groupingStats(s model.GroupingStats, in clusterIn, units []model.ChangeUnit
 // and bullets), stores the answers and applies the names. Ungrouped groups
 // are never sent. Only cancellation and store errors are returned; a Jev
 // failure keeps placeholder names and is noted.
-func (p *Pipeline) nameGroups(ctx context.Context, it model.Item, units []model.ChangeUnit, groups []model.Group, rl *model.RunLog) ([]model.Group, string, error) {
+func (p *Pipeline) nameGroups(ctx context.Context, r *run, it model.Item, units []model.ChangeUnit, groups []model.Group, rl *model.RunLog) ([]model.Group, string, error) {
 	bullets := model.DescBullets(it.Body)
 	nctx := p.fn.nameCtx(it.Title, bullets)
 	byID := unitsByID(units)
@@ -153,7 +153,7 @@ func (p *Pipeline) nameGroups(ctx context.Context, it model.Item, units []model.
 		}
 	}
 	note := fmt.Sprintf("names: %d asked, %d cached", len(subjects), len(subjects)-len(need))
-	fresh, suffix, err := p.askNames(ctx, it.Title, bullets, need, stored, rl)
+	fresh, suffix, err := p.askNames(ctx, r, it.Title, bullets, need, stored, rl)
 	if err != nil {
 		if ctx.Err() != nil || !errors.Is(err, errJudge) {
 			return groups, note, err
@@ -167,17 +167,21 @@ func (p *Pipeline) nameGroups(ctx context.Context, it model.Item, units []model.
 // errJudge marks a failed judge call (soft), as opposed to a store error.
 var errJudge = errors.New("judge failed")
 
-func (p *Pipeline) askNames(ctx context.Context, title string, bullets []string, need []judge.GroupText, stored []model.Label, rl *model.RunLog) ([]model.Label, string, error) {
+func (p *Pipeline) askNames(ctx context.Context, r *run, title string, bullets []string, need []judge.GroupText, stored []model.Label, rl *model.RunLog) ([]model.Label, string, error) {
 	if len(need) == 0 {
 		return nil, "", nil
 	}
-	if p.d.Jev == nil {
+	if r.m.Jev == nil {
 		return nil, " (Jev unavailable)", nil
 	}
-	res, err := p.fn.names(ctx, p.d.Jev, judge.NameInput{
-		Title: title, Bullets: bullets, Groups: need, Catalogue: p.catalogue(), Concurrency: p.d.Config.Pipeline.Concurrency,
+	res, err := p.fn.names(ctx, r.m.Jev, judge.NameInput{
+		Title: title, Bullets: bullets, Groups: need, Catalogue: p.catalogue(), Concurrency: r.cfg.Pipeline.Concurrency,
 	})
 	rl.Calls, rl.Cost = rl.Calls+res.Calls, rl.Cost+res.Cost
+	if stopped(ctx) {
+		p.putAnswered(ctx, res.Labels)
+		return nil, "", stopErr(ctx, model.StageCluster)
+	}
 	if err != nil {
 		return nil, "", fmt.Errorf("%w: names: %w", errJudge, err)
 	}
@@ -190,7 +194,7 @@ func (p *Pipeline) askNames(ctx context.Context, title string, bullets []string,
 // and builds the split
 // suggestion. It runs only when the item has at least two real groups; a
 // single group has nothing to split off.
-func (p *Pipeline) splitSuggestion(ctx context.Context, it model.Item, units []model.ChangeUnit, groups []model.Group, rl *model.RunLog) (*model.SplitSuggestion, string, error) {
+func (p *Pipeline) splitSuggestion(ctx context.Context, r *run, it model.Item, units []model.ChangeUnit, groups []model.Group, rl *model.RunLog) (*model.SplitSuggestion, string, error) {
 	sums := groupSummaries(units, groups)
 	if len(sums) < 2 {
 		return nil, "", nil
@@ -222,7 +226,7 @@ func (p *Pipeline) splitSuggestion(ctx context.Context, it model.Item, units []m
 		}
 	}
 	note := fmt.Sprintf("split: %d files, %d cached", len(files), len(files)-len(need))
-	fresh, suffix, err := p.askSplit(ctx, it, need, sums, stored, rl)
+	fresh, suffix, err := p.askSplit(ctx, r, it, need, sums, stored, rl)
 	if err != nil {
 		if ctx.Err() != nil || !errors.Is(err, errJudge) {
 			return nil, note, err
@@ -233,17 +237,21 @@ func (p *Pipeline) splitSuggestion(ctx context.Context, it model.Item, units []m
 	return p.fn.suggestion(it.ID, units, groups, mergeLabels(stored, fresh), sctx), note + suffix, nil
 }
 
-func (p *Pipeline) askSplit(ctx context.Context, it model.Item, need []judge.FileText, sums []judge.GroupSummary, stored []model.Label, rl *model.RunLog) ([]model.Label, string, error) {
+func (p *Pipeline) askSplit(ctx context.Context, r *run, it model.Item, need []judge.FileText, sums []judge.GroupSummary, stored []model.Label, rl *model.RunLog) ([]model.Label, string, error) {
 	if len(need) == 0 {
 		return nil, "", nil
 	}
-	if p.d.Jev == nil {
+	if r.m.Jev == nil {
 		return nil, " (Jev unavailable)", nil
 	}
-	res, err := p.fn.separatePR(ctx, p.d.Jev, judge.SplitInput{
-		ItemID: it.ID, Title: it.Title, Files: need, Groups: sums, Catalogue: p.catalogue(), Concurrency: p.d.Config.Pipeline.Concurrency,
+	res, err := p.fn.separatePR(ctx, r.m.Jev, judge.SplitInput{
+		ItemID: it.ID, Title: it.Title, Files: need, Groups: sums, Catalogue: p.catalogue(), Concurrency: r.cfg.Pipeline.Concurrency,
 	})
 	rl.Calls, rl.Cost = rl.Calls+res.Calls, rl.Cost+res.Cost
+	if stopped(ctx) {
+		p.putAnswered(ctx, res.Labels)
+		return nil, "", stopErr(ctx, model.StageCluster)
+	}
 	if err != nil {
 		return nil, "", fmt.Errorf("%w: separate_pr: %w", errJudge, err)
 	}

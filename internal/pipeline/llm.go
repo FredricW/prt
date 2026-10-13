@@ -135,16 +135,3 @@ func reasonText(err error) string {
 	}
 	return s
 }
-
-// tierModel is the model spec of a tier: its reviewer's, else the
-// configured one (estimates and request keys need a name even when no
-// reviewer runs).
-func (p *Pipeline) tierModel(t model.Tier) string {
-	if rev := p.d.Reviewers.For(t); rev != nil {
-		return rev.Model()
-	}
-	if t == model.TierDeep {
-		return p.d.Config.Models.Deep
-	}
-	return p.d.Config.Models.Fast
-}

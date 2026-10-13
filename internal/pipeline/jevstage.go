@@ -39,13 +39,16 @@ func (p *Pipeline) catalogue() questions.Catalogue {
 // units get unknown labels and the item is marked labels-missing. A
 // labels.Run error fails the stage (soft: the caller carries on with unknown
 // labels) and is returned so the RunLog row records it.
-func (p *Pipeline) labelStage(ctx context.Context, it model.Item, files []model.File, units []model.ChangeUnit, rl *model.RunLog) (jevOut, error) {
+//
+// On a user stop only the known answers of the calls that completed are
+// stored (putAnswered) and the stop error is returned.
+func (p *Pipeline) labelStage(ctx context.Context, r *run, it model.Item, files []model.File, units []model.ChangeUnit, rl *model.RunLog) (jevOut, error) {
 	cat := p.catalogue()
 	stored, err := p.d.Store.Labels(ctx, unitIDs(units))
 	if err != nil {
 		return jevOut{}, fmt.Errorf("pipeline: load labels: %w", err)
 	}
-	lctx := p.labelContext(it, files)
+	lctx := r.labelContext(it, files)
 	hashes := labels.InputHashes(cat, lctx)
 	need := unitsNeedingLabels(units, stored, cat, hashes)
 	rl.In = len(units)
@@ -54,18 +57,22 @@ func (p *Pipeline) labelStage(ctx context.Context, it model.Item, files []model.
 		rl.CacheHit = true
 		return jevOut{}, nil
 	}
-	if p.d.Jev == nil {
+	if r.m.Jev == nil {
 		rl.Note = "Jev unavailable"
 		return jevOut{missing: true}, p.storeLabels(ctx, withUnknowns(nil, stored, need, cat, hashes), rl)
 	}
-	res, runErr := labels.Run(ctx, p.d.Jev, labels.Input{
+	res, runErr := labels.Run(ctx, r.m.Jev, labels.Input{
 		Ctx:         lctx,
 		Units:       need,
 		Catalogue:   cat,
-		LineBatch:   p.d.Config.Pipeline.LineBatch,
-		Concurrency: p.d.Config.Pipeline.Concurrency,
+		LineBatch:   r.cfg.Pipeline.LineBatch,
+		Concurrency: r.cfg.Pipeline.Concurrency,
 	})
 	rl.Calls, rl.Cost = res.Calls, res.Cost
+	if stopped(ctx) {
+		p.putAnswered(ctx, res.Labels)
+		return jevOut{}, stopErr(ctx, model.StageJev)
+	}
 	if runErr != nil {
 		// Keep any labels that did arrive; fill the rest with unknowns.
 		ls := withUnknowns(res.Labels, stored, need, cat, hashes)
@@ -143,18 +150,6 @@ func (p *Pipeline) storeLabels(ctx context.Context, ls []model.Label, rl *model.
 		return fmt.Errorf("pipeline: store labels: %w", err)
 	}
 	return nil
-}
-
-// labelContext is the per-item context sent with unit questions.
-func (p *Pipeline) labelContext(it model.Item, files []model.File) labels.Context {
-	return labels.Context{
-		ItemID:       it.ID,
-		Title:        it.Title,
-		Bullets:      model.DescBullets(it.Body),
-		Role:         p.d.Config.User.Role,
-		Owns:         p.d.Config.User.Owns,
-		TestsTouched: testsTouched(files),
-	}
 }
 
 // testsTouched lists the changed paths that look like tests, in diff order.

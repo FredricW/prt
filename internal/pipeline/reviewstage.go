@@ -111,7 +111,7 @@ func (p *Pipeline) reviewStage(ctx context.Context, r *run, ro *routeOut, rl *mo
 		rl.Note = "nothing to review"
 		return reviewOut{rows: rr.snapshot()}, nil
 	}
-	fastErr, deepErr := review.Ready(p.d.Reviewers.Fast), review.Ready(p.d.Reviewers.Deep)
+	fastErr, deepErr := review.Ready(r.m.Reviewers.Fast), review.Ready(r.m.Reviewers.Deep)
 	rr.phase1(ctx, fastErr, deepErr)
 	if ctx.Err() == nil && fastErr == nil && deepErr == nil {
 		rr.phase2(ctx)
@@ -124,13 +124,21 @@ func (p *Pipeline) reviewStage(ctx context.Context, r *run, ro *routeOut, rl *mo
 		// Fast reviews ran; deep rows were skipped and phase 2 never ran.
 		out.note = "deep " + skipReason(deepErr) + "; escalation and calibration off"
 	}
+	if stopped(ctx) {
+		rr.markStopped()
+	}
 	rr.finalise()
 	out.rows = rr.snapshot()
 	if ctx.Err() == nil {
 		out.rows = p.keepStale(ctx, r, ro, out.rows)
 	}
 	if err := ctx.Err(); err != nil {
+		// The rows land although the run was cancelled: queued (shutdown,
+		// removal) or stopped (user stop) instead of running.
 		rr.persist(context.WithoutCancel(ctx))
+		if stopped(ctx) {
+			return out, stopErr(ctx, model.StageReview)
+		}
 		return out, err
 	}
 	if err := p.d.Store.PutItemReviews(ctx, r.it.ID, out.rows); err != nil {
@@ -230,9 +238,29 @@ func (rr *reviewRun) progressLocked() model.RunLog {
 	}
 }
 
-// finished reports whether a row status is final for this run.
+// finished reports whether a row status is final for this run. A stopped
+// row is not: it is re-run on resume.
 func finished(s model.ReviewStatus) bool {
 	return s == model.ReviewDone || s == model.ReviewFailed || s == model.ReviewSkipped
+}
+
+// markStopped turns every row whose routed call was in flight or queued in
+// this run (a planned, not over-cap row still running or queued) into
+// model.ReviewStopped after a user stop. Finished rows and over-cap rows
+// (which this run would not have called) keep their status. Attempts are
+// left as they were: a stopped call is not an attempt.
+func (rr *reviewRun) markStopped() {
+	rr.mu.Lock()
+	defer rr.mu.Unlock()
+	for _, pl := range rr.ro.plan {
+		i, ok := rr.idx[pl.GroupID]
+		if !ok || pl.Tier == model.TierNone || pl.OverCap {
+			continue
+		}
+		if row := &rr.rows[i]; row.Status == model.ReviewRunning || row.Status == model.ReviewQueued {
+			row.Status, row.Err = model.ReviewStopped, ""
+		}
+	}
 }
 
 // count adds calls and their cost to the stage totals.
@@ -311,22 +339,28 @@ func (rr *reviewRun) slots(tier model.Tier) int {
 	if tier == model.TierDeep {
 		return max(1, rr.ro.rules.Config.DeepSlots)
 	}
-	return rr.p.concurrency()
+	return rr.r.concurrency()
 }
 
 // runRouted runs a group's routed review: running, then done (cached in
-// the review cache) or failed with the error and attempts, left for R.
+// the review cache) or failed with the error and attempts, left for R. A
+// call cancelled by a user stop leaves the row stopped (not failed, not
+// retried, Attempts unchanged); any other cancellation leaves it queued.
 func (rr *reviewRun) runRouted(ctx context.Context, j reviewJob) {
 	_, i, ok := rr.row(j.groupID)
 	if !ok {
 		return
 	}
 	rr.update(ctx, i, func(row *model.Review) {
-		row.Status, row.StartedAt, row.Model = model.ReviewRunning, rr.p.d.Now(), rr.p.tierModel(j.tier)
+		row.Status, row.StartedAt, row.Model = model.ReviewRunning, rr.p.d.Now(), rr.r.tierModel(j.tier)
 	})
 	res := rr.review(ctx, j)
 	if res.err != nil && ctx.Err() != nil {
-		rr.update(context.WithoutCancel(ctx), i, func(row *model.Review) { row.Status = model.ReviewQueued })
+		status := model.ReviewQueued
+		if stopped(ctx) {
+			status = model.ReviewStopped
+		}
+		rr.update(context.WithoutCancel(ctx), i, func(row *model.Review) { row.Status = status })
 		return
 	}
 	// The fresh flag is cleared before the done row is published, so a
@@ -370,7 +404,7 @@ func (rr *reviewRun) review(ctx context.Context, j reviewJob) reviewResult {
 		res.retryReserved = rr.budget.Reserve(j.est)
 		return res.retryReserved
 	}
-	out := rr.p.callRetry(ctx, rr.p.d.Reviewers.For(j.tier), j.req,
+	out := rr.p.callRetry(ctx, rr.r.m.Reviewers.For(j.tier), j.req,
 		callMeta{itemID: rr.r.it.ID, groupID: j.groupID, tier: j.tier, purpose: j.purpose},
 		func(r review.Result) error {
 			f, v, c, err := rr.p.parseResult(r, units)
@@ -402,8 +436,13 @@ func (p *Pipeline) parseResult(res review.Result, units []model.ChangeUnit) ([]m
 
 // cache stores a finished review in the review cache (group id + tier),
 // with StartedAt the time its routed call started (now for a follow-up),
-// which stale-labels compares override times with.
+// which stale-labels compares override times with. Only completed reviews
+// get here; one that completed as the user stopped the run is still kept
+// (it was paid for).
 func (rr *reviewRun) cache(ctx context.Context, j reviewJob, res reviewResult) {
+	if stopped(ctx) {
+		ctx = context.WithoutCancel(ctx)
+	}
 	in := rr.ro.inputs[j.groupID]
 	started := rr.p.d.Now()
 	if row, _, ok := rr.row(j.groupID); ok && j.purpose == purposeRouted && !row.StartedAt.IsZero() {
@@ -427,7 +466,7 @@ func (rr *reviewRun) serveCached(ctx context.Context, groupID string, tier model
 	if rr.ignoreCache {
 		return model.Review{}, false
 	}
-	c, ok := rr.p.cachedReview(ctx, groupID, tier, rr.ro.inputs[groupID].Prompts)
+	c, ok := rr.p.cachedReview(ctx, rr.r.snapshot, groupID, tier, rr.ro.inputs[groupID].Prompts)
 	if !ok {
 		return model.Review{}, false
 	}
@@ -587,11 +626,11 @@ func (rr *reviewRun) phase2(ctx context.Context) {
 // followUpEstimate is a deep follow-up's estimate (0 when cached).
 func (rr *reviewRun) followUpEstimate(ctx context.Context, j reviewJob) float64 {
 	if !rr.ignoreCache {
-		if _, hit := rr.p.cachedReview(ctx, j.groupID, j.tier, rr.ro.inputs[j.groupID].Prompts); hit {
+		if _, hit := rr.p.cachedReview(ctx, rr.r.snapshot, j.groupID, j.tier, rr.ro.inputs[j.groupID].Prompts); hit {
 			return 0
 		}
 	}
-	return review.PlanCost(rr.p.tierModel(j.tier), j.req)
+	return review.PlanCost(rr.r.tierModel(j.tier), j.req)
 }
 
 // sampled reports whether a fast-routed group is a calibration sample: the
@@ -633,6 +672,14 @@ func (rr *reviewRun) runFollowUp(ctx context.Context, j reviewJob, b route.Budge
 		if res.err == nil {
 			rr.cache(ctx, j, res)
 		}
+	}
+	if res.err != nil && stopped(ctx) {
+		// A stopped follow-up changes nothing: the fast result stands (an
+		// escalation runs again on resume), no calibration is recorded.
+		if j.purpose == purposeEscalation {
+			rr.update(context.WithoutCancel(ctx), i, func(row *model.Review) { row.Status = model.ReviewDone })
+		}
+		return
 	}
 	if j.purpose == purposeEscalation {
 		rr.applyEscalation(ctx, i, res)

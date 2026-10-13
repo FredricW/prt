@@ -27,15 +27,21 @@ const calibrationWindow = 30 * 24 * time.Hour
 // text is CleanTLDR'd and capped at 160 runes. No fast reviewer leaves it
 // empty; an error leaves it empty with a note (returned). A fast reviewer
 // that is not ready (no key) still serves a cached TL;DR.
+//
+// A FreeOnly aggregate-only run reads the cache only; on a miss it keeps
+// the stored aggregate's TL;DR (r.prev) instead of asking.
 func (p *Pipeline) tldr(ctx context.Context, r *run, agg *model.ItemAgg, rl *model.RunLog) string {
-	fast := p.d.Reviewers.Fast
+	fast := r.m.Reviewers.Fast
 	if fast == nil {
-		return ""
+		return p.keepTLDR(r, agg)
 	}
 	bypass := r.opt.Force || r.opt.ignoresCache(model.StageAggregate)
 	clean := func(s string) string { return capRunes(p.fn.cleanTLDR(s), review.MaxTLDR) }
-	out := p.prose(ctx, nsTLDR, p.fn.buildTLDR(*agg), callMeta{itemID: r.it.ID, tier: model.TierFast, purpose: purposeTLDR}, bypass, clean)
+	out := p.prose(ctx, fast, nsTLDR, p.fn.buildTLDR(*agg), callMeta{itemID: r.it.ID, tier: model.TierFast, purpose: purposeTLDR}, bypass && !r.opt.FreeOnly, clean)
 	if out.notReady {
+		if note := p.keepTLDR(r, agg); note != "" {
+			return note
+		}
 		// A cached TL;DR is served without a key; only a miss is skipped.
 		return "TL;DR skipped: " + reasonText(out.err)
 	}
@@ -57,6 +63,17 @@ func (p *Pipeline) tldr(ctx context.Context, r *run, agg *model.ItemAgg, rl *mod
 		return "TL;DR cached"
 	}
 	return "TL;DR written"
+}
+
+// keepTLDR copies the stored aggregate's TL;DR onto agg in a FreeOnly run
+// whose TL;DR is not cached for the new record, and returns the note ("" when
+// it does not apply: not FreeOnly, or nothing stored).
+func (p *Pipeline) keepTLDR(r *run, agg *model.ItemAgg) string {
+	if !r.opt.FreeOnly || r.prev == nil || r.prev.TLDR == "" {
+		return ""
+	}
+	agg.TLDR, agg.TLDRKey = r.prev.TLDR, r.prev.TLDRKey
+	return "TL;DR kept (not regenerated in a free-only run)"
 }
 
 // reviewStats is the Pipeline page's totals block from the routing rows

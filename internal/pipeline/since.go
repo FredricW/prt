@@ -73,7 +73,7 @@ func (p *Pipeline) sinceLooked(ctx context.Context, r *run, units []model.Change
 	} else {
 		notes = append(notes, fmt.Sprintf("base head %s not available locally", shortSHA(base)))
 	}
-	ad, err := p.addressedComments(ctx, cur, r.f.HeadSHA, base, local, units)
+	ad, err := p.addressedComments(ctx, r, cur, base, local, units)
 	if err != nil {
 		return sinceOut{}, err
 	}
@@ -157,7 +157,8 @@ type addressedOut struct {
 // answer with an unknown one) and returns one row per comment in path/line
 // order. Without Jev, or when it fails, rows are unknown and the note says
 // "labels unavailable". Only cancellation is returned.
-func (p *Pipeline) addressedComments(ctx context.Context, it model.Item, head, base string, local bool, units []model.ChangeUnit) (addressedOut, error) {
+func (p *Pipeline) addressedComments(ctx context.Context, r *run, it model.Item, base string, local bool, units []model.ChangeUnit) (addressedOut, error) {
+	head := r.f.HeadSHA
 	viewer := p.viewer(ctx)
 	if viewer == "" {
 		return addressedOut{}, nil
@@ -172,7 +173,7 @@ func (p *Pipeline) addressedComments(ctx context.Context, it model.Item, head, b
 		return addressedOut{}, nil
 	}
 	cases := p.commentCases(ctx, it, prev, head, base, local, units)
-	ans, err := p.addressedLabels(ctx, it.ID, cases)
+	ans, err := p.addressedLabels(ctx, r, it.ID, cases)
 	if err != nil {
 		return addressedOut{}, err
 	}
@@ -343,8 +344,9 @@ type addressedLabelsOut struct {
 // addressedLabels returns the current known comment_addressed label of each
 // case: stored ones whose Ctx matches judge.AddressedCtx, and fresh answers
 // from Jev for the rest. Fresh labels are stored, except unknown ones that
-// would replace a known stored answer. Only cancellation is returned.
-func (p *Pipeline) addressedLabels(ctx context.Context, itemID string, cases []judge.CommentCase) (addressedLabelsOut, error) {
+// would replace a known stored answer. A FreeOnly run uses the stored
+// answers only. Only cancellation is returned.
+func (p *Pipeline) addressedLabels(ctx context.Context, r *run, itemID string, cases []judge.CommentCase) (addressedLabelsOut, error) {
 	out := addressedLabelsOut{byID: map[string]model.Label{}}
 	subjects := make([]string, len(cases))
 	for i, cc := range cases {
@@ -363,11 +365,11 @@ func (p *Pipeline) addressedLabels(ctx context.Context, itemID string, cases []j
 		}
 		need = append(need, cc)
 	}
-	if len(need) == 0 || p.d.Jev == nil {
+	if len(need) == 0 || r.m.Jev == nil || r.opt.FreeOnly {
 		return out, nil
 	}
-	res, err := judge.CommentAddressed(ctx, p.d.Jev, judge.AddressedInput{
-		ItemID: itemID, Cases: need, Catalogue: p.catalogue(), Concurrency: p.concurrency(),
+	res, err := judge.CommentAddressed(ctx, r.m.Jev, judge.AddressedInput{
+		ItemID: itemID, Cases: need, Catalogue: p.catalogue(), Concurrency: r.concurrency(),
 	})
 	out.calls, out.cost = res.Calls, res.Cost
 	if err != nil {

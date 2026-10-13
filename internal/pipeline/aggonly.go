@@ -77,7 +77,13 @@ func (p *Pipeline) loadAnalysis(ctx context.Context, it model.Item) (storedAnaly
 // looked" and Jev totals are carried from the stored aggregate; the TL;DR
 // is asked only when its request key changed). ok is false when nothing is
 // stored, and the caller runs normally.
-func (p *Pipeline) runAggregateOnly(ctx context.Context, it model.Item, opt RunOptions) (string, bool, error) {
+//
+// With RunOptions.FreeOnly as well (settings changes re-aggregate every
+// analysed item) the run's models are guards and the TL;DR comes from its
+// cache only; on a miss the stored TL;DR is kept. The branch block, "Since
+// you looked" and the group titles are always carried from the stored
+// analysis, so they never call a model here.
+func (p *Pipeline) runAggregateOnly(ctx context.Context, it model.Item, opt RunOptions, snap snapshot) (string, bool, error) {
 	cur := p.currentItem(ctx, it)
 	s, ok, err := p.loadAnalysis(ctx, cur)
 	if err != nil {
@@ -87,7 +93,7 @@ func (p *Pipeline) runAggregateOnly(ctx context.Context, it model.Item, opt RunO
 	if !ok {
 		return "", false, nil
 	}
-	r := &run{it: cur, f: s.f, opt: opt, calls: newCallLog()}
+	r := &run{snapshot: snap, it: cur, f: s.f, opt: opt, calls: newCallLog(), prev: &s.prev}
 	if err := p.preloadCalls(ctx, r, s.a.gro.groups); err != nil {
 		p.d.Log.Warn("load call logs failed", "item", it.ID, "err", err)
 	}
