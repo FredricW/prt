@@ -42,8 +42,16 @@ func (c *InProcess) ReviewAction(ctx context.Context, p proto.ReviewActionParams
 	if err := c.p.SetGroupOverride(ctx, it.ID, p.GroupID, tier); err != nil {
 		return fmt.Errorf("daemon: review action %s: %w", p.ItemID, err)
 	}
+	j := job{itemID: it.ID, urgency: it.Urgency, rerun: true}
+	if p.Action == proto.ActionSkip && it.AnalysedSHA != "" && it.AnalysedSHA != it.HeadSHA {
+		// A skip asks for less spending: on a Stale item it must not
+		// request (and pay for) an analysis of the new head. Automatic, so
+		// the strategy decides (DECISIONS "M5.1 review fixes").
+		c.q.push(j)
+		return nil
+	}
 	// Explicit: the user acted on this item (D, R, s).
-	return c.pushExplicit(ctx, it, job{itemID: it.ID, urgency: it.Urgency, rerun: true})
+	return c.pushExplicit(ctx, it, j)
 }
 
 // Routing implements Client. Without flags it describes the active rules.

@@ -101,7 +101,9 @@ func (c *InProcess) stopAll() proto.StopResult {
 	return proto.StopResult{Stopped: slices.Compact(ids)}
 }
 
-// Resume implements Client: p.ItemID (in any state; a no-op while it runs)
+// Resume implements Client: p.ItemID (in any state; a no-op while an
+// explicit run of it is going; behind an automatic or stopped run it is
+// queued to start after that run)
 // or, with p.All, every StateStopped item is queued again as an explicit,
 // non-forced request with user priority, its head recorded as requested.
 // Finished stages hit their caches. An unknown item is an error.
@@ -129,10 +131,11 @@ func (c *InProcess) Resume(ctx context.Context, p proto.ResumeParams) (proto.Res
 	}
 	var res proto.ResumeResult
 	for _, it := range items {
-		if c.q.isRunning(it.ID) {
-			continue
+		j := job{itemID: it.ID, urgency: it.Urgency, user: true, explicit: true}
+		if c.q.covers(j) {
+			continue // an explicit run of it is already going
 		}
-		if err := c.pushExplicit(ctx, it, job{itemID: it.ID, urgency: it.Urgency, user: true}); err != nil {
+		if err := c.pushExplicit(ctx, it, j); err != nil {
 			return res, err
 		}
 		res.Resumed = append(res.Resumed, it.ID)
@@ -186,7 +189,10 @@ func (c *InProcess) settingsInfo(ctx context.Context) proto.SettingsInfo {
 // it is not.
 func (c *InProcess) gitHubProbe() proto.Probe {
 	if c.d.GH != nil {
-		return proto.Probe{OK: true, Note: "gh auth token ok"}
+		c.evMu.RLock()
+		note := c.ghNote
+		c.evMu.RUnlock()
+		return proto.Probe{OK: true, Note: cmp.Or(note, "gh auth token ok")}
 	}
 	return proto.Probe{Note: c.gitHubNote()}
 }
@@ -237,7 +243,14 @@ func (c *InProcess) SaveSettings(ctx context.Context, p proto.SaveSettingsParams
 		return c.settingsInfo(ctx), err
 	}
 	oldCfg, oldRt := c.cfg(), c.p.Routing().Config
-	if err := settings.Save(dir, p.Values, oldRt.Source); err != nil {
+	// A new repo prt.toml shadows the active (global) one, so it starts as a
+	// copy of it. A new global file is shadowed by the repo one instead, so
+	// it never copies repo-only keys such as [github] repo.
+	seedMain := ""
+	if dir == c.repoDir() {
+		seedMain = oldCfg.Source
+	}
+	if err := settings.SaveSeeded(dir, p.Values, seedMain, oldRt.Source); err != nil {
 		return c.settingsInfo(ctx), fmt.Errorf("daemon: save settings: %w", err)
 	}
 	notes := c.shadowWarnings(p.Scope)
@@ -266,6 +279,11 @@ func (c *InProcess) scopeDir(scope proto.SettingsScope) (string, error) {
 		dir = c.repoDir()
 	case proto.ScopeGlobal:
 		dir = c.globalDir()
+		// Replay mode (make demo) reads only .git/prt: a global save would
+		// write the user's real config and change nothing here.
+		if len(c.d.ConfigDirs) > 0 && !slices.Contains(c.d.ConfigDirs, dir) {
+			return "", fmt.Errorf("daemon: save settings: the global config (%s) is not read in this mode; save to the repo scope", dir)
+		}
 	default:
 		return "", fmt.Errorf("daemon: save settings: unknown scope %q (want %q or %q)", scope, proto.ScopeRepo, proto.ScopeGlobal)
 	}

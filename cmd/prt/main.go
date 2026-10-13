@@ -197,7 +197,8 @@ type environment struct {
 	deps   pipeline.Deps
 	cfg    config.Config
 	gitDir string
-	// ghNote says why GitHub is disabled ("" when a client is wired).
+	// ghNote says why GitHub is disabled, or where a wired client came from
+	// when it is not gh auth (a --fixtures file); "" for a gh-auth client.
 	ghNote string
 	// srcNote names replayed sources ("" when none), shown in the status bar.
 	srcNote string
@@ -299,6 +300,7 @@ func setup(ctx context.Context, o options) (*environment, error) {
 			return nil, fmt.Errorf("--fixtures: %w", err)
 		}
 		d.GH = fake
+		env.ghNote = "GitHub fixture " + filepath.Base(o.fixtures) + " (gh auth not checked)"
 		logger.Info("using GitHub fixture", "path", o.fixtures)
 	}
 	if o.offline && d.GH == nil {

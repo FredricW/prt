@@ -158,7 +158,7 @@ func TestGateDecidesWhenJobStarts(t *testing.T) {
 		{"old request, new head", model.AutoManual, oldRequest, job{}, true, free, model.StateNotAnalysed, "h-old"},
 		{"analysed branch, forced from a stage", model.AutoNeedsYou, analysedItem(branch), job{force: true, fromStage: model.StageReview}, true, aggFree, model.StateReady, ""},
 		{"analysed branch, aggregate-only", model.AutoNeedsYou, analysedItem(branch), job{aggOnly: true, rerun: true}, true, aggFree, model.StateReady, ""},
-		{"stale branch keeps its old analysis", model.AutoNeedsYou, stale, job{}, true, free, model.StateStale, ""},
+		{"stale branch keeps its old analysis", model.AutoNeedsYou, stale, job{}, true, aggFree, model.StateStale, ""},
 		{"preview of a needs-you PR", model.AutoNeedsYou, preview, job{user: true}, true, free, model.StateNotAnalysed, ""},
 		{"preview under all", model.AutoAll, preview, job{user: true}, true, pipeline.RunOptions{}, model.StateReady, ""},
 		{"stopped item, automatic job", model.AutoAll, stopped, job{}, false, pipeline.RunOptions{}, model.StateStopped, ""},

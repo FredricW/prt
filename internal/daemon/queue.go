@@ -100,10 +100,26 @@ func newQueue(slots int, wg *sync.WaitGroup, run func(job)) *queue {
 // coveredLocked reports whether the run in flight for j's item already does
 // j's work, so j is dropped: true for a plain job (not forced, not a
 // rerun) behind a full run. An aggregate-only run covers nothing but
-// another aggregate-only job, which is a rerun anyway.
+// another aggregate-only job, which is a rerun anyway. An explicit job is
+// covered only by an explicit run: an automatic run may be gated to the
+// free stages, so the user's request (Add, :resume) must run after it. A
+// run the user stopped (still unwinding) covers nothing.
 func (q *queue) coveredLocked(j job) bool {
 	cur, ok := q.inflight[j.itemID]
-	return ok && !cur.aggOnly && !j.force && !j.rerun
+	if !ok || cur.aggOnly || j.force || j.rerun {
+		return false
+	}
+	if j.explicit && !cur.explicit {
+		return false
+	}
+	return !q.stoppedLocked(cur)
+}
+
+// covers reports whether j would be dropped as covered by the run in flight.
+func (q *queue) covers(j job) bool {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return q.coveredLocked(j)
 }
 
 // push adds jobs atomically (so a batch is ordered by urgency even with one
@@ -230,15 +246,11 @@ func (q *queue) dropAll() (waiting, busy []string) {
 func (q *queue) stoppedBefore(j job) bool {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	return j.seq <= q.stopAllSeq || j.seq <= q.stopSeq[j.itemID]
+	return q.stoppedLocked(j)
 }
 
-// isRunning reports whether a job of id is running.
-func (q *queue) isRunning(id string) bool {
-	q.mu.Lock()
-	defer q.mu.Unlock()
-	_, ok := q.inflight[id]
-	return ok
+func (q *queue) stoppedLocked(j job) bool {
+	return j.seq <= q.stopAllSeq || j.seq <= q.stopSeq[j.itemID]
 }
 
 // setSlots changes how many jobs may run at once (the settings page's

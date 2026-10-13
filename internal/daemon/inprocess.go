@@ -145,7 +145,10 @@ func (c *InProcess) strategy() model.AutoReview { return c.cfg().Pipeline.Strate
 
 // SetGitHubNote records why GitHub is disabled (no token, origin not on
 // GitHub, --offline). With no GitHub client, each discovery reports it as an
-// EventLog note so the status bar explains the missing PRs.
+// EventLog note so the status bar explains the missing PRs. With a client
+// wired, the note (when set) describes where it came from (e.g. a
+// --fixtures file) and the settings page shows it instead of "gh auth
+// token ok".
 func (c *InProcess) SetGitHubNote(note string) {
 	c.evMu.Lock()
 	c.ghNote = note
@@ -635,9 +638,9 @@ type plan struct {
 // change applies to queued jobs; DECISIONS "M5.1 user override"). An
 // explicit job, or one whose item the strategy allows (covered, or its head
 // requested), runs as queued. Otherwise the run is FreeOnly: an item with a
-// stored analysis of its current head is only re-aggregated (never
-// downgraded to not analysed); any other item runs the free stages and ends
-// not analysed. An automatic job of a stopped item does not run at all
+// stored analysis (of its current head, or an older one when Stale) is only
+// re-aggregated (never downgraded, its stored analysis never replaced);
+// any other item runs the free stages and ends not analysed. An automatic job of a stopped item does not run at all
 // (nothing restarts a stopped item automatically): ok is false.
 func (c *InProcess) gate(j job, it model.Item) (p plan, ok bool) {
 	opts := j.options()
@@ -651,8 +654,13 @@ func (c *InProcess) gate(j job, it model.Item) (p plan, ok bool) {
 		return plan{opts: opts}, true
 	}
 	opts.FreeOnly = true
-	if it.AnalysedSHA != "" && it.AnalysedSHA == it.HeadSHA {
-		return plan{opts: pipeline.RunOptions{AggregateOnly: true, FreeOnly: true}}, true
+	if it.AnalysedSHA != "" {
+		// Any stored analysis, of this head or an older one (Stale): only
+		// re-aggregate it. A free-only full run would fetch and parse the
+		// new head and replace the stored files and units, leaving them out
+		// of step with the analysed head's groups, labels and fetch.
+		// notAnalysed: AnalysedSHA never moves on a gated run.
+		return plan{opts: pipeline.RunOptions{AggregateOnly: true, FreeOnly: true}, notAnalysed: true}, true
 	}
 	return plan{opts: opts, notAnalysed: true}, true
 }
@@ -724,7 +732,9 @@ func stoppedByUser(runCtx context.Context, err error) bool {
 // analysed" so it is queued again. A free-only run of an unanalysed item
 // leaves it StateNotAnalysed (and AnalysedSHA unset).
 func (c *InProcess) finish(runCtx context.Context, id string, o outcome) {
-	if stoppedByUser(runCtx, o.err) {
+	// A run that returned without error completed, even if a stop arrived
+	// after it (before this point): its result is recorded.
+	if o.err != nil && stoppedByUser(runCtx, o.err) {
 		c.log.Info("analysis stopped", "item", id, "stage", o.stage)
 		c.setStopped(id, string(o.stage))
 		return

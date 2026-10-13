@@ -165,7 +165,8 @@ type RunOptions struct {
 	// call; the TL;DR is regenerated only when its inputs changed. Routing
 	// rows of groups containing an overridden unit whose override is newer
 	// than the row become model.ReviewStaleLabels (with StaleNote). With no
-	// stored analysis it falls back to a normal run. The daemon's Override
+	// stored analysis it falls back to a normal run (with FreeOnly as well
+	// and an AnalysedSHA set, it does nothing instead). The daemon's Override
 	// queues such a run (M5; DECISIONS "M5 shared contracts").
 	AggregateOnly bool
 	// FreeOnly (M5.1) forbids every model-backed call in this run: Jev
@@ -304,6 +305,13 @@ func (p *Pipeline) RunHead(ctx context.Context, it model.Item, opt RunOptions) (
 	if opt.AggregateOnly {
 		if head, ok, err := p.runAggregateOnly(ctx, it, opt, s); ok {
 			return head, err
+		}
+		if opt.FreeOnly && it.AnalysedSHA != "" {
+			// A gated re-aggregation never falls back to a free-only full
+			// run: that would replace the stored files and units of the
+			// analysed head with another head's (M5.1 review fixes).
+			p.d.Log.Debug("free-only aggregate-only run: nothing stored to aggregate", "item", it.ID)
+			return "", nil
 		}
 		opt.AggregateOnly = false
 	}
