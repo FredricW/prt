@@ -425,6 +425,7 @@ type fakePane struct {
 	setLabels    [][]string
 	gotLabels    []model.Label
 	failedLabels [][]string
+	staleLabels  [][]string
 	// updates counts the non-key messages (mouse) the pane was given.
 	updates int
 }
@@ -445,6 +446,13 @@ func (p *fakePane) SetLabels(_ string, units []string, ls []model.Label) {
 
 func (p *fakePane) LabelsFailed(_ string, units []string, _ error) {
 	p.failedLabels = append(p.failedLabels, units)
+}
+
+// LabelsStale asks for units again, as codeview does for the units it
+// still needs.
+func (p *fakePane) LabelsStale(_ string, units []string) {
+	p.staleLabels = append(p.staleLabels, units)
+	p.wantLabels = append(p.wantLabels, units...)
 }
 
 func (p *fakePane) PendingOpen() (codeview.OpenRequest, bool) {

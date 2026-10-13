@@ -27,7 +27,8 @@ func (c *content) labelsKnown(id string) bool {
 // wantLabels asks for the labels of the ids that are not on the page and
 // reports whether every one was. A unit whose fetch failed is asked for
 // again only with retry (an explicit L or !), so a failing daemon is not
-// asked on every rebuild.
+// asked on every rebuild; retry also asks again for a unit still waiting
+// (the root does not start a second call while one is in flight).
 func (m *Model) wantLabels(retry bool, ids ...string) bool {
 	all := true
 	for _, id := range ids {
@@ -35,12 +36,13 @@ func (m *Model) wantLabels(retry bool, ids ...string) bool {
 			continue
 		}
 		all = false
-		if m.labelWait[id] {
+		if m.labelWait[id] && !retry {
 			continue
 		}
 		if _, failed := m.labelErr[id]; failed && !retry {
 			continue
 		}
+		delete(m.labelWait, id)
 		delete(m.labelErr, id)
 		m.labelReq[id] = true
 	}
@@ -144,6 +146,20 @@ func (m *Model) LabelsFailed(itemID string, units []string, err error) {
 			m.note = "mark a label wrong: labels unavailable (" + msg + ")"
 		}
 	}
+}
+
+// LabelsStale reports that the answer for units came for an analysis the
+// page no longer shows (the item's head moved while the call was in
+// flight): they stop waiting, and the page asks again for those the open
+// overlay, a waiting label picker or the shown group still need.
+func (m *Model) LabelsStale(itemID string, units []string) {
+	if itemID != m.c.itemID || !m.c.labelsOmitted {
+		return
+	}
+	for _, id := range units {
+		delete(m.labelWait, id)
+	}
+	m.rewantLabels()
 }
 
 // labelsNote is the overlay's stand-in for the rows of unit id while its

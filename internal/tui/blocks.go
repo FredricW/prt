@@ -148,9 +148,7 @@ func (m *Model) listKey(k tea.KeyMsg) {
 		if key.Matches(k, km.PrevBlock) {
 			dir = -1
 		}
-		o.moveFocus(dir)
-		m.redrawOverview()
-		m.openBlock(o.focus)
+		m.nextList(dir)
 	case key.Matches(k, km.Down):
 		if !l.move(1) {
 			vp.ScrollDown(1)
@@ -176,11 +174,45 @@ func (m *Model) listKey(k tea.KeyMsg) {
 	}
 }
 
+// nextList moves the block focus dir boxes at a time from the open list's
+// block, skipping boxes without a list (Description, Not analysed or
+// Stopped, the one-line note boxes), and opens the first list it reaches.
+// With none left in that direction the open list and the focus stay, with
+// a note, so the overlay never shows a block other than the focused one.
+func (m *Model) nextList(dir int) {
+	o := &m.overview
+	start, y := o.focus, o.vp.YOffset
+	for {
+		prev := o.focus
+		o.moveFocus(dir)
+		if o.focus == prev {
+			o.focus = start
+			o.vp.SetYOffset(y)
+			m.note = "no other list"
+			return
+		}
+		if m.hasList(o.focus) {
+			m.redrawOverview()
+			m.openBlock(o.focus)
+			return
+		}
+	}
+}
+
+// hasList reports whether the shown detail's block title has a full list.
+func (m *Model) hasList(title string) bool {
+	if m.detail == nil {
+		return false
+	}
+	b, ok := findBlock(*m.detail, m.ovOpts(), title)
+	return ok && b.list
+}
+
 // overviewClick handles a left press on the Overview at main-pane cell
 // (x, y): in a full list, a row with a unit jumps to it; on the page, a
 // "+N more" line opens its block's list, an anchored row (or minimap cell)
 // opens its unit in Code, and anywhere else in a box focuses that box.
-func (m Model) overviewClick(x, y int) (tea.Model, tea.Cmd) {
+func (m Model) overviewClick(x, y int) (Model, tea.Cmd) {
 	o := &m.overview
 	if m.detail == nil {
 		return m, nil

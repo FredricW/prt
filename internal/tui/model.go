@@ -615,11 +615,14 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	case m.tab == TabPipeline:
 		return m, m.pipe.Update(msg)
 	case m.tab == TabArch:
+		// A jump to Code may ask for the target group's labels (M5.2).
 		cmd := m.arch.Update(msg)
-		return m, batch(cmd, m.archJump())
+		return m, batch(cmd, m.archJump(), m.codeLabels())
 	case msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress:
-		// Rows 0 and 1 are the header and the tab bar.
-		return m.overviewClick(msg.X-sw-2, msg.Y-2)
+		// Rows 0 and 1 are the header and the tab bar; a click that jumps
+		// to Code may ask for the target group's labels.
+		next, cmd := m.overviewClick(msg.X-sw-2, msg.Y-2)
+		return next, batch(cmd, next.codeLabels())
 	default:
 		wheelOverview(&m.overview, msg, wheel)
 	}
@@ -777,7 +780,10 @@ func (m Model) handleKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.focus == FocusPicker {
 		return m.handlePickerKey(k)
 	}
-	return m.handleMainKey(k)
+	// A jump to Code (enter on the Overview) may ask for the target
+	// group's labels (M5.2).
+	next, cmd := m.handleMainKey(k)
+	return next, batch(cmd, next.codeLabels())
 }
 
 // routeMain gives the focused main pane the first look at k. The Code page

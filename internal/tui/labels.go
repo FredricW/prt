@@ -121,7 +121,17 @@ func (m Model) onLabels(msg labelsMsg) (tea.Model, tea.Cmd) {
 			delete(busy, u)
 		}
 	}
-	shown := m.detail != nil && m.detail.Item.ID == msg.itemID && labelHead(*m.detail) == msg.head
+	sameItem := m.detail != nil && m.detail.Item.ID == msg.itemID
+	shown := sameItem && labelHead(*m.detail) == msg.head
+	if sameItem && !shown {
+		// The analysis moved while the call was in flight: the answer (or
+		// error) is for a head the pages no longer show, so it is dropped
+		// (caching it would replace the shown head's entry). Ask again for
+		// the shown head, so the Code page and the overlay do not wait for
+		// good.
+		m.code.LabelsStale(msg.itemID, msg.units)
+		return m, batch(m.codeLabels(), m.refetchRawLabels(msg.units))
+	}
 	if msg.err != nil {
 		if shown {
 			m.code.LabelsFailed(msg.itemID, msg.units, msg.err)
@@ -129,6 +139,21 @@ func (m Model) onLabels(msg labelsMsg) (tea.Model, tea.Cmd) {
 			m.refreshRawLabels(msg.units, msg.err)
 		}
 		return m, nil
+	}
+	m.cacheLabels(msg)
+	if !shown {
+		return m, nil
+	}
+	m.code.SetLabels(msg.itemID, msg.units, msg.labels)
+	m.refreshRawLabels(msg.units, nil)
+	return m, m.codeLabels()
+}
+
+// cacheLabels stores a good Labels answer under its item and head (an
+// answer for another head than the cached one starts a new entry).
+func (m *Model) cacheLabels(msg labelsMsg) {
+	if msg.err != nil {
+		return
 	}
 	e := m.labels.entryFor(msg.itemID, msg.head)
 	byUnit := make(map[string][]model.Label, len(msg.units))
@@ -143,12 +168,21 @@ func (m Model) onLabels(msg labelsMsg) (tea.Model, tea.Cmd) {
 	for u, ls := range byUnit {
 		e.units[u] = ls
 	}
-	if !shown {
-		return m, nil
+}
+
+// refetchRawLabels asks again for the raw-labels overlay's unit when it is
+// among units (their answer came for a head no longer shown).
+func (m *Model) refetchRawLabels(units []string) tea.Cmd {
+	o := &m.overview
+	if !o.raw || o.rawUnit == "" {
+		return nil
 	}
-	m.code.SetLabels(msg.itemID, msg.units, msg.labels)
-	m.refreshRawLabels(msg.units, nil)
-	return m, m.codeLabels()
+	for _, u := range units {
+		if u == o.rawUnit {
+			return m.fetchLabels([]string{u})
+		}
+	}
+	return nil
 }
 
 // supplyLabels hands the Code page the cached labels of d's item after a

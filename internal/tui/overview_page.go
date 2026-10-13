@@ -426,7 +426,7 @@ func overviewCells(d proto.Detail, o ovOpts) (lead []blockSpec, cells []cell) {
 			cells[2] = surfaceCell
 			cells[5] = cell{{blockSlice, noteFill("needs labels"), false}, sinceSpec(d)}
 		}
-		files := statsFromDetail(d.Files)
+		files := gitFiles(d)
 		return []blockSpec{{blockFiles, func(q *page, full bool) { filesBlock(q, files, full) }, true}}, cells
 	}
 	return nil, labelledCells(d, o)
@@ -563,7 +563,8 @@ func gitFactsLines(p *page, d proto.Detail, boxes func()) {
 	p.dim("Confidence: needs labels")
 }
 
-// filesBlock is the git-facts Files list: "+a −d  path" per file, capped.
+// filesBlock is the git-facts Files list (gitFiles order): "+a −d  path"
+// per file, anchored to its first unit, capped.
 func filesBlock(p *page, files []fileStat, full bool) {
 	if len(files) == 0 {
 		p.dim("no files")
@@ -571,7 +572,7 @@ func filesBlock(p *page, files []fileStat, full bool) {
 	}
 	shown := capped(len(files), capFiles, full)
 	for _, f := range files[:shown] {
-		p.add(fmt.Sprintf("%s  %s", padLeft(fmt.Sprintf("+%d −%d", f.adds, f.dels), 11), f.path), "")
+		p.add(fmt.Sprintf("%s  %s", padLeft(fmt.Sprintf("+%d −%d", f.adds, f.dels), 11), f.path), f.unit)
 	}
 	p.more(len(files)-shown, "more")
 }
@@ -831,32 +832,60 @@ func sortedHeadlines(hs []model.Headline) []model.Headline {
 	return out
 }
 
-// headlinesBlock lists the headlines (capped), then a dim line for the
-// candidates left out below .60 (Agg.HeadlinesUnsure).
+// headlinesBlock lists the headlines (capped), then the candidates left
+// out below .60 (Agg.HeadlineCandidates): the summary has one "+N below .60
+// (unsure)" line, which opens the full list like "+N more"; the full list
+// shows each candidate as a "?" row anchored to its unit. A record written
+// before candidates were stored has only their count (Agg.HeadlinesUnsure),
+// shown as a dim line.
 func headlinesBlock(p *page, a *model.ItemAgg, full bool) {
 	hs := sortedHeadlines(a.Headlines)
-	if len(hs) == 0 {
+	cands := sortedHeadlines(a.HeadlineCandidates)
+	unsure := max(a.HeadlinesUnsure, len(cands))
+	switch {
+	case len(hs) == 0 && unsure > 0:
+		// Absence stays explicit, without contradicting the unsure line.
+		p.dim("no contract changes at .60 or above")
+	case len(hs) == 0:
 		p.dim("no contract changes")
 	}
 	shown := capped(len(hs), capHeadlines, full)
+	rows := hs[:shown]
+	if full {
+		rows = append(append([]model.Headline(nil), rows...), cands...)
+	}
 	kw := 0
-	for _, h := range hs[:shown] {
+	for _, h := range rows {
 		kw = max(kw, len([]rune(h.Kind)))
 	}
 	for _, h := range hs[:shown] {
-		// Units without a symbol or signature get Text = path, which the
-		// location column already shows.
-		text := h.Text
-		if text == h.Path {
-			text = "(top level)"
-		}
-		p.fitRow(gutter(h.P)+p.st.accent.Render("⚠")+" "+padRight(h.Kind, kw)+"  ", text,
-			fmt.Sprintf("%s:%d", h.Path, h.Line), p.prob(h.P), h.UnitID)
+		headlineRow(p, h, kw)
 	}
 	p.more(len(hs)-shown, "more")
-	if a.HeadlinesUnsure > 0 {
-		p.dim(fmt.Sprintf("  +%d below .60 (unsure)", a.HeadlinesUnsure))
+	switch {
+	case full && len(cands) > 0:
+		p.dim("below .60 (unsure)")
+		for _, h := range cands {
+			headlineRow(p, h, kw)
+		}
+	case len(cands) > 0:
+		p.more(len(cands), "below .60 (unsure)")
+	case unsure > 0:
+		p.dim(fmt.Sprintf("  +%d below .60 (unsure)", unsure))
 	}
+}
+
+// headlineRow is one headline claim: "?" below .60, the kind (padded to
+// kw), the unit's symbol, its location and the dim probability.
+func headlineRow(p *page, h model.Headline, kw int) {
+	// Units without a symbol or signature get Text = path, which the
+	// location column already shows.
+	text := h.Text
+	if text == h.Path {
+		text = "(top level)"
+	}
+	p.fitRow(gutter(h.P)+p.st.accent.Render("⚠")+" "+padRight(h.Kind, kw)+"  ", text,
+		fmt.Sprintf("%s:%d", h.Path, h.Line), p.prob(h.P), h.UnitID)
 }
 
 func checkBlock(p *page, a *model.ItemAgg, full bool) {

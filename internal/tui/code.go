@@ -72,10 +72,13 @@ type codePane interface {
 
 	// M5.2, labels on demand (codeview/labels.go): PendingLabels returns
 	// (once) the units whose labels the page asked for; SetLabels hands
-	// them over and LabelsFailed reports a failed fetch.
+	// them over and LabelsFailed reports a failed fetch; LabelsStale says
+	// the answer came for an analysis no longer shown, so the page stops
+	// waiting and asks again.
 	PendingLabels() (itemID string, unitIDs []string, ok bool)
 	SetLabels(itemID string, unitIDs []string, labels []model.Label)
 	LabelsFailed(itemID string, unitIDs []string, err error)
+	LabelsStale(itemID string, unitIDs []string)
 }
 
 // originSetter is implemented by components that map mouse coordinates
@@ -131,6 +134,8 @@ func (p *codeviewPane) SetLabels(itemID string, units []string, ls []model.Label
 func (p *codeviewPane) LabelsFailed(itemID string, units []string, err error) {
 	p.m.LabelsFailed(itemID, units, err)
 }
+
+func (p *codeviewPane) LabelsStale(itemID string, units []string) { p.m.LabelsStale(itemID, units) }
 
 // ContextLine forwards the page's tab-bar context ("#482 · showing 7 of 19
 // chunks") when codeview provides one; "" otherwise.

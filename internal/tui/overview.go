@@ -13,10 +13,13 @@ import (
 	"github.com/fredricw/prt/internal/proto"
 )
 
-// fileStat is one row of the git-facts file list.
+// fileStat is one row of the git-facts file list: the file's counts and,
+// for the list's order and anchors, whether it is owned and its first unit.
 type fileStat struct {
 	path       string
 	adds, dels int
+	owned      bool
+	unit       string
 }
 
 // markdown renders PR descriptions with glamour. Without colour (snapshots,
@@ -451,8 +454,44 @@ func statsFromDetail(fs []model.File) []fileStat {
 		if f.Renamed && f.OldPath != "" {
 			p = f.OldPath + " → " + f.Path
 		}
-		out = append(out, fileStat{path: p, adds: f.Adds, dels: f.Dels})
+		out = append(out, fileStat{path: p, adds: f.Adds, dels: f.Dels, owned: f.Owned})
 	}
+	return out
+}
+
+// gitFiles is the git-facts Files list of d by importance: owned files
+// first, then by changed lines (most first), then by path; each row
+// anchored to the file's first unit (the aggregate's line order when it has
+// the file, else the first of d.Units), so enter or a click opens it in
+// Code.
+func gitFiles(d proto.Detail) []fileStat {
+	first := map[string]string{}
+	if d.Agg != nil {
+		for _, fa := range d.Agg.Files {
+			if len(fa.UnitIDs) > 0 {
+				first[fa.Path] = fa.UnitIDs[0]
+			}
+		}
+	}
+	for _, u := range d.Units {
+		if _, ok := first[u.Path]; !ok {
+			first[u.Path] = u.ID
+		}
+	}
+	out := statsFromDetail(d.Files)
+	for i, f := range d.Files {
+		out[i].unit = first[f.Path]
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		a, b := out[i], out[j]
+		if a.owned != b.owned {
+			return a.owned
+		}
+		if a.adds+a.dels != b.adds+b.dels {
+			return a.adds+a.dels > b.adds+b.dels
+		}
+		return a.path < b.path
+	})
 	return out
 }
 
