@@ -85,15 +85,56 @@ func Diff(old, cur proto.SettingsValues) Changes {
 // "provider:model" specs. The error names the first bad field in words
 // the form can show ("keep_pair_p must be between 0 and 1").
 func Validate(v proto.SettingsValues) error {
-	checks := []func(proto.SettingsValues) error{
+	return validate(v, func(string) bool { return true })
+}
+
+// ValidateChanged is Validate limited to the keys whose value differs from
+// old (the live configuration's values, FromConfig). config.Load accepts
+// values the page's rules reject (concurrency = 0 means the default 4, a
+// blank fast spec disables the tier), so a save that changes only
+// auto_review (`:auto`) or another field must not fail on an unrelated key
+// it writes back unchanged (DECISIONS "M5.1 review fixes 2").
+func ValidateChanged(old, v proto.SettingsValues) error {
+	changed := changedKeys(old, v)
+	return validate(v, func(key string) bool { return changed[key] })
+}
+
+// validate runs every check on the keys check selects.
+func validate(v proto.SettingsValues, check func(key string) bool) error {
+	checks := []func(proto.SettingsValues, func(string) bool) error{
 		validateStrategy, validateIdentity, validateKnobs, validateRank, validateModels,
 	}
-	for _, check := range checks {
-		if err := check(v); err != nil {
+	for _, c := range checks {
+		if err := c(v, check); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// changedKeys names the settings keys whose values differ between a and b.
+func changedKeys(a, b proto.SettingsValues) map[string]bool {
+	ch := map[string]bool{
+		"auto_review":      a.AutoReview != b.AutoReview,
+		"role":             a.Role != b.Role,
+		"owns":             !slices.Equal(a.Owns, b.Owns),
+		"unsure_below":     a.UnsureBelow != b.UnsureBelow,
+		"keep_pair_p":      a.KeepPairP != b.KeepPairP,
+		"embed_min_cosine": a.EmbedMinCosine != b.EmbedMinCosine,
+		"max_group_units":  a.MaxGroupUnits != b.MaxGroupUnits,
+		"concurrency":      a.Concurrency != b.Concurrency,
+		"deep_slots":       a.DeepSlots != b.DeepSlots,
+		"cost_cap_usd":     a.CostCapUSD != b.CostCapUSD,
+		"fast":             a.Fast != b.Fast,
+		"deep":             a.Deep != b.Deep,
+		"embed":            a.Embed != b.Embed,
+	}
+	wa, wb := rankWeights(a.Rank), rankWeights(b.Rank)
+	for i := range wb {
+		// NaN != NaN: an unchanged NaN counts as changed and is rejected.
+		ch[wb[i].key] = i >= len(wa) || wa[i].val != wb[i].val
+	}
+	return ch
 }
 
 // Save writes v into dir/prt.toml and dir/prt.routing.toml (dir is a scope
@@ -124,6 +165,20 @@ func SaveSeeded(dir string, v proto.SettingsValues, seedMain, seedRouting string
 	if err := Validate(v); err != nil {
 		return err
 	}
+	return saveSeeded(dir, v, seedMain, seedRouting)
+}
+
+// SaveSeededChanged is SaveSeeded validating only the keys that differ from
+// old (ValidateChanged); the daemon's save path.
+func SaveSeededChanged(dir string, old, v proto.SettingsValues, seedMain, seedRouting string) error {
+	if err := ValidateChanged(old, v); err != nil {
+		return err
+	}
+	return saveSeeded(dir, v, seedMain, seedRouting)
+}
+
+// saveSeeded is SaveSeeded after validation.
+func saveSeeded(dir string, v proto.SettingsValues, seedMain, seedRouting string) error {
 	v = canonical(v)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("settings: create %s: %w", dir, err)

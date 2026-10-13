@@ -15,9 +15,15 @@ import (
 // maxConcurrency bounds [pipeline] concurrency (queue slots).
 const maxConcurrency = 64
 
+// Each validator below checks the keys of v that check selects (every key
+// for Validate, the changed ones for ValidateChanged).
+
 // validateStrategy checks auto_review: a known strategy, "" included as an
 // error (the form always sends one).
-func validateStrategy(v proto.SettingsValues) error {
+func validateStrategy(v proto.SettingsValues, check func(string) bool) error {
+	if !check("auto_review") {
+		return nil
+	}
 	if strings.TrimSpace(v.AutoReview) == "" {
 		return fmt.Errorf("auto_review must be one of manual, needs-you, needs-you+yours or all")
 	}
@@ -28,9 +34,12 @@ func validateStrategy(v proto.SettingsValues) error {
 }
 
 // validateIdentity checks role and the owns globs.
-func validateIdentity(v proto.SettingsValues) error {
-	if !validText(v.Role) {
+func validateIdentity(v proto.SettingsValues, check func(string) bool) error {
+	if check("role") && !validText(v.Role) {
 		return fmt.Errorf("role must be valid UTF-8 text")
+	}
+	if !check("owns") {
+		return nil
 	}
 	for _, g := range v.Owns {
 		switch {
@@ -44,7 +53,7 @@ func validateIdentity(v proto.SettingsValues) error {
 }
 
 // validateKnobs checks the pipeline and routing numbers.
-func validateKnobs(v proto.SettingsValues) error {
+func validateKnobs(v proto.SettingsValues, check func(string) bool) error {
 	for _, p := range []struct {
 		key string
 		val float64
@@ -53,27 +62,27 @@ func validateKnobs(v proto.SettingsValues) error {
 		{"keep_pair_p", v.KeepPairP},
 		{"embed_min_cosine", v.EmbedMinCosine},
 	} {
-		if !(p.val >= 0 && p.val <= 1) { // also rejects NaN
+		if check(p.key) && !(p.val >= 0 && p.val <= 1) { // also rejects NaN
 			return fmt.Errorf("%s must be between 0 and 1", p.key)
 		}
 	}
 	switch {
-	case v.MaxGroupUnits < 1:
+	case check("max_group_units") && v.MaxGroupUnits < 1:
 		return fmt.Errorf("max_group_units must be at least 1")
-	case v.Concurrency < 1 || v.Concurrency > maxConcurrency:
+	case check("concurrency") && (v.Concurrency < 1 || v.Concurrency > maxConcurrency):
 		return fmt.Errorf("concurrency must be between 1 and %d", maxConcurrency)
-	case v.DeepSlots < 1:
+	case check("deep_slots") && v.DeepSlots < 1:
 		return fmt.Errorf("deep_slots must be at least 1")
-	case !finite(v.CostCapUSD) || v.CostCapUSD <= 0:
+	case check("cost_cap_usd") && (!finite(v.CostCapUSD) || v.CostCapUSD <= 0):
 		return fmt.Errorf("cost_cap_usd must be a number greater than 0")
 	}
 	return nil
 }
 
 // validateRank checks every w_* weight.
-func validateRank(v proto.SettingsValues) error {
+func validateRank(v proto.SettingsValues, check func(string) bool) error {
 	for _, w := range rankWeights(v.Rank) {
-		if !finite(w.val) || w.val < 0 {
+		if check(w.key) && (!finite(w.val) || w.val < 0) {
 			return fmt.Errorf("%s must be a number of at least 0", w.key)
 		}
 	}
@@ -81,11 +90,14 @@ func validateRank(v proto.SettingsValues) error {
 }
 
 // validateModels checks the fast, deep and embed specs.
-func validateModels(v proto.SettingsValues) error {
+func validateModels(v proto.SettingsValues, check func(string) bool) error {
 	for _, m := range []struct{ key, spec string }{{"fast", v.Fast}, {"deep", v.Deep}} {
-		if !validSpec(m.spec) {
+		if check(m.key) && !validSpec(m.spec) {
 			return fmt.Errorf("%s must be \"provider:model\" (e.g. anthropic:claude-haiku-5-5)", m.key)
 		}
+	}
+	if !check("embed") {
+		return nil
 	}
 	kind, _, _ := strings.Cut(v.Embed, ":")
 	if !validSpec(v.Embed) || (kind != "ollama" && kind != "onnx") {
