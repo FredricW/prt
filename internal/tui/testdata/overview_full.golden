@@ -7,12 +7,22 @@ r refactor 50% · f feature 32% · ░ noise 10% · t test 9%
 
 ┌─ Headlines · contract surface ───────────────────────────────────────────────┐
 │   ⚠ breaking   refresh(token) — breaks existing…  web/src/session.ts:12  .86 │
-│ ? ⚠ signature  Refresh(ctx, id) adds a param…  server/api/session.go:20  .55 │
+│ ? ⚠ signature  Refresh(ctx, id) adds a paramet…  …ver/api/session.go:20  .55 │
 └──────────────────────────────────────────────────────────────────────────────┘
 ┌─ Check before approving · hot spots ─────────────────────────────────────────┐
 │ 1 web/src/session.ts:14  token reused after refresh  9.4                     │
 │ 2 server/api/session.go:31  writes session without lock  4.2                 │
 │ 3 web/src/devices.tsx:40  unhandled fetch error path  1.1                    │
+│   +1 more                                                                    │
+└──────────────────────────────────────────────────────────────────────────────┘
+┌─ API endpoints ──────────────────────────────────────────────────────────────┐
+│ not computed — r refreshes                                                   │
+└──────────────────────────────────────────────────────────────────────────────┘
+┌─ Database ───────────────────────────────────────────────────────────────────┐
+│ not computed — r refreshes                                                   │
+└──────────────────────────────────────────────────────────────────────────────┘
+┌─ Feature flags & config ─────────────────────────────────────────────────────┐
+│ not computed — r refreshes                                                   │
 └──────────────────────────────────────────────────────────────────────────────┘
 ┌─ Risk ───────────────────────────────────────────────────────────────────────┐
 │ Risk HIGH (4)                                                                │
@@ -20,10 +30,11 @@ r refactor 50% · f feature 32% · ░ noise 10% · t test 9%
 │   test gap: 1 of 2 risky chunks untested                                     │
 └──────────────────────────────────────────────────────────────────────────────┘
 ┌─ Description fidelity ───────────────────────────────────────────────────────┐
-│   ✓ implemented  Refresh tokens before expiry  .91                           │
-│ ? ✓ implemented  Add a device list page  .58                                 │
+│ ✓ 2 of 3 bullets implemented                                                 │
 │   ✗ not found    Log out other devices                                       │
 │   + undocumented server/api/session.go:20 Refresh                            │
+│ ? ✓ implemented  Add a device list page  .58                                 │
+│   +1 more                                                                    │
 │   coherence: mixed  .72                                                      │
 └──────────────────────────────────────────────────────────────────────────────┘
 ┌─ Minimap · attention per chunk ──────────────────────────────────────────────┐

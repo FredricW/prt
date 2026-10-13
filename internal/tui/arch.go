@@ -95,18 +95,29 @@ func (m Model) codeContext() string {
 	return itemShort(it) + " · " + plural(len(m.detail.Units), "chunk")
 }
 
-// tabContext is the dim context on the right of the tab bar.
+// tabContext is the dim context on the right of the tab bar, after the
+// "↻ updating review · <stage>" note while the item updates (M5.2).
 func (m Model) tabContext() string {
 	if m.detail == nil || m.tab == TabSettings {
 		return ""
 	}
+	var ctx string
 	switch m.tab {
 	case TabCode:
-		return m.codeContext()
+		ctx = m.codeContext()
 	case TabArch:
-		return m.archContext()
+		ctx = m.archContext()
 	case TabPipeline:
-		return itemShort(m.detail.Item)
+		ctx = itemShort(m.detail.Item)
+	default:
+		ctx = overviewContext(m.detail.Item, m.now())
 	}
-	return overviewContext(m.detail.Item, m.now())
+	note := updatingNote(*m.detail)
+	switch {
+	case note == "":
+		return ctx
+	case ctx == "":
+		return note
+	}
+	return note + " · " + ctx
 }

@@ -90,32 +90,49 @@ func (m *Model) threadKey() {
 
 // labelPicker is the `!` picker: first one of the unit's unit-scope labels,
 // then its corrected value. aiID is the ai-draft dismissed with the
-// override ("" for a plain override).
+// override ("" for a plain override). loading is set while the unit's
+// labels are being fetched (M5.2): the picker then says "loading labels…"
+// and only esc cancels.
 type labelPicker struct {
-	unit   string
-	aiID   string
-	labels []model.Label
-	chosen int      // index into labels; -1 while picking the label
-	values []string // corrected values of the chosen label
-	sel    int
+	unit    string
+	aiID    string
+	labels  []model.Label
+	chosen  int      // index into labels; -1 while picking the label
+	values  []string // corrected values of the chosen label
+	sel     int
+	loading bool
 }
 
 // openPicker opens the label picker on unit id. When the unit has no label
 // that can be corrected it shows a note; started on an ai-draft (aiID), it
-// still dismisses the finding, without an override.
+// still dismisses the finding, without an override. Without the unit's
+// labels on the page (M5.2) it opens waiting for them.
 func (m *Model) openPicker(id, aiID string) {
-	ls := pickableLabels(m.c.labels, id)
+	m.picker = &labelPicker{unit: id, aiID: aiID, chosen: -1, loading: true}
+	if m.wantLabels(true, id) {
+		m.fillPicker()
+	}
+	if m.picker != nil {
+		m.vis, m.visRow = nil, -1
+	}
+}
+
+// fillPicker fills the open picker from the page's labels of its unit, or
+// closes it with a note when none can be corrected.
+func (m *Model) fillPicker() {
+	pk := m.picker
+	ls := pickableLabels(m.c.labels, pk.unit)
 	if len(ls) == 0 {
-		if aiID != "" {
-			m.pendingComment = &CommentOp{Kind: CommentOpDismiss, CommentID: aiID}
+		m.picker = nil
+		if pk.aiID != "" {
+			m.pendingComment = &CommentOp{Kind: CommentOpDismiss, CommentID: pk.aiID}
 			m.note = "AI finding dismissed; no labels on its unit to mark wrong"
 			return
 		}
 		m.note = "mark a label wrong: no labels on this unit to correct"
 		return
 	}
-	m.vis, m.visRow = nil, -1
-	m.picker = &labelPicker{unit: id, aiID: aiID, labels: ls, chosen: -1}
+	pk.labels, pk.loading = ls, false
 }
 
 // pickableLabels are unit id's unit-scope labels (no line labels, no
@@ -189,14 +206,16 @@ func (m *Model) pickerKey(k tea.KeyMsg) bool {
 	case key.Matches(k, kk.Close):
 		m.picker = nil
 		m.note = "mark a label wrong: cancelled"
+	case k.String() == "ctrl+c":
+		return false
+	case pk.loading:
+		// Waiting for the unit's labels: nothing to move or pick yet.
 	case key.Matches(k, kk.Down):
 		pk.sel = min(pk.sel+1, n-1)
 	case key.Matches(k, kk.Up):
 		pk.sel = max(pk.sel-1, 0)
 	case key.Matches(k, kk.StripJump):
 		m.pick()
-	case k.String() == "ctrl+c":
-		return false
 	}
 	return true
 }
@@ -236,20 +255,10 @@ func (m Model) pickerView(lay layout, out []string) (string, string, []string) {
 		title = "dismiss AI finding + mark a label wrong — " + m.c.unitLabel(pk.unit)
 	}
 	title += " · " + m.keys.StripJump.Help().Key + " picks · " + m.keys.Close.Help().Key + " cancels"
-	var rows []string
-	if pk.chosen < 0 {
-		rows = append(rows, "which label is wrong?")
-		for _, l := range pk.labels {
-			rows = append(rows, l.Question+"  "+currentValue(l)+" "+ProbText(l.P))
-		}
-	} else {
-		l := pk.labels[pk.chosen]
-		rows = append(rows, l.Question+": "+currentValue(l)+" → corrected value?")
-		rows = append(rows, pk.values...)
-	}
+	rows := m.pickerRows()
 	for i := range rows[1:] {
 		marker := "  "
-		if i == pk.sel {
+		if i == pk.sel && !pk.loading {
 			marker = "▸ "
 		}
 		rows[i+1] = marker + rows[i+1]
@@ -263,4 +272,23 @@ func (m Model) pickerView(lay layout, out []string) (string, string, []string) {
 		out[i] = fit(diffview.Clean(rows[i]), lay.paneW)
 	}
 	return diffview.Clean(title), "", out
+}
+
+// pickerRows are the picker's prompt line and its rows (without markers):
+// the labels, the chosen label's values, or "loading labels…" while the
+// unit's labels are fetched.
+func (m Model) pickerRows() []string {
+	pk := m.picker
+	switch {
+	case pk.loading:
+		return []string{"which label is wrong?", loadingLabels}
+	case pk.chosen < 0:
+		rows := []string{"which label is wrong?"}
+		for _, l := range pk.labels {
+			rows = append(rows, l.Question+"  "+currentValue(l)+" "+ProbText(l.P))
+		}
+		return rows
+	}
+	l := pk.labels[pk.chosen]
+	return append([]string{l.Question + ": " + currentValue(l) + " → corrected value?"}, pk.values...)
 }

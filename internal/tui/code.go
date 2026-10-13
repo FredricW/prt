@@ -69,6 +69,13 @@ type codePane interface {
 	SetDiffLayout(l codeview.Layout) bool
 	CurrentUnit() (model.ChangeUnit, bool)
 	Note() string
+
+	// M5.2, labels on demand (codeview/labels.go): PendingLabels returns
+	// (once) the units whose labels the page asked for; SetLabels hands
+	// them over and LabelsFailed reports a failed fetch.
+	PendingLabels() (itemID string, unitIDs []string, ok bool)
+	SetLabels(itemID string, unitIDs []string, labels []model.Label)
+	LabelsFailed(itemID string, unitIDs []string, err error)
 }
 
 // originSetter is implemented by components that map mouse coordinates
@@ -115,6 +122,15 @@ func (p *codeviewPane) DiffLayout() codeview.Layout               { return p.m.D
 func (p *codeviewPane) SetDiffLayout(l codeview.Layout) bool      { return p.m.SetDiffLayout(l) }
 func (p *codeviewPane) CurrentUnit() (model.ChangeUnit, bool)     { return p.m.CurrentUnit() }
 func (p *codeviewPane) Note() string                              { return p.m.Note() }
+
+func (p *codeviewPane) PendingLabels() (string, []string, bool) { return p.m.PendingLabels() }
+func (p *codeviewPane) SetLabels(itemID string, units []string, ls []model.Label) {
+	p.m.SetLabels(itemID, units, ls)
+}
+
+func (p *codeviewPane) LabelsFailed(itemID string, units []string, err error) {
+	p.m.LabelsFailed(itemID, units, err)
+}
 
 // ContextLine forwards the page's tab-bar context ("#482 · showing 7 of 19
 // chunks") when codeview provides one; "" otherwise.

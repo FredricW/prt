@@ -49,6 +49,10 @@ func (m *Model) sendComment() tea.Cmd {
 		m.note = "comment failed: " + err.Error()
 		return nil
 	}
+	if op.Override != nil {
+		// The overridden label changes: fetch the unit's labels afresh.
+		m.dropUnitLabels(id, op.Override.UnitID)
+	}
 	return cmd
 }
 

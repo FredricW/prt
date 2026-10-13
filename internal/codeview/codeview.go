@@ -268,6 +268,13 @@ type Model struct {
 	// last `e`/`o` (PendingOpen).
 	diffLayout  Layout
 	pendingOpen *OpenRequest
+
+	// Labels on demand (M5.2, labels.go): labelReq holds the units whose
+	// labels the page asked for since the last PendingLabels, labelWait the
+	// units handed out and not answered yet, labelErr the units whose fetch
+	// failed (with the error text).
+	labelReq, labelWait map[string]bool
+	labelErr            map[string]string
 }
 
 // New builds an empty component. r may be nil (lipgloss's default
@@ -324,9 +331,15 @@ func (m *Model) SetOrigin(x, y int) { m.ox, m.oy = x, y }
 // its line again), the thread panel while its thread exists, the label
 // picker while its unit exists and a V selection while its anchor is
 // drawn; another item closes them all.
+//
+// Labels (M5.2): a detail loaded without labels (LabelsOmitted) starts with
+// none on the page; the overlay, the label picker and the by-change roles
+// ask for the units they need again (PendingLabels), and the root hands
+// them over with SetLabels.
 func (m *Model) SetDetail(d proto.Detail) {
 	m.setDetail(d)
 	m.settleComments()
+	m.rewantLabels()
 	m.keepCursorVisible()
 }
 
@@ -409,6 +422,7 @@ func (m *Model) resetView() {
 	m.stripFocus, m.stripSel, m.stripOff = false, 0, 0
 	m.pendingComment = nil
 	m.pendingOpen = nil
+	m.labelReq, m.labelWait, m.labelErr = map[string]bool{}, map[string]bool{}, map[string]string{}
 }
 
 // Clear empties the component (selection changed, detail loading). Filter
@@ -429,6 +443,7 @@ func (m *Model) rebuild() {
 		m.sel = 0
 	}
 	if m.byChange() {
+		m.wantGroupLabels()
 		m.p = m.buildGroupPane(m.sel)
 	} else {
 		m.p = m.buildPane(m.sel)

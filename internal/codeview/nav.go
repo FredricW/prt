@@ -359,13 +359,18 @@ func (m *Model) openOverlay() {
 		return
 	}
 	m.overlay, m.overlayUnit, m.overlayOff = true, u.ID, 0
+	m.wantLabels(true, u.ID)
 }
 
-// overlayLines is the overlay body for the pane width.
+// overlayLines is the overlay body for the pane width; while the unit's
+// labels are being fetched (M5.2) it is the title and "loading labels…".
 func (m *Model) overlayLines(width int) []string {
 	u := m.c.units[m.overlayUnit]
 	if u == nil {
 		return nil
+	}
+	if !m.c.labelsKnown(u.ID) {
+		return []string{overlayTitle(*u, width), m.labelsNote(u.ID)}
 	}
 	return strings.Split(strings.TrimSuffix(RawLabelsText(*u, m.c.labels, width), "\n"), "\n")
 }

@@ -32,6 +32,10 @@ type content struct {
 	// and filters apply only then.
 	labelled      bool
 	labelsMissing bool
+	// labelsOmitted is Detail.LabelsOmitted: labels are fetched on demand
+	// (M5.2) and known lists the units whose labels are on the page.
+	labelsOmitted bool
+	known         map[string]bool
 	// anyOwned is true when at least one file is owned; without owned files
 	// the "mine" filter is ignored (it would hide everything).
 	anyOwned bool
@@ -95,6 +99,9 @@ func buildContent(d proto.Detail) content {
 		aggs:      map[string]*model.UnitAgg{},
 		labels:    d.Labels,
 		lineCache: map[string][]diff.Line{},
+
+		labelsOmitted: d.LabelsOmitted,
+		known:         map[string]bool{},
 	}
 	for i := range d.Units {
 		c.units[d.Units[i].ID] = &d.Units[i]

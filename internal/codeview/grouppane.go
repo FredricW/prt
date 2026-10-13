@@ -135,12 +135,19 @@ func (m *Model) unitTitle(id string, w int) string {
 
 // unitRole is a unit's place in the review order: "interface" (its
 // interface label says yes), "test" (its file's role is test), else
-// "caller"; "" without labels.
+// "caller"; "" without labels, and "" (or "test") while the unit's labels
+// are being fetched (M5.2), so it never claims "caller" too early.
 func (c *content) unitRole(id string) string {
 	if !c.labelled {
 		return ""
 	}
 	u := c.units[id]
+	if !c.labelsKnown(id) {
+		if c.roles[u.Path] == model.RoleTest {
+			return "test"
+		}
+		return ""
+	}
 	for _, l := range c.labels {
 		if l.UnitID == id && l.Line == 0 && l.Question == model.QInterface && currentValue(l) == model.LabelYes {
 			return "interface"

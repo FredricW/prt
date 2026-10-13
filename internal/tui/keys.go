@@ -73,6 +73,11 @@ type KeyMap struct {
 	// (ctrl+o) resumes the selected item; Settings (,) opens the settings
 	// page.
 	Stop, StopAll, Resume, Settings key.Binding
+	// Overview blocks (M5.2): NextBlock (J, ]) and PrevBlock (K, [) move
+	// the block focus; OpenBlock (enter, space) opens the focused block's
+	// full list. Without a focused block enter jumps to the unit at the top
+	// and space pages down as before.
+	NextBlock, PrevBlock, OpenBlock key.Binding
 	// Confirm prompts.
 	Yes, No key.Binding
 }
@@ -150,6 +155,9 @@ func DefaultKeyMap() KeyMap {
 		StopAll:        b("stop all analysis", "ctrl+k"),
 		Resume:         b("resume analysis", "ctrl+o"),
 		Settings:       b("settings", ","),
+		NextBlock:      b("next block", "J", "]"),
+		PrevBlock:      b("previous block", "K", "["),
+		OpenBlock:      b("open block list", "enter", " "),
 		Yes:            b("yes", "y", "Y"),
 		No:             b("no", "n", "N", "esc"),
 	}
@@ -189,6 +197,7 @@ func (k *KeyMap) actions() map[string]*key.Binding {
 		"comment": &k.Comment, "visual": &k.Visual, "save_draft": &k.SaveDraft, "accept": &k.Accept,
 		"dismiss": &k.Dismiss, "override": &k.OverrideLabel, "thread": &k.Thread, "resolve": &k.Resolve,
 		"stop": &k.Stop, "stop_all": &k.StopAll, "resume": &k.Resume, "settings": &k.Settings,
+		"next_block": &k.NextBlock, "prev_block": &k.PrevBlock, "open_block": &k.OpenBlock,
 	}
 }
 
@@ -387,6 +396,7 @@ func (k KeyMap) overviewHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Down, k.Up, k.PageDown, k.PageUp, k.HalfPageDown, k.HalfPageUp, k.Top, k.Bottom},
 		{k.jump(), k.RawLabels, k.Weights},
+		{k.NextBlock, k.PrevBlock, k.OpenBlock},
 		k.reviewKeys(),
 		k.navKeys(),
 		k.controlKeys(),
@@ -517,5 +527,19 @@ func (k KeyMap) mainHints(tab Tab, component []key.Binding) []theme.Hint {
 		return append(append(hs, k.tabsHint()), theme.HintsOf(k.Help, k.Quit)...)
 	}
 	hs := []theme.Hint{pairHint(k.Down, k.Up, "scroll"), k.tabsHint()}
-	return append(hs, theme.HintsOf(k.jump(), k.RawLabels, k.Weights, k.Approve, k.Submit, k.Pipeline, k.Back, k.Help, k.Quit)...)
+	hs = append(hs, theme.HintsOf(k.jump())...)
+	hs = append(hs, pairHint(k.NextBlock, k.PrevBlock, "blocks"))
+	return append(hs, theme.HintsOf(k.RawLabels, k.Weights, k.Approve, k.Submit, k.Pipeline, k.Back, k.Help, k.Quit)...)
+}
+
+// blockHints is the Overview's hint bar while a block is focused (M5.2).
+func (k KeyMap) blockHints() []theme.Hint {
+	return append([]theme.Hint{pairHint(k.NextBlock, k.PrevBlock, "blocks")},
+		theme.HintsOf(relabel(k.OpenBlock, "full list"), k.RawLabels, relabel(k.Back, "unfocus"), k.Help, k.Quit)...)
+}
+
+// listHints is the hint bar of a block's full-list overlay (M5.2).
+func (k KeyMap) listHints() []theme.Hint {
+	return append([]theme.Hint{pairHint(k.Down, k.Up, "move"), pairHint(k.NextBlock, k.PrevBlock, "other blocks")},
+		theme.HintsOf(relabel(k.Focus, "jump to unit"), relabel(k.Back, "close"))...)
 }

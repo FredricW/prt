@@ -15,17 +15,27 @@ r refactor 50% · f feature 32% · ░ noise 10% · t test 9%
 │   c3 wip                                                                               │
 │   d4 tests                                                                             │
 │   e5 fmt                                                                               │
-│   … 2 more                                                                             │
+│   +2 more                                                                              │
 │ Suggested PR title: Refresh sessions before expiry  ai·from group names                │
 └────────────────────────────────────────────────────────────────────────────────────────┘
 ┌─ Headlines · contract surface ─────────────────────────────────────────────────────────┐
 │   ⚠ breaking   refresh(token) — breaks existing callers  web/src/session.ts:12  .86    │
 │ ? ⚠ signature  Refresh(ctx, id) adds a parameter  server/api/session.go:20  .55        │
 └────────────────────────────────────────────────────────────────────────────────────────┘
+┌─ API endpoints ────────────────────────────────────────────────────────────────────────┐
+│ not computed — r refreshes                                                             │
+└────────────────────────────────────────────────────────────────────────────────────────┘
+┌─ Database ─────────────────────────────────────────────────────────────────────────────┐
+│ not computed — r refreshes                                                             │
+└────────────────────────────────────────────────────────────────────────────────────────┘
+┌─ Feature flags & config ───────────────────────────────────────────────────────────────┐
+│ not computed — r refreshes                                                             │
+└────────────────────────────────────────────────────────────────────────────────────────┘
 ┌─ Check before approving · hot spots ───────────────────────────────────────────────────┐
 │ 1 web/src/session.ts:14  token reused after refresh  9.4                               │
 │ 2 server/api/session.go:31  writes session without lock  4.2                           │
 │ 3 web/src/devices.tsx:40  unhandled fetch error path  1.1                              │
+│   +1 more                                                                              │
 └────────────────────────────────────────────────────────────────────────────────────────┘
 ┌─ Risk ─────────────────────────────────────────────────────────────────────────────────┐
 │ Risk HIGH (4)                                                                          │

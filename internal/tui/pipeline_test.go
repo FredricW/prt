@@ -253,9 +253,11 @@ func TestPipelineSpinnerAndReloads(t *testing.T) {
 	if len(p.nows) != n+1 {
 		t.Errorf("tick did not set the page clock (%d → %d)", n, len(p.nows))
 	}
+	// A finished-stage patch reloads the detail after the debounce (M5.2).
+	before := len(p.details)
 	m, cmd := updateCmd(t, m, eventMsg(proto.Event{Type: proto.EventPatch, ItemID: "pr:1", Stage: model.StageReview}))
-	m = feed[detailMsg](t, m, cmd)
-	if len(p.details) == 0 || p.details[len(p.details)-1] != "pr:1" {
+	m = settle(t, m, cmd)
+	if len(p.details) <= before || p.details[len(p.details)-1] != "pr:1" {
 		t.Errorf("patch did not refresh the page: %v", p.details)
 	}
 	clears := p.clears

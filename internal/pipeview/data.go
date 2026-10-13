@@ -97,15 +97,40 @@ type row struct {
 	placeholder bool
 }
 
-// buildRows orders d.Reviews by d.Groups (rows of unknown groups follow in
-// their own order) and resolves names.
+// liveRows reports whether the routing table shows the run in flight's
+// rows (M5.2, stale-while-revalidate): the daemon serves the last complete
+// analysis (Run.Snapshot) and the live routing rows in Run.Reviews.
+func liveRows(d proto.Detail) bool {
+	return d.Run != nil && d.Run.Snapshot && d.Run.Reviews != nil
+}
+
+// updatingNote is the routing box's dim line while it shows live rows:
+// "updating · <stage>" ("updating" before the run's first stage).
+func updatingNote(d proto.Detail) string {
+	if !liveRows(d) {
+		return ""
+	}
+	if d.Run.Stage == "" {
+		return "updating"
+	}
+	return "updating · " + string(d.Run.Stage)
+}
+
+// buildRows orders the routing rows (d.Reviews, or the live Run.Reviews
+// while a run is in flight over a snapshot) by d.Groups (rows of unknown
+// groups follow in their own order, named by their GroupName) and
+// resolves names.
 func buildRows(d proto.Detail) []row {
 	groups := make(map[string]model.Group, len(d.Groups))
 	pos := make(map[string]int, len(d.Groups))
 	for i, g := range d.Groups {
 		groups[g.ID], pos[g.ID] = g, i
 	}
-	revs := append([]model.Review(nil), d.Reviews...)
+	src := d.Reviews
+	if liveRows(d) {
+		src = d.Run.Reviews
+	}
+	revs := append([]model.Review(nil), src...)
 	sort.SliceStable(revs, func(i, j int) bool {
 		pi, iok := pos[revs[i].GroupID]
 		pj, jok := pos[revs[j].GroupID]

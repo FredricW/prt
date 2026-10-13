@@ -189,6 +189,11 @@ func (m *Model) discardPreview() tea.Cmd {
 	id := m.previewID
 	m.previewID, m.preview = "", nil
 	m.previewSeq++
+	if l, ok := m.loads.live[id]; ok {
+		l.cancel()
+		delete(m.loads.live, id)
+	}
+	m.cache.drop(id)
 	return m.removePreviewCmd(id)
 }
 
@@ -200,13 +205,55 @@ func (m *Model) removePreviewCmd(id string) tea.Cmd {
 	}
 }
 
-// loadPreview reads the previewed item's detail.
+// loadPreview reads the previewed item's detail (without labels: the
+// preview shows no raw labels).
 func (m Model) loadPreview(id string, seq int) tea.Cmd {
 	c := m.client
 	return func() tea.Msg {
-		d, err := c.Detail(context.Background(), id)
+		d, err := c.DetailOf(context.Background(), proto.DetailParams{ItemID: id, NoLabels: true})
 		return previewDetailMsg{seq: seq, d: d, err: err}
 	}
+}
+
+// showPreview starts showing item id as the preview: its cached detail at
+// once (M5.2), then a fresh load through the shared loader.
+func (m *Model) showPreview(id string) tea.Cmd {
+	m.note = ""
+	m.previewID, m.preview = id, nil
+	if d, ok := m.cache.get(id); ok {
+		m.preview = &d
+		m.renderPreview()
+	}
+	return m.startLoad(id)
+}
+
+// onPreviewDetail applies the preview's latest detail (cached), then the
+// follow-up load when the preview was asked for again meanwhile.
+func (m Model) onPreviewDetail(msg previewDetailMsg) (Model, tea.Cmd) {
+	id := m.previewID
+	if msg.d.Item.ID != "" {
+		id = msg.d.Item.ID
+	}
+	dirty := m.landed(id, msg.seq)
+	if msg.seq != m.previewSeq || m.previewID == "" || id != m.previewID {
+		m.loads.dropped++
+		return m, nil
+	}
+	if msg.err != nil {
+		m.note = "preview failed: " + msg.err.Error()
+	} else {
+		d := msg.d
+		if prev, ok := m.cache.peek(id); ok {
+			d = keepAnalysis(prev, d)
+		}
+		m.cache.put(d)
+		m.preview = &d
+		m.renderPreview()
+	}
+	if dirty {
+		return m, m.startLoad(id)
+	}
+	return m, nil
 }
 
 // onSearchMsg handles the answers of the search-related daemon calls; ok is
@@ -263,20 +310,10 @@ func (m Model) onSearchMsg(msg tea.Msg) (Model, tea.Cmd, bool) {
 		if !m.search.Active() { // closed meanwhile: drop it again
 			return m, m.removePreviewCmd(msg.item.ID), true
 		}
-		m.note = ""
-		m.previewID, m.preview = msg.item.ID, nil
-		m.previewSeq++
-		return m, m.loadPreview(msg.item.ID, m.previewSeq), true
+		return m, m.showPreview(msg.item.ID), true
 	case previewDetailMsg:
-		if msg.seq != m.previewSeq || m.previewID == "" {
-			return m, nil, true
-		}
-		if msg.err != nil {
-			m.note = "preview failed: " + msg.err.Error()
-			return m, nil, true
-		}
-		m.preview = &msg.d
-		m.renderPreview()
+		next, cmd := m.onPreviewDetail(msg)
+		return next, cmd, true
 	default:
 		return m, nil, false
 	}

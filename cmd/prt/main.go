@@ -152,9 +152,13 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 
 	var client daemon.Client
+	// attached: the TUI talks to a running `prt daemon`, which runs
+	// discovery itself, so the TUI's refresh tick only re-reads the items.
+	attached := false
 	if !o.noDaemon && !o.snapshot {
 		if c, err := daemon.Dial(ctx, daemon.SocketPath(env.gitDir)); err == nil {
 			client = c
+			attached = true
 		} else {
 			env.deps.Log.Info("no daemon; running in-process", "err", err)
 		}
@@ -179,6 +183,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		Repo:         env.repoLabel,
 		Role:         env.cfg.User.Role,
 		Root:         env.root,
+		ReloadOnTick: attached,
 	}
 	if km, err := tui.KeyMapFromConfig(env.cfg.Keys); err != nil {
 		env.deps.Log.Warn("bad [keys] in prt.toml; using defaults", "err", err)

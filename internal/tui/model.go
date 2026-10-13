@@ -90,6 +90,11 @@ type Options struct {
 	// EditFile opens a file at a line for the Code page's `e`; nil runs
 	// `$EDITOR +<line> <path>` (fallback vi) through tea.ExecProcess (M5).
 	EditFile EditFileFunc
+	// ReloadOnTick makes the refresh tick only re-read the items instead of
+	// running discovery (M5.2): set it when a daemon is attached, since the
+	// daemon runs discovery itself. The default discovers on every tick
+	// (--no-daemon).
+	ReloadOnTick bool
 }
 
 // Messages.
@@ -98,9 +103,13 @@ type (
 		items []model.Item
 		err   error // discovery error; items are still the stored ones
 	}
+	// detailMsg answers a Detail call for item id ("" means d.Item.ID);
+	// only the shown item's latest (seq == detailSeq) is applied.
 	detailMsg struct {
 		seq int
+		id  string
 		d   proto.Detail
+		err error
 	}
 	eventMsg       proto.Event
 	errMsg         struct{ err error }
@@ -153,6 +162,14 @@ type Model struct {
 	detail        *proto.Detail
 	detailSeq     int
 	detailPending bool
+	// cache keeps the last Detail per item, loads the Detail calls in
+	// flight and the debounce of event-triggered reloads, labels the labels
+	// fetched on demand (M5.2; loader.go, labels.go). debounce is
+	// reloadDebounce (tests may shorten it).
+	cache    *detailCache
+	loads    *loadState
+	labels   *labelState
+	debounce time.Duration
 	// reloadPending is set while an event-triggered list reload is in
 	// flight, so a burst of item events causes one reload, not one each.
 	reloadPending, reloadAgain bool
@@ -268,6 +285,10 @@ func NewWithOptions(c daemon.Client, r *lipgloss.Renderer, o Options) Model {
 		stages:     map[string]model.Stage{},
 		runLogs:    map[string][]model.RunLog{},
 		viewed:     map[string]bool{},
+		cache:      newDetailCache(detailCacheSize),
+		loads:      newLoadState(),
+		labels:     newLabelState(),
+		debounce:   reloadDebounce,
 		strip:      pipeview.StageStrip,
 		width:      120,
 		height:     40,
@@ -341,17 +362,6 @@ func (m *Model) queueReload() tea.Cmd {
 	}
 	m.reloadPending = true
 	return m.reloadItems()
-}
-
-func (m Model) loadDetail(id string, seq int) tea.Cmd {
-	c := m.client
-	return func() tea.Msg {
-		d, err := c.Detail(context.Background(), id)
-		if err != nil {
-			return errMsg{fmt.Errorf("load %s: %w", id, err)}
-		}
-		return detailMsg{seq: seq, d: d}
-	}
 }
 
 func (m Model) listen() tea.Cmd {
@@ -432,18 +442,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case reloadedMsg:
 		return m.onReloaded(msg)
 	case detailMsg:
-		if msg.seq != m.detailSeq {
-			return m, nil
-		}
-		m.applyDetail(msg.d)
-		m.syncFocus()
-		return m, m.markViewed()
+		return m.onDetail(msg)
+	case reloadTickMsg:
+		return m.onReloadTick(msg)
+	case labelsMsg:
+		return m.onLabels(msg)
 	case eventMsg:
 		return m.onEvent(proto.Event(msg))
 	case spinner.TickMsg:
 		return m.onSpin(msg)
 	case refreshTickMsg:
-		return m, tea.Batch(m.discover(), m.scheduleRefresh())
+		return m, tea.Batch(m.tickCmd(), m.scheduleRefresh())
 	case checkoutMsg:
 		return m.onCheckout(msg), nil
 	case groupEditedMsg:
@@ -566,10 +575,13 @@ func afterInput(tm tea.Model, cmd tea.Cmd) (tea.Model, tea.Cmd) {
 }
 
 // handleMouse implements the spec's mouse support: the wheel scrolls the
-// pane under the pointer, a left click on a picker row selects that item;
-// clicks in the search results, the Code, Pipeline and Architecture pages
-// go to those components. Row 0 is the header line; the sidebar box spans
-// rows 1..body with its list starting at row 2.
+// pane under the pointer, a left click on a picker row selects that item,
+// a click on a tab selects that tab (tabbar.go; the tab bar never passes a
+// click on), clicks in the search results, the Code, Pipeline and
+// Architecture pages go to those components, and on the Overview a click
+// opens a row's unit, focuses a box or opens a "+N more" list. Row 0 is
+// the header line; the sidebar box spans rows 1..body with its list
+// starting at row 2; row 1 of the main pane is the tab bar.
 func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	// The settings page is keyboard-only (a Huh form); the mouse is ignored
 	// while it is open.
@@ -591,23 +603,23 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m.pickerMouse(msg, row, wheel)
 	case msg.Y < 1:
 		return m, nil
+	case msg.Y == 1 && !wheel:
+		// The main pane starts after the sidebar box and a gap.
+		return m.tabBarMouse(msg, msg.X-sw-2)
 	case m.previewing():
 		wheelOverview(&m.previewOV, msg, wheel)
 	case m.tab == TabCode:
-		return m, m.code.Update(msg)
+		// A click on a group may ask for its units' labels (M5.2).
+		cmd := m.code.Update(msg)
+		return m, batch(cmd, m.codeLabels())
 	case m.tab == TabPipeline:
 		return m, m.pipe.Update(msg)
 	case m.tab == TabArch:
 		cmd := m.arch.Update(msg)
 		return m, batch(cmd, m.archJump())
-	case msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress && !m.overview.raw:
-		// Rows 0 and 1 are the header and the tab bar; a click on an
-		// anchored Overview line (minimap cell, headline, …) opens that unit
-		// in Code. The main pane starts after the sidebar box and a gap.
-		if id, ok := m.overview.clickAt(m.overview.vp.YOffset+msg.Y-2, msg.X-sw-2); ok && m.detail != nil {
-			m.focus = FocusMain
-			m.jumpToUnit(id)
-		}
+	case msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress:
+		// Rows 0 and 1 are the header and the tab bar.
+		return m.overviewClick(msg.X-sw-2, msg.Y-2)
 	default:
 		wheelOverview(&m.overview, msg, wheel)
 	}
@@ -685,39 +697,6 @@ func (m Model) onItems(msg itemsMsg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
-func (m Model) onEvent(e proto.Event) (tea.Model, tea.Cmd) {
-	cmds := []tea.Cmd{m.listen()}
-	switch e.Type {
-	case proto.EventItem:
-		if e.Item != nil {
-			m.picker.patch(*e.Item)
-		}
-		cmds = append(cmds, m.queueReload(), m.ensureSpin())
-	case proto.EventRemove:
-		cmds = append(cmds, m.queueReload())
-	case proto.EventStage:
-		if e.Stage != "" {
-			m.stages[e.ItemID] = e.Stage
-		}
-		if e.RunLog != nil {
-			m.runLogs[e.ItemID] = upsertRunLog(m.runLogs[e.ItemID], *e.RunLog)
-		}
-	case proto.EventLog:
-		m.logNote = e.Note
-	case proto.EventSettings:
-		cmds = append(cmds, m.onSettingsEvent())
-	}
-	if it, ok := m.picker.selected(); ok && it.ID == e.ItemID && e.Type != proto.EventRemove {
-		m.detailSeq++
-		cmds = append(cmds, m.loadDetail(it.ID, m.detailSeq))
-	}
-	if m.previewID != "" && e.ItemID == m.previewID && e.Type != proto.EventRemove {
-		m.previewSeq++
-		cmds = append(cmds, m.loadPreview(m.previewID, m.previewSeq))
-	}
-	return m, tea.Batch(cmds...)
-}
-
 func (m Model) onCheckout(msg checkoutMsg) Model {
 	switch {
 	case msg.err != nil:
@@ -739,54 +718,6 @@ func (m *Model) ensureSpin() tea.Cmd {
 	}
 	m.spinning = true
 	return m.spin.Tick
-}
-
-// selectionChanged clears the main pane and loads the selected item's
-// detail. Each load carries a sequence number; only the latest is applied,
-// so fast cursor movement never shows a stale item.
-func (m *Model) selectionChanged() tea.Cmd {
-	m.detail = nil
-	m.detailSeq++
-	m.code.Clear()
-	m.pipe.Clear()
-	m.arch.Clear()
-	m.overview.setContent("", nil)
-	m.overview.closeRaw()
-	it, ok := m.picker.selected()
-	if !ok {
-		m.detailPending = false
-		return nil
-	}
-	m.detailPending = true
-	return m.loadDetail(it.ID, m.detailSeq)
-}
-
-// applyDetail shows d in the main pane. A reload of the same item keeps the
-// Overview scroll position; the Code and Architecture pages keep their own
-// state (SetDetail contracts).
-func (m *Model) applyDetail(d proto.Detail) {
-	same := m.detail != nil && m.detail.Item.ID == d.Item.ID
-	m.code.SetDetail(d)
-	m.pipe.SetDetail(d)
-	m.arch.SetDetail(d)
-	m.detail = &d
-	m.detailPending = false
-	if d.Agg != nil && d.Agg.Branch != nil && d.Agg.Branch.SupersededBy > 0 {
-		m.superseded[d.Item.ID] = d.Agg.Branch.SupersededBy
-	}
-	y := m.overview.vp.YOffset
-	m.renderOverview()
-	if same {
-		m.overview.vp.SetYOffset(y)
-	}
-}
-
-func (m *Model) renderOverview() {
-	if m.detail == nil {
-		return
-	}
-	_, mw, _ := m.dims()
-	m.overview.setPage(overviewPageWith(m.st, m.md, *m.detail, m.now(), mw, m.ovOpts()))
 }
 
 // jumpToUnit switches to the Code tab and focuses unit id there.
@@ -827,7 +758,7 @@ func (m Model) handleKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 				next.layoutNote()
 			}
 			cmd := batch(next.sendGroupEdit(), next.sendReReview(), next.pipeActionCmd(), next.sendComment(),
-				next.codeOpenCmd(), next.archJump())
+				next.codeOpenCmd(), next.archJump(), next.codeLabels())
 			return next, cmd
 		}
 	}
@@ -846,7 +777,7 @@ func (m Model) handleKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.focus == FocusPicker {
 		return m.handlePickerKey(k)
 	}
-	return m.handleMainKey(k), nil
+	return m.handleMainKey(k)
 }
 
 // routeMain gives the focused main pane the first look at k. The Code page
@@ -876,35 +807,13 @@ func (m Model) routeMain(k tea.KeyMsg) (Model, bool) {
 	case m.overview.raw:
 		m.handleRawKey(k)
 		return m, true
+	case m.tab == TabOverview && m.overview.focus != "" && key.Matches(k, m.keys.Back):
+		// esc first clears the block focus, then returns to the picker.
+		m.overview.focus = ""
+		m.redrawOverview()
+		return m, true
 	}
 	return m, false
-}
-
-// handleRawKey drives the Overview's overlays: L (raw labels) or w (urgency
-// weights) or esc closes the open one, scroll keys scroll it, anything else
-// is ignored.
-func (m *Model) handleRawKey(k tea.KeyMsg) {
-	km, vp := m.keys, &m.overview.rawVP
-	closer := km.RawLabels
-	if m.overview.weights {
-		closer = km.Weights
-	}
-	switch {
-	case key.Matches(k, closer), key.Matches(k, km.Back):
-		m.overview.closeRaw()
-	case key.Matches(k, km.Down):
-		vp.ScrollDown(1)
-	case key.Matches(k, km.Up):
-		vp.ScrollUp(1)
-	case key.Matches(k, km.PageDown):
-		vp.PageDown()
-	case key.Matches(k, km.PageUp):
-		vp.PageUp()
-	case key.Matches(k, km.Top):
-		vp.GotoTop()
-	case key.Matches(k, km.Bottom):
-		vp.GotoBottom()
-	}
 }
 
 // handleGlobalKey handles keys that work in any pane; ok is false when k is
@@ -1030,17 +939,24 @@ func (m Model) handlePickerKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 // handleMainKey handles Overview keys (Code, Pipeline and Architecture keys
-// went to their components in routeMain).
-func (m Model) handleMainKey(k tea.KeyMsg) Model {
+// went to their components in routeMain): the block keys first (blocks.go),
+// then the overlays, the jump to the unit at the viewport top and
+// scrolling.
+func (m Model) handleMainKey(k tea.KeyMsg) (Model, tea.Cmd) {
 	if m.tab != TabOverview {
-		return m
+		return m, nil
+	}
+	if m.detail != nil {
+		if cmd, ok := m.overviewBlockKey(k); ok {
+			return m, cmd
+		}
 	}
 	km, vp := m.keys, &m.overview.vp
 	switch {
 	case key.Matches(k, km.Weights):
 		if m.detail == nil {
 			m.note = "no item loaded"
-			return m
+			return m, nil
 		}
 		_, mw, _ := m.dims()
 		m.overview.openWeights(m.st.title.Render("Urgency weights") + "  " +
@@ -1049,18 +965,16 @@ func (m Model) handleMainKey(k tea.KeyMsg) Model {
 		id, ok := m.overview.anchor()
 		if !ok || m.detail == nil {
 			m.note = "no unit here"
-			return m
+			return m, nil
 		}
 		m.jumpToUnit(id)
 	case key.Matches(k, km.RawLabels):
 		id, ok := m.overview.anchor()
 		if !ok || m.detail == nil {
 			m.note = "no unit here"
-			return m
+			return m, nil
 		}
-		_, mw, _ := m.dims()
-		m.overview.openRaw(m.st.title.Render("Raw labels") + "  " + m.st.dim.Render("esc or L closes") + "\n\n" +
-			rawLabelsFor(*m.detail, id, mw-2))
+		return m, m.openRawLabels(id)
 	case key.Matches(k, km.Down):
 		vp.ScrollDown(1)
 	case key.Matches(k, km.Up):
@@ -1078,7 +992,7 @@ func (m Model) handleMainKey(k tea.KeyMsg) Model {
 	case key.Matches(k, km.Bottom):
 		vp.GotoBottom()
 	}
-	return m
+	return m, nil
 }
 
 // ---- layout and view ------------------------------------------------------
@@ -1208,32 +1122,6 @@ func spread(left, right string, w int) string {
 	return theme.Spread(left, right, w)
 }
 
-// viewTabs is the tab bar ("1 Overview  2 Code  3 Architecture", the
-// active one bracketed without colour) with the tab's dim context on the
-// right.
-func (m Model) viewTabs(w int) string {
-	th, k := m.st.th, m.keys
-	tab := func(t Tab, label string) string { return th.Tab(label, m.tab == t) }
-	focus := "  "
-	if m.focus == FocusMain {
-		focus = "▸ "
-	}
-	s := focus + tab(TabOverview, k.Overview.Help().Key+" Overview") + " " + tab(TabCode, k.Code.Help().Key+" Code") + " " +
-		tab(TabArch, k.Architecture.Help().Key+" Architecture")
-	switch m.tab {
-	case TabPipeline:
-		s += " " + tab(TabPipeline, k.Pipeline.Help().Key+" Pipeline")
-	case TabSettings:
-		s += " " + tab(TabSettings, k.Settings.Help().Key+" Settings")
-	}
-	// The tabs win: the context is cut to the room left after them.
-	room := w - ansi.StringWidth(s) - 2
-	if room < 4 {
-		return truncate(s, w)
-	}
-	return spread(s, m.st.dim.Render(truncate(m.tabContext(), room)), w)
-}
-
 // viewHeader is the top line: "prt · <repo> · N PRs · N branches · role:
 // <role>" on the left; the sort mode (when not urgency), the multi-select
 // count, busy items, drafts and the daemon's log note dim on the right.
@@ -1299,6 +1187,8 @@ func (m Model) viewStatus() string {
 		s = m.cmd.View()
 	case m.note != "":
 		s = m.note
+	case m.tab == TabOverview && m.focus != FocusPicker && m.overview.list != nil:
+		s = m.st.th.Hints(m.keys.listHints(), m.width)
 	case m.tab == TabOverview && m.focus != FocusPicker && m.overview.raw && m.overview.weights:
 		s = m.st.dim.Render("urgency weights · esc or " + m.keys.Weights.Help().Key + " closes")
 	case m.tab == TabOverview && m.focus != FocusPicker && m.overview.raw:
@@ -1325,6 +1215,8 @@ func (m Model) hints() []theme.Hint {
 		return m.keys.mainHints(m.tab, m.arch.ShortBindings())
 	case m.tab == TabCode:
 		return m.keys.mainHints(m.tab, m.code.ShortBindings())
+	case m.overview.focus != "":
+		return m.keys.blockHints()
 	}
 	return m.keys.mainHints(TabOverview, nil)
 }

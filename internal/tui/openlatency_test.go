@@ -138,7 +138,8 @@ func perfServe(tb testing.TB, c daemon.Client) daemon.Client {
 	}
 }
 
-// timedClient counts and times the client calls the TUI makes.
+// timedClient counts and times the client calls the TUI makes (Detail and,
+// since M5.2, DetailOf without labels).
 type timedClient struct {
 	daemon.Client
 	mu       sync.Mutex
@@ -149,6 +150,10 @@ type timedClient struct {
 }
 
 func (c *timedClient) Detail(ctx context.Context, id string) (proto.Detail, error) {
+	return c.DetailOf(ctx, proto.DetailParams{ItemID: id})
+}
+
+func (c *timedClient) DetailOf(ctx context.Context, p proto.DetailParams) (proto.Detail, error) {
 	n := c.inflight.Add(1)
 	for {
 		m := c.maxIn.Load()
@@ -157,7 +162,7 @@ func (c *timedClient) Detail(ctx context.Context, id string) (proto.Detail, erro
 		}
 	}
 	t := time.Now()
-	d, err := c.Client.Detail(ctx, id)
+	d, err := c.Client.DetailOf(ctx, p)
 	el := time.Since(t)
 	c.inflight.Add(-1)
 	c.mu.Lock()
@@ -292,6 +297,34 @@ func (r *perfRT) resetCounts() ([]time.Duration, int, int) {
 
 func painted(id string) func(Model) bool {
 	return func(m Model) bool { return m.detail != nil && m.detail.Item.ID == id }
+}
+
+// revalidated holds once the selected item's latest load landed (M5.2: a
+// cached item is painted at once and loaded again in the background).
+func revalidated(id string) func(Model) bool {
+	return func(m Model) bool { return painted(id)(m) && !m.detailPending }
+}
+
+// openTimes opens id (as a click on its row) and returns how long until
+// its detail was painted ("loading…" visible meanwhile; 0-ish for a cached
+// item, painted inside the click) and until its fresh detail was applied;
+// cached reports whether the item was in the detail cache.
+func (r *perfRT) openTimes(id string, timeout time.Duration) (paint, fresh time.Duration, cached bool) {
+	r.tb.Helper()
+	_, cached = r.m.cache.peek(id)
+	t0 := time.Now()
+	r.selectID(id)
+	if r.m.detail == nil && !strings.Contains(r.m.View(), "loading…") {
+		r.tb.Fatal("expected the loading placeholder while the detail loads")
+	}
+	if _, ok := r.until(painted(id), timeout); !ok {
+		r.tb.Fatalf("%s never painted", id)
+	}
+	paint = time.Since(t0)
+	if _, ok := r.until(revalidated(id), timeout); !ok {
+		r.tb.Fatalf("%s never revalidated", id)
+	}
+	return paint, time.Since(t0), cached
 }
 
 // ---- stats ----------------------------------------------------------------------
@@ -435,32 +468,35 @@ func openLatencyTUI(t *testing.T, transport string) {
 	}
 
 	// 1. Idle: open each analysed item in turn (as a click on its row),
-	// starting from the last one so every open is a real move.
+	// starting from the last one so every open is a real move. The first
+	// open of an item shows "loading…" until its Detail lands; a re-open
+	// (M5.2) paints the cached detail inside the click and revalidates it
+	// in the background.
 	r.selectID(ids[len(ids)-1])
-	if _, ok := r.until(painted(ids[len(ids)-1]), 30*time.Second); !ok {
+	if _, ok := r.until(revalidated(ids[len(ids)-1]), 30*time.Second); !ok {
 		t.Fatal("never painted")
 	}
 	c.reset()
 	r.resetCounts()
-	var loading []time.Duration
+	var firstOpen, reopen, fresh []time.Duration
 	per := map[string][]time.Duration{}
 	for range 5 {
 		for _, id := range ids {
-			r.selectID(id)
-			if r.m.detail == nil && !strings.Contains(r.m.View(), "loading…") {
-				t.Fatal("expected the loading placeholder while the detail loads")
+			paint, upd, cached := r.openTimes(id, 30*time.Second)
+			if cached {
+				reopen = append(reopen, paint)
+			} else {
+				firstOpen = append(firstOpen, paint)
 			}
-			el, ok := r.until(painted(id), 30*time.Second)
-			if !ok {
-				t.Fatalf("%s never painted", id)
-			}
-			loading = append(loading, el)
-			per[id] = append(per[id], el)
+			fresh = append(fresh, upd)
+			per[id] = append(per[id], paint)
 		}
 	}
 	paint, applied, dropped := r.resetCounts()
 	dets, items, _ := c.reset()
-	t.Logf("perf: [%s] 1. idle open (\"loading…\" shown until painted): %s", transport, summarise(loading))
+	t.Logf("perf: [%s] 1. idle open, first open of an item (\"loading…\" until painted): %s", transport, summarise(firstOpen))
+	t.Logf("perf: [%s]    re-open of a cached item (painted, no \"loading…\"): %s", transport, summarise(reopen))
+	t.Logf("perf: [%s]    until the revalidated detail is applied: %s", transport, summarise(fresh))
 	for _, id := range ids {
 		t.Logf("perf: [%s]    %-26s %s", transport, id, summarise(per[id]))
 	}
@@ -496,20 +532,18 @@ func openLatencyTUI(t *testing.T, transport string) {
 	r.pump(500 * time.Millisecond)
 	c.reset()
 	r.resetCounts()
-	loading = nil
+	var busyPaint, busyFresh []time.Duration
 	for range 5 {
 		for _, id := range browse {
-			r.selectID(id)
-			el, ok := r.until(painted(id), 60*time.Second)
-			if !ok {
-				t.Fatalf("%s never painted", id)
-			}
-			loading = append(loading, el)
+			paint, upd, _ := r.openTimes(id, 60*time.Second)
+			busyPaint = append(busyPaint, paint)
+			busyFresh = append(busyFresh, upd)
 		}
 	}
 	paint, applied, dropped = r.resetCounts()
 	dets, items, maxIn := c.reset()
-	t.Logf("perf: [%s] 2. open while %v re-analyse: %s", transport, churn, summarise(loading))
+	t.Logf("perf: [%s] 2. open while %v re-analyse: painted %s; revalidated %s", transport, churn,
+		summarise(busyPaint), summarise(busyFresh))
 	t.Logf("perf: [%s]    Detail calls %d (%s), max %d in flight, applied %d, dropped %d, list reloads %d; paint %s",
 		transport, len(dets), summarise(dets), maxIn, applied, dropped, items, summarise(paint))
 	close(stopChurn)
@@ -536,6 +570,7 @@ func openLatencyTUI(t *testing.T, transport string) {
 	r.pump(200 * time.Millisecond)
 	c.reset()
 	r.resetCounts()
+	loadsBefore := *r.m.loads
 	sawBusy := false
 	r.apply(keyMsg("r"))
 	done := func(m Model) bool {
@@ -544,7 +579,8 @@ func openLatencyTUI(t *testing.T, transport string) {
 			sawBusy = true
 		}
 		return sawBusy && it.State == model.StateReady && c.inflight.Load() == 0 &&
-			m.detail != nil && m.detail.Item.State == model.StateReady
+			m.detail != nil && m.detail.Item.State == model.StateReady &&
+			len(m.loads.due) == 0 && len(m.loads.live) == 0 && m.detail.Run == nil
 	}
 	runFor, ok := r.until(done, 60*time.Second)
 	if !ok {
@@ -556,6 +592,8 @@ func openLatencyTUI(t *testing.T, transport string) {
 	t.Logf("perf: [%s] 3. r on the open item %s: settled after %s", transport, target, msf(runFor))
 	t.Logf("perf: [%s]    Detail calls %d (sum %s; %s), max %d in flight, applied %d, dropped %d, list reloads %d; paint %s (sum %s)",
 		transport, len(dets), msf(sum(dets)), summarise(dets), maxIn, applied, dropped, items, summarise(paint), msf(sum(paint)))
+	t.Logf("perf: [%s]    loader: started %d, applied %d, dropped %d", transport,
+		r.m.loads.started-loadsBefore.started, r.m.loads.applied-loadsBefore.applied, r.m.loads.dropped-loadsBefore.dropped)
 
 	// 4. Open an analysed item while it re-runs (`r`, a routing reload or a
 	// cap change landed on it): "loading…" lasts until a load finishes with
@@ -564,7 +602,7 @@ func openLatencyTUI(t *testing.T, transport string) {
 	if other == target {
 		other = browse[0]
 	}
-	var opens []time.Duration
+	var opens, opensFresh []time.Duration
 	for range 3 {
 		r.apply(keyMsg("r"))
 		if _, ok := r.until(func(m Model) bool {
@@ -575,20 +613,17 @@ func openLatencyTUI(t *testing.T, transport string) {
 		}
 		sawBusy = true
 		r.selectID(other)
-		r.selectID(target)
-		el, ok := r.until(painted(target), 60*time.Second)
-		if !ok {
-			t.Fatal("target never painted")
-		}
-		opens = append(opens, el)
+		paint, upd, _ := r.openTimes(target, 60*time.Second)
+		opens = append(opens, paint)
+		opensFresh = append(opensFresh, upd)
 		if _, ok := r.until(done, 60*time.Second); !ok {
 			t.Fatal("re-run did not finish")
 		}
 		r.pump(200 * time.Millisecond)
 	}
 	_, _, dropped = r.resetCounts()
-	t.Logf("perf: [%s] 4. open %s while it re-runs: \"loading…\" for %s (%d stale loads dropped over the 3 runs)",
-		transport, target, summarise(opens), dropped)
+	t.Logf("perf: [%s] 4. open %s while it re-runs: painted after %s (no \"loading…\"); revalidated after %s (%d stale loads dropped over the 3 runs)",
+		transport, target, summarise(opens), summarise(opensFresh), dropped)
 
 	// 5. Paint cost of large items (the Update that applies a detail).
 	det, err := c.Detail(ctx, target)

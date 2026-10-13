@@ -5,8 +5,8 @@ r refactor 50% · f feature 32% · ░ noise 10% · t test 9%
 +312 −88 → ~180 lines that matter · ~24 min · 3 of 6 chunks need eyes
 
 ┌─ Branch state ────────────────────────────────────────────────────┐  ┌─ Headlines · contract surface ────────────────────────────────────┐
-│ abandoned? .70                                                    │  │   ⚠ breaking   refresh(token) — brea…  web/src/session.ts:12  .86 │
-│ rule: no commits for 16 days                                      │  │ ? ⚠ signature  Refresh(ctx, id) a…  server/api/session.go:20  .55 │
+│ abandoned? .70                                                    │  │   ⚠ breaking   refresh(token) — breaks …  …src/session.ts:12  .86 │
+│ rule: no commits for 16 days                                      │  │ ? ⚠ signature  Refresh(ctx, id) adds a …  …api/session.go:20  .55 │
 │ abandoned .70 · WIP .20 · ready for PR .05 · spike .03 · superse… │  │                                                                   │
 │ 7 unpushed commits                                                │  │                                                                   │
 │   a1b2c3d refresh tokens early                                    │  │                                                                   │
@@ -14,13 +14,19 @@ r refactor 50% · f feature 32% · ░ noise 10% · t test 9%
 │   c3 wip                                                          │  │                                                                   │
 │   d4 tests                                                        │  │                                                                   │
 │   e5 fmt                                                          │  │                                                                   │
-│   … 2 more                                                        │  │                                                                   │
+│   +2 more                                                         │  │                                                                   │
 │ Suggested PR title: Refresh sessions before expiry  ai·from grou… │  │                                                                   │
 └───────────────────────────────────────────────────────────────────┘  └───────────────────────────────────────────────────────────────────┘
-┌─ Check before approving · hot spots ──────────────────────────────┐  ┌─ Risk ────────────────────────────────────────────────────────────┐
-│ 1 web/src/session.ts:14  token reused after refresh  9.4          │  │ Risk HIGH (4)                                                     │
-│ 2 server/api/session.go:31  writes session without lock  4.2      │  │   auth ×2 · data write ×1 · error path ×1                         │
-│ 3 web/src/devices.tsx:40  unhandled fetch error path  1.1         │  │   test gap: 1 of 2 risky chunks untested                          │
+┌─ API endpoints ───────────────────────────────────────────────────┐  ┌─ Check before approving · hot spots ──────────────────────────────┐
+│ not computed — r refreshes                                        │  │ 1 web/src/session.ts:14  token reused after refresh  9.4          │
+└───────────────────────────────────────────────────────────────────┘  │ 2 server/api/session.go:31  writes session without lock  4.2      │
+┌─ Database ────────────────────────────────────────────────────────┐  │ 3 web/src/devices.tsx:40  unhandled fetch error path  1.1         │
+│ not computed — r refreshes                                        │  │   +1 more                                                         │
+└───────────────────────────────────────────────────────────────────┘  └───────────────────────────────────────────────────────────────────┘
+┌─ Feature flags & config ──────────────────────────────────────────┐  ┌─ Risk ────────────────────────────────────────────────────────────┐
+│ not computed — r refreshes                                        │  │ Risk HIGH (4)                                                     │
+│                                                                   │  │   auth ×2 · data write ×1 · error path ×1                         │
+│                                                                   │  │   test gap: 1 of 2 risky chunks untested                          │
 └───────────────────────────────────────────────────────────────────┘  └───────────────────────────────────────────────────────────────────┘
 ┌─ Minimap · attention per chunk ───────────────────────────────────┐  ┌─ Your slice ──────────────────────────────────────────────────────┐
 │ web/src/session.ts       █▒                                       │  │ web/** 4 chunks · 2 need eyes                                     │

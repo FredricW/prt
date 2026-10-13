@@ -585,22 +585,32 @@ func TestOverviewSince(t *testing.T) {
 
 	none := loadDetail(t, "detail_full.json")
 
+	// M5.2: one list capped at capSince rows, comments not addressed first,
+	// then the changed units, then the addressed comments; "+N more" opens
+	// the rest (fullBlock).
 	tests := []struct {
-		name string
-		d    proto.Detail
-		want []string
+		name   string
+		d      proto.Detail
+		want   []string
+		absent []string
+		full   []string
 	}{
-		{"first look", none, []string{"Since you looked", "nothing to compare yet (first look)"}},
+		{"first look", none, []string{"Since you looked", "nothing to compare yet (first look)"}, nil, nil},
 		{"many units, no comments", many, []string{
 			"since e661461 (you looked) · 7 units changed", "  base head not available locally",
-			"  web/src/session.ts:12", "  server/api/session.go:20", "  … 2 more", "  no earlier comments of yours"}},
+			"  web/src/session.ts:12", "  web/src/session.test.ts:3", "  +3 more", "  no earlier comments of yours"},
+			[]string{"server/api/session.go:20", "server/api/format.go:1"},
+			[]string{"  server/api/format.go:1"}},
 		{"unsure, unknown, resolved", unsure, []string{
-			"? ✓ addressed .55  a.go:3  maybe", "  ? unknown  b.go:4  who knows", "  ✓ addressed .90  c.go:5  done  resolved"}},
+			"· 2 units changed · 2 of 3 addressed", "  ? unknown  b.go:4  who knows", "? ✓ addressed .55  a.go:3  maybe", "  +1 more"},
+			[]string{"c.go:5"},
+			[]string{"  ✓ addressed .90  c.go:5  done  resolved"}},
 	}
 	// A branch has the branch state box instead (spec Overview, Branches).
 	if got, _ := renderOverviewText(branch); sinceSection(got) != "" || !strings.Contains(got, blockBranch) {
 		t.Errorf("branch overview has a Since block or lacks the branch state:\n%s", got)
 	}
+	st := newStyles(plainRenderer())
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got, _ := renderOverviewText(tt.d)
@@ -610,8 +620,23 @@ func TestOverviewSince(t *testing.T) {
 					t.Errorf("since block missing %q:\n%s", w, sec)
 				}
 			}
-			if strings.Contains(sec, "server/api/format.go:1") {
-				t.Error("more than five changed units listed")
+			for _, w := range tt.absent {
+				if strings.Contains(sec, w) {
+					t.Errorf("capped since block lists %q:\n%s", w, sec)
+				}
+			}
+			if tt.full == nil {
+				return
+			}
+			p, ok := fullBlock(st, tt.d, defaultOvOpts(), blockSince, 80)
+			if !ok {
+				t.Fatal("no full Since list")
+			}
+			all := strings.Join(p.lines, "\n")
+			for _, w := range tt.full {
+				if !strings.Contains(all, w) {
+					t.Errorf("full list missing %q:\n%s", w, all)
+				}
 			}
 		})
 	}

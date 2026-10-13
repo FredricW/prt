@@ -175,6 +175,9 @@ func (m *Model) buildTable(b *docBuilder, w int) {
 	var t docBuilder
 	t.rowTop = make([]int, len(m.rows))
 	t.rowEnd = make([]int, len(m.rows))
+	if note := updatingNote(m.d); note != "" {
+		t.add(m.st.dim.Render(note))
+	}
 	if len(m.rows) == 0 {
 		t.add(m.st.dim.Render("no routing decisions yet (stage 6 has not run for this item)"))
 	} else {

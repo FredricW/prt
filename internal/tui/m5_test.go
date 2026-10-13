@@ -124,11 +124,12 @@ func TestOverviewTwoColumnAnchors(t *testing.T) {
 		want   string
 		anchor string
 	}{
-		{"risk chips (left)", lineWith("Add a device list page"), 4, "u-refresh", "u-refresh"},
-		{"fidelity bullet (right)", lineWith("Add a device list page"), right, "u-devices", "u-refresh"},
+		{"headline (left)", lineWith("refresh(token)"), 4, "u-refresh", "u-refresh"},
+		{"risk chips (right) beside a border", lineWith("auth ×2 · data write"), right, "u-refresh", "u-refresh"},
+		{"fidelity bullet (right) beside a stretched box", lineWith("Add a device list page"), right, "u-devices", "u-devices"},
+		{"stretched box beside it", lineWith("Add a device list page"), 4, "", "u-devices"},
 		{"third hot spot beside a stretched box", lineWith("web/src/devices.tsx:40"), right, "u-devices", "u-devices"},
-		{"stretched box beside it", lineWith("web/src/devices.tsx:40"), 4, "", "u-devices"},
-		{"box border", lineWith("Add a device list page"), 0, "", "u-refresh"},
+		{"box border", lineWith("Add a device list page"), 0, "", "u-devices"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -197,7 +198,7 @@ func TestBranchBlock(t *testing.T) {
 	for _, want := range []string{
 		blockBranch, "abandoned? .70", "rule: no commits for 16 days",
 		"abandoned .70 · WIP .20 · ready for PR .05 · spike .03 · superseded .02",
-		"7 unpushed commits", "a1b2c3d refresh tokens early", "fmt", "… 2 more",
+		"7 unpushed commits", "a1b2c3d refresh tokens early", "fmt", "+2 more",
 		"Suggested PR title: Refresh sessions before expiry  ai·from group names",
 	} {
 		if !strings.Contains(got, want) {
@@ -470,12 +471,17 @@ func TestSearchPreview(t *testing.T) {
 	if !strings.Contains(v, previewLine) || !strings.Contains(v, "#99 New thing") || selectedID(m) != "pr:1" {
 		t.Errorf("preview not shown (selected %s):\n%s", selectedID(m), v)
 	}
-	// An event for the preview item reloads it.
-	_, cmd := updateCmd(t, m, eventMsg{Type: proto.EventPatch, ItemID: "pr:99"})
+	// An event for the preview item reloads it (after the debounce, M5.2).
+	m2, cmd := updateCmd(t, m, eventMsg{Type: proto.EventPatch, ItemID: "pr:99"})
 	seen := false
 	for _, msg := range run(cmd) {
-		if _, ok := msg.(previewDetailMsg); ok {
-			seen = true
+		if tick, ok := msg.(reloadTickMsg); ok {
+			_, load := updateCmd(t, m2, tick)
+			for _, msg := range run(load) {
+				if _, ok := msg.(previewDetailMsg); ok {
+					seen = true
+				}
+			}
 		}
 	}
 	if !seen {

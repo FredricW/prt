@@ -228,13 +228,15 @@ func strategyWords(s string) string {
 }
 
 // ovOpts is what the Overview needs besides the item: the strategy and the
-// keys its not-analysed / stopped box names.
+// keys its not-analysed / stopped box names, and the focused block's title
+// (M5.2).
 type ovOpts struct {
 	strategy                       string
 	runKey, resumeKey, settingsKey string
+	focus                          string
 }
 
-// ovOpts returns the Overview options from the model.
+// ovOpts returns the Overview options from the model (no focused block).
 func (m Model) ovOpts() ovOpts {
 	return ovOpts{strategy: m.strategy, runKey: m.keys.Refresh.Help().Key, resumeKey: m.keys.Resume.Help().Key,
 		settingsKey: m.keys.Settings.Help().Key}

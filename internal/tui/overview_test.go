@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	tea "github.com/charmbracelet/bubbletea"
+
 	"github.com/fredricw/prt/internal/model"
 	"github.com/fredricw/prt/internal/proto"
 	"github.com/fredricw/prt/internal/theme"
@@ -99,8 +101,20 @@ func unboxed(l string) string {
 }
 
 func TestOverviewProbabilities(t *testing.T) {
-	got, _ := renderOverviewText(loadDetail(t, "detail_full.json"))
+	d := loadDetail(t, "detail_full.json")
+	got, _ := renderOverviewText(d)
 	lines := strings.Split(got, "\n")
+	// The sure implemented bullet is past Description fidelity's cap (M5.2):
+	// it is in the block's full list.
+	full, ok := fullBlock(newStyles(plainRenderer()), d, defaultOvOpts(), blockFidelity, 76)
+	if !ok {
+		t.Fatal("no full fidelity list")
+	}
+	boxed := make([]string, 0, len(full.lines))
+	for _, l := range full.lines {
+		boxed = append(boxed, "│ "+l) // as drawn in a box, for unboxed
+	}
+	lines = append(boxed, lines...)
 	find := func(sub string) string {
 		for _, l := range lines {
 			if strings.Contains(l, sub) {
@@ -141,10 +155,11 @@ func TestCompositionBar(t *testing.T) {
 	a := &model.ItemAgg{Composition: map[string]float64{"refactor": 0.5, "feature": 0.5, "fix": 0.0},
 		EffectiveLines: 90, NoiseLines: 10}
 	segs := compositionSegments(a)
-	if got := compositionLegend(segs); got != "f feature 45% · r refactor 45% · ░ noise 10%" {
+	plain := newStyles(plainRenderer()).th
+	if got := compositionLegend(plain, segs); got != "f feature 45% · r refactor 45% · ░ noise 10%" {
 		t.Errorf("legend = %q", got)
 	}
-	if got := compositionBar(segs, 20); got != "fffffffffrrrrrrrrr░░" {
+	if got := compositionBar(plain, segs, 20); got != "fffffffffrrrrrrrrr░░" {
 		t.Errorf("bar = %q", got)
 	}
 	// Name clash: second "f…" kind takes its next free letter.
@@ -252,7 +267,10 @@ func TestOverviewRawLabels(t *testing.T) {
 	m, _ := overviewFocused(t, d)
 	m.overview.vp.SetYOffset(lineOf(t, m, "Headlines"))
 	for _, closeKey := range []string{"L", "esc"} {
-		m = update(t, m, keyMsg("L"))
+		// The labels are fetched on demand the first time (M5.2).
+		var cmd tea.Cmd
+		m, cmd = updateCmd(t, m, keyMsg("L"))
+		m = feedAll[labelsMsg](t, m, cmd)
 		if !m.overview.raw {
 			t.Fatal("L did not open the raw-labels overlay")
 		}
