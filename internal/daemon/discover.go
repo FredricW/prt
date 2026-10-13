@@ -1,7 +1,9 @@
 package daemon
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
@@ -66,6 +68,7 @@ func (c *InProcess) Discover(ctx context.Context) error {
 // whether GitHub answered (false when offline or on error).
 func (c *InProcess) discoverPRs(ctx context.Context, seen map[string]bool) bool {
 	if c.d.GH == nil {
+		c.send(proto.Event{Type: proto.EventLog, Note: c.gitHubNote()})
 		return false
 	}
 	viewer, prs, err := c.searchPRs(ctx)
@@ -239,15 +242,24 @@ func (c *InProcess) upsertPR(ctx context.Context, pr gh.PR, viewer string) error
 func (c *InProcess) upsertDiscovered(ctx context.Context, id string, fill func(*model.Item)) error {
 	c.itemMu.Lock()
 	it, err := c.d.Store.Item(ctx, id)
+	var before []byte
 	switch {
 	case errors.Is(err, store.ErrNotFound):
 		it = model.Item{ID: id, Source: model.SourceRanked}
 	case err != nil:
 		c.itemMu.Unlock()
 		return fmt.Errorf("daemon: load %s: %w", id, err)
+	default:
+		before = itemKey(it)
 	}
 	fill(&it)
 	c.setUrgency(&it)
+	if before != nil && bytes.Equal(before, itemKey(it)) {
+		// Unchanged: no write and no event (a discovery pass would
+		// otherwise make every client reload the list once per item).
+		c.itemMu.Unlock()
+		return nil
+	}
 	err = c.d.Store.UpsertItem(ctx, it)
 	c.itemMu.Unlock()
 	if err != nil {
@@ -255,6 +267,17 @@ func (c *InProcess) upsertDiscovered(ctx context.Context, id string, fill func(*
 	}
 	c.send(proto.Event{Type: proto.EventItem, ItemID: id, Item: &it})
 	return nil
+}
+
+// itemKey is the item's stored form, for change detection. Times are
+// normalised to UTC so a store round trip compares equal.
+func itemKey(it model.Item) []byte {
+	it.CreatedAt, it.UpdatedAt = it.CreatedAt.UTC(), it.UpdatedAt.UTC()
+	b, err := json.Marshal(it)
+	if err != nil {
+		return nil
+	}
+	return b
 }
 
 // setUrgency computes the M0 urgency and minutes from item metadata alone;

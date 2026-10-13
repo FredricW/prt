@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/fredricw/prt/internal/gh"
 	"github.com/fredricw/prt/internal/testutil"
@@ -129,6 +130,9 @@ func TestSetupDegradesWithoutKeys(t *testing.T) {
 	if env.deps.GH != nil {
 		t.Error("no gh token: GitHub must be disabled")
 	}
+	if !strings.Contains(env.ghNote, "no token") {
+		t.Errorf("GitHub note = %q, want the reason (no token)", env.ghNote)
+	}
 	if env.deps.Jev == nil || env.deps.Reviewers.Fast == nil || env.deps.Reviewers.Deep == nil {
 		t.Errorf("clients must exist and report missing keys at call time: %+v", env.deps)
 	}
@@ -139,5 +143,23 @@ func TestSetupDegradesWithoutKeys(t *testing.T) {
 	defer off.close()
 	if off.deps.GH != nil || off.deps.Jev != nil || off.deps.Embedder != nil || off.deps.Reviewers.Fast != nil {
 		t.Errorf("--offline must disable every external client: %+v", off.deps)
+	}
+	if !strings.Contains(off.ghNote, "offline") {
+		t.Errorf("offline GitHub note = %q", off.ghNote)
+	}
+}
+
+// --now must reach the pipeline (urgency age term), not just the TUI.
+func TestNowReachesPipeline(t *testing.T) {
+	isolate(t)
+	repo := gitRepo(t, "")
+	fixed := time.Date(2020, 1, 2, 3, 4, 5, 0, time.UTC)
+	env, err := setup(context.Background(), options{repo: repo, offline: true, nowFn: func() time.Time { return fixed }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer env.close()
+	if env.deps.Now == nil || !env.deps.Now().Equal(fixed) {
+		t.Fatal("pipeline clock is not the --now clock")
 	}
 }

@@ -53,6 +53,10 @@ type options struct {
 	width    int
 	height   int
 	maxItems int
+	// nowFn is the parsed --now clock (nil: wall clock). setup hands it to
+	// the pipeline too, so urgency (age term), quartiles and order use the
+	// same clock as the TUI and snapshots do not drift.
+	nowFn func() time.Time
 }
 
 func run(args []string, stdout, stderr io.Writer) int {
@@ -92,6 +96,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 			return 2
 		}
 		nowFn = func() time.Time { return t }
+		o.nowFn = nowFn
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -103,9 +108,14 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	defer env.close()
+	newInProcess := func() *daemon.InProcess {
+		c := daemon.NewInProcess(env.deps)
+		c.SetGitHubNote(env.ghNote)
+		return c
+	}
 
 	if daemonMode {
-		inproc := daemon.NewInProcess(env.deps)
+		inproc := newInProcess()
 		defer func() { _ = inproc.Close() }()
 		go discoverLoop(ctx, inproc, time.Duration(env.cfg.Pipeline.RefreshSeconds)*time.Second, env.deps.Log)
 		if err := daemon.Serve(ctx, inproc, daemon.SocketPath(env.gitDir)); err != nil {
@@ -124,7 +134,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		}
 	}
 	if client == nil {
-		client = daemon.NewInProcess(env.deps)
+		client = newInProcess()
 	}
 	defer func() { _ = client.Close() }()
 
@@ -154,9 +164,11 @@ func run(args []string, stdout, stderr io.Writer) int {
 }
 
 type environment struct {
-	deps    pipeline.Deps
-	cfg     config.Config
-	gitDir  string
+	deps   pipeline.Deps
+	cfg    config.Config
+	gitDir string
+	// ghNote says why GitHub is disabled ("" when a client is wired).
+	ghNote  string
 	closers []func()
 }
 
@@ -221,7 +233,7 @@ func setup(ctx context.Context, o options) (*environment, error) {
 		logger.Warn("config", "warning", w)
 	}
 
-	d := pipeline.Deps{Git: g, Store: st, Config: cfg, Routing: routing, Questions: cat, Log: logger}
+	d := pipeline.Deps{Git: g, Store: st, Config: cfg, Routing: routing, Questions: cat, Log: logger, Now: o.nowFn}
 	if o.fixtures != "" {
 		fake, err := gh.LoadFixture(o.fixtures)
 		if err != nil {
@@ -231,9 +243,16 @@ func setup(ctx context.Context, o options) (*environment, error) {
 		d.GH = fake
 		logger.Info("using GitHub fixture", "path", o.fixtures)
 	}
+	if o.offline && d.GH == nil {
+		env.ghNote = "offline: GitHub disabled; local branches only"
+	}
 	if !o.offline {
 		if d.GH == nil {
-			d.GH = githubClient(ctx, g, cfg, logger)
+			var reason string
+			d.GH, reason = githubClient(ctx, g, cfg, logger)
+			if d.GH == nil {
+				env.ghNote = "GitHub disabled (" + reason + "); local branches only"
+			}
 		}
 		jevURL := os.Getenv("JEV_BASE_URL")
 		if jevURL == "" {
@@ -266,13 +285,23 @@ func setup(ctx context.Context, o options) (*environment, error) {
 	return env, nil
 }
 
-// discoverLoop runs discovery now and then every interval until ctx ends, so
-// a daemon keeps the picker fresh with no TUI attached. interval <= 0 runs
-// discovery once.
-func discoverLoop(ctx context.Context, c daemon.Client, interval time.Duration, logger *log.Logger) {
+// daemonWork is what the daemon loop drives: discovery, then analysis of
+// every never-analysed item (urgency order), so the cache fills with no TUI
+// attached (spec: Architecture).
+type daemonWork interface {
+	Discover(ctx context.Context) error
+	AnalysePending(ctx context.Context) error
+}
+
+// discoverLoop runs discovery and queues pending analysis now and then
+// every interval until ctx ends. interval <= 0 runs one pass.
+func discoverLoop(ctx context.Context, c daemonWork, interval time.Duration, logger *log.Logger) {
 	discover := func() {
 		if err := c.Discover(ctx); err != nil && ctx.Err() == nil {
 			logger.Warn("discover", "err", err)
+		}
+		if err := c.AnalysePending(ctx); err != nil && ctx.Err() == nil {
+			logger.Warn("queue analysis", "err", err)
 		}
 	}
 	discover()
@@ -307,33 +336,34 @@ func openURL(url string) error {
 	return nil
 }
 
-// githubClient returns nil when the repo is not on GitHub or gh has no token.
-func githubClient(ctx context.Context, g gitx.Git, cfg config.Config, logger *log.Logger) gh.Client {
+// githubClient returns nil and a short user-facing reason when the repo is
+// not on GitHub or gh has no token.
+func githubClient(ctx context.Context, g gitx.Git, cfg config.Config, logger *log.Logger) (gh.Client, string) {
 	var repo gh.Repo
 	if cfg.GitHub.Repo != "" {
 		r, ok := gh.ParseRemote("github.com/" + cfg.GitHub.Repo)
 		if !ok {
 			logger.Warn("bad github.repo in config", "repo", cfg.GitHub.Repo)
-			return nil
+			return nil, "bad github.repo in prt.toml"
 		}
 		repo = r
 	} else {
 		url, err := g.RemoteURL(ctx, "origin")
 		if err != nil {
 			logger.Info("no origin remote; GitHub disabled")
-			return nil
+			return nil, "no origin remote"
 		}
 		r, ok := gh.ParseRemote(url)
 		if !ok {
 			logger.Info("origin is not GitHub; GitHub disabled")
-			return nil
+			return nil, "origin is not on GitHub"
 		}
 		repo = r
 	}
 	tok, err := ghToken(ctx)
 	if err != nil {
 		logger.Warn("GitHub disabled", "err", err)
-		return nil
+		return nil, "no token from `gh auth token`"
 	}
-	return gh.NewAPI(ctx, repo, tok)
+	return gh.NewAPI(ctx, repo, tok), ""
 }

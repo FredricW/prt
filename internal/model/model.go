@@ -66,27 +66,30 @@ const (
 
 // Item is a PR or a local branch under review.
 type Item struct {
-	ID        string     `json:"id"` // "pr:<number>" or "branch:<ref>"; see ItemID
-	Kind      ItemKind   `json:"kind"`
-	Number    int        `json:"number,omitempty"` // PR number, 0 for branches
-	Ref       string     `json:"ref"`              // head branch name
-	BaseRef   string     `json:"baseRef,omitempty"`
-	HeadSHA   string     `json:"headSha"`
-	BaseSHA   string     `json:"baseSha"` // merge base with the base ref
-	Title     string     `json:"title"`
-	Body      string     `json:"body,omitempty"`
-	Author    string     `json:"author,omitempty"`
-	Reviewers []string   `json:"reviewers,omitempty"`
-	CI        CIState    `json:"ci,omitempty"`
-	Labels    []string   `json:"labels,omitempty"` // GitHub labels, not Jev labels
-	Pinned    bool       `json:"pinned,omitempty"`
-	Source    ItemSource `json:"source"`
-	Section   Section    `json:"section,omitempty"`
-	URL       string     `json:"url,omitempty"`
-	State     ItemState  `json:"state,omitempty"`
-	StateNote string     `json:"stateNote,omitempty"` // stage name or error reason
-	CreatedAt time.Time  `json:"createdAt,omitempty"`
-	UpdatedAt time.Time  `json:"updatedAt,omitempty"`
+	ID      string   `json:"id"` // "pr:<number>" or "branch:<ref>"; see ItemID
+	Kind    ItemKind `json:"kind"`
+	Number  int      `json:"number,omitempty"` // PR number, 0 for branches
+	Ref     string   `json:"ref"`              // head branch name
+	BaseRef string   `json:"baseRef,omitempty"`
+	HeadSHA string   `json:"headSha"`
+	BaseSHA string   `json:"baseSha"` // merge base with the base ref
+	// AnalysedSHA is the head the stored files, units and overview describe
+	// (set when a run finishes). It differs from HeadSHA while Stale.
+	AnalysedSHA string     `json:"analysedSha,omitempty"`
+	Title       string     `json:"title"`
+	Body        string     `json:"body,omitempty"`
+	Author      string     `json:"author,omitempty"`
+	Reviewers   []string   `json:"reviewers,omitempty"`
+	CI          CIState    `json:"ci,omitempty"`
+	Labels      []string   `json:"labels,omitempty"` // GitHub labels, not Jev labels
+	Pinned      bool       `json:"pinned,omitempty"`
+	Source      ItemSource `json:"source"`
+	Section     Section    `json:"section,omitempty"`
+	URL         string     `json:"url,omitempty"`
+	State       ItemState  `json:"state,omitempty"`
+	StateNote   string     `json:"stateNote,omitempty"` // stage name or error reason
+	CreatedAt   time.Time  `json:"createdAt,omitempty"`
+	UpdatedAt   time.Time  `json:"updatedAt,omitempty"`
 
 	// ReviewRequested is true when the current user is a requested reviewer.
 	ReviewRequested bool `json:"reviewRequested,omitempty"`

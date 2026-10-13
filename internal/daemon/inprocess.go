@@ -44,6 +44,7 @@ type InProcess struct {
 	evMu   sync.RWMutex
 	closed bool
 	events chan proto.Event
+	ghNote string // guarded by evMu
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -80,7 +81,26 @@ func NewInProcess(d pipeline.Deps) *InProcess {
 		slots = defaultConcurrency
 	}
 	c.q = newQueue(slots, &c.wg, c.analyse)
+	c.recoverStates(ctx)
 	return c
+}
+
+// SetGitHubNote records why GitHub is disabled (no token, origin not on
+// GitHub, --offline). With no GitHub client, each discovery reports it as an
+// EventLog note so the status bar explains the missing PRs.
+func (c *InProcess) SetGitHubNote(note string) {
+	c.evMu.Lock()
+	c.ghNote = note
+	c.evMu.Unlock()
+}
+
+func (c *InProcess) gitHubNote() string {
+	c.evMu.RLock()
+	defer c.evMu.RUnlock()
+	if c.ghNote == "" {
+		return "GitHub disabled; local branches only"
+	}
+	return c.ghNote
 }
 
 // send never blocks: the UI re-reads Detail on the next event anyway.
@@ -201,9 +221,15 @@ func (c *InProcess) Detail(ctx context.Context, itemID string) (proto.Detail, er
 		return proto.Detail{}, fmt.Errorf("daemon: detail %s: %w", itemID, err)
 	}
 	det := proto.Detail{Item: it}
-	if it.HeadSHA != "" {
-		if f, ok, err := s.Fetch(ctx, itemID, it.HeadSHA); err == nil && ok {
+	// The diff must match the stored files and units, which describe the
+	// analysed head; a Stale item's new head has no analysis (or fetch) yet.
+	for _, sha := range []string{it.AnalysedSHA, it.HeadSHA} {
+		if sha == "" {
+			continue
+		}
+		if f, ok, err := s.Fetch(ctx, itemID, sha); err == nil && ok {
 			det.Diff = f.Diff
+			break
 		}
 	}
 	if det.Files, err = s.Files(ctx, itemID); err != nil {
@@ -312,19 +338,29 @@ func (c *InProcess) analyse(j job) {
 	}
 	c.setState(it.ID, model.StateFetching, "")
 	head, err := c.p.RunHead(c.ctx, it, pipeline.RunOptions{Force: j.force})
-	c.finish(it.ID, head, err)
+	c.finish(c.ctx, it.ID, head, err)
 }
 
 // finish records the outcome of a run that analysed head. If discovery
 // moved the item's head while the run was in flight, the result describes
-// an old commit: the item becomes Stale instead of Ready.
-func (c *InProcess) finish(id, head string, err error) {
+// an old commit: the item becomes Stale instead of Ready. A run that failed
+// because runCtx was cancelled (quit, daemon stop) was interrupted, not
+// broken: the item goes back to "not analysed" so it is queued again.
+func (c *InProcess) finish(runCtx context.Context, id, head string, err error) {
+	if err != nil && runCtx.Err() != nil {
+		c.log.Info("analysis interrupted", "item", id, "err", err)
+		c.resetState(id)
+		return
+	}
 	if err != nil {
 		c.log.Warn("analysis failed", "item", id, "err", err)
 		c.setState(id, model.StateError, err.Error())
 		return
 	}
 	if _, _, err := c.updateItem(context.Background(), id, func(it *model.Item) {
+		if head != "" {
+			it.AnalysedSHA = head
+		}
 		if head != "" && it.HeadSHA != "" && it.HeadSHA != head {
 			it.State, it.StateNote = model.StateStale, staleNote
 			return
@@ -335,6 +371,58 @@ func (c *InProcess) finish(id, head string, err error) {
 	}
 }
 
+// resetState marks an interrupted item as not analysed, or Stale when an
+// earlier analysis of another head is still stored.
+func (c *InProcess) resetState(id string) {
+	if _, _, err := c.updateItem(context.Background(), id, func(it *model.Item) {
+		if it.AnalysedSHA != "" {
+			it.State, it.StateNote = model.StateStale, staleNote
+			if it.AnalysedSHA == it.HeadSHA {
+				it.State, it.StateNote = model.StateReady, ""
+			}
+			return
+		}
+		it.State, it.StateNote = "", ""
+	}); err != nil {
+		c.log.Warn("reset item state", "item", id, "err", err)
+	}
+}
+
+// recoverStates resets items left Fetching or Analysing by a process that
+// died mid-run (SIGKILL, closed terminal), so they are analysed again
+// instead of spinning forever.
+func (c *InProcess) recoverStates(ctx context.Context) {
+	items, err := c.d.Store.Items(ctx)
+	if err != nil {
+		c.log.Warn("recover item states", "err", err)
+		return
+	}
+	for _, it := range items {
+		if it.State == model.StateFetching || it.State == model.StateAnalysing {
+			c.resetState(it.ID)
+		}
+	}
+}
+
+// AnalysePending queues every never-analysed item (State "") in urgency
+// order, so a daemon with no TUI attached fills the cache.
+func (c *InProcess) AnalysePending(ctx context.Context) error {
+	items, err := c.d.Store.Items(ctx)
+	if err != nil {
+		return fmt.Errorf("daemon: items: %w", err)
+	}
+	var ids []string
+	for _, it := range items {
+		if it.State == "" {
+			ids = append(ids, it.ID)
+		}
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	return c.Analyse(ctx, false, ids...)
+}
+
 // RunSync runs the pipeline for an item and waits (tests, --snapshot).
 func (c *InProcess) RunSync(ctx context.Context, itemID string) error {
 	it, err := c.d.Store.Item(ctx, itemID)
@@ -342,7 +430,7 @@ func (c *InProcess) RunSync(ctx context.Context, itemID string) error {
 		return fmt.Errorf("daemon: run %s: %w", itemID, err)
 	}
 	head, err := c.p.RunHead(ctx, it, pipeline.RunOptions{})
-	c.finish(itemID, head, err)
+	c.finish(ctx, itemID, head, err)
 	return err
 }
 
