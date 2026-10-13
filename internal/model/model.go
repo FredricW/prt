@@ -24,6 +24,12 @@ type ItemSource string
 const (
 	SourceRanked ItemSource = "ranked"
 	SourceAdded  ItemSource = "added"
+	// SourcePreview marks an item opened with `tab` on a search result
+	// (spec Picker: "previews its overview without adding"). It is analysed
+	// and served by Detail like any item but never listed by Items(); `enter`
+	// on the same result turns it into SourceAdded, and the daemon removes
+	// leftover previews (another preview, Remove, or start-up). M5.
+	SourcePreview ItemSource = "preview"
 )
 
 // CIState is the combined CI status of an item's head commit.
@@ -155,7 +161,29 @@ type Item struct {
 	// and re-anchors the comments, which is before AnalysedSHA moves (at the
 	// end of the run); a review is posted on this commit.
 	UnitsSHA string `json:"unitsSha,omitempty"`
+
+	// Branch facts (M5; branches only). Upstream is the branch's upstream
+	// ref ("origin/feat/x"; "" when it has none) and LastCommitAt the
+	// commit date of its head, both set by discovery from gitx.Ref.
+	// BranchState and BranchStateP are copied from ItemAgg.Branch by the
+	// pipeline for the picker's Branches line ("ready for PR .81"); the
+	// state is one of the Branch* constants, "" before analysis.
+	Upstream     string    `json:"upstream,omitempty"`
+	LastCommitAt time.Time `json:"lastCommitAt,omitzero"`
+	BranchState  string    `json:"branchState,omitempty"`
+	BranchStateP float64   `json:"branchStateP,omitempty"`
 }
+
+// Branch states: the options of the catalogue's branch-scope question
+// "state" (spec Jev catalogue: WIP, ready for PR, spike, abandoned,
+// superseded). The UI shows BranchAbandoned as "abandoned?" (a guess).
+const (
+	BranchWIP        = "WIP"
+	BranchReady      = "ready for PR"
+	BranchSpike      = "spike"
+	BranchAbandoned  = "abandoned"
+	BranchSuperseded = "superseded"
+)
 
 // FileRole is the Jev-assigned role of a changed file.
 type FileRole string
@@ -534,6 +562,12 @@ type Review struct {
 	Cost         float64   `json:"cost"` // all calls for this row (routed + escalation + calibration)
 	Err          string    `json:"err,omitempty"`
 	Attempts     int       `json:"attempts,omitempty"`
+	// StaleNote says which label overrides made a finished review
+	// ReviewStaleLabels (spec: "An override invalidates aggregate only, and
+	// marks the affected review as stale-labels without re-running it"),
+	// e.g. "label overridden: risk 4→2 (web/src/a.ts:12)". Set together
+	// with Status ReviewStaleLabels; findings and verdict are kept. M5.
+	StaleNote string `json:"staleNote,omitempty"`
 }
 
 // Calibration is the sampled deep double review of a fast-routed group

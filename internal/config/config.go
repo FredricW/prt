@@ -40,16 +40,19 @@ type GitHub struct {
 
 // Rank holds urgency weights (spec: Ranking and aggregation).
 type Rank struct {
-	WRequested  float64 `toml:"w_requested"`
-	WBreaking   float64 `toml:"w_breaking"`
-	WRisk       float64 `toml:"w_risk"`
-	WTestGap    float64 `toml:"w_test_gap"`
-	WRelevance  float64 `toml:"w_relevance"`
-	WRelease    float64 `toml:"w_release"`
-	WCIRed      float64 `toml:"w_ci_red"`
-	WAge        float64 `toml:"w_age"`
-	WMinutes    float64 `toml:"w_minutes"`
-	WUnpushed   float64 `toml:"w_unpushed"` // branches only
+	WRequested float64 `toml:"w_requested"`
+	WBreaking  float64 `toml:"w_breaking"`
+	WRisk      float64 `toml:"w_risk"`
+	WTestGap   float64 `toml:"w_test_gap"`
+	WRelevance float64 `toml:"w_relevance"`
+	WRelease   float64 `toml:"w_release"`
+	WCIRed     float64 `toml:"w_ci_red"`
+	WAge       float64 `toml:"w_age"`
+	WMinutes   float64 `toml:"w_minutes"`
+	WUnpushed  float64 `toml:"w_unpushed"` // branches only: w_u × unpushed commits
+	// WReadyStale weighs the staleness bonus of a branch whose state is
+	// "ready for PR": WReadyStale × log(1 + days since its last commit)
+	// (spec Ranking "Branches"; M5).
 	WReadyStale float64 `toml:"w_ready_stale"`
 }
 
@@ -69,7 +72,15 @@ type Pipeline struct {
 	// the spec: a cost bound for embedders whose cosines are compressed
 	// (see DECISIONS "Pair requests are capped per item").
 	MaxPairsPerUnit int `toml:"max_pairs_per_unit"`
+	// AbandonedDays is the branch-state default: a branch whose head commit
+	// is at least this many days old shows "abandoned?" unless Jev says
+	// ready for PR or superseded (≤ 0: default 14; spec open question,
+	// DECISIONS "Branch states (M5)"). Not in the spec's sample prt.toml.
+	AbandonedDays int `toml:"abandoned_days"`
 }
+
+// DefaultAbandonedDays is the default pipeline.abandoned_days.
+const DefaultAbandonedDays = 14
 
 // DefaultMaxPairsPerUnit is the default max_pairs_per_unit.
 const DefaultMaxPairsPerUnit = 3
@@ -114,7 +125,7 @@ func Defaults() Config {
 		Pipeline: Pipeline{
 			MaxGroupUnits: 8, EmbedMinCosine: 0.72, EmbedTopK: 3, KeepPairP: 0.60, UnsureBelow: 0.60,
 			Concurrency: 4, LineBatch: 20, MechanicalMin: 3, RefreshSeconds: 60,
-			MaxPairsPerUnit: DefaultMaxPairsPerUnit,
+			MaxPairsPerUnit: DefaultMaxPairsPerUnit, AbandonedDays: DefaultAbandonedDays,
 		},
 		Models: Models{
 			Embed: "ollama:embeddinggemma-2",

@@ -1,5 +1,7 @@
 package model
 
+import "time"
+
 // Attention is the reading depth a unit deserves.
 type Attention string
 
@@ -209,6 +211,137 @@ type CalibrationStats struct {
 	// LastAgree is the last sample's agreement (nil when none).
 	LastAgree *bool  `json:"lastAgree,omitempty"`
 	LastAt    string `json:"lastAt,omitempty"` // RFC3339
+	// LastGroup is the name of the group the last sample double-reviewed
+	// ("" when unknown), for "sampled <group> to deep too: agrees". M5.
+	LastGroup string `json:"lastGroup,omitempty"`
+	// Questions is the override rate per question over the trailing 30 days
+	// (spec Ranking "Calibration metrics": overrides ÷ labels), one row per
+	// question with at least one override, highest rate first. FlagAbove is
+	// the rate above which a question is flagged as a rewording candidate
+	// (0.15). M5.
+	Questions []QuestionRate `json:"questions,omitempty"`
+	FlagAbove float64        `json:"flagAbove,omitempty"`
+}
+
+// QuestionRate is one question's label override rate (CalibrationStats).
+type QuestionRate struct {
+	Question  string  `json:"question"`
+	Overrides int     `json:"overrides"` // overrides in the trailing 30 days
+	Labels    int     `json:"labels"`    // labels of the question (denominator)
+	Rate      float64 `json:"rate"`      // Overrides ÷ Labels (0 when Labels is 0)
+	Flagged   bool    `json:"flagged"`   // Rate > FlagAbove
+}
+
+// BranchCommit is one commit of a branch's overview block.
+type BranchCommit struct {
+	SHA     string    `json:"sha"`
+	Subject string    `json:"subject"`
+	Date    time.Time `json:"date"`
+}
+
+// BranchInfo is the Overview's branch state block (spec Overview,
+// "Branches"): the Jev Choice branch.state with its probability, the
+// unpushed commits and the suggested PR title. Set by the pipeline for
+// branch items in stage 8 (nil for PRs). M5.
+type BranchInfo struct {
+	// State is one of the Branch* constants ("" when unknown: Jev
+	// unavailable and no rule applied); P is its probability (1 for a rule
+	// decision) and Probs the full Jev distribution (option → p).
+	State string             `json:"state"`
+	P     float64            `json:"p"`
+	Probs map[string]float64 `json:"probs,omitempty"`
+	// Known is false when Jev gave no answer (labels unavailable).
+	Known bool `json:"known"`
+	// Rule explains a state set by code rather than Jev, e.g. "no commits
+	// for 16 days" (the abandoned? default, DECISIONS "Branch states (M5)").
+	Rule string `json:"rule,omitempty"`
+	// SupersededBy is the open PR that supersedes the branch (0 when none
+	// or unknown).
+	SupersededBy int `json:"supersededBy,omitempty"`
+	// LastCommitAt is the head commit's date; IdleDays the whole days since
+	// then at analysis time.
+	LastCommitAt time.Time `json:"lastCommitAt,omitzero"`
+	IdleDays     int       `json:"idleDays"`
+	// Unpushed counts commits not on the upstream (all commits ahead for a
+	// branch without one); Commits lists them, newest first (at most 20).
+	Unpushed int            `json:"unpushed"`
+	Commits  []BranchCommit `json:"commits,omitempty"`
+	// SuggestedTitle is the fast LLM's PR title written from the group
+	// names (shown marked as model-written); TitleKey the request key it
+	// came from; TitleNote why there is none ("no review model", "no
+	// groups").
+	SuggestedTitle string `json:"suggestedTitle,omitempty"`
+	TitleKey       string `json:"titleKey,omitempty"`
+	TitleNote      string `json:"titleNote,omitempty"`
+}
+
+// Architecture module and edge statuses (ArchModule.Status, ArchEdge.Status).
+const (
+	ArchChanged = "changed" // module exists at base and head and has changed files
+	ArchNew     = "new"     // module exists only at head
+	ArchRemoved = "removed" // module exists only at base
+	ArchContext = "context" // unchanged module reached through imports (Hop ≥ 1)
+	ArchSame    = "same"    // edge present at base and head
+)
+
+// ArchModule is one node of the Architecture tab's module graph. A module
+// is a directory of source files (see internal/arch for the exact rule).
+type ArchModule struct {
+	ID     string `json:"id"` // module path, e.g. "web/src/api"; "." for the repo root
+	Status string `json:"status"`
+	// Hop is 0 for modules the diff touches, n for modules n import hops
+	// away from a touched one.
+	Hop   int  `json:"hop"`
+	Owned bool `json:"owned,omitempty"`
+	// Files are the item's changed files in this module (diff paths, sorted);
+	// FileCount the module's source files at head (at base when removed).
+	Files     []string `json:"files,omitempty"`
+	FileCount int      `json:"fileCount"`
+	// Unit roll-ups over the module's change units (from ItemAgg.Units).
+	Units        int `json:"units"`
+	Eyes         int `json:"eyes"`
+	Skim         int `json:"skim"`
+	Skip         int `json:"skip"`
+	Unsure       int `json:"unsure"`
+	Untested     int `json:"untested"`
+	Undocumented int `json:"undocumented"`
+	Breaking     int `json:"breaking"`
+	RiskMax      int `json:"riskMax"` // max unit risk level, 0 unknown
+	// Attention colours the node: eyes if any unit needs eyes, else skim,
+	// else skip; "" for context modules without units.
+	Attention Attention `json:"attention,omitempty"`
+}
+
+// ArchEdge is an import dependency between two modules (From imports To).
+type ArchEdge struct {
+	From   string `json:"from"`
+	To     string `json:"to"`
+	Status string `json:"status"` // ArchSame, ArchNew or ArchRemoved
+	// Imports counts the file-level import statements behind the edge (at
+	// head; at base for a removed edge).
+	Imports int `json:"imports"`
+	// Contracts are headline texts of breaking or contract-changing units
+	// in To that From's files import ("contracts crossing edges").
+	Contracts []string `json:"contracts,omitempty"`
+}
+
+// ArchGraph is the Architecture tab's record (spec: "module graph coloured
+// by attention, as in the v2 design"): modules touched by the diff plus
+// their import neighbours up to MaxHop, and the edges between them. Built
+// from import analysis by internal/arch and set by the pipeline in stage 8.
+type ArchGraph struct {
+	Modules []ArchModule `json:"modules"`
+	Edges   []ArchEdge   `json:"edges"`
+	// MaxHop is the largest Hop computed (the tab's +/- depth range).
+	MaxHop int `json:"maxHop"`
+	// NetEffect are short sentences written by code from the graph diff
+	// ("new module server/middleware", "web/api no longer imports
+	// server/session"); no model call.
+	NetEffect []string `json:"netEffect,omitempty"`
+	// Note explains a degraded graph ("import analysis unavailable: …");
+	// Truncated is set when the repo had more source files than indexed.
+	Note      string `json:"note,omitempty"`
+	Truncated bool   `json:"truncated,omitempty"`
 }
 
 // UrgencyTerm is one weighted term of the urgency score.
@@ -276,6 +409,11 @@ type ItemAgg struct {
 	// Since is the Overview's "Since you looked" block, set by the pipeline
 	// (M4); nil when there is no earlier head to compare with.
 	Since *SinceLooked `json:"since,omitempty"`
+	// Branch is the branch state block (branch items only) and Arch the
+	// Architecture tab's module graph; both set by the pipeline in stage 8
+	// (M5), nil before.
+	Branch *BranchInfo `json:"branch,omitempty"`
+	Arch   *ArchGraph  `json:"arch,omitempty"`
 }
 
 // Since-you-looked base sources (SinceLooked.Source).

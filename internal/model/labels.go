@@ -188,6 +188,12 @@ func GroupSubject(groupID string) string { return "group:" + groupID }
 // was judged against (judge.AddressedCtx), so a new push asks again.
 func CommentSubject(itemID, commentID string) string { return "comment:" + itemID + ":" + commentID }
 
+// BranchSubject is the Label.UnitID used for the branch-scope question
+// "state" (M5); itemID is the branch item's id ("branch:<ref>"). The
+// label's Ctx hashes the inputs it was asked with (log, age, open PR
+// titles), so a new commit asks again.
+func BranchSubject(itemID string) string { return "branchstate:" + itemID }
+
 // PairSubject is the Label.UnitID used for pair-scope questions (relation).
 // The two unit ids are sorted, so (a, b) and (b, a) share one cached answer.
 func PairSubject(a, b string) string {

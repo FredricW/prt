@@ -15,6 +15,7 @@ import (
 	"encoding/json"
 	"io"
 	"sync"
+	"time"
 
 	"github.com/fredricw/prt/internal/model"
 )
@@ -77,7 +78,69 @@ const (
 	// MethodSetCap sets an item's review cost cap (Pipeline page $, `:cap`)
 	// and re-runs groups queued over the old cap: CapParams → {}.
 	MethodSetCap = "set_cap"
+	// MethodSearch runs one source of the picker's search-and-add (`/`):
+	// SearchParams → SearchResult. The TUI calls it once per source in
+	// parallel and merges the results as they land (M5).
+	MethodSearch = "search"
+	// MethodPreview stores and analyses an item without listing it (`tab`
+	// on a search result): AddParams → model.Item (Source preview). M5.
+	MethodPreview = "preview"
 )
+
+// SearchSource is one of the search-and-add sources (spec Picker "Search
+// and add").
+type SearchSource string
+
+// Search sources.
+const (
+	// SearchLocal: local refs whose name (or tip subject) contains the
+	// query, from git for-each-ref (instant).
+	SearchLocal SearchSource = "local"
+	// SearchOpen: open PRs from GitHub search `repo:o/n is:pr is:open <q>`;
+	// a bare number ("482" or "#482") returns exactly that PR, whatever its
+	// state.
+	SearchOpen SearchSource = "open"
+	// SearchClosed: closed and merged PRs (`is:pr is:closed <q>`); the TUI
+	// asks it when the query starts with "!" or the open source matched
+	// nothing.
+	SearchClosed SearchSource = "closed"
+)
+
+// SearchParams is the params of MethodSearch. Query is what the user typed
+// (a leading "!" is stripped by the daemon); Limit 0 means 20.
+type SearchParams struct {
+	Query  string       `json:"query"`
+	Source SearchSource `json:"source"`
+	Limit  int          `json:"limit,omitempty"`
+}
+
+// SearchHit is one search result: kind, number or ref, title, author and
+// age (spec: "Each result shows kind, number or ref, title, author and
+// age"). Query is the exact string MethodAdd/MethodPreview accept for it
+// ("#482" or the ref name); ItemID the id the item has or would get; Listed
+// is set when that item is already in the picker.
+type SearchHit struct {
+	Source    SearchSource   `json:"source"`
+	Kind      model.ItemKind `json:"kind"`
+	Number    int            `json:"number,omitempty"`
+	Ref       string         `json:"ref,omitempty"`
+	Title     string         `json:"title"`
+	Author    string         `json:"author,omitempty"`
+	State     string         `json:"state,omitempty"` // open, closed, merged; "" for local refs
+	UpdatedAt time.Time      `json:"updatedAt,omitzero"`
+	Query     string         `json:"query"`
+	ItemID    string         `json:"itemId"`
+	Listed    bool           `json:"listed,omitempty"`
+}
+
+// SearchResult is the result of MethodSearch. Note explains a source that
+// could not run ("GitHub unavailable"); it is not an error.
+type SearchResult struct {
+	Source SearchSource `json:"source"`
+	Query  string       `json:"query"`
+	Hits   []SearchHit  `json:"hits,omitempty"`
+	Note   string       `json:"note,omitempty"`
+}
 
 // ReviewAction is what MethodReviewAction does to a group.
 type ReviewAction string
