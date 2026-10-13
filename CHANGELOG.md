@@ -47,6 +47,29 @@ on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); milestones follow
 - `--fixtures` and `--now` flags; `make demo` and `make snapshot` run fully
   offline against the fixture repo.
 
+#### Fixed (M0 review)
+
+- Needs you holds only the spec's triggers (review requested, CI red after
+  your approval, re-review after a push, a comment addressed to you); other
+  involvement moves to a new "Involved" section.
+- The owned-paths source works: open PRs are listed with their changed
+  files and matched against `user.owns` locally (issue search has no `path:`).
+- A push during analysis leaves the item `stale`, not `ready` with an empty
+  diff; stale items wait for `r`, and `r` re-resolves the head first.
+- Overlapping discoveries are serialised and can no longer prune each
+  other's items; a missing default branch only skips local branches.
+- Ahead counts and merge bases use `origin/<default>` when it exists; fork
+  PRs no longer hide same-named local branches, and `c` checks out their
+  head commit.
+- Config: unknown keys (including the spec's `models.jev_endpoint`) warn
+  instead of stopping prt.
+- TUI starts against the cache; mouse wheel and row clicks; `~N min` on
+  Needs you and open-thread counts on Yours.
+- Socket: no 64 MiB line cap, a short fallback path for deep repos, a
+  visible note when the daemon connection drops; `git checkout <ref> --`.
+- Tests: the fixture pipeline test generates its own repo (never skips);
+  `cmd/prt` has tests; live-tagged tests are vetted and linted.
+
 ### M1 — units and labels
 
 ### M2 — groups

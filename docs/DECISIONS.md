@@ -30,7 +30,7 @@ Each entry: date, decision, why, alternatives considered.
 
 ## 2026-10-13 — Fixture repo is generated, not committed
 
-- **Decision:** `testdata/fixture-repo` is built deterministically (fixed author, committer and dates; `GIT_CONFIG_GLOBAL=/dev/null`) by `tools/fixturegen` from committed sources: `testdata/fixtures/base/**` (initial tree on `main`) and `testdata/fixtures/prs/NN-name.patch` (one branch per patch; mbox patches via `git am`, plain diffs via `git apply --index`). The generated dir is gitignored; `make fixtures` regenerates, `make demo`/`make snapshot` generate on demand. Tests that need it call `testutil.FixtureRepo`, which skips when absent.
+- **Decision:** `testdata/fixture-repo` is built deterministically (fixed author, committer and dates; `GIT_CONFIG_GLOBAL=/dev/null`) by `internal/fixturegen` (CLI: `tools/fixturegen`) from committed sources: `testdata/fixtures/base/**` (initial tree on `main`) and `testdata/fixtures/prs/NN-name.patch` (one branch per patch; mbox patches via `git am`, plain diffs via `git apply --index`). The generated dir is gitignored; `make fixtures` regenerates, `make demo`/`make snapshot` regenerate it whenever a fixture source changes. Tests call `testutil.FixtureRepo`, which generates a fresh copy into `t.TempDir()` (never skips, never stale; needs only the git binary).
 - **Why:** a nested `.git` cannot be committed; deterministic SHAs keep cache keys and recordings stable.
 - **Alternatives:** git submodule (needs a second remote), a bundle file (opaque in review), committing with `.git` renamed (fragile).
 
@@ -57,7 +57,7 @@ Each entry: date, decision, why, alternatives considered.
 - **Alternatives:** pin old versions to keep `go 1.23` (rejected).
 - **Other choices:**
   - Bubble Tea **v1** (`github.com/charmbracelet/bubbletea` v1.3.10) with bubbles v1.0.0, lipgloss v1.1.x, glamour v1.0.0, huh v1.0.0, charmbracelet/log v1.0.0 — huh and glamour v1 are built on Bubble Tea v1; v2 would split the stack.
-  - TOML: `github.com/BurntSushi/toml` (its `MetaData.Undecoded` lets config reject unknown keys).
+  - TOML: `github.com/BurntSushi/toml` (its `MetaData.Undecoded` lets config warn about unknown keys).
   - Globs for `owns`: `github.com/bmatcuk/doublestar/v4` (`**` support).
   - Intra-line diff: `github.com/sergi/go-diff/diffmatchpatch` (character diff + semantic cleanup).
   - TUI tests: `github.com/charmbracelet/x/exp/teatest` available; `tui.Snapshot` is the primary no-TTY check.
@@ -121,7 +121,7 @@ Each entry: date, decision, why, alternatives considered.
 ## 2026-10-13 — GitHub client behaviour (M0)
 
 - **`ErrUnauthorized` wraps `ErrNoToken`**, so callers that fall back to local branches on a missing token do the same on a rejected one. Alternative: a separate error every caller checks.
-- **"Viewer commented" is inferred:** true when the viewer's latest review is not PENDING, or they wrote one of the PR's last 20 comments. Alternatives: an extra `commenter:@me` search per refresh; the participants list (also counts the author).
+- **"Viewer commented" is inferred:** true when the viewer's latest review is not PENDING, or they wrote one of the PR's last 20 comments. It is informational only (superseded for sections by the 2026-10-13 "Needs you membership" entry below). Alternatives: an extra `commenter:@me` search per refresh; the participants list (also counts the author).
 - **Only user review requests count;** team requests neither add a reviewer nor set ReviewRequested. Team membership may come later.
 - **Fake `is:closed`** matches closed and merged PRs, like GitHub; an empty State counts as open.
 - **`type:pr` counts as `is:pr`** when building search queries.
@@ -130,13 +130,13 @@ Each entry: date, decision, why, alternatives considered.
 ## 2026-10-13 — Daemon and discovery (M0)
 
 - **Adding an existing item** returns it in its current section and queues analysis; it does not move a ranked item into Added. Alternative: convert it to source=added.
-- **Staleness without a new field:** an item becomes Stale only if it was Ready or Error and its head SHA changed (note "new push since analysis"); in-flight items are left alone.
+- **Staleness without a new field:** an item becomes Stale if it was Ready or Error and its head SHA changed (note "new push since analysis"). Discovery leaves in-flight items alone, but when a run finishes it compares the head it analysed with the stored head and sets Stale instead of Ready if they differ.
 - **Discovery computes urgency from metadata** with the M0 formula and GitHub's Additions/Deletions (when non-zero) so the picker can rank and queue before analysis. M3 must merge label terms from the stored ItemAgg (TODO in `setUrgency`).
 - **Urgency terms by kind:** PR-only terms (requested, release, CI red) are omitted for branches; unpushed is omitted for PRs (spec: "Branches replace the PR-only terms"). Label terms are stored with value 0.
 - **GitHub failure keeps cached PR items** (not pruned); their head ref/SHA still hide matching local branches.
-- **Owned-path search** uses `is:pr is:open path:<glob>` best-effort; GitHub may reject `path:`, so errors are only logged. Remaining PRs go to Needs you.
+- **Owned-path source** (revised, see "M0 review fixes"): issue search has no `path:` qualifier, so discovery lists up to 100 open PRs with their first 100 changed paths (`gh.Client.ListOpenPRs`, GraphQL `pullRequests(states: OPEN)` + `files`) and matches `user.owns` with doublestar locally. Errors are logged only.
 - **Socket:** requests on one connection run concurrently (responses may be out of order, correlated by ID). Each subscriber has a 256-event buffer; events drop on overflow, as InProcess does. A live socket gives `ErrDaemonRunning`; a dead socket file is removed.
-- **Periodic discovery:** `prt daemon` runs `Discover` at start and every `pipeline.refresh_seconds`; the TUI also runs it on the same interval (`tui.Options.RefreshEvery`), so a TUI on an in-process client stays fresh too. Duplicate discovery through the socket is cheap and idempotent. Alternative: only the daemon refreshes and pushes events (the TUI would then need a separate path for `--no-daemon`).
+- **Periodic discovery:** `prt daemon` runs `Discover` at start and every `pipeline.refresh_seconds`; the TUI also runs it on the same interval (`tui.Options.RefreshEvery`), so a TUI on an in-process client stays fresh too. `Discover` runs are serialised by a mutex, so overlapping callers (daemon loop, TUI ticks, TUI start) never prune each other's results; a duplicate run is then cheap and idempotent. Alternative: only the daemon refreshes and pushes events (the TUI would then need a separate path for `--no-daemon`).
 
 ## 2026-10-13 — Diff viewer (M0)
 
@@ -154,7 +154,7 @@ Each entry: date, decision, why, alternatives considered.
 - **Selection without colour:** the cursor row has a "▸" marker as well as bold, so selection is visible in snapshots.
 - **Notes clear on the next key press**, not a timer (deterministic, no tick commands).
 - **Detail loads:** only the newest load is applied (sequence number); no debounce delay.
-- **Analysis start** runs in daemon order in one command, at most once per (item, head SHA); `r` always forces.
+- **Analysis start** runs in daemon order in one command, at most once per (item, head SHA), and only for never-analysed items (empty state). A Stale item waits for `r`, as the spec's state list says; `r` always forces.
 - **Rebinding:** `[keys]` in `prt.toml` maps action → comma-separated keys (`down = "j,down"`). Actions: up, down, top, bottom, focus, back, next_focus, prev_focus, refresh, overview, code, open, checkout, page_down, page_up, next_file, prev_file, help, quit. An unknown action logs a warning and the defaults are used.
 - **Branches secondary line:** "<n> unpushed · <n> ahead · age"; branch state arrives in M5.
 - **Markdown without colour** uses glamour's "notty" style; with colour it picks dark/light from `HasDarkBackground()` read before the program starts.
@@ -166,3 +166,20 @@ Each entry: date, decision, why, alternatives considered.
 - **`--fixtures FILE`** loads `gh.LoadFixture` as `Deps.GH` and wins over the real client; it works with `--offline` (offline still disables Jev, LLMs and embeddings). `make demo` and `make snapshot` use `testdata/fixtures/prs.json`.
 - **`--now RFC3339`** fixes the clock for ages; `make snapshot` passes `2026-10-13T12:00:00Z` so output is byte-stable. Alternative: a `PRT_NOW` env var (flags are more visible in the Makefile).
 - **Opener for `o`:** `open` on macOS, `xdg-open` elsewhere, started without a shell and not waited on.
+
+## 2026-10-13 — M0 review fixes
+
+- **Needs you membership.** Only the spec's four triggers put a PR in Needs you: (1) the viewer is a requested reviewer (user requests only); (2) CI is red and the viewer's latest review approved it; (3) re-review after a push: the commit of the viewer's latest submitted, non-dismissed review (`viewerLatestReview.commit.oid`) differs from the head SHA; (4) a comment addressed to the viewer: one of the PR's last 20 conversation comments, written by someone else, @-mentions the viewer's login, and the viewer has not commented after it. PRs the viewer authored go to Yours, whatever else is true. Why: the spec's table. Alternatives: count every comment by the viewer (the old rule: every involved PR landed in Needs you); thread-level "reply in a thread you started" detection (needs review-thread comments per PR; possible later with `Threads`).
+- **Involved section (deviation).** PRs a source returned that trigger nothing above (owned-path matches nobody asked you about, PRs you only commented on, approved PRs with no new push) are listed in a fifth section, "Involved", after Branches and before Added, hidden when empty. Why: the spec requires these sources but its section table has no row for them; putting them in Needs you made that section meaningless. Alternatives: drop them (loses the owned-path source), or rank them low inside Needs you (still dilutes it).
+- **Added PRs get fresh metadata** from `GH.PR` on each discovery when no source returned them.
+- **Fork PRs.** `isCrossRepository` is fetched. Local branches are hidden by a PR's head SHA, and by its head ref name only for same-repo PRs, so a fork's `patch-1` never hides your own `patch-1`. `c` on a fork PR checks out its head commit (detached) when it is local, otherwise it fails with "run `gh pr checkout N`". Alternative: fetch `refs/pull/N/head` (network git; not in gitx by design).
+- **Comparison base.** Ahead counts and merge bases use `origin/<default>` when that remote-tracking ref exists (`gitx.CompareRef`), else the local branch; branch items show that ref as their base. A `CountAhead` error keeps the stored item instead of pruning it. A missing default branch skips only the branch source (EventLog note), PR discovery still runs.
+- **`r` re-resolves the head** before re-running: the local ref for branches, `GH.PR` for PRs (metadata refreshed too). A failed lookup keeps the stored head and still re-runs.
+- **Config.** Unknown keys in any TOML file are warnings (logged at start), not errors; syntax and type errors stay fatal. The spec's `models.jev_endpoint` is accepted and ignored with a warning (the spec value is a full endpoint, not a base URL, so it cannot map onto `jev_base_url`). A test loads the spec's sample `prt.toml` verbatim.
+- **Picker secondary lines.** Needs you shows `~N min` (stand-in minutes until M3); breaking and needs-eyes counts need labels and arrive in M3. Yours shows `N open threads` (unresolved review threads, first 100) when non-zero, plus CI state and age.
+- **Mouse.** Wheel over the picker moves the selection, over the Overview scrolls it, over Code goes to the diff viewer; a left click on a picker row selects that item; nothing else.
+- **TUI start** batches a cache load with discovery, so stored items render before GitHub answers.
+- **Socket protocol.** Lines have no size cap (`bufio.Reader`); a lost daemon connection shows "daemon connection lost; restart prt" in the status bar. Reconnect or fallback to in-process is not attempted (later).
+- **Socket path length.** When `<gitDir>/prt/prtd.sock` is longer than 100 bytes, the socket lives at `$TMPDIR/prt-<sha256(gitDir)[:16 hex]>/prtd.sock`; the daemon refuses a socket directory owned by another user.
+- **Checkout** runs `git checkout <ref> --` and refuses refs starting with `-`, so a ref is never read as a pathspec or option.
+- **Lint and vet cover `//go:build live` tests** (`build-tags: [live]`, `go vet -tags live` in `make check`); they are compiled, never run.

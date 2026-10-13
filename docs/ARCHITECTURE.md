@@ -43,9 +43,9 @@ Nothing outside those five packages makes a network call or runs `git`.
 | --- | --- | --- | --- |
 | `cmd/prt` | M0 | flags (`--repo --no-daemon --offline --fixtures --snapshot --now`), `daemon` subcommand (socket + periodic discovery), wiring from env, browser opener | done for M0 |
 | `internal/model` | M0 | domain types (spec "Data model"), `UnitID`, `GroupID`, `ContentHash`, aggregates | done |
-| `internal/config` | M0 | `prt.toml`, `prt.routing.toml` (+ raw `prt.questions.toml`), lookup `.git/prt` → XDG → builtin, unknown keys rejected | done |
+| `internal/config` | M0 | `prt.toml`, `prt.routing.toml` (+ raw `prt.questions.toml`), lookup `.git/prt` → XDG → builtin, unknown keys warned about (`Config.Warnings`) | done |
 | `internal/gitx` | M0 | `Git` interface, `Exec` (git CLI), `Fake` | done |
-| `internal/gh` | M0/M4 | `Client` interface, `API` (go-github + githubv4; token from `gh auth token`), `Fake`, `ParseRemote` | `Viewer`, `SearchPRs`, `PR`, `PRDiff`, `CODEOWNERS` done; fake + `LoadFixture`; M4 write methods (`Threads`, `SubmitReview`, `Reply`, `ResolveThread`, `CreatePR`) TODO |
+| `internal/gh` | M0/M4 | `Client` interface, `API` (go-github + githubv4; token from `gh auth token`), `Fake`, `ParseRemote` | `Viewer`, `SearchPRs`, `ListOpenPRs` (with changed paths, for owned globs), `PR`, `PRDiff`, `CODEOWNERS` done; fake + `LoadFixture`; M4 write methods (`Threads`, `SubmitReview`, `Reply`, `ResolveThread`, `CreatePR`) TODO |
 | `internal/store` | M0 | `Store` interface, `SQLite` (JSON docs table + cache + runlog, `PRAGMA user_version` migrations), `OpenMemory` for tests | done |
 | `internal/diff` | M0 | unified diff parser, hunk/line numbering, `IntraLine` char diff, `Pair` | done |
 | `internal/proto` | M0 | NDJSON `Message`, `Event`, `Detail`, encoder/decoder | done |
@@ -62,8 +62,9 @@ Nothing outside those five packages makes a network call or runs `git`.
 | `internal/cluster` | M2 | components, splitting, mechanical groups, review order | placeholder: one group per unit |
 | `internal/route` | M3 | `when` expression parser/evaluator, `Route`, context decisions, slots/cap | placeholder |
 | `internal/review` | M3 | `Reviewer`, `Tiers`, `Anthropic` adapter (`PRT_ANTHROPIC_API_KEY`), `Fake` | interface + fake done; adapter TODO |
-| `internal/testutil` | all | `RepoRoot`, `Testdata`, `FixtureRepo` (skips if not generated), `RecordingsDir` | done |
-| `tools/fixturegen` | pre-M1 | builds `testdata/fixture-repo` from `testdata/fixtures/{base,prs/*.patch}` with fixed dates | done |
+| `internal/testutil` | all | `RepoRoot`, `Testdata`, `FixtureRepo` (generates a fresh copy into `t.TempDir()`), `RecordingsDir` | done |
+| `internal/fixturegen` | pre-M1 | `Generate`: builds a fixture repo from `testdata/fixtures/{base,prs/*.patch}` with fixed dates | done |
+| `tools/fixturegen` | pre-M1 | CLI over `internal/fixturegen` for `testdata/fixture-repo` | done |
 
 ## Core interfaces (abridged; see code for docs)
 
