@@ -1,0 +1,67 @@
+{
+  "item": {
+    "id": "pr:103",
+    "kind": "pr",
+    "number": 103,
+    "ref": "auth-fix",
+    "headSha": "eee555",
+    "baseSha": "fff666",
+    "title": "Fix token refresh",
+    "source": "ranked",
+    "state": "ready"
+  },
+  "groups": [
+    {"id": "k1aaaaaaaaaa", "itemId": "pr:103", "unitIds": ["u1", "u2"], "name": "Refresh token on 401", "nameSource": "bullet", "nameP": 0.77, "order": 0},
+    {"id": "k2bbbbbbbbbb", "itemId": "pr:103", "unitIds": ["u3"], "name": "Tests for refresh", "nameSource": "bullet", "nameP": 0.55, "order": 1}
+  ],
+  "reviews": [
+    {"groupId": "k1aaaaaaaaaa", "itemId": "pr:103", "groupName": "Refresh token on 401", "tier": "deep", "rule": "risk >= 4 || tag.auth", "ruleIndex": 2, "ruleWords": "if risk >= 4 || tag.auth → deep", "context": ["callers"], "prompts": ["security"], "status": "skipped", "queueNote": "no PRT_ANTHROPIC_API_KEY", "confidence": 0, "ms": 0, "cost": 0},
+    {"groupId": "k2bbbbbbbbbb", "itemId": "pr:103", "groupName": "Tests for refresh", "tier": "fast", "rule": "true", "ruleIndex": 3, "ruleWords": "if true → fast", "context": ["code_under_test"], "status": "skipped", "queueNote": "no PRT_ANTHROPIC_API_KEY", "confidence": 0, "ms": 0, "cost": 0}
+  ],
+  "agg": {
+    "itemId": "pr:103",
+    "composition": {"bugfix": 1},
+    "noiseLines": 0, "added": 30, "removed": 4, "effectiveLines": 34, "minutes": 6,
+    "unitsTotal": 3, "unitsEyes": 2, "unitsSkim": 1, "unitsSkip": 0,
+    "headlines": [], "hotSpots": [], "riskMax": 4, "riskAny": 0.4, "riskTags": {"auth": 2}, "testGap": 0, "riskyUnits": 2,
+    "fidelity": 1, "undocumented": [], "unsure": 0, "urgency": 4.1, "urgencyTerms": [], "why": "asked you", "units": [], "groups": [],
+    "grouping": {
+      "units": 3, "structural": {"tests": 1, "calls": 1}, "embedCandidates": 1, "mechanicalCandidates": 0, "pairsAsked": 1,
+      "jevKept": {}, "jevRejected": 1, "cutLinks": 0, "groups": 2, "mechanical": 0, "mechanicalCollapsed": 0,
+      "ejected": 0, "ungrouped": 0, "userEdits": 1
+    },
+    "review": {
+      "groups": 2, "tiers": {"fast": 1, "deep": 1}, "status": {"skipped": 2},
+      "escalations": 0, "calibrations": 0, "findings": 0, "elapsedMs": 0, "allDeepEstMs": 21000,
+      "cost": 0, "capUsd": 0.4, "overCap": 0, "jevCalls": 9, "jevCost": 0.0031,
+      "note": "reviews skipped: PRT_ANTHROPIC_API_KEY not set"
+    },
+    "calibration": {"samples": 0, "misses": 0, "missRate": 0, "overrides": {"risk": 1}}
+  },
+  "runLogs": [
+    {"itemId": "pr:103", "stage": "fetch", "status": "done", "startedAt": "2026-10-13T11:00:00Z", "ms": 350, "calls": 1, "cost": 0, "cacheHit": false},
+    {"itemId": "pr:103", "stage": "parse", "status": "done", "startedAt": "2026-10-13T11:00:01Z", "ms": 70, "calls": 0, "cost": 0, "cacheHit": false, "out": 3},
+    {"itemId": "pr:103", "stage": "link", "status": "done", "startedAt": "2026-10-13T11:00:01.1Z", "ms": 30, "calls": 0, "cost": 0, "cacheHit": false, "in": 3, "out": 2},
+    {"itemId": "pr:103", "stage": "embed", "status": "done", "startedAt": "2026-10-13T11:00:01.2Z", "ms": 210, "calls": 1, "cost": 0, "cacheHit": false, "in": 3, "out": 1},
+    {"itemId": "pr:103", "stage": "jev", "status": "done", "startedAt": "2026-10-13T11:00:01.5Z", "ms": 1900, "calls": 9, "cost": 0.0031, "cacheHit": false, "in": 3, "out": 0},
+    {"itemId": "pr:103", "stage": "cluster", "status": "done", "startedAt": "2026-10-13T11:00:03.4Z", "ms": 6, "calls": 0, "cost": 0, "cacheHit": false, "in": 3, "out": 2},
+    {"itemId": "pr:103", "stage": "route", "status": "done", "startedAt": "2026-10-13T11:00:03.5Z", "ms": 2, "calls": 0, "cost": 0, "cacheHit": false, "in": 2, "out": 2},
+    {"itemId": "pr:103", "stage": "review", "status": "skipped", "startedAt": "2026-10-13T11:00:03.6Z", "ms": 0, "calls": 0, "cost": 0, "cacheHit": false, "in": 2, "note": "reviews skipped: PRT_ANTHROPIC_API_KEY not set"},
+    {"itemId": "pr:103", "stage": "aggregate", "status": "done", "startedAt": "2026-10-13T11:00:03.7Z", "ms": 4, "calls": 0, "cost": 0, "cacheHit": false, "in": 3, "out": 1}
+  ],
+  "routing": {
+    "path": ".git/prt/prt.routing.toml",
+    "source": ".git/prt/prt.routing.toml",
+    "deepSlots": 2,
+    "costCapUsd": 0.4,
+    "escalateBelow": 0.6,
+    "calibrationSample": 0.05,
+    "warnings": ["rule 4 can never fire (after `true`)"],
+    "rules": [
+      {"index": 1, "when": "mechanical", "tier": "none", "words": "if mechanical → none"},
+      {"index": 2, "when": "risk >= 4 || tag.auth", "tier": "deep", "prompts": ["security"], "context": ["callers"], "words": "if risk >= 4 || tag.auth → deep"},
+      {"index": 3, "when": "true", "tier": "fast", "words": "if true → fast"},
+      {"index": 4, "when": "risk >>= 2", "tier": "deep", "err": "unexpected token \">\" at column 7"}
+    ]
+  }
+}

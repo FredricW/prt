@@ -40,6 +40,11 @@ type rowCtx struct {
 	now    time.Time
 	spin   string                 // current spinner frame
 	stages map[string]model.Stage // latest stage per item (from stage events)
+	// runLogs are the stage rows per item (from stage events), drawn as the
+	// one-line stage strip while the item analyses by strip
+	// (pipeview.StageStrip; nil draws no strip).
+	runLogs map[string][]model.RunLog
+	strip   func(rls []model.RunLog, width int) string
 }
 
 // sortItems orders items by section, then urgency descending, then most
@@ -195,7 +200,49 @@ func (p picker) row(i int, st styles, rc rowCtx, w int) (string, string) {
 		first = st.cursor.Render(first)
 	}
 	second := st.dim.Render(truncate("       "+secondaryLine(it, rc), w))
+	if strip := stageStrip(it, rc, w-9); strip != "" {
+		second = st.dim.Render(truncate("       "+strings.TrimSpace(rc.spin+" "+strip), w))
+	}
 	return first, second
+}
+
+// stageStrip is the picker's one-line stage strip for an analysing item
+// (spec Pipeline page: "also shown as a one-line status in the picker"),
+// "" when the item is not analysing or no stage row arrived yet.
+func stageStrip(it model.Item, rc rowCtx, width int) string {
+	rows := rc.runLogs[it.ID]
+	if it.State != model.StateAnalysing || len(rows) == 0 || rc.strip == nil {
+		return ""
+	}
+	return rc.strip(rows, max(1, width))
+}
+
+// upsertRunLog records a stage row: it replaces the row of the same stage,
+// and a row that starts a stage (queued or running) drops the rows of every
+// later stage, which are about to run again.
+func upsertRunLog(rows []model.RunLog, rl model.RunLog) []model.RunLog {
+	starting := rl.Status == model.StageQueued || rl.Status == model.StageRunning
+	pos := stageIndex(rl.Stage)
+	out := make([]model.RunLog, 0, len(rows)+1)
+	for _, r := range rows {
+		if r.Stage == rl.Stage || (starting && stageIndex(r.Stage) > pos) {
+			continue
+		}
+		out = append(out, r)
+	}
+	out = append(out, rl)
+	sort.SliceStable(out, func(i, j int) bool { return stageIndex(out[i].Stage) < stageIndex(out[j].Stage) })
+	return out
+}
+
+// stageIndex is s's position in model.Stages (unknown stages last).
+func stageIndex(s model.Stage) int {
+	for i, x := range model.Stages {
+		if x == s {
+			return i
+		}
+	}
+	return len(model.Stages)
 }
 
 // itemAt returns the item index drawn on screen row y of the picker (0 is

@@ -1,13 +1,13 @@
   Pass request options through getUser    ‹ApiError›  2 units · 2 files                                                 
-    3u 3f · b2 .82 · — · not reviewed    ┌ risk 1 · routing: — (M3)
+    3u 3f · b2 .82 · not routed          ┌ risk 1 · routing: not routed
 ▸ ‹ApiError› — 2 units hidden by filters │ placeholder name (code-derived; no description bullet names this group)
   Invalidate the profile cache on logout 
-    1u 1f · b1 .64 · — · not reviewed    why these belong together
+    1u 1f · b1 .64 · not routed          why these belong together
   ‹import fetchJSON from client› — 5 un…   moved  client.ts ApiError → errors.ts ApiError
 ── ungrouped (3) ─────────────────────── 
   ‹f.tsx› — 1 unit hidden by filters     2 units hidden by filters (f)
   ‹theme.css› — 1 unit hidden by filters 
-  ‹save› — 1 unit hidden by filters      findings: none yet (review lands in M3)
+  ‹save› — 1 unit hidden by filters      findings: not reviewed (not routed)
 ── split suggestion ──────────────────── 
   split? web/src/styles/theme.css .74    
                                          

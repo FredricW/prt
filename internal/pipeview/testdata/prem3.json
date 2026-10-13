@@ -1,0 +1,38 @@
+{
+  "item": {
+    "id": "pr:102",
+    "kind": "pr",
+    "number": 102,
+    "ref": "rename-fetch",
+    "headSha": "ccc333",
+    "baseSha": "ddd444",
+    "title": "Rename fetchUser",
+    "source": "ranked",
+    "state": "ready"
+  },
+  "groups": [
+    {"id": "h1aaaaaaaaaa", "itemId": "pr:102", "unitIds": ["u1", "u2", "u3"], "name": "rename fetchUser", "nameSource": "placeholder", "mechanical": true, "count": 3, "order": 0}
+  ],
+  "agg": {
+    "itemId": "pr:102",
+    "composition": {"refactor": 1},
+    "noiseLines": 0, "added": 6, "removed": 6, "effectiveLines": 2, "minutes": 1,
+    "unitsTotal": 3, "unitsEyes": 0, "unitsSkim": 1, "unitsSkip": 2,
+    "headlines": [], "hotSpots": [], "riskMax": 1, "riskAny": 0, "riskTags": {}, "testGap": 0, "riskyUnits": 0,
+    "fidelity": 1, "undocumented": [], "unsure": 0, "urgency": 1.1, "urgencyTerms": [], "why": "", "units": [], "groups": [],
+    "grouping": {
+      "units": 3, "structural": {}, "embedCandidates": 0, "mechanicalCandidates": 3, "pairsAsked": 0,
+      "jevKept": {}, "jevRejected": 0, "cutLinks": 0, "groups": 1, "mechanical": 1, "mechanicalCollapsed": 2,
+      "ejected": 0, "ungrouped": 0, "userEdits": 0, "embedNote": "no embedding model: groups from structural links only"
+    }
+  },
+  "runLogs": [
+    {"itemId": "pr:102", "stage": "fetch", "status": "done", "startedAt": "2026-10-13T10:00:00Z", "ms": 300, "calls": 1, "cost": 0, "cacheHit": false},
+    {"itemId": "pr:102", "stage": "parse", "status": "done", "startedAt": "2026-10-13T10:00:01Z", "ms": 60, "calls": 0, "cost": 0, "cacheHit": false, "out": 3},
+    {"itemId": "pr:102", "stage": "link", "status": "done", "startedAt": "2026-10-13T10:00:01.1Z", "ms": 20, "calls": 0, "cost": 0, "cacheHit": false, "in": 3},
+    {"itemId": "pr:102", "stage": "embed", "status": "skipped", "startedAt": "2026-10-13T10:00:01.2Z", "ms": 0, "calls": 0, "cost": 0, "cacheHit": false, "note": "no embedding model"},
+    {"itemId": "pr:102", "stage": "jev", "status": "skipped-cache", "startedAt": "2026-10-13T10:00:01.3Z", "ms": 2, "calls": 0, "cost": 0, "cacheHit": true, "in": 3, "out": 3},
+    {"itemId": "pr:102", "stage": "cluster", "status": "done", "startedAt": "2026-10-13T10:00:01.4Z", "ms": 4, "calls": 0, "cost": 0, "cacheHit": false, "in": 3, "out": 1},
+    {"itemId": "pr:102", "stage": "aggregate", "status": "done", "startedAt": "2026-10-13T10:00:01.5Z", "ms": 3, "calls": 0, "cost": 0, "cacheHit": false, "in": 3, "out": 1}
+  ]
+}

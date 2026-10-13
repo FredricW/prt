@@ -4,18 +4,16 @@
 // contributions. No I/O, no model calls; the TL;DR is filled in by the
 // pipeline from the returned record.
 //
-// M1 state: every per-unit and per-item formula over labels. Urgency keeps
-// the M0 placeholder (DECISIONS "M0 urgency placeholder"): only terms that
-// need no labels contribute; label terms are present with value 0 so M3 only
-// has to fill them in.
-//
-// TODO(M3): hot spots with findings, label urgency terms.
+// M3 state: every per-unit and per-item formula over labels, plus
+//   - urgency label terms (breaking, risk, test gap, relevance) taken from
+//     the record being built, or from Input.Prior when Urgency is called on
+//     its own (discovery);
+//   - hot-spot reasons from review findings (Input.Reviews), falling back to
+//     the label that fired;
+//   - the group fields routing needs: GroupAgg.Kind, HotSpot and Findings.
 package aggregate
 
 import (
-	"math"
-	"sort"
-	"strings"
 	"time"
 
 	"github.com/bmatcuk/doublestar/v4"
@@ -37,7 +35,9 @@ type Input struct {
 	Groups []model.Group
 	// Links are the item's stored links (structural and Jev-confirmed);
 	// M2 fidelity uses incoming calls links (see the M2 fidelity rule).
-	Links              []model.Link
+	Links []model.Link
+	// Reviews are the routing-table rows (one per group, with findings):
+	// they give hot spots their finding reasons and GroupAgg.Findings.
 	Reviews            []model.Review
 	Weights            config.Rank
 	Pipeline           config.Pipeline
@@ -50,6 +50,11 @@ type Input struct {
 	// LabelsMissing is set by the pipeline when Jev was unavailable for this
 	// run; it is copied to ItemAgg.LabelsMissing.
 	LabelsMissing bool
+	// Prior, when set, is the item's stored aggregate: Urgency then takes
+	// its label terms (breaking, risk, test gap, relevance) from it instead
+	// of zeros. Discovery sets it so a poll keeps the label-based ranking
+	// (M3; DECISIONS "M3 shared contracts"). Item ignores it.
+	Prior *model.ItemAgg
 }
 
 // Item computes the overview record from units, labels and git facts: per
@@ -82,11 +87,11 @@ func Item(in Input) model.ItemAgg {
 		RiskyUnits:     s.risky,
 		Unsure:         s.unsure,
 		Headlines:      headlines(us),
-		HotSpots:       hotSpots(us),
+		HotSpots:       hotSpots(us, findingReasons(in.Reviews)),
 		Undocumented:   []string{},
 		Files:          files(in.Files, us),
 		Slice:          slice(in.Owns, us),
-		Groups:         groups(in.Groups, us, unsureBelow),
+		Groups:         groups(in.Groups, us, in.Reviews, unsureBelow),
 		Units:          make([]model.UnitAgg, 0, len(us)),
 		LabelsMissing:  in.LabelsMissing,
 	}
@@ -101,7 +106,7 @@ func Item(in Input) model.ItemAgg {
 	if idx.anyKnown {
 		agg.Minutes = s.minutes
 	}
-	agg.UrgencyTerms, agg.Urgency, agg.Why = Urgency(in, agg.Minutes)
+	agg.UrgencyTerms, agg.Urgency, agg.Why = urgency(in, agg.Minutes, labelTermsOf(&agg))
 	return agg
 }
 
@@ -161,63 +166,4 @@ func IsRelease(base string, globs []string) bool {
 		}
 	}
 	return false
-}
-
-// Urgency computes the urgency terms, their sum and the "why" line. Terms
-// that do not apply to the item's kind are omitted: PRs get review
-// requested, release and CI terms; branches get unpushed commits instead
-// (spec: "Branches replace the PR-only terms"). minutes enters negatively.
-func Urgency(in Input, minutes float64) ([]model.UrgencyTerm, float64, string) {
-	w := in.Weights
-	isPR := in.Item.Kind != model.KindBranch
-	var terms []model.UrgencyTerm
-	add := func(name, words string, value, weight float64, sign float64) {
-		terms = append(terms, model.UrgencyTerm{Name: name, Words: words, Value: value, Weight: weight, Contrib: sign * weight * value})
-	}
-	if isPR {
-		add("w_requested", "asked you", indicator(in.Item.ReviewRequested), w.WRequested, 1)
-	}
-	// Label terms: 0 until M1/M3 fill them from labels.
-	add("w_breaking", "breaking", 0, w.WBreaking, 1)
-	add("w_risk", "risk", 0, w.WRisk, 1)
-	add("w_test_gap", "untested", 0, w.WTestGap, 1)
-	add("w_relevance", "relevant to you", 0, w.WRelevance, 1)
-	if isPR {
-		add("w_release", "release", indicator(in.Release), w.WRelease, 1)
-		add("w_ci_red", "CI red after approval", indicator(in.CIRedAfterApproval), w.WCIRed, 1)
-	}
-	add("w_age", "age", math.Log1p(max(in.AgeDays, 0)), w.WAge, 1)
-	add("w_minutes", "size", minutes, w.WMinutes, -1)
-	if !isPR {
-		add("w_unpushed", "unpushed", float64(max(in.Item.Unpushed, 0)), w.WUnpushed, 1)
-	}
-	total := 0.0
-	for _, t := range terms {
-		total += t.Contrib
-	}
-	return terms, total, Why(terms)
-}
-
-// Why returns the words of the three largest positive contributions, joined
-// by " · " (ties keep term order).
-func Why(terms []model.UrgencyTerm) string {
-	pos := make([]model.UrgencyTerm, 0, len(terms))
-	for _, t := range terms {
-		if t.Contrib > 0 {
-			pos = append(pos, t)
-		}
-	}
-	sort.SliceStable(pos, func(i, j int) bool { return pos[i].Contrib > pos[j].Contrib })
-	words := make([]string, 0, 3)
-	for i := 0; i < len(pos) && i < 3; i++ {
-		words = append(words, pos[i].Words)
-	}
-	return strings.Join(words, " · ")
-}
-
-func indicator(b bool) float64 {
-	if b {
-		return 1
-	}
-	return 0
 }

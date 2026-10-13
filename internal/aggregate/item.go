@@ -138,17 +138,23 @@ func riskAny(us []unitFacts) float64 {
 
 func clamp01(p float64) float64 { return min(max(p, 0), 1) }
 
-// hotSpots ranks units by risk × relevance × (1 − covered) × min confidence
-// and keeps the top three with a positive score (ties keep unit order).
-func hotSpots(us []unitFacts) []model.HotSpot {
+// hotSpots ranks units by model.UnitHotSpot (risk × relevance ×
+// (1 − covered) × min confidence) and keeps the top three with a positive
+// score (ties keep unit order). The reason is the unit's entry in reasons
+// (from review findings) when present, else the label that fired.
+func hotSpots(us []unitFacts, reasons map[string]string) []model.HotSpot {
 	out := []model.HotSpot{}
 	for _, f := range us {
 		a := f.agg
-		score := a.Risk * a.Relevance * (1 - a.CoveredP) * a.MinConfidence
+		score := model.UnitHotSpot(a)
 		if score <= 0 {
 			continue
 		}
-		out = append(out, model.HotSpot{UnitID: a.UnitID, Path: a.Path, Line: f.line, Score: score, Reason: hotSpotReason(a)})
+		reason, ok := reasons[a.UnitID]
+		if !ok {
+			reason = hotSpotReason(a)
+		}
+		out = append(out, model.HotSpot{UnitID: a.UnitID, Path: a.Path, Line: f.line, Score: score, Reason: reason})
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Score > out[j].Score })
 	if len(out) > maxHotSpots {
@@ -443,11 +449,13 @@ func moduleOf(a model.UnitAgg, owns []string) string {
 }
 
 // groups computes a GroupAgg per input group; unknown unit ids are ignored.
-func groups(gs []model.Group, us []unitFacts, unsureBelow float64) []model.GroupAgg {
+// Findings come from the group's routing row in reviews.
+func groups(gs []model.Group, us []unitFacts, reviews []model.Review, unsureBelow float64) []model.GroupAgg {
 	byID := make(map[string]unitFacts, len(us))
 	for _, f := range us {
 		byID[f.agg.UnitID] = f
 	}
+	findings := groupFindings(reviews)
 	out := make([]model.GroupAgg, 0, len(gs))
 	for _, g := range gs {
 		members := make([]unitFacts, 0, len(g.UnitIDs))
@@ -461,6 +469,7 @@ func groups(gs []model.Group, us []unitFacts, unsureBelow float64) []model.Group
 			GroupID: g.ID, Composition: s.composition, EffectiveLines: s.effective,
 			Minutes: s.minutes, RiskMax: float64(s.riskMax), RiskTags: s.riskTags,
 			TestGap: s.testGap, Breaking: s.breaking, Unsure: s.unsure,
+			Kind: groupKind(members), HotSpot: groupHotSpot(members), Findings: findings[g.ID],
 		})
 	}
 	return out

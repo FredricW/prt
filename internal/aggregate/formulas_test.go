@@ -117,13 +117,13 @@ func TestHotSpotsOrderAndCut(t *testing.T) {
 		facts("e", 3, 3, 0.5, 1), // 4.5
 		facts("f", 0, 5, 0, 1),   // unknown risk: skipped
 	}
-	got := hotSpots(us)
+	got := hotSpots(us, nil)
 	ids := make([]string, 0, len(got))
 	for _, h := range got {
 		ids = append(ids, h.UnitID)
 	}
 	assertEqual(t, "hot spots", ids, []string{"b", "e", "a"})
-	if len(hotSpots(nil)) != 0 || hotSpots(nil) == nil {
+	if len(hotSpots(nil, nil)) != 0 || hotSpots(nil, nil) == nil {
 		t.Error("no units: want empty, non-nil hot spots")
 	}
 }

@@ -1,0 +1,24 @@
+Pipeline · #101 Cache user lookups · analysing (review)
+
+Stages  run 10-13 14:03:00 · fetch ✓ 400 ms
+╭────────────╮ ╭────────────╮ ╭────────────╮ ╭────────────╮ ╭────────────╮ ╭────────────╮ ╭────────────╮ ╭────────────╮
+│parse ✓     │ │link ✓      │ │embed ≡     │ │jev ✓       │ │cluster ✓   │ │route ✓     │ │review ⟳    │ │agg ·       │
+│120 ms      │ │85 ms       │ │cached      │ │2.3 s       │ │40 ms       │ │5 ms        │ │13s         │ │queued      │
+│0→24        │ │24→9        │ │24→12       │ │24→6        │ │24→7        │ │7→7         │ │7→…         │ │            │
+╰────────────╯ ╰────────────╯ ╰────────────╯ ╰────────────╯ ╰────────────╯ ╰────────────╯ ╰────────────╯ ╰────────────╯
+
+Routing  D deep · s skip · c call log · r re-review
+  group                   tier            rule                 context       status         time find    cost calib
+▸ Cache getUser results   fast → deep .42 if true → fast       callers,types done          8.4 s    2 $0.0412
+  ‹rename fetchUser›      none            if mechanical || ki… —             skipped           —    —       —
+  ai·Retry wrapper tweaks fast            if true → fast       tests         done          2.1 s    0 $0.0339 ✓ agree
+  Session token checks    deep (forced)   forced deep (D)      callers,test… running 12s       —    —       —
+  ‹config defaults›       fast            if true → fast       config        queued            —    —       —
+    ↳ over cost cap: est $0.14, $0.05 of $0.40 left
+  Logger cleanup          fast            if true → fast       —             failed       30.0 s    — $0.0021
+    ↳ error: timeout after 30s (retried once)
+  Docs typo               none (skipped)  skipped by user (s)  —             skipped           —    —       —
+
+Totals
+  tier mix  nnnnnnnffffffffffddddddd  n none 2 · f fast 3 · d deep 2
+raise cost cap for this item: $0.80█  enter sets · esc cancels

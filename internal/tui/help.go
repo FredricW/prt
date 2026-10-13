@@ -13,8 +13,11 @@ func (m Model) helpGroups() (string, [][]key.Binding) {
 	if m.focus == FocusPicker {
 		return "picker", m.keys.pickerHelp()
 	}
-	if m.tab == TabCode {
+	switch m.tab {
+	case TabCode:
 		return "code", m.keys.codeHelp(m.code.HelpBindings())
+	case TabPipeline:
+		return "pipeline", m.keys.pipelineHelp(m.pipe.HelpBindings())
 	}
 	return "overview", m.keys.overviewHelp()
 }

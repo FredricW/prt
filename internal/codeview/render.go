@@ -312,6 +312,8 @@ func (m Model) buildRow(i, width int) string {
 		return ansi.Truncate(m.groupHeadText(int(r.line)), width, ellipsis)
 	case rowText:
 		return m.textRow(m.p.texts[r.line], width)
+	case rowFinding:
+		return m.findingRow(m.p.flines[r.line], width)
 	}
 	return ""
 }

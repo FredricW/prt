@@ -177,6 +177,8 @@ func (m *Model) handleKey(k tea.KeyMsg) bool {
 		m.mergeKey()
 	case key.Matches(k, kk.SplitGroup):
 		m.splitKey()
+	case key.Matches(k, kk.ReReview):
+		m.reReviewKey()
 	case key.Matches(k, kk.Filters):
 		m.barOpen = !m.barOpen
 		m.clamp()
@@ -210,7 +212,7 @@ func (m *Model) barKey(k tea.KeyMsg) bool {
 func (m *Model) toggleFilter(i int) {
 	f := AllFilters[i]
 	if !hasData(f) {
-		m.note = filterLabel(f) + ": no data yet (comments and last-look marks arrive in M4, findings in M3)"
+		m.note = filterLabel(f) + ": no data yet (comments and last-look marks arrive in M4)"
 		return
 	}
 	m.filters[i] = !m.filters[i]

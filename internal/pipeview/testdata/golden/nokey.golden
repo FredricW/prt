@@ -1,0 +1,50 @@
+Pipeline · #103 Fix token refresh · ready
+
+Stages  run 10-13 11:00:00 · fetch ✓ 350 ms
+╭────────────╮ ╭────────────╮ ╭────────────╮ ╭────────────╮ ╭────────────╮ ╭────────────╮ ╭────────────╮ ╭────────────╮
+│parse ✓     │ │link ✓      │ │embed ✓     │ │jev ✓       │ │cluster ✓   │ │route ✓     │ │review –    │ │agg ✓       │
+│70 ms       │ │30 ms       │ │210 ms      │ │1.9 s       │ │6 ms        │ │2 ms        │ │skipped     │ │4 ms        │
+│0→3         │ │3→2         │ │3→1         │ │3→0         │ │3→2         │ │2→2         │ │2→0         │ │3→1         │
+╰────────────╯ ╰────────────╯ ╰────────────╯ ╰────────────╯ ╰────────────╯ ╰────────────╯ ╰────────────╯ ╰────────────╯
+
+Routing  D deep · s skip · c call log · r re-review
+  group                tier            rule                    context       status         time find    cost calib
+▸ Refresh token on 401 deep            if risk >= 4 || tag.au… callers       skipped           —    —       —
+    ↳ no PRT_ANTHROPIC_API_KEY
+  Tests for refresh    fast            if true → fast          cut           skipped           —    —       —
+    ↳ no PRT_ANTHROPIC_API_KEY
+
+Totals
+  tier mix  ffffffffffffdddddddddddd  n none 0 · f fast 1 · d deep 1
+  2 groups: skipped 2
+  reviews — · all-deep sequential ~21 s
+  cost $0 of $0.40 cap
+  jev 9 calls · $0.0031
+  escalations 0 · calibration samples 0 · findings 0
+  note: reviews skipped: PRT_ANTHROPIC_API_KEY not set
+
+Rules  e edit
+  1 if mechanical → none  0 rows
+  2 if risk >= 4 || tag.auth → deep  +security · ctx callers · 1 row
+  3 if true → fast  1 row
+  4 if risk >>= 2 → deep  0 rows
+    ✗ unexpected token ">" at column 7
+  deep_slots 2 · cost_cap_usd $0.40 · escalate_below .60 · calibration_sample .05
+  source .git/prt/prt.routing.toml
+  warning: rule 4 can never fire (after `true`)
+
+Grouping
+  units 3 → structural calls 1 · tests 1
+    → embed candidates 1 · mechanical candidates 0
+    → jev asked 1 pair: kept none · rejected 1 · cut 0
+    → groups 2 · mechanical 0 (0 units collapsed) · ejected 0 · ungrouped 0 · user edits 1
+
+Calibration
+  no sampled double reviews yet (calibration_sample .05)
+  label overrides risk 1
+
+
+
+
+
+

@@ -12,17 +12,14 @@ import (
 // Fixed by-change texts.
 const (
 	textWhy         = "why these belong together"
-	textFindings    = "findings: none yet (review lands in M3)"
 	textPlaceholder = "│ placeholder name (code-derived; no description bullet names this group)"
-	// metaStatus is the tier and review status placeholder of a list row
-	// until routing and review land (M3).
-	metaStatus = "— · not reviewed"
+	textAITitle     = "│ ai· title written by the fast model (no description bullet names this group)"
 )
 
 // buildGroupPane lays out group gi: header chips, the "why these belong
 // together" block, the visible units in review order (a mechanical group:
 // the example, "×N verified identical", members and promoted-out units),
-// then the findings placeholder.
+// then the group's review findings.
 func (m *Model) buildGroupPane(gi int) *pane {
 	p := &pane{}
 	if gi < 0 || gi >= len(m.c.groups) {
@@ -30,12 +27,15 @@ func (m *Model) buildGroupPane(gi int) *pane {
 	}
 	ge := &m.c.groups[gi]
 	w := m.layout().paneW
-	p.gchips = groupChips(ge, m.c.labelled)
+	p.gchips = append(groupChips(ge, m.c.labelled), routingChips(m.c.reviewOf(ge))...)
 	p.gchipRows = wrapChips(p.gchips, w)
 	for k := range p.gchipRows {
 		p.rows = append(p.rows, prow{kind: rowGroupHead, line: int32(k), pair: -1})
 	}
-	if ge.placeholder() {
+	switch {
+	case ge.aiTitle():
+		p.addText(textAITitle, textDim)
+	case ge.placeholder():
 		p.addText(textPlaceholder, textDim)
 	}
 	p.addBlank()
@@ -62,7 +62,7 @@ func (m *Model) buildGroupPane(gi int) *pane {
 			p.addBlank()
 		}
 	}
-	p.addText(textFindings, textDim)
+	m.addGroupFindings(p, ge, w)
 	p.gutter = len(strconv.Itoa(maxNo))
 	return p
 }
@@ -312,17 +312,18 @@ func (m Model) groupMarker(gi int) string {
 	return cur + mark
 }
 
-// groupMeta is a list row's second line: "3u 2f · b2 .82 · — · not
-// reviewed" ("×5 5f" for a mechanical group).
+// groupMeta is a list row's second line: "3u 2f · b2 .82 · fast · 2
+// findings" ("×5 5f" for a mechanical group; see reviewMeta for the tier
+// and status).
 func (m Model) groupMeta(ge *groupEntry) string {
 	parts := []string{strconv.Itoa(len(ge.units)) + "u " + strconv.Itoa(ge.files) + "f"}
 	if ge.mechanical() {
 		parts[0] = "×" + strconv.Itoa(ge.count()) + " " + strconv.Itoa(ge.files) + "f"
 	}
-	if !ge.placeholder() {
+	if ge.bulletNamed() {
 		parts = append(parts, ge.bullet+" "+ProbText(ge.g.NameP))
 	}
-	return strings.Join(append(parts, metaStatus), " · ")
+	return strings.Join(append(parts, reviewMeta(m.c.reviewOf(ge))), " · ")
 }
 
 func pluralWord(n int, word string) string {
@@ -379,6 +380,8 @@ func (m Model) textRow(t ptext, width int) string {
 		st = m.st.header
 	case textDim:
 		st = m.st.hidden
+	case textWarn:
+		st = m.st.chipWarn
 	}
 	return st.Render(fit(diffview.Clean(t.s), width))
 }

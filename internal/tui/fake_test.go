@@ -15,6 +15,7 @@ import (
 	"github.com/fredricw/prt/internal/codeview"
 	"github.com/fredricw/prt/internal/daemon"
 	"github.com/fredricw/prt/internal/model"
+	"github.com/fredricw/prt/internal/pipeview"
 	"github.com/fredricw/prt/internal/proto"
 )
 
@@ -33,6 +34,14 @@ type fakeClient struct {
 	// returned by EditGroups when set.
 	groupEdits []proto.GroupEditParams
 	editErr    error
+	// M3 review-pipeline calls (Pipeline page D/s/e/c/$, Code page R);
+	// routing and calls are the canned answers of Routing and CallLog.
+	reviewActions []proto.ReviewActionParams
+	routingCalls  []proto.RoutingParams
+	callLogs      []proto.CallLogParams
+	caps          []proto.CapParams
+	routing       proto.RoutingInfo
+	calls         []model.ReviewCall
 }
 
 var _ daemon.Client = (*fakeClient)(nil)
@@ -102,6 +111,34 @@ func (f *fakeClient) EditGroups(_ context.Context, p proto.GroupEditParams) erro
 	return f.editErr
 }
 
+func (f *fakeClient) ReviewAction(_ context.Context, p proto.ReviewActionParams) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.reviewActions = append(f.reviewActions, p)
+	return nil
+}
+
+func (f *fakeClient) Routing(_ context.Context, p proto.RoutingParams) (proto.RoutingInfo, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.routingCalls = append(f.routingCalls, p)
+	return f.routing, nil
+}
+
+func (f *fakeClient) CallLog(_ context.Context, p proto.CallLogParams) ([]model.ReviewCall, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.callLogs = append(f.callLogs, p)
+	return f.calls, nil
+}
+
+func (f *fakeClient) SetCap(_ context.Context, p proto.CapParams) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.caps = append(f.caps, p)
+	return nil
+}
+
 // listenerStarted is signalled each time a command asks for the event
 // channel: that command is the (blocking) event listener, so run abandons it.
 var listenerStarted = make(chan struct{}, 64)
@@ -130,6 +167,17 @@ type fakePane struct {
 	focusOK   bool
 	mode      codeview.Mode
 	pending   *model.GroupEdit
+	// review is handed out (once) by PendingReview; R sets it to "g-r".
+	review string
+}
+
+func (p *fakePane) PendingReview() (string, bool) {
+	if p.review == "" {
+		return "", false
+	}
+	g := p.review
+	p.review = ""
+	return g, true
 }
 
 var _ codePane = (*fakePane)(nil)
@@ -182,8 +230,90 @@ func (p *fakePane) HandleKey(k tea.KeyMsg) bool {
 	case key.Matches(k, p.keys.Mode):
 		p.mode = 1 - p.mode
 		return true
+	case key.Matches(k, p.keys.ReReview):
+		p.review = "g-r"
+		return true
 	}
 	return false
+}
+
+// fakePipe is a recording pipePane: it handles the movement keys and the
+// action keys (each queues the action set in actions[key]), opens a
+// "prompt" on RaiseCap that captures every key until Close, and records
+// everything the root model tells it.
+type fakePipe struct {
+	keys      pipeview.Keys
+	offered   []string
+	captured  []string
+	capturing bool
+	details   []string
+	clears    int
+	nows      []time.Time
+	notes     []string
+	callLogs  []string // group ids passed to SetCallLog
+	callN     []int    // number of calls passed with each
+	actions   map[string]pipeview.Action
+	pending   *pipeview.Action
+	origin    [2]int // last SetOrigin
+}
+
+var _ pipePane = (*fakePipe)(nil)
+
+func newFakePipe() *fakePipe { return &fakePipe{actions: map[string]pipeview.Action{}} }
+
+func (p *fakePipe) SetOrigin(x, y int)            { p.origin = [2]int{x, y} }
+func (p *fakePipe) SetKeys(k pipeview.Keys)       { p.keys = k }
+func (p *fakePipe) SetSize(int, int)              {}
+func (p *fakePipe) SetDetail(d proto.Detail)      { p.details = append(p.details, d.Item.ID) }
+func (p *fakePipe) Clear()                        { p.clears++ }
+func (p *fakePipe) SetNow(t time.Time)            { p.nows = append(p.nows, t) }
+func (p *fakePipe) SetNote(s string)              { p.notes = append(p.notes, s) }
+func (p *fakePipe) Update(tea.Msg) tea.Cmd        { return nil }
+func (p *fakePipe) Capturing() bool               { return p.capturing }
+func (p *fakePipe) HelpBindings() [][]key.Binding { return [][]key.Binding{{p.keys.ForceDeep}} }
+func (p *fakePipe) ShortBindings() []key.Binding  { return []key.Binding{p.keys.ForceDeep} }
+func (p *fakePipe) View() string                  { return "fake pipeline page" }
+
+func (p *fakePipe) SetCallLog(groupID string, calls []model.ReviewCall, _ error) {
+	p.callLogs = append(p.callLogs, groupID)
+	p.callN = append(p.callN, len(calls))
+}
+
+func (p *fakePipe) PendingAction() (pipeview.Action, bool) {
+	if p.pending == nil {
+		return pipeview.Action{}, false
+	}
+	a := *p.pending
+	p.pending = nil
+	return a, true
+}
+
+func (p *fakePipe) HandleKey(k tea.KeyMsg) bool {
+	p.offered = append(p.offered, k.String())
+	if p.capturing {
+		p.captured = append(p.captured, k.String())
+		if key.Matches(k, p.keys.Close) {
+			p.capturing = false
+		}
+		return true
+	}
+	if key.Matches(k, p.keys.RaiseCap) && p.actions[k.String()].Kind == pipeview.ActNone {
+		p.capturing = true
+		return true
+	}
+	if a, ok := p.actions[k.String()]; ok {
+		p.pending = &a
+		return true
+	}
+	return key.Matches(k, p.keys.Down) || key.Matches(k, p.keys.Up)
+}
+
+// withFakePipe installs a recording Pipeline page keyed like m.
+func withFakePipe(m Model) (Model, *fakePipe) {
+	p := newFakePipe()
+	p.SetKeys(m.keys.pipeKeys())
+	m.pipe = p
+	return m, p
 }
 
 // withFakePane installs a recording Code pane keyed like m.

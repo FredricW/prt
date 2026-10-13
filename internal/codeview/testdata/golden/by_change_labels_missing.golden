@@ -1,19 +1,19 @@
 labels unavailable — filters off
 ▸ Pass request options through getUser    Pass request options through getUser  3 units · 3 files                       
-    3u 3f · b2 .82 · — · not reviewed    ┌ b2 .82 · routing: — (M3)
+    3u 3f · b2 .82 · not routed          ┌ b2 .82 · routing: not routed
   ‹ApiError›                             
-    2u 2f · — · not reviewed             why these belong together
+    2u 2f · not routed                   why these belong together
   Invalidate the profile cache on logout   calls  UserCard.tsx UserCard → client.ts getUser
-    1u 1f · b1 .64 · — · not reviewed      tests  client.test.ts → client.ts getUser
+    1u 1f · b1 .64 · not routed            tests  client.test.ts → client.ts getUser
   ‹import fetchJSON from client›           jev caller update .82 · cos .79  UserCard.tsx UserCard → client.test.ts
-    ×5 5f · — · not reviewed             
+    ×5 5f · not routed                   
 ── ungrouped (3) ─────────────────────── ┌ modified
   ‹f.tsx›                                │ L10–12 · +2 −2 · export async function getUser(id: string, opts?: RequestIni…
-    1u 1f · — · not reviewed               10    - export async function getUser(id: string) {
+    1u 1f · not routed                     10    - export async function getUser(id: string) {
   ‹theme.css›                              11    -   return fetchJSON(`/users/${id}`);
-    1u 1f · — · not reviewed                  10 + export async function getUser(id: string, opts?: RequestInit) {
+    1u 1f · not routed                        10 + export async function getUser(id: string, opts?: RequestInit) {
   ‹save›                                      11 +   return fetchJSON(`/users/${id}`, opts);
-    1u 1f · — · not reviewed               12 12   }
+    1u 1f · not routed                     12 12   }
 ── split suggestion ──────────────────── 
   split? web/src/styles/theme.css .74    ┌ modified
                                          │ L8–10 · +1 −1 · export function UserCard({ id }: Props)

@@ -3,6 +3,8 @@ package daemon
 import (
 	"sort"
 	"sync"
+
+	"github.com/fredricw/prt/internal/model"
 )
 
 // job is one queued analysis.
@@ -10,11 +12,31 @@ type job struct {
 	itemID  string
 	urgency float64
 	force   bool
+	// fromStage makes that stage and every later one ignore its cache
+	// (pipeline.RunOptions.FromStage); "" for none.
+	fromStage model.Stage
 	// rerun queues the job even while the item is running (it starts after
-	// that run): used after a group edit, which the running run may have
-	// read too early to apply.
+	// that run): used after a group edit, a review action, a cap change or
+	// a routing reload, which the running run may have read too early.
 	rerun bool
 	seq   int // enqueue order, breaks urgency ties
+}
+
+// earlierStage returns the earlier of two FromStage values ("" means
+// none, so the other wins).
+func earlierStage(a, b model.Stage) model.Stage {
+	switch {
+	case a == "":
+		return b
+	case b == "":
+		return a
+	}
+	for _, s := range model.Stages {
+		if s == a || s == b {
+			return s
+		}
+	}
+	return a
 }
 
 // queue is a priority work queue: at most slots jobs run at once, and the
@@ -53,6 +75,7 @@ func (q *queue) push(jobs ...job) {
 	for _, j := range jobs {
 		if i, ok := q.queued[j.itemID]; ok {
 			q.waiting[i].force = q.waiting[i].force || j.force
+			q.waiting[i].fromStage = earlierStage(q.waiting[i].fromStage, j.fromStage)
 			q.waiting[i].urgency = j.urgency
 			continue
 		}

@@ -322,6 +322,30 @@ func (s *server) call(ctx context.Context, sc *serverConn, m proto.Message) (any
 			return nil, err
 		}
 		return empty{}, c.EditGroups(ctx, p)
+	case proto.MethodReviewAction:
+		p, err := params[proto.ReviewActionParams](m)
+		if err != nil {
+			return nil, err
+		}
+		return empty{}, c.ReviewAction(ctx, p)
+	case proto.MethodRouting:
+		p, err := params[proto.RoutingParams](m)
+		if err != nil {
+			return nil, err
+		}
+		return c.Routing(ctx, p)
+	case proto.MethodCallLog:
+		p, err := params[proto.CallLogParams](m)
+		if err != nil {
+			return nil, err
+		}
+		return c.CallLog(ctx, p)
+	case proto.MethodSetCap:
+		p, err := params[proto.CapParams](m)
+		if err != nil {
+			return nil, err
+		}
+		return empty{}, c.SetCap(ctx, p)
 	case proto.MethodSubscribe:
 		sc.subscribe()
 		return empty{}, nil

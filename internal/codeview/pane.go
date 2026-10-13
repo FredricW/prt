@@ -23,6 +23,7 @@ const (
 	rowBlank                    // gap between units
 	rowGroupHead                // chips strip of a group (by change)
 	rowText                     // a styled text line (by change: why block, counts)
+	rowFinding                  // one row of an inline review finding (by file)
 )
 
 // textStyle picks the style of a rowText line.
@@ -32,6 +33,7 @@ const (
 	textPlain textStyle = iota
 	textBold
 	textDim
+	textWarn // alert style (high-severity findings)
 )
 
 // ptext is the content of one rowText line.
@@ -96,6 +98,8 @@ type pane struct {
 	gchips    []chip
 	gchipRows [][2]int
 	texts     []ptext
+	// flines are the inline finding rows (by file).
+	flines []fline
 }
 
 func (p *pane) addText(s string, st textStyle) {
@@ -170,6 +174,8 @@ func (m *Model) addUnit(p *pane, id string) int {
 	if u.MovedFrom != "" {
 		p.rows = append(p.rows, prow{kind: rowMoved, unit: ui, pair: -1})
 	}
+	atLine, rest := m.inlineFindings(id, pu.lines)
+	m.addFindingRows(p, ui, rest, m.layout().paneW)
 	lineRow := make([]int32, len(pu.lines))
 	maxNo := 0
 	for li, l := range pu.lines {
@@ -177,6 +183,9 @@ func (m *Model) addUnit(p *pane, id string) int {
 		p.rows = append(p.rows, prow{kind: rowLine, unit: ui, line: int32(li), pair: -1})
 		if l.NoEOL {
 			p.rows = append(p.rows, prow{kind: rowNoEOL, unit: ui, line: int32(li), pair: -1})
+		}
+		if l.Op != diff.Del && atLine[l.NewNo] != nil {
+			m.addFindingRows(p, ui, atLine[l.NewNo], m.layout().paneW)
 		}
 		maxNo = max(maxNo, l.OldNo, l.NewNo)
 	}
@@ -186,6 +195,23 @@ func (m *Model) addUnit(p *pane, id string) int {
 	}
 	p.rows = append(p.rows, prow{kind: rowBlank, pair: -1})
 	return maxNo
+}
+
+// inlineFindings returns unit id's findings to draw inline (by file only;
+// by change they are listed after the group's units): those under a new-side
+// line of lines, and the rest, drawn under the unit's header.
+func (m *Model) inlineFindings(id string, lines []diff.Line) (map[int][]model.Finding, []model.Finding) {
+	fs := m.c.unitFindings[id]
+	if m.byChange() || len(fs) == 0 {
+		return nil, nil
+	}
+	newLines := make(map[int]bool, len(lines))
+	for _, l := range lines {
+		if l.Op != diff.Del {
+			newLines[l.NewNo] = true
+		}
+	}
+	return splitFindings(fs, newLines)
 }
 
 // unitAt returns the index (into p.units) of the unit whose header is at

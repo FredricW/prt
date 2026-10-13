@@ -58,13 +58,34 @@ func TestSnapshotRendersPickerOverviewCodeAndHelp(t *testing.T) {
 		t.Error("snapshot must not contain ANSI escapes")
 	}
 
+	if !strings.Contains(s, "=== screen: picker + pipeline · branch:feat/x ===") {
+		t.Errorf("snapshot lacks the pipeline screen:\n%s", s)
+	}
+
+	// The Pipeline page shows measured wall times of this live run, so it
+	// is left out of the determinism check.
 	var again bytes.Buffer
 	if err := SnapshotWithOptions(ctx, c, &again, 100, 20, 3, opts); err != nil {
 		t.Fatal(err)
 	}
-	if again.String() != s {
+	if withoutScreens(again.String(), "pipeline") != withoutScreens(s, "pipeline") {
 		t.Error("snapshot is not deterministic")
 	}
+}
+
+// withoutScreens drops the snapshot screens whose header names kind.
+func withoutScreens(s, kind string) string {
+	var b strings.Builder
+	skip := false
+	for _, l := range strings.SplitAfter(s, "\n") {
+		if strings.HasPrefix(l, "=== screen: ") {
+			skip = strings.Contains(l, " + "+kind+" ")
+		}
+		if !skip {
+			b.WriteString(l)
+		}
+	}
+	return b.String()
 }
 
 func TestSnapshotEmpty(t *testing.T) {

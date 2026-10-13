@@ -1,6 +1,6 @@
  1/7 Pass request options through getUser  3 unit…
 ┌ b2 .82 · risk 4 · auth · error_path · test gap 1
-│ breaking 1 · routing: — (M3)
+│ breaking 1 · routing: not routed
 
 why these belong together
   calls  UserCard.tsx UserCard → client.ts getUser

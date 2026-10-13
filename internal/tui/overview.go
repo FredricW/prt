@@ -69,8 +69,11 @@ type overview struct {
 	anchors []string        // per content line; "" when the line has no unit
 	cells   map[int]cellRow // per content line with unit cells (minimap)
 
-	raw   bool // raw-labels overlay open
+	raw   bool // an overlay is open (raw labels, or urgency weights)
 	rawVP viewport.Model
+	// weights marks the open overlay as the urgency weights (`w`), which
+	// `w` closes; otherwise it is the raw labels (`L`).
+	weights bool
 }
 
 func newOverview() overview {
@@ -132,12 +135,18 @@ func (o overview) anchorAt(i int) (string, bool) {
 
 // openRaw shows the raw-labels overlay with body.
 func (o *overview) openRaw(body string) {
-	o.raw = true
+	o.raw, o.weights = true, false
 	o.rawVP.SetContent(body)
 	o.rawVP.GotoTop()
 }
 
-func (o *overview) closeRaw() { o.raw = false }
+// openWeights shows the urgency-weights overlay with body.
+func (o *overview) openWeights(body string) {
+	o.openRaw(body)
+	o.weights = true
+}
+
+func (o *overview) closeRaw() { o.raw, o.weights = false, false }
 
 func (o overview) view() string {
 	if o.raw {

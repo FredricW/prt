@@ -1,0 +1,30 @@
+  Pass request options through getUser    ‹f.tsx›  1 unit · 1 file                                                      
+    3u 3f · b2 .82 · fast · 3 findings   ┌ ungrouped · routing: if true → fast
+  ‹ApiError›                             │ placeholder name (code-derived; no description bullet names this group)
+    2u 2f · deep←fast .42 · done         
+  Invalidate the profile cache on logout why these belong together
+    1u 1f · b1 .64 · deep (forced) · ru…   no kept link binds this unit to another (ungrouped)
+  ‹import fetchJSON from client›         
+    ×5 5f · none                         ┌ modified · refactor · behaviour ✗ .70 · tests ✓ · risk 2 · skim
+── ungrouped (3) ─────────────────────── │ L1 · +1 −1
+▸ ‹f.tsx›                                  1   - import { fetchJSON, retry } from "../api/fetch";
+    1u 1f · fast · queued (over cap)     ·   1 + import { fetchJSON } from "../api/client";
+  ‹theme.css›                            
+    1u 1f · none (skipped)               findings: not reviewed (queued, over cap)
+  ‹save›                                   over cost cap: est $0.14, $0.05 of $0.40 left
+    1u 1f · deep · failed                
+── split suggestion ──────────────────── 
+  split? web/src/styles/theme.css .74    
+                                         
+                                         
+                                         
+                                         
+                                         
+                                         
+                                         
+                                         
+                                         
+                                         
+                                         
+                                         
+                                         

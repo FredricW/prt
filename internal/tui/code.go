@@ -34,10 +34,17 @@ type codePane interface {
 	SetMode(md codeview.Mode) bool
 	// PendingEdit returns and clears a merge/split made by the last key.
 	PendingEdit() (model.GroupEdit, bool)
+	// PendingReview returns and clears the group R asked to re-review on
+	// the deep tier.
+	PendingReview() (string, bool)
 	HelpBindings() [][]key.Binding
 	ShortBindings() []key.Binding
 	View() string
 }
+
+// originSetter is implemented by components that map mouse coordinates
+// (codeview, pipeview): the root tells them where the main pane starts.
+type originSetter interface{ SetOrigin(x, y int) }
 
 // codeviewPane adapts codeview.Model (value-returning Update) to codePane.
 // The root model holds it by pointer, so copies of the root model share one
@@ -52,6 +59,7 @@ func newCodePane(r *lipgloss.Renderer) *codeviewPane {
 
 func (p *codeviewPane) SetKeys(k codeview.Keys)       { p.m.SetKeys(k) }
 func (p *codeviewPane) SetSize(w, h int)              { p.m.SetSize(w, h) }
+func (p *codeviewPane) SetOrigin(x, y int)            { p.m.SetOrigin(x, y) }
 func (p *codeviewPane) SetDetail(d proto.Detail)      { p.m.SetDetail(d) }
 func (p *codeviewPane) Clear()                        { p.m.Clear() }
 func (p *codeviewPane) HandleKey(k tea.KeyMsg) bool   { return p.m.HandleKey(k) }
@@ -61,6 +69,7 @@ func (p *codeviewPane) Mode() codeview.Mode           { return p.m.Mode() }
 func (p *codeviewPane) SetMode(md codeview.Mode) bool { return p.m.SetMode(md) }
 
 func (p *codeviewPane) PendingEdit() (model.GroupEdit, bool) { return p.m.PendingEdit() }
+func (p *codeviewPane) PendingReview() (string, bool)        { return p.m.PendingReview() }
 func (p *codeviewPane) HelpBindings() [][]key.Binding        { return p.m.HelpBindings() }
 func (p *codeviewPane) ShortBindings() []key.Binding         { return p.m.ShortBindings() }
 func (p *codeviewPane) View() string                         { return p.m.View() }
@@ -83,12 +92,7 @@ func (m Model) sendGroupEdit() tea.Cmd {
 	if !ok {
 		return nil
 	}
-	id := ""
-	if m.detail != nil {
-		id = m.detail.Item.ID
-	} else if it, ok := m.picker.selected(); ok {
-		id = it.ID
-	}
+	id := m.shownItemID()
 	if id == "" {
 		return nil
 	}
@@ -97,6 +101,22 @@ func (m Model) sendGroupEdit() tea.Cmd {
 	return func() tea.Msg {
 		return groupEditedMsg{err: c.EditGroups(context.Background(), proto.GroupEditParams{ItemID: id, Edit: e})}
 	}
+}
+
+// sendReReview returns a command that asks the daemon to re-review the
+// group the Code page's R picked on the deep tier, or nil when there is
+// none; it sets the note "re-reviewing on deep…".
+func (m *Model) sendReReview() tea.Cmd {
+	gid, ok := m.code.PendingReview()
+	if !ok {
+		return nil
+	}
+	id := m.shownItemID()
+	if id == "" {
+		return nil
+	}
+	m.note = "re-reviewing on deep…"
+	return sendReviewAction(m.client, proto.ReviewActionParams{ItemID: id, GroupID: gid, Action: proto.ActionDeep})
 }
 
 // onGroupEdited shows the outcome of a merge or split in the status line.

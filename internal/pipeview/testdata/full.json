@@ -1,0 +1,85 @@
+{
+  "item": {
+    "id": "pr:101",
+    "kind": "pr",
+    "number": 101,
+    "ref": "cache-users",
+    "headSha": "aaa111",
+    "baseSha": "bbb222",
+    "title": "Cache user lookups",
+    "source": "ranked",
+    "state": "analysing",
+    "stateNote": "review"
+  },
+  "groups": [
+    {"id": "g1aaaaaaaaaa", "itemId": "pr:101", "unitIds": ["u1", "u2"], "name": "Cache getUser results", "nameSource": "bullet", "nameP": 0.82, "order": 0},
+    {"id": "g2bbbbbbbbbb", "itemId": "pr:101", "unitIds": ["u3", "u4", "u5", "u6", "u7"], "name": "rename fetchUser", "nameSource": "placeholder", "mechanical": true, "count": 5, "order": 1},
+    {"id": "g3cccccccccc", "itemId": "pr:101", "unitIds": ["u8"], "name": "Retry wrapper tweaks", "nameSource": "ai", "order": 2},
+    {"id": "g4dddddddddd", "itemId": "pr:101", "unitIds": ["u9", "u10"], "name": "Session token checks", "nameSource": "bullet", "nameP": 0.71, "order": 3},
+    {"id": "g5eeeeeeeeee", "itemId": "pr:101", "unitIds": ["u11"], "name": "config defaults", "nameSource": "placeholder", "order": 4},
+    {"id": "g6ffffffffff", "itemId": "pr:101", "unitIds": ["u12"], "name": "Logger cleanup", "nameSource": "bullet", "nameP": 0.66, "order": 5},
+    {"id": "g7gggggggggg", "itemId": "pr:101", "unitIds": ["u13"], "name": "Docs typo", "nameSource": "bullet", "nameP": 0.9, "order": 6}
+  ],
+  "reviews": [
+    {"groupId": "g7gggggggggg", "itemId": "pr:101", "groupName": "Docs typo", "tier": "none", "ruleWords": "skipped by user (s)", "userSkipped": true, "status": "skipped", "confidence": 0, "ms": 0, "cost": 0},
+    {"groupId": "g1aaaaaaaaaa", "itemId": "pr:101", "groupName": "Cache getUser results", "tier": "deep", "rule": "true", "ruleIndex": 3, "ruleWords": "if true → fast", "context": ["callers", "types"], "findings": [
+      {"path": "web/src/api/client.ts", "line": 42, "severity": "high", "claim": "stale cache entry survives logout"},
+      {"path": "web/src/api/client.ts", "line": 57, "severity": "low", "claim": "TTL constant duplicated"}
+    ], "verdict": "changes needed", "confidence": 0.81, "model": "anthropic:claude-opus-5-5", "status": "done", "escalatedOf": "fast", "fastConf": 0.42, "ms": 8400, "cost": 0.0412},
+    {"groupId": "g2bbbbbbbbbb", "itemId": "pr:101", "groupName": "rename fetchUser", "tier": "none", "rule": "mechanical || kind == \"docs\"", "ruleIndex": 1, "ruleWords": "if mechanical || kind == docs → none", "status": "skipped", "confidence": 0, "ms": 0, "cost": 0},
+    {"groupId": "g3cccccccccc", "itemId": "pr:101", "groupName": "Retry wrapper tweaks", "tier": "fast", "rule": "true", "ruleIndex": 3, "ruleWords": "if true → fast", "context": ["tests"], "confidence": 0.88, "model": "anthropic:claude-haiku-5-5", "status": "done", "calibration": {"confidence": 0.9, "missed": 0, "agree": true, "cost": 0.031, "ms": 9100}, "ms": 2100, "cost": 0.0339},
+    {"groupId": "g4dddddddddd", "itemId": "pr:101", "groupName": "Session token checks", "tier": "deep", "ruleWords": "forced deep (D)", "forced": true, "context": ["callers", "tests", "config"], "prompts": ["security"], "status": "running", "confidence": 0, "startedAt": "2026-10-13T14:03:05Z", "ms": 0, "cost": 0},
+    {"groupId": "g5eeeeeeeeee", "itemId": "pr:101", "groupName": "config defaults", "tier": "fast", "rule": "true", "ruleIndex": 3, "ruleWords": "if true → fast", "context": ["config"], "status": "queued", "queueNote": "over cost cap: est $0.14, $0.05 of $0.40 left", "confidence": 0, "estCost": 0.14, "ms": 0, "cost": 0},
+    {"groupId": "g6ffffffffff", "itemId": "pr:101", "groupName": "Logger cleanup", "tier": "fast", "rule": "true", "ruleIndex": 3, "ruleWords": "if true → fast", "status": "failed", "err": "timeout after 30s (retried once)", "confidence": 0, "ms": 30000, "cost": 0.0021, "attempts": 2}
+  ],
+  "agg": {
+    "itemId": "pr:101",
+    "composition": {"feature": 0.6, "refactor": 0.4},
+    "noiseLines": 0, "added": 120, "removed": 40, "effectiveLines": 140, "minutes": 22,
+    "unitsTotal": 13, "unitsEyes": 5, "unitsSkim": 4, "unitsSkip": 4,
+    "headlines": [], "hotSpots": [], "riskMax": 4, "riskAny": 0.5, "riskTags": {}, "testGap": 1, "riskyUnits": 3,
+    "fidelity": 1, "undocumented": [], "unsure": 0, "urgency": 3.2, "urgencyTerms": [], "why": "asked you", "units": [], "groups": [],
+    "grouping": {
+      "units": 24, "structural": {"calls": 4, "tests": 3, "moved": 2}, "embedCandidates": 12, "mechanicalCandidates": 5,
+      "pairsAsked": 12, "jevKept": {"same intent": 3, "caller update": 2, "test for": 1}, "jevRejected": 5, "cutLinks": 1,
+      "groups": 6, "mechanical": 1, "mechanicalCollapsed": 4, "ejected": 1, "ungrouped": 1, "userEdits": 0
+    },
+    "review": {
+      "groups": 7, "tiers": {"none": 2, "fast": 3, "deep": 2},
+      "status": {"done": 2, "running": 1, "queued": 1, "failed": 1, "skipped": 2},
+      "escalations": 1, "calibrations": 1, "findings": 2, "elapsedMs": 12400, "allDeepEstMs": 48000,
+      "cost": 0.18, "capUsd": 0.4, "overCap": 1, "jevCalls": 31, "jevCost": 0.0123
+    },
+    "calibration": {
+      "samples": 25, "misses": 3, "missRate": 0.12, "overrides": {"risk": 4, "behaviour": 2, "kind": 2},
+      "lastAgree": true, "lastAt": "2026-10-13T14:02:50Z"
+    }
+  },
+  "runLogs": [
+    {"itemId": "pr:101", "stage": "fetch", "status": "done", "startedAt": "2026-10-12T09:00:00Z", "ms": 600, "calls": 2, "cost": 0, "cacheHit": false},
+    {"itemId": "pr:101", "stage": "parse", "status": "done", "startedAt": "2026-10-12T09:00:01Z", "ms": 130, "calls": 0, "cost": 0, "cacheHit": false, "out": 22},
+    {"itemId": "pr:101", "stage": "review", "status": "failed", "startedAt": "2026-10-12T09:00:09Z", "ms": 31000, "calls": 4, "cost": 0.021, "cacheHit": false, "in": 6, "err": "anthropic: 529 overloaded"},
+    {"itemId": "pr:101", "stage": "aggregate", "status": "done", "startedAt": "2026-10-12T09:00:41Z", "ms": 20, "calls": 1, "cost": 0.0004, "cacheHit": false, "in": 22, "out": 1},
+    {"itemId": "pr:101", "stage": "fetch", "status": "done", "startedAt": "2026-10-13T14:03:00Z", "ms": 400, "calls": 2, "cost": 0, "cacheHit": false},
+    {"itemId": "pr:101", "stage": "parse", "status": "done", "startedAt": "2026-10-13T14:03:01Z", "ms": 120, "calls": 0, "cost": 0, "cacheHit": false, "out": 24},
+    {"itemId": "pr:101", "stage": "link", "status": "done", "startedAt": "2026-10-13T14:03:01.2Z", "ms": 85, "calls": 0, "cost": 0, "cacheHit": false, "in": 24, "out": 9},
+    {"itemId": "pr:101", "stage": "embed", "status": "skipped-cache", "startedAt": "2026-10-13T14:03:01.3Z", "ms": 3, "calls": 0, "cost": 0, "cacheHit": true, "in": 24, "out": 12},
+    {"itemId": "pr:101", "stage": "jev", "status": "done", "startedAt": "2026-10-13T14:03:01.4Z", "ms": 2300, "calls": 31, "cost": 0.0123, "cacheHit": false, "in": 24, "out": 6, "note": "(2 over the cap not asked)"},
+    {"itemId": "pr:101", "stage": "cluster", "status": "done", "startedAt": "2026-10-13T14:03:03.7Z", "ms": 40, "calls": 1, "cost": 0.0002, "cacheHit": false, "in": 24, "out": 7},
+    {"itemId": "pr:101", "stage": "route", "status": "done", "startedAt": "2026-10-13T14:03:03.8Z", "ms": 5, "calls": 0, "cost": 0, "cacheHit": false, "in": 7, "out": 7},
+    {"itemId": "pr:101", "stage": "review", "status": "running", "startedAt": "2026-10-13T14:03:04Z", "ms": 0, "calls": 0, "cost": 0, "cacheHit": false, "in": 7}
+  ],
+  "routing": {
+    "path": ".git/prt/prt.routing.toml",
+    "source": "builtin",
+    "deepSlots": 2,
+    "costCapUsd": 0.4,
+    "escalateBelow": 0.6,
+    "calibrationSample": 0.05,
+    "rules": [
+      {"index": 1, "when": "mechanical || kind == \"docs\"", "tier": "none", "words": "if mechanical || kind == docs → none"},
+      {"index": 2, "when": "risk >= 4 || tag.auth", "tier": "deep", "prompts": ["security"], "context": ["callers"], "words": "if risk >= 4 || tag.auth → deep"},
+      {"index": 3, "when": "true", "tier": "fast", "words": "if true → fast"}
+    ]
+  }
+}

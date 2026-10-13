@@ -44,6 +44,13 @@ type content struct {
 	// embedNote says why grouping ran without embeddings
 	// (Agg.Grouping.EmbedNote); shown by change.
 	embedNote string
+
+	// reviews is the routing table (Detail.Reviews) by group id; a group
+	// without a row is "not routed". unitFindings holds the findings
+	// anchored to each unit (line order, unanchored lines last); findings
+	// that name no unit of this detail stay on their group's row only.
+	reviews      map[string]*model.Review
+	unitFindings map[string][]model.Finding
 }
 
 // plain reports whether there are no units to lay out, so the component
@@ -92,6 +99,7 @@ func buildContent(d proto.Detail) content {
 	if len(c.groups) > 0 && d.Agg != nil && d.Agg.Grouping != nil {
 		c.embedNote = d.Agg.Grouping.EmbedNote
 	}
+	indexReviews(&c, d.Reviews)
 	return c
 }
 

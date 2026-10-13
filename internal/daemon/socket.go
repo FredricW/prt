@@ -228,6 +228,30 @@ func (s *Socket) EditGroups(ctx context.Context, p proto.GroupEditParams) error 
 	return s.call(ctx, proto.MethodEditGroups, p, nil)
 }
 
+// ReviewAction implements Client.
+func (s *Socket) ReviewAction(ctx context.Context, p proto.ReviewActionParams) error {
+	return s.call(ctx, proto.MethodReviewAction, p, nil)
+}
+
+// Routing implements Client.
+func (s *Socket) Routing(ctx context.Context, p proto.RoutingParams) (proto.RoutingInfo, error) {
+	var r proto.RoutingInfo
+	err := s.call(ctx, proto.MethodRouting, p, &r)
+	return r, err
+}
+
+// CallLog implements Client.
+func (s *Socket) CallLog(ctx context.Context, p proto.CallLogParams) ([]model.ReviewCall, error) {
+	var calls []model.ReviewCall
+	err := s.call(ctx, proto.MethodCallLog, p, &calls)
+	return calls, err
+}
+
+// SetCap implements Client.
+func (s *Socket) SetCap(ctx context.Context, p proto.CapParams) error {
+	return s.call(ctx, proto.MethodSetCap, p, nil)
+}
+
 // Events implements Client. The channel closes when the connection drops or
 // Close is called.
 func (s *Socket) Events() <-chan proto.Event { return s.events }

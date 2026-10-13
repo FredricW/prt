@@ -464,18 +464,18 @@ func TestByChangeHints(t *testing.T) {
 func TestByChangeContent(t *testing.T) {
 	m := byChangeModel(t, loadGroups(t), 160, 40, true)
 	v := m.View()
-	contains(t, v, "┌ b2 .82 · risk 4 · auth · error_path · test gap 1 · breaking 1 · routing: — (M3)")
+	contains(t, v, "┌ b2 .82 · risk 4 · auth · error_path · test gap 1 · breaking 1 · routing: not routed")
 	contains(t, v, "  calls  UserCard.tsx UserCard → client.ts getUser")
 	contains(t, v, "  tests  client.test.ts → client.ts getUser")
 	contains(t, v, "  jev caller update .82 · cos .79  UserCard.tsx UserCard → client.test.ts")
-	contains(t, v, "findings: none yet (review lands in M3)")
-	contains(t, v, "    3u 3f · b2 .82 · — · not reviewed")
+	contains(t, v, "findings: not reviewed (not routed)")
+	contains(t, v, "    3u 3f · b2 .82 · not routed")
 	contains(t, v, "‹ApiError›")
 	press(t, &m, "J")
 	contains(t, m.View(), "  moved  client.ts ApiError → errors.ts ApiError")
 	press(t, &m, "J")
 	v = m.View()
-	contains(t, v, "┌ b1 .64 · edited by you · risk 3 · test gap 1 · ? 2 unsure · routing: — (M3)")
+	contains(t, v, "┌ b1 .64 · edited by you · risk 3 · test gap 1 · ? 2 unsure · routing: not routed")
 	contains(t, v, "grouped by you (merge or split)")
 	press(t, &m, "J")
 	v = m.View()
@@ -484,7 +484,7 @@ func TestByChangeContent(t *testing.T) {
 	contains(t, v, "promoted out: f.tsx → ‹f.tsx›")
 	contains(t, v, "same shape ×5 (verified)")
 	press(t, &m, "J")
-	contains(t, m.View(), "┌ ungrouped · routing: — (M3)") // no GroupAgg row for g-f
+	contains(t, m.View(), "┌ ungrouped · routing: not routed") // no GroupAgg row for g-f
 }
 
 func TestMemberLine(t *testing.T) {

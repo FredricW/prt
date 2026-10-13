@@ -58,17 +58,29 @@ func (ge *groupEntry) count() int {
 	return len(ge.units)
 }
 
-// placeholder reports whether the name is code-derived, not a Jev bullet.
-func (ge *groupEntry) placeholder() bool { return ge.g.NameSource != model.NameBullet }
+// bulletNamed reports whether Jev named the group after a description
+// bullet.
+func (ge *groupEntry) bulletNamed() bool { return ge.g.NameSource == model.NameBullet }
+
+// aiTitle reports whether the fast model wrote the group's title (M3).
+func (ge *groupEntry) aiTitle() bool { return ge.g.NameSource == model.NameAI }
+
+// placeholder reports whether the name is code-derived: neither a Jev
+// bullet nor a model-written title.
+func (ge *groupEntry) placeholder() bool { return !ge.bulletNamed() && !ge.aiTitle() }
 
 // displayName is the group name as shown: placeholder names are wrapped in
-// ‹ › so they read as stand-ins even without colour.
+// ‹ › so they read as stand-ins even without colour, and model-written
+// titles carry an "ai·" prefix.
 func (ge *groupEntry) displayName() string {
 	name := strings.TrimSpace(ge.g.Name)
 	if name == "" {
 		name = "unnamed"
 	}
-	if ge.placeholder() {
+	switch {
+	case ge.aiTitle():
+		return "ai·" + name
+	case ge.placeholder():
 		return "‹" + name + "›"
 	}
 	return name
@@ -292,13 +304,13 @@ func (c *content) linkText(l model.Link) string {
 // kindWord is a link kind in words ("same symbol" for same-symbol).
 func kindWord(k model.LinkKind) string { return strings.ReplaceAll(string(k), "-", " ") }
 
-// groupChips builds a group header's chips: bullet with P (bullet-named
-// groups), mechanical/ungrouped/edited markers, then — only with labels —
-// GroupAgg facts (risk max, tags, test gap, breaking, unsure), and the
-// routing placeholder.
+// groupChips builds a group header's label chips: bullet with P
+// (bullet-named groups), mechanical/ungrouped/edited markers, then — only
+// with labels — GroupAgg facts (risk max, tags, test gap, breaking,
+// unsure). The routing chips (routingChips) follow them.
 func groupChips(ge *groupEntry, labelled bool) []chip {
 	var cs []chip
-	if !ge.placeholder() {
+	if ge.bulletNamed() {
 		cs = append(cs, chip{text: ge.bullet, prob: ProbText(ge.g.NameP)})
 	}
 	switch {
@@ -313,7 +325,7 @@ func groupChips(ge *groupEntry, labelled bool) []chip {
 	if labelled && ge.agg != nil {
 		cs = append(cs, aggChips(ge.agg)...)
 	}
-	return append(cs, chip{text: "routing: — (M3)"})
+	return cs
 }
 
 // aggChips renders GroupAgg facts; zero values are left out.

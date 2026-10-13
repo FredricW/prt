@@ -354,6 +354,10 @@ func TestProfileGroups(t *testing.T) {
 	if g.GroupID != "g1" || g.EffectiveLines != 8 || !near(g.Minutes, 4) || g.RiskMax != 4 || g.TestGap != 1 || g.Unsure != 0 {
 		t.Errorf("group = %+v", g)
 	}
+	// u1 and u4 are both feature; u1 has the larger hot spot; no reviews.
+	if g.Kind != "feature" || !near(g.HotSpot, 4.3*4.6*0.8*0.6) || g.Findings != 0 {
+		t.Errorf("group kind %q hot spot %v findings %d", g.Kind, g.HotSpot, g.Findings)
+	}
 	assertComposition(t, g.Composition, map[string]float64{"feature": 1})
 	assertEqual(t, "group tags", g.RiskTags, map[string]int{"data_write": 1})
 	assertEqual(t, "group breaking", g.Breaking, []string{"u4"})

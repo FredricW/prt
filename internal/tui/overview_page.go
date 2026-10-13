@@ -114,6 +114,7 @@ func overviewText(st styles, md *markdown, d proto.Detail, now time.Time, width 
 func overviewPage(st styles, md *markdown, d proto.Detail, now time.Time, width int) *page {
 	p := &page{st: st, width: max(10, width), cells: map[int]cellRow{}}
 	p.add(st.title.Render(titleLine(d.Item, now)), "")
+	tldrBlock(p, d)
 	switch {
 	case d.Agg == nil:
 		pendingBlocks(p, d.Item)

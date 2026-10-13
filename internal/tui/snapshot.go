@@ -25,10 +25,10 @@ func Snapshot(ctx context.Context, c daemon.Client, w io.Writer, width, height, 
 
 // SnapshotWithOptions discovers items, analyses every item synchronously
 // (when c is a Runner), then writes, for each of the first maxItems items,
-// the picker with the Overview tab, the picker with the Code tab by file
-// and the picker with the Code tab by change ("code-by-change"; by file
-// with the note "no groups yet" when the item has no groups), plus one
-// help-overlay screen. Screens are separated by "=== screen: … ==="
+// the picker with the Overview tab, the picker with the Code tab by file,
+// the picker with the Code tab by change ("code-by-change"; by file with
+// the note "no groups yet" when the item has no groups) and the picker with
+// the Pipeline page ("pipeline"), plus one help-overlay screen. Screens are separated by "=== screen: … ==="
 // headers. Output has no colour; pass o.Now for deterministic ages.
 func SnapshotWithOptions(ctx context.Context, c daemon.Client, w io.Writer, width, height, maxItems int, o Options) error {
 	if err := c.Discover(ctx); err != nil {
@@ -80,6 +80,14 @@ func SnapshotWithOptions(ctx context.Context, c daemon.Client, w io.Writer, widt
 		m.code.SetMode(codeview.ModeChange)
 		_, err = fmt.Fprintf(w, "=== screen: picker + code-by-change · %s ===\n%s\n\n", it.ID, m.View())
 		m.code.SetMode(codeview.ModeFile)
+		if err != nil {
+			return err
+		}
+		// The Pipeline page, clocked like the rest of the snapshot.
+		m.tab = TabPipeline
+		m.pipe.SetNow(m.now())
+		_, err = fmt.Fprintf(w, "=== screen: picker + pipeline · %s ===\n%s\n\n", it.ID, m.View())
+		m.tab = TabOverview
 		if err != nil {
 			return err
 		}

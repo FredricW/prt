@@ -28,9 +28,9 @@ func filterIndex(f Filter) int {
 	return -1
 }
 
-// hasData reports whether a filter can be evaluated in M1; comments,
-// findings and last-look marks arrive with later milestones.
-func hasData(f Filter) bool { return f != FilterComments && f != FilterFindings && f != FilterSince }
+// hasData reports whether a filter can be evaluated yet; comments and
+// last-look marks arrive in M4.
+func hasData(f Filter) bool { return f != FilterComments && f != FilterSince }
 
 // filterLabel is the bar text of f ("risk ≥ 3" for FilterRisk).
 func filterLabel(f Filter) string {
@@ -76,7 +76,14 @@ func (m *Model) visible(id string) bool {
 		return true
 	}
 	for i, f := range AllFilters {
-		if m.filters[i] && m.filterActive(f) && !matches(f, a) {
+		if !m.filters[i] || !m.filterActive(f) {
+			continue
+		}
+		ok := matches(f, a)
+		if f == FilterFindings {
+			ok = m.c.hasFindings(id) // findings live on the routing rows, not the aggregate
+		}
+		if !ok {
 			return false
 		}
 	}
@@ -92,12 +99,12 @@ func (m *Model) filterActive(f Filter) bool {
 
 // collapsed reports whether a unit is drawn as a one-line summary: noise
 // per the aggregate (or, by file, a mechanical repeat: a non-example member
-// of a mechanical group), not unsure, and not expanded by `z` (on its file
-// by file, on its group by change) or FocusUnit. By change a mechanical
-// group already shows only its example.
+// of a mechanical group), not unsure, without review findings, and not
+// expanded by `z` (on its file by file, on its group by change) or
+// FocusUnit. By change a mechanical group already shows only its example.
 func (m *Model) collapsed(id string) bool {
 	a := m.c.aggs[id]
-	if !m.c.hasAgg || a == nil || a.Unsure || m.expandedUnits[id] {
+	if !m.c.hasAgg || a == nil || a.Unsure || m.c.hasFindings(id) || m.expandedUnits[id] {
 		return false
 	}
 	if m.byChange() {
@@ -124,7 +131,7 @@ func (m *Model) hiddenIn(ids []string) int {
 	return n
 }
 
-// SetFilter turns filter f on or off (filters without data in M1 are
+// SetFilter turns filter f on or off (filters without data yet are
 // ignored). It keeps the selected file and clamps the scroll.
 func (m *Model) SetFilter(f Filter, on bool) {
 	i := filterIndex(f)

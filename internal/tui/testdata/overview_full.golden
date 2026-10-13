@@ -1,4 +1,6 @@
 #482 Rework session refresh and add device list · alice · 1d · main ← feat/sess…
+Refreshes session tokens before expiry and adds a device list; the auth refresh
+path is untested.  ai·from labels
 
 Composition
 rrrrrrrrrrrrrrrrrrrrffffffffffff░░░░tttt

@@ -5,16 +5,20 @@ import (
 
 	"github.com/fredricw/prt/internal/aggregate"
 	"github.com/fredricw/prt/internal/cluster"
+	"github.com/fredricw/prt/internal/config"
 	"github.com/fredricw/prt/internal/jev"
 	"github.com/fredricw/prt/internal/judge"
 	"github.com/fredricw/prt/internal/link"
 	"github.com/fredricw/prt/internal/model"
+	"github.com/fredricw/prt/internal/review"
+	"github.com/fredricw/prt/internal/route"
 )
 
 // stageFuncs are the pure stage implementations the pipeline wires (link,
-// cluster, judge, aggregate). They live on the Pipeline rather than in
-// package-level variables so tests can substitute any of them per Pipeline
-// without global mutable state; New fills them with the real packages.
+// cluster, judge, route, review prompts, aggregate). They live on the
+// Pipeline rather than in package-level variables so tests can substitute
+// any of them per Pipeline without global mutable state; New fills them
+// with the real packages.
 type stageFuncs struct {
 	structural func(context.Context, link.Input) ([]model.Link, error)
 	embedCands func([]model.ChangeUnit, map[string][]float32, link.EmbedOptions) []model.Link
@@ -31,6 +35,21 @@ type stageFuncs struct {
 	separatePR func(context.Context, jev.Client, judge.SplitInput) (judge.Result, error)
 	splitCtx   func([]judge.GroupSummary) string
 	suggestion func(string, []model.ChangeUnit, []model.Group, []model.Label, string) *model.SplitSuggestion
+
+	// Stage 6 (route).
+	compile   func(config.Routing) (route.Rules, error)
+	route     func(route.Rules, []route.GroupFacts) []route.Decision
+	gather    func([]string, model.Group, []model.ChangeUnit, []model.Link, []model.UnitAgg) []model.ContextBlock
+	plan      func(route.PlanInput) []route.Planned
+	newBudget func(capUSD, spent float64) route.Budget
+
+	// Stage 7 (review) and the prose calls of stages 5 and 8.
+	buildReview     func(review.GroupInput) review.Request
+	parseReview     func(string, []model.ChangeUnit) ([]model.Finding, string, float64, error)
+	buildTLDR       func(model.ItemAgg) review.Request
+	cleanTLDR       func(string) string
+	buildGroupTitle func(model.Group, []model.ChangeUnit) review.Request
+	cleanTitle      func(string) string
 
 	aggregate func(aggregate.Input) model.ItemAgg
 }
@@ -50,6 +69,20 @@ func defaultStages() stageFuncs {
 		separatePR: judge.SeparatePR,
 		splitCtx:   judge.SplitCtx,
 		suggestion: judge.Suggestion,
-		aggregate:  aggregate.Item,
+
+		compile:   route.Compile,
+		route:     route.Route,
+		gather:    route.Gather,
+		plan:      route.Plan,
+		newBudget: route.NewBudget,
+
+		buildReview:     review.BuildReview,
+		parseReview:     review.ParseReview,
+		buildTLDR:       review.BuildTLDR,
+		cleanTLDR:       review.CleanTLDR,
+		buildGroupTitle: review.BuildGroupTitle,
+		cleanTitle:      review.CleanTitle,
+
+		aggregate: aggregate.Item,
 	}
 }

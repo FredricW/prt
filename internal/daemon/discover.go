@@ -285,12 +285,13 @@ func itemKey(it model.Item) []byte {
 	return b
 }
 
-// setUrgency recomputes the urgency from fresh item metadata. Minutes come
-// from the stored ItemAgg (label-based once any label is known) when that
-// aggregate describes the item's current head: sameHead (discovery did not
-// move the head in this pass), not stale, and analysed at this head or on
-// its first analysis. Otherwise they are the stand-in from the line counts.
-// TODO(M3): keep label terms from the stored ItemAgg too.
+// setUrgency recomputes the urgency from fresh item metadata. Minutes and
+// the label terms (breaking, risk, test gap, relevance: aggregate.Input
+// Prior) come from the stored ItemAgg when that aggregate describes the
+// item's current head: sameHead (discovery did not move the head in this
+// pass), not stale, and analysed at this head or on its first analysis.
+// Otherwise minutes are the stand-in from the line counts and the label
+// terms 0.
 func (c *InProcess) setUrgency(ctx context.Context, it *model.Item, sameHead bool) {
 	age, release, ciRed := aggregate.Facts(*it, c.d.Config.GitHub.ReleaseBranches, c.now())
 	in := aggregate.Input{Item: *it, Weights: c.d.Config.Rank, AgeDays: age, Release: release, CIRedAfterApproval: ciRed}
@@ -298,6 +299,7 @@ func (c *InProcess) setUrgency(ctx context.Context, it *model.Item, sameHead boo
 	if sameHead && it.State != model.StateStale && (it.AnalysedSHA == "" || it.AnalysedSHA == it.HeadSHA) {
 		if agg, ok, err := c.d.Store.Agg(ctx, it.ID); err == nil && ok {
 			it.Minutes = agg.Minutes
+			in.Prior = &agg
 		}
 	}
 	_, it.Urgency, it.Why = aggregate.Urgency(in, it.Minutes)

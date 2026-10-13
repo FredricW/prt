@@ -13,12 +13,20 @@
 // order, ungrouped singletons and the split suggestion last, and a right
 // pane with the group's header chips, the links that bind it ("why these
 // belong together"), its units rendered as in mode A (a mechanical group:
-// one example and "×N verified identical") and a findings placeholder. `M`
-// and `X` merge and split groups; the edit is handed to the root model
+// one example and "×N verified identical") and the group's review findings.
+// `M` and `X` merge and split groups; the edit is handed to the root model
 // through PendingEdit.
 //
+// Review (M3): the list rows show each group's tier and review status from
+// the routing table (Detail.Reviews), the group header the rule that fired
+// and the context attached. By file, findings render inline under their
+// anchored line (or under the unit header when unanchored), and units with
+// findings never collapse. `R` asks for a deep re-review through
+// PendingReview.
+//
 // It renders only what proto.Detail carries (Units, Labels, Files, Agg,
-// Diff); every number comes from Detail.Agg (the TUI never does maths).
+// Reviews, Diff); every number comes from Detail.Agg or the routing table
+// (the TUI never does maths).
 // It is a plain component like diffview: the tui root model owns it,
 // forwards keys and size, and calls View.
 //
@@ -54,8 +62,8 @@ type Filter string
 // Filters in bar order; number keys 1–9 and 0 toggle them in this order.
 // The first three are on by default (spec: needs eyes, behaviour changes,
 // mine). FilterRisk means risk ≥ RiskMin. Filters hide units, never files.
-// Comments, findings and changed-since-last-look are placeholders until
-// their data exists (M4, M3, M4).
+// FilterFindings keeps units with at least one review finding. Comments and
+// changed-since-last-look are placeholders until their data exists (M4).
 const (
 	FilterNeedsEyes    Filter = "needs eyes"
 	FilterBehaviour    Filter = "behaviour"
@@ -103,6 +111,9 @@ type Keys struct {
 	// Mode toggles by file / by change (default g); MergeGroups (M) and
 	// SplitGroup (X) edit the grouping in by-change mode.
 	Mode, MergeGroups, SplitGroup key.Binding
+	// ReReview (R) asks for the group (by file: the cursor unit's group) to
+	// be re-reviewed on the deep tier; see PendingReview.
+	ReReview key.Binding
 	// Toggle[i] toggles AllFilters[i] (default keys "1".."9", then "0");
 	// they are only active while the filters bar is open (after Filters), so
 	// the tab keys 1/2 keep working otherwise.
@@ -127,7 +138,8 @@ func DefaultKeys() Keys {
 		NextFile: b("next file", "J", "]"), PrevFile: b("previous file", "K", "["),
 		Filters: b("filters", "f"), Expand: b("expand noise", "z"), RawLabels: b("raw labels", "L"),
 		Mode: b("by file / by change", "g"), MergeGroups: b("merge groups", "M"), SplitGroup: b("split group", "X"),
-		Close: b("close", "esc"),
+		ReReview: b("re-review on deep", "R"),
+		Close:    b("close", "esc"),
 	}
 	for i := range k.Toggle {
 		s := strconv.Itoa((i + 1) % 10)
@@ -172,6 +184,8 @@ type Model struct {
 	mergeMark string
 	// pending is the grouping edit waiting for PendingEdit.
 	pending *model.GroupEdit
+	// pendingReview is the group id R asked to re-review (PendingReview).
+	pendingReview string
 
 	p     *pane
 	cache *renderCache
@@ -267,6 +281,7 @@ func (m *Model) resetView() {
 	m.expandedUnits = map[string]bool{}
 	m.revealed = map[string]bool{}
 	m.mergeMark = ""
+	m.pendingReview = ""
 	m.note = ""
 }
 
@@ -435,17 +450,17 @@ func (m Model) HelpBindings() [][]key.Binding {
 		{k.Down, k.Up, k.PageDown, k.PageUp, k.HalfPageDown, k.HalfPageUp, k.Top, k.Bottom},
 		{k.NextUnit, k.PrevUnit, k.NextFile, k.PrevFile},
 		{k.Filters, k.Expand, k.RawLabels},
-		{k.Mode, k.MergeGroups, k.SplitGroup},
+		{k.Mode, k.MergeGroups, k.SplitGroup, k.ReReview},
 	}
 }
 
-// ShortBindings returns the status-line hints; merge and split only by
-// change.
+// ShortBindings returns the status-line hints; merge, split and re-review
+// only by change.
 func (m Model) ShortBindings() []key.Binding {
 	k := m.entryKeys()
 	if m.byChange() {
 		return []key.Binding{k.NextUnit, k.PrevUnit, k.NextFile, k.PrevFile, k.MergeGroups, k.SplitGroup,
-			k.Filters, k.Expand, k.RawLabels, k.Mode}
+			k.ReReview, k.Filters, k.Expand, k.RawLabels, k.Mode}
 	}
 	return []key.Binding{k.NextUnit, k.PrevUnit, k.NextFile, k.PrevFile, k.Filters, k.Expand, k.RawLabels, k.Mode}
 }

@@ -30,8 +30,36 @@
 //	                reached the error, date and command go to --blocked
 //	                (docs/BLOCKED.md) and the tool exits non-zero.
 //
-// Recording files are written only by jev.Recorder, which never sees the
-// API key. The key is read from the environment and never printed.
+// Reviews (--review, M3): runs the same fixture pipeline to record the
+// stage-7 LLM calls (group reviews, TL;DR, group titles) into --review-out
+// (testdata/recordings/review). Jev answers are replayed strictly from
+// --out (a missing recording is an error; Jev is never called), embeddings
+// follow --embed, and the reviewers are the fixture repo's configured
+// models (models.fast / models.deep).
+//
+//	recordjev --review         dry run: fake reviewers (confidence 0.9);
+//	                           prints the review requests, estimated input
+//	                           tokens, the upper-bound cost and how many are
+//	                           already recorded; no network, no spend
+//	recordjev --live --review  records with the Anthropic Messages API
+//	                           (PRT_ANTHROPIC_API_KEY; PRT_ANTHROPIC_BASE_URL
+//	                           overrides the endpoint). Recorded requests are
+//	                           served without a call; a call is refused when
+//	                           the Anthropic ledger spend + this run + in-flight
+//	                           estimates + its review.EstimateCost would pass
+//	                           --review-cap (default $3.00), or the ledger's
+//	                           total over all services would pass $5.00; an
+//	                           "anthropic" ledger row is appended after every
+//	                           run, also a failed one
+//
+// The Makefile targets are:
+//
+//	make record-review      go run ./tools/recordjev --live --review --embed replay
+//	make record-review-dry  go run ./tools/recordjev --review --embed replay
+//
+// Recording files are written only by jev.Recorder and review.Recorder,
+// which never see API keys. Keys are read from the environment and never
+// printed.
 package main
 
 import (
@@ -51,6 +79,7 @@ import (
 	"github.com/fredricw/prt/internal/jev"
 	"github.com/fredricw/prt/internal/model"
 	"github.com/fredricw/prt/internal/pipeline/pipelinetest"
+	"github.com/fredricw/prt/internal/review"
 )
 
 func main() {
@@ -65,6 +94,10 @@ type config struct {
 
 	embed, embedOut, blocked string
 	args                     []string // as given, for BLOCKED.md
+
+	review    bool    // record review calls instead of Jev answers
+	reviewOut string  // review recordings directory
+	reviewCap float64 // cap on cumulative Anthropic spend in USD
 }
 
 // env looks up an environment variable ("" when unset); injected for tests.
@@ -76,7 +109,11 @@ func run(ctx context.Context, args []string, getenv env, stdout, stderr io.Write
 	if err != nil {
 		return 2
 	}
-	if cfg.live && getenv("JEV_API_KEY") == "" {
+	switch {
+	case cfg.live && cfg.review && getenv(review.AnthropicKeyEnv) == "":
+		fmt.Fprintf(stderr, "recordjev: --live --review needs %s in the environment; nothing was sent\n", review.AnthropicKeyEnv)
+		return 2
+	case cfg.live && !cfg.review && getenv("JEV_API_KEY") == "":
 		fmt.Fprintln(stderr, "recordjev: --live needs JEV_API_KEY (an AI Gateway API key) in the environment; nothing was sent")
 		return 2
 	}
@@ -102,12 +139,19 @@ func parseFlags(args []string, stderr io.Writer) (config, error) {
 	fs.StringVar(&c.embed, "embed", "", "embedder: none, replay or live (default: replay when --embed-out has recordings, else none)")
 	fs.StringVar(&c.embedOut, "embed-out", filepath.Join(root, "testdata", "recordings", "embed"), "embedding recordings directory")
 	fs.StringVar(&c.blocked, "blocked", filepath.Join(root, "docs", "BLOCKED.md"), "where an unreachable Ollama is recorded (--embed live)")
+	fs.BoolVar(&c.review, "review", false, "record review LLM calls (Jev replayed from --out); with --live needs "+review.AnthropicKeyEnv)
+	fs.StringVar(&c.reviewOut, "review-out", filepath.Join(root, "testdata", "recordings", "review"), "review recordings directory")
+	fs.Float64Var(&c.reviewCap, "review-cap", 3.00, "cap on cumulative Anthropic spend in USD (ledger + this run)")
 	if err := fs.Parse(args); err != nil {
 		return c, err
 	}
 	c.args = args
 	if c.live && c.synthetic {
 		fmt.Fprintln(stderr, "recordjev: --live and --synthetic are exclusive")
+		return c, errors.New("exclusive flags")
+	}
+	if c.review && c.synthetic {
+		fmt.Fprintln(stderr, "recordjev: --review and --synthetic are exclusive")
 		return c, errors.New("exclusive flags")
 	}
 	mode, err := resolveEmbedMode(c.embed, c.embedOut)
@@ -157,6 +201,8 @@ func execute(ctx context.Context, cfg config, getenv env, stdout io.Writer) erro
 	}
 	opts := emb.options()
 	switch {
+	case cfg.review:
+		err = recordReview(ctx, cfg, repo, prs, getenv, stdout, opts)
 	case cfg.live:
 		err = recordLive(ctx, cfg, repo, prs, getenv, stdout, opts)
 	case cfg.synthetic:

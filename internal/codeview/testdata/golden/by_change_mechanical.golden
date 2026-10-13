@@ -1,20 +1,20 @@
   Pass request options through getUser    ‹import fetchJSON from client›  ×5 · 5 files                                  
-    3u 3f · b2 .82 · — · not reviewed    ┌ mechanical ×5 · risk 1 · routing: — (M3)
+    3u 3f · b2 .82 · not routed          ┌ mechanical ×5 · risk 1 · routing: not routed
   ‹ApiError›                             │ placeholder name (code-derived; no description bullet names this group)
-    2u 2f · — · not reviewed             
+    2u 2f · not routed                   
   Invalidate the profile cache on logout why these belong together
-    1u 1f · b1 .64 · — · not reviewed      same shape ×5 (verified)
+    1u 1f · b1 .64 · not routed            same shape ×5 (verified)
 ▸ ‹import fetchJSON from client›         
-    ×5 5f · — · not reviewed             ┌ modified · refactor · behaviour ✗ .98 · tests ✓ · risk 1 · skip
+    ×5 5f · not routed                   ┌ modified · refactor · behaviour ✗ .98 · tests ✓ · risk 1 · skip
 ── ungrouped (3) ─────────────────────── │ L1 · +1 −1
   ‹f.tsx›                                  1   - import { fetchJSON } from "../api/fetch";
-    1u 1f · — · not reviewed             ·   1 + import { fetchJSON } from "../api/client";
+    1u 1f · not routed                   ·   1 + import { fetchJSON } from "../api/client";
   ‹theme.css›                            
-    1u 1f · — · not reviewed             ×5 verified identical
+    1u 1f · not routed                   ×5 verified identical
   ‹save›                                 members: web/src/pages/b.tsx · web/src/pages/c.tsx +2 more
-    1u 1f · — · not reviewed             promoted out: f.tsx → ‹f.tsx›
+    1u 1f · not routed                   promoted out: f.tsx → ‹f.tsx›
 ── split suggestion ──────────────────── 
-  split? web/src/styles/theme.css .74    findings: none yet (review lands in M3)
+  split? web/src/styles/theme.css .74    findings: not reviewed (not routed)
                                          
                                          
                                          

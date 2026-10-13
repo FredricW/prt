@@ -52,12 +52,26 @@ func ledgerSpent(path, service string) (float64, error) {
 	return parseLedger(string(b), service)
 }
 
-// parseLedger sums the "Run cost" column of rows whose Service is service.
+// ledgerTotal returns the summed run cost of every service's rows (0 when
+// the file does not exist), for the cap on total model spend.
+func ledgerTotal(path string) (float64, error) {
+	return ledgerSpent(path, anyService)
+}
+
+// anyService makes parseLedger sum the rows of every service.
+const anyService = "*"
+
+// parseLedger sums the "Run cost" column of rows whose Service is service
+// (every data row for anyService; the header and separator rows are
+// skipped).
 func parseLedger(text, service string) (float64, error) {
 	total := 0.0
 	for i, line := range strings.Split(text, "\n") {
 		cells := tableCells(line)
-		if len(cells) < 4 || cells[1] != service {
+		if len(cells) < 4 || cells[1] == "Service" || strings.HasPrefix(cells[1], "---") {
+			continue
+		}
+		if service != anyService && cells[1] != service {
 			continue
 		}
 		cost, err := strconv.ParseFloat(strings.TrimPrefix(cells[3], "$"), 64)

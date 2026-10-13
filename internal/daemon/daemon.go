@@ -60,6 +60,16 @@ type Client interface {
 	// queues the item for re-analysis (cached stages are skipped, so only
 	// clustering re-runs); a patch event follows when the new groups land.
 	EditGroups(ctx context.Context, p proto.GroupEditParams) error
+	// ReviewAction forces a group deep (D, R), skips it (s) or resets that
+	// override, then re-runs the item from routing (cached reviews hit).
+	ReviewAction(ctx context.Context, p proto.ReviewActionParams) error
+	// Routing returns the active routing rules; Ensure writes the built-in
+	// file when missing, Reload re-reads it and re-routes unreviewed groups.
+	Routing(ctx context.Context, p proto.RoutingParams) (proto.RoutingInfo, error)
+	// CallLog returns the raw LLM calls of a routing-table row.
+	CallLog(ctx context.Context, p proto.CallLogParams) ([]model.ReviewCall, error)
+	// SetCap sets an item's review cost cap and re-runs groups queued over it.
+	SetCap(ctx context.Context, p proto.CapParams) error
 	// Events streams patches; closed by Close.
 	Events() <-chan proto.Event
 	Close() error

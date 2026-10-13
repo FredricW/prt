@@ -20,6 +20,7 @@ import (
 
 	"github.com/fredricw/prt/internal/daemon"
 	"github.com/fredricw/prt/internal/model"
+	"github.com/fredricw/prt/internal/pipeview"
 	"github.com/fredricw/prt/internal/proto"
 )
 
@@ -37,9 +38,12 @@ const (
 type Tab int
 
 // Main-pane tabs. Architecture (3) is shown as "later" until M5.
+// TabPipeline is the Pipeline page: not a numbered tab but a page `P`
+// opens over the main pane and `P`/esc closes, back to the previous tab.
 const (
 	TabOverview Tab = iota
 	TabCode
+	TabPipeline
 )
 
 // Options configures the root model; the zero value is usable.
@@ -54,6 +58,10 @@ type Options struct {
 	// Now returns the current time for ages; nil means time.Now. Snapshots
 	// and tests inject a fixed clock.
 	Now func() time.Time
+	// Edit opens the routing rules file for the Pipeline page's `e`; nil
+	// runs $EDITOR (fallback vi) through tea.ExecProcess. Tests inject a
+	// recording stand-in.
+	Edit EditFunc
 }
 
 // Messages.
@@ -122,9 +130,18 @@ type Model struct {
 	reloadPending, reloadAgain bool
 	overview                   overview
 	code                       codePane
+	pipe                       pipePane
+	// prevTab is the tab the Pipeline page returns to.
+	prevTab Tab
 
 	requested map[string]string      // item id → head SHA auto-refreshed
 	stages    map[string]model.Stage // item id → latest stage seen
+	// runLogs are the stage rows received as stage events, per item, for
+	// the picker's one-line stage strip while the item analyses.
+	runLogs map[string][]model.RunLog
+	// strip renders the picker's stage strip (pipeview.StageStrip; tests
+	// substitute a stand-in).
+	strip func(rls []model.RunLog, width int) string
 
 	note    string // transient; cleared on the next key press
 	logNote string // latest daemon log note ("GitHub unavailable")
@@ -150,6 +167,7 @@ func NewWithOptions(c daemon.Client, r *lipgloss.Renderer, o Options) Model {
 	}
 	h := help.New()
 	h.Styles = helpStyles(r)
+	pipe := pipeview.New(r)
 	m := Model{
 		client:    c,
 		opts:      o,
@@ -161,12 +179,16 @@ func NewWithOptions(c daemon.Client, r *lipgloss.Renderer, o Options) Model {
 		spin:      spinner.New(spinner.WithSpinner(spinner.MiniDot), spinner.WithStyle(r.NewStyle())),
 		overview:  newOverview(),
 		code:      newCodePane(r),
+		pipe:      &pipe,
 		requested: map[string]string{},
 		stages:    map[string]model.Stage{},
+		runLogs:   map[string][]model.RunLog{},
+		strip:     pipeview.StageStrip,
 		width:     120,
 		height:    40,
 	}
 	m.code.SetKeys(km.codeKeys())
+	m.pipe.SetKeys(km.pipeKeys())
 	m.layout()
 	return m
 }
@@ -335,6 +357,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case eventMsg:
 		return m.onEvent(proto.Event(msg))
 	case spinner.TickMsg:
+		if m.tab == TabPipeline {
+			m.pipe.SetNow(m.now()) // a running review's elapsed seconds
+		}
 		if !m.picker.busy() {
 			m.spinning = false
 			return m, nil
@@ -372,6 +397,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.logNote = "daemon connection lost; restart prt"
 		return m, nil
 	}
+	if next, cmd, ok := m.onPipeMsg(msg); ok {
+		return next, cmd
+	}
 	return m, nil
 }
 
@@ -408,6 +436,8 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case m.tab == TabCode:
 		return m, m.code.Update(msg)
+	case m.tab == TabPipeline:
+		return m, m.pipe.Update(msg)
 	case msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress && !m.overview.raw:
 		// Row 0 of the main pane is the tab bar; a click on an anchored
 		// Overview line (minimap row, headline, …) opens that unit in Code.
@@ -476,6 +506,9 @@ func (m Model) onEvent(e proto.Event) (tea.Model, tea.Cmd) {
 		if e.Stage != "" {
 			m.stages[e.ItemID] = e.Stage
 		}
+		if e.RunLog != nil {
+			m.runLogs[e.ItemID] = upsertRunLog(m.runLogs[e.ItemID], *e.RunLog)
+		}
 	case proto.EventLog:
 		m.logNote = e.Note
 	}
@@ -516,6 +549,7 @@ func (m *Model) selectionChanged() tea.Cmd {
 	m.detail = nil
 	m.detailSeq++
 	m.code.Clear()
+	m.pipe.Clear()
 	m.overview.setContent("", nil)
 	m.overview.closeRaw()
 	it, ok := m.picker.selected()
@@ -533,6 +567,7 @@ func (m *Model) selectionChanged() tea.Cmd {
 func (m *Model) applyDetail(d proto.Detail) {
 	same := m.detail != nil && m.detail.Item.ID == d.Item.ID
 	m.code.SetDetail(d)
+	m.pipe.SetDetail(d)
 	m.detail = &d
 	m.detailPending = false
 	y := m.overview.vp.YOffset
@@ -571,7 +606,8 @@ func (m Model) handleKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	if !m.showHelp && m.focus == FocusMain {
 		if next, ok := m.routeMain(k); ok {
-			return next, next.sendGroupEdit()
+			cmd := tea.Batch(next.sendGroupEdit(), next.sendReReview(), next.pipeActionCmd())
+			return next, cmd
 		}
 	}
 	if key.Matches(k, km.Quit) {
@@ -595,8 +631,9 @@ func (m Model) handleKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 // routeMain gives the focused main pane the first look at k. The Code page
 // takes every key while it captures (filters bar, raw labels: so 1–9 toggle
 // filters instead of switching tabs) and otherwise any key it handles; the
-// Overview's raw-labels overlay captures every key. ok is false when k
-// falls through to the global and pane keys.
+// Pipeline page likewise (cap prompt, call log, stage log); the Overview's
+// overlays (raw labels, urgency weights) capture every key. ok is false
+// when k falls through to the global and pane keys.
 func (m Model) routeMain(k tea.KeyMsg) (Model, bool) {
 	switch {
 	case m.tab == TabCode && m.code.Capturing():
@@ -604,6 +641,11 @@ func (m Model) routeMain(k tea.KeyMsg) (Model, bool) {
 		return m, true
 	case m.tab == TabCode:
 		return m, m.code.HandleKey(k)
+	case m.tab == TabPipeline && m.pipe.Capturing():
+		m.pipe.HandleKey(k)
+		return m, true
+	case m.tab == TabPipeline:
+		return m, m.pipe.HandleKey(k)
 	case m.overview.raw:
 		m.handleRawKey(k)
 		return m, true
@@ -611,12 +653,17 @@ func (m Model) routeMain(k tea.KeyMsg) (Model, bool) {
 	return m, false
 }
 
-// handleRawKey drives the Overview's raw-labels overlay: L or esc closes it,
-// scroll keys scroll it, anything else is ignored.
+// handleRawKey drives the Overview's overlays: L (raw labels) or w (urgency
+// weights) or esc closes the open one, scroll keys scroll it, anything else
+// is ignored.
 func (m *Model) handleRawKey(k tea.KeyMsg) {
 	km, vp := m.keys, &m.overview.rawVP
+	closer := km.RawLabels
+	if m.overview.weights {
+		closer = km.Weights
+	}
 	switch {
-	case key.Matches(k, km.RawLabels), key.Matches(k, km.Back):
+	case key.Matches(k, closer), key.Matches(k, km.Back):
 		m.overview.closeRaw()
 	case key.Matches(k, km.Down):
 		vp.ScrollDown(1)
@@ -647,6 +694,10 @@ func (m Model) handleGlobalKey(k tea.KeyMsg) (Model, tea.Cmd, bool) {
 		} else {
 			m.focus = FocusPicker
 		}
+	case key.Matches(k, km.Pipeline):
+		m.togglePipeline()
+	case key.Matches(k, km.Back) && m.tab == TabPipeline && m.focus == FocusMain:
+		m.closePipeline()
 	case key.Matches(k, km.Back):
 		m.focus = FocusPicker
 	case key.Matches(k, km.Overview):
@@ -724,14 +775,22 @@ func (m Model) handlePickerKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// handleMainKey handles Overview keys (Code keys went to the component in
-// routeMain).
+// handleMainKey handles Overview keys (Code and Pipeline keys went to their
+// components in routeMain).
 func (m Model) handleMainKey(k tea.KeyMsg) Model {
-	if m.tab == TabCode {
+	if m.tab != TabOverview {
 		return m
 	}
 	km, vp := m.keys, &m.overview.vp
 	switch {
+	case key.Matches(k, km.Weights):
+		if m.detail == nil {
+			m.note = "no item loaded"
+			return m
+		}
+		_, mw, _ := m.dims()
+		m.overview.openWeights(m.st.title.Render("Urgency weights") + "  " +
+			m.st.dim.Render("esc or "+km.Weights.Help().Key+" closes") + "\n\n" + weightsText(*m.detail, mw-2))
 	case key.Matches(k, km.Focus):
 		id, ok := m.overview.anchor()
 		if !ok || m.detail == nil {
@@ -790,6 +849,14 @@ func (m *Model) layout() {
 	sw, mw, bh := m.dims()
 	m.picker.setSize(sw, bh)
 	m.code.SetSize(mw, bh-1)
+	m.pipe.SetSize(mw, bh-1)
+	// The main pane starts after the sidebar, its right border and a gap,
+	// one row below the tab bar; components map mouse cells from there.
+	for _, c := range []any{m.code, m.pipe} {
+		if o, ok := c.(originSetter); ok {
+			o.SetOrigin(sw+2, 1)
+		}
+	}
 	m.overview.setSize(mw, bh-1)
 	m.renderOverview()
 }
@@ -797,7 +864,7 @@ func (m *Model) layout() {
 // View implements tea.Model.
 func (m Model) View() string {
 	sw, mw, bh := m.dims()
-	rc := rowCtx{now: m.now(), spin: m.spin.View(), stages: m.stages}
+	rc := rowCtx{now: m.now(), spin: m.spin.View(), stages: m.stages, runLogs: m.runLogs, strip: m.strip}
 	side := m.st.sidebar.Width(sw).Render(fit(m.picker.view(m.st, rc), sw, bh))
 	main := fit(m.viewMain(mw), mw, bh)
 	body := lipgloss.JoinHorizontal(lipgloss.Top, side, " ", main)
@@ -817,6 +884,8 @@ func (m Model) viewMain(w int) string {
 		return head + "\n" + m.st.title.Render(itemLabel(it)) + "\n" + m.st.dim.Render("loading…")
 	case m.tab == TabCode:
 		return head + "\n" + m.code.View()
+	case m.tab == TabPipeline:
+		return head + "\n" + m.pipe.View()
 	}
 	return head + "\n" + m.overview.view()
 }
@@ -832,8 +901,12 @@ func (m Model) viewTabs() string {
 	if m.focus == FocusMain {
 		focus = "▸ "
 	}
-	return focus + tab(TabOverview, "1 Overview") + "  " + tab(TabCode, "2 Code") + "  " +
+	s := focus + tab(TabOverview, "1 Overview") + "  " + tab(TabCode, "2 Code") + "  " +
 		m.st.tabLater.Render("3 Architecture (later)")
+	if m.tab == TabPipeline {
+		s += "  " + tab(TabPipeline, m.keys.Pipeline.Help().Key+" Pipeline")
+	}
+	return s
 }
 
 func (m Model) viewStatus() string {
@@ -851,8 +924,12 @@ func (m Model) viewStatus() string {
 		switch {
 		case m.focus == FocusPicker:
 			left = h.ShortHelpView(m.keys.pickerShort())
+		case m.tab == TabOverview && m.overview.raw && m.overview.weights:
+			left = m.st.dim.Render("urgency weights · esc or " + m.keys.Weights.Help().Key + " closes")
 		case m.tab == TabOverview && m.overview.raw:
-			left = m.st.dim.Render("raw labels · esc or L closes")
+			left = m.st.dim.Render("raw labels · esc or " + m.keys.RawLabels.Help().Key + " closes")
+		case m.tab == TabPipeline:
+			left = h.ShortHelpView(m.keys.mainShort(m.tab, m.pipe.ShortBindings()))
 		default:
 			left = h.ShortHelpView(m.keys.mainShort(m.tab, m.code.ShortBindings()))
 		}

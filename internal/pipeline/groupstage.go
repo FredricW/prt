@@ -54,10 +54,12 @@ func (c clusterIn) keptLinks() []model.Link {
 }
 
 // clusterStage is stage 5: cluster.Cluster over the kept links with the
-// user's group edits, then Jev names for real groups and the split
-// suggestion. Jev failures in naming and split are soft (placeholder
-// names, no split) and only noted; store errors fail the stage.
-func (p *Pipeline) clusterStage(ctx context.Context, it model.Item, in clusterIn, rl *model.RunLog) (groupOut, error) {
+// user's group edits, then Jev names for real groups, the split suggestion
+// and fast-LLM titles for groups Jev could not name. Titles come after the
+// split so no Jev request ever sees them (the separate_pr state carries
+// group names). Jev and LLM failures are soft (placeholder names, no
+// split) and only noted; store errors fail the stage.
+func (p *Pipeline) clusterStage(ctx context.Context, r *run, it model.Item, in clusterIn, rl *model.RunLog) (groupOut, error) {
 	units := in.parsed.units
 	links := in.keptLinks()
 	edits, err := p.d.Store.GroupEdits(ctx, it.ID)
@@ -84,6 +86,10 @@ func (p *Pipeline) clusterStage(ctx context.Context, it model.Item, in clusterIn
 	if err != nil {
 		return groupOut{}, err
 	}
+	groups, titleNote, err := p.titleGroups(ctx, r, units, groups, rl)
+	if err != nil {
+		return groupOut{}, err
+	}
 	if err := p.d.Store.PutGroups(ctx, it.ID, groups); err != nil {
 		return groupOut{}, fmt.Errorf("pipeline: store groups: %w", err)
 	}
@@ -92,7 +98,7 @@ func (p *Pipeline) clusterStage(ctx context.Context, it model.Item, in clusterIn
 	}
 	stats := groupingStats(res.Stats, in, units)
 	rl.In, rl.Out = len(units), len(groups)
-	rl.Note = joinNotes(fmt.Sprintf("%d groups · %d mechanical · %d ungrouped", stats.Groups, stats.Mechanical, stats.Ungrouped), nameNote, splitNote)
+	rl.Note = joinNotes(fmt.Sprintf("%d groups · %d mechanical · %d ungrouped", stats.Groups, stats.Mechanical, stats.Ungrouped), nameNote, splitNote, titleNote)
 	return groupOut{groups: groups, links: links, noStructural: in.structural == nil, stats: &stats, split: split}, nil
 }
 

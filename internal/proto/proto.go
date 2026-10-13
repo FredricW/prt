@@ -45,7 +45,98 @@ const (
 	// groups and re-runs the item (cached stages are skipped, so only
 	// clustering re-runs): GroupEditParams → {}.
 	MethodEditGroups = "edit_groups"
+	// MethodReviewAction forces a group to the deep tier (Pipeline page D,
+	// Code page R) or skips its review (Pipeline page s), then re-runs the
+	// item from routing: ReviewActionParams → {}.
+	MethodReviewAction = "review_action"
+	// MethodRouting returns the active routing rules (and, with Ensure,
+	// writes the built-in rules to .git/prt/prt.routing.toml when no file
+	// exists; with Reload, re-reads the file and re-routes every item's
+	// unreviewed groups): RoutingParams → RoutingInfo.
+	MethodRouting = "routing"
+	// MethodCallLog returns the raw LLM calls behind a routing-table row
+	// (prompt, context, response, tokens): CallLogParams → []model.ReviewCall.
+	MethodCallLog = "call_log"
+	// MethodSetCap sets an item's review cost cap (Pipeline page $, `:cap`)
+	// and re-runs groups queued over the old cap: CapParams → {}.
+	MethodSetCap = "set_cap"
 )
+
+// ReviewAction is what MethodReviewAction does to a group.
+type ReviewAction string
+
+// Review actions.
+const (
+	// ActionDeep forces the group to the deep tier (re-reviews it there).
+	ActionDeep ReviewAction = "deep"
+	// ActionSkip skips the group's review (tier none, logged).
+	ActionSkip ReviewAction = "skip"
+	// ActionReset drops a previous deep/skip override (back to the rules).
+	ActionReset ReviewAction = "reset"
+)
+
+// ReviewActionParams is the params of MethodReviewAction.
+type ReviewActionParams struct {
+	ItemID  string       `json:"itemId"`
+	GroupID string       `json:"groupId"`
+	Action  ReviewAction `json:"action"`
+}
+
+// RoutingParams is the params of MethodRouting.
+type RoutingParams struct {
+	// Ensure writes the built-in rules to Path when no routing file exists
+	// yet, so `e` always has a file to open.
+	Ensure bool `json:"ensure,omitempty"`
+	// Reload re-reads the routing file and re-routes every analysed item's
+	// groups that have no finished review.
+	Reload bool `json:"reload,omitempty"`
+}
+
+// RoutingRule is one rule of the active routing file, for the rules panel.
+type RoutingRule struct {
+	Index   int      `json:"index"` // 1-based
+	When    string   `json:"when"`
+	Tier    string   `json:"tier"`
+	Prompts []string `json:"prompts,omitempty"`
+	Context []string `json:"context,omitempty"`
+	// Words is the rule rendered as "if … → tier" (route.Rule.Words).
+	Words string `json:"words"`
+	// Err is the parse error of When ("" when it compiled).
+	Err string `json:"err,omitempty"`
+}
+
+// RoutingInfo is the result of MethodRouting and Detail.Routing.
+type RoutingInfo struct {
+	// Path is the file `e` edits: the active routing file, or
+	// <gitDir>/prt/prt.routing.toml when the built-in rules are active.
+	Path string `json:"path"`
+	// Source is where the active rules came from (a path or "builtin").
+	Source            string        `json:"source"`
+	DeepSlots         int           `json:"deepSlots"`
+	CostCapUSD        float64       `json:"costCapUsd"`
+	EscalateBelow     float64       `json:"escalateBelow"`
+	CalibrationSample float64       `json:"calibrationSample"`
+	Rules             []RoutingRule `json:"rules"`
+	Warnings          []string      `json:"warnings,omitempty"`
+	// Err is set when a reload failed (syntax error, bad rule); the
+	// previous rules stay active.
+	Err string `json:"err,omitempty"`
+	// Rerouted counts groups queued for re-routing by a Reload.
+	Rerouted int `json:"rerouted,omitempty"`
+}
+
+// CallLogParams is the params of MethodCallLog. An empty GroupID returns
+// the item's TL;DR calls.
+type CallLogParams struct {
+	ItemID  string `json:"itemId"`
+	GroupID string `json:"groupId,omitempty"`
+}
+
+// CapParams is the params of MethodSetCap; CapUSD 0 restores the default.
+type CapParams struct {
+	ItemID string  `json:"itemId"`
+	CapUSD float64 `json:"capUsd"`
+}
 
 // GroupEditParams is the params of MethodEditGroups. Edit.ItemID must equal
 // ItemID; the daemon fills Edit.At when zero.
@@ -115,17 +206,21 @@ type AddParams struct {
 
 // Detail is everything the item screens render.
 type Detail struct {
-	Item     model.Item         `json:"item"`
-	Diff     string             `json:"diff,omitempty"`
-	Files    []model.File       `json:"files,omitempty"`
-	Units    []model.ChangeUnit `json:"units,omitempty"`
-	Labels   []model.Label      `json:"labels,omitempty"`
-	Links    []model.Link       `json:"links,omitempty"`
-	Groups   []model.Group      `json:"groups,omitempty"`
-	Reviews  []model.Review     `json:"reviews,omitempty"`
-	Comments []model.Comment    `json:"comments,omitempty"`
-	Agg      *model.ItemAgg     `json:"agg,omitempty"`
-	RunLogs  []model.RunLog     `json:"runLogs,omitempty"`
+	Item   model.Item         `json:"item"`
+	Diff   string             `json:"diff,omitempty"`
+	Files  []model.File       `json:"files,omitempty"`
+	Units  []model.ChangeUnit `json:"units,omitempty"`
+	Labels []model.Label      `json:"labels,omitempty"`
+	Links  []model.Link       `json:"links,omitempty"`
+	Groups []model.Group      `json:"groups,omitempty"`
+	// Reviews is the routing table: one row per current group, final state
+	// (Store.ItemReviews).
+	Reviews  []model.Review  `json:"reviews,omitempty"`
+	Comments []model.Comment `json:"comments,omitempty"`
+	Agg      *model.ItemAgg  `json:"agg,omitempty"`
+	RunLogs  []model.RunLog  `json:"runLogs,omitempty"`
+	// Routing is the active routing configuration (rules panel).
+	Routing *RoutingInfo `json:"routing,omitempty"`
 }
 
 // Encoder writes messages, one per line; safe for concurrent use.

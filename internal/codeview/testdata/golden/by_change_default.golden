@@ -1,8 +1,8 @@
 ▸ Pass request options through getUser    Pass request options through getUser  3 units · 3 files                       
-    3u 3f · b2 .82 · — · not reviewed    ┌ b2 .82 · risk 4 · auth · error_path · test gap 1 · breaking 1
-  ‹ApiError› — 2 units hidden by filters │ routing: — (M3)
+    3u 3f · b2 .82 · not routed          ┌ b2 .82 · risk 4 · auth · error_path · test gap 1 · breaking 1
+  ‹ApiError› — 2 units hidden by filters │ routing: not routed
   Invalidate the profile cache on logout 
-    1u 1f · b1 .64 · — · not reviewed    why these belong together
+    1u 1f · b1 .64 · not routed          why these belong together
   ‹import fetchJSON from client› — 5 un…   calls  UserCard.tsx UserCard → client.ts getUser
 ── ungrouped (3) ───────────────────────   tests  client.test.ts → client.ts getUser
   ‹f.tsx› — 1 unit hidden by filters       jev caller update .82 · cos .79  UserCard.tsx UserCard → client.test.ts
@@ -25,6 +25,6 @@
                                          
                                          1 unit hidden by filters (f)
                                          
-                                         findings: none yet (review lands in M3)
+                                         findings: not reviewed (not routed)
                                          
                                          

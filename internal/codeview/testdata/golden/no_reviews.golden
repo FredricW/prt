@@ -1,0 +1,30 @@
+▸ Pass request options through getUser    Pass request options through getUser  3 units · 3 files                       
+    3u 3f · b2 .82 · not routed          ┌ b2 .82 · risk 4 · auth · error_path · test gap 1 · breaking 1
+  ‹ApiError›                             │ routing: not routed
+    2u 2f · not routed                   
+  Invalidate the profile cache on logout why these belong together
+    1u 1f · b1 .64 · not routed            calls  UserCard.tsx UserCard → client.ts getUser
+  ‹import fetchJSON from client›           tests  client.test.ts → client.ts getUser
+    ×5 5f · not routed                     jev caller update .82 · cos .79  UserCard.tsx UserCard → client.test.ts
+── ungrouped (3) ─────────────────────── 
+  ‹f.tsx›                                ┌ modified · feature · behaviour ✓ .90 · breaking .86 · b2 · tests ✗ · auth
+    1u 1f · not routed                   │ error_path · risk 4 · eyes
+  ‹theme.css›                            │ L10–12 · +2 −2 · export async function getUser(id: string, opts?: RequestIni…
+    1u 1f · not routed                     10    - export async function getUser(id: string) {
+  ‹save›                                   11    -   return fetchJSON(`/users/${id}`);
+    1u 1f · not routed                   ·    10 + export async function getUser(id: string, opts?: RequestInit) {
+── split suggestion ──────────────────── ·    11 +   return fetchJSON(`/users/${id}`, opts);
+  split? web/src/styles/theme.css .74      12 12   }
+                                         
+                                         ┌ modified · feature · behaviour ✓ .80 · b2 · tests ✓ · risk 2 · eyes
+                                         │ L8–10 · +1 −1 · export function UserCard({ id }: Props)
+                                            8  8   export function UserCard({ id }: Props) {
+                                            9    -   const user = useUser(() => getUser(id));
+                                         ·     9 +   const user = useUser(() => getUser(id, { cache: "no-store" }));
+                                           10 10     return <Card user={user} />;
+                                         
+                                         ┌ added · test · behaviour ✗ .90 · tests ✓ · risk 1 · skim
+                                         │ L20–23 · +4 −0
+                                         ·    20 + test("getUser passes options", async () => {
+                                         ·    21 +   await getUser("1", { cache: "no-store" });
+                                         ·    22 +   expect(fetchMock).toHaveBeenCalledWith("/users/1", { cache: "no-st…

@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 
 	"github.com/fredricw/prt/internal/codeview"
+	"github.com/fredricw/prt/internal/pipeview"
 )
 
 // KeyMap holds every binding (spec: Keybindings and navigation). Fields
@@ -28,6 +29,16 @@ type KeyMap struct {
 	// takes its keys away from the Code page's Top (the picker and the
 	// Overview keep g as top).
 	Mode, MergeGroups, SplitGroup key.Binding
+	// Review pipeline (M3). Pipeline opens and closes the Pipeline page for
+	// the selected item (P, any focus); Weights opens the Overview's urgency
+	// weights overlay (w); ReReview re-reviews the Code page's group on the
+	// deep tier (R).
+	Pipeline, Weights, ReReview key.Binding
+	// Pipeline page only (handed to pipeview): force deep (D), skip review
+	// (s), re-run the selected stage (r; elsewhere r stays Refresh), edit
+	// routing rules (e), call log (c; elsewhere c stays Checkout), raise
+	// the cost cap ($).
+	ForceDeep, SkipReview, RerunStage, EditRules, CallLog, RaiseCap key.Binding
 	// Global.
 	Help, Quit key.Binding
 	// Confirm prompts.
@@ -67,6 +78,15 @@ func DefaultKeyMap() KeyMap {
 		Mode:         b("by file / by change", "g"),
 		MergeGroups:  b("merge groups", "M"),
 		SplitGroup:   b("split group", "X"),
+		Pipeline:     b("pipeline page", "P"),
+		Weights:      b("urgency weights", "w"),
+		ReReview:     b("re-review on deep", "R"),
+		ForceDeep:    b("force deep", "D"),
+		SkipReview:   b("skip review", "s"),
+		RerunStage:   b("re-run stage", "r"),
+		EditRules:    b("edit rules", "e"),
+		CallLog:      b("call log", "c"),
+		RaiseCap:     b("raise cost cap", "$"),
 		Help:         b("help", "?"),
 		Quit:         b("quit", "q", "ctrl+c"),
 		Yes:          b("yes", "y", "Y"),
@@ -93,6 +113,9 @@ func (k *KeyMap) actions() map[string]*key.Binding {
 		"next_unit": &k.NextUnit, "prev_unit": &k.PrevUnit, "filters": &k.Filters,
 		"expand": &k.Expand, "raw_labels": &k.RawLabels,
 		"mode": &k.Mode, "merge_groups": &k.MergeGroups, "split_group": &k.SplitGroup,
+		"pipeline": &k.Pipeline, "weights": &k.Weights, "rereview": &k.ReReview,
+		"force_deep": &k.ForceDeep, "skip_review": &k.SkipReview, "rerun_stage": &k.RerunStage,
+		"edit_rules": &k.EditRules, "call_log": &k.CallLog, "raise_cap": &k.RaiseCap,
 	}
 }
 
@@ -108,7 +131,26 @@ func (k KeyMap) codeKeys() codeview.Keys {
 	ck.NextUnit, ck.PrevUnit, ck.NextFile, ck.PrevFile = k.NextUnit, k.PrevUnit, k.NextFile, k.PrevFile
 	ck.Filters, ck.Expand, ck.RawLabels, ck.Close = k.Filters, k.Expand, k.RawLabels, k.Back
 	ck.Mode, ck.MergeGroups, ck.SplitGroup = k.Mode, k.MergeGroups, k.SplitGroup
+	ck.ReReview = k.ReReview
 	return ck
+}
+
+// pipeKeys builds the Pipeline page bindings from the key map: movement
+// keys are shared, J/K (next/previous file) move between panels, enter
+// (Focus) opens a stage log and esc (Back) closes it.
+func (k KeyMap) pipeKeys() pipeview.Keys {
+	pk := pipeview.DefaultKeys()
+	pk.Down, pk.Up, pk.Top, pk.Bottom = k.Down, k.Up, k.Top, k.Bottom
+	pk.NextPanel, pk.PrevPanel = relabel(k.NextFile, "next panel"), relabel(k.PrevFile, "previous panel")
+	pk.Enter, pk.Close = relabel(k.Focus, "stage log"), relabel(k.Back, "close")
+	pk.ForceDeep, pk.Skip, pk.Rerun = k.ForceDeep, k.SkipReview, k.RerunStage
+	pk.EditRules, pk.CallLog, pk.RaiseCap = k.EditRules, k.CallLog, k.RaiseCap
+	return pk
+}
+
+// relabel returns b's keys with another help description.
+func relabel(b key.Binding, desc string) key.Binding {
+	return key.NewBinding(key.WithKeys(b.Keys()...), key.WithHelp(b.Help().Key, desc))
 }
 
 // without returns b minus the keys of other; the help key is the first
@@ -187,7 +229,7 @@ func splitKeys(s string) []string {
 func (k KeyMap) pickerHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Down, k.Up, k.Top, k.Bottom},
-		{k.Focus, k.NextFocus, k.Overview, k.Code},
+		{k.Focus, k.NextFocus, k.Overview, k.Code, k.Pipeline},
 		{k.Refresh, k.Open, k.Checkout},
 		{k.Help, k.Quit},
 	}
@@ -198,7 +240,7 @@ func (k KeyMap) pickerHelp() [][]key.Binding {
 func (k KeyMap) codeHelp(component [][]key.Binding) [][]key.Binding {
 	out := append([][]key.Binding(nil), component...)
 	return append(out,
-		[]key.Binding{k.Back, k.NextFocus, k.Overview, k.Code},
+		[]key.Binding{k.Back, k.NextFocus, k.Overview, k.Code, k.Pipeline},
 		[]key.Binding{k.Refresh, k.Open, k.Checkout, k.Help, k.Quit},
 	)
 }
@@ -207,23 +249,41 @@ func (k KeyMap) codeHelp(component [][]key.Binding) [][]key.Binding {
 func (k KeyMap) overviewHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Down, k.Up, k.PageDown, k.PageUp, k.HalfPageDown, k.HalfPageUp, k.Top, k.Bottom},
-		{k.jump(), k.RawLabels},
-		{k.Back, k.NextFocus, k.Overview, k.Code},
+		{k.jump(), k.RawLabels, k.Weights},
+		{k.Back, k.NextFocus, k.Overview, k.Code, k.Pipeline},
 		{k.Refresh, k.Open, k.Checkout, k.Help, k.Quit},
 	}
 }
 
+// pipelineHelp is the help shown when the Pipeline page has focus: the
+// component's own groups, then the root model's (P or esc closes the page;
+// r and c act on the page, so refresh and checkout are not listed).
+func (k KeyMap) pipelineHelp(component [][]key.Binding) [][]key.Binding {
+	out := append([][]key.Binding(nil), component...)
+	return append(out,
+		[]key.Binding{k.closePipeline(), k.NextFocus, k.Overview, k.Code},
+		[]key.Binding{k.Open, k.Help, k.Quit},
+	)
+}
+
+// closePipeline is the Pipeline key described as closing the page.
+func (k KeyMap) closePipeline() key.Binding { return relabel(k.Pipeline, "close pipeline") }
+
 // pickerShort is the status-line hint list for the picker.
 func (k KeyMap) pickerShort() []key.Binding {
-	return []key.Binding{k.Down, k.Up, k.Focus, k.Overview, k.Code, k.Refresh, k.Checkout, k.Open, k.Help, k.Quit}
+	return []key.Binding{k.Down, k.Up, k.Focus, k.Overview, k.Code, k.Pipeline, k.Refresh, k.Checkout, k.Open, k.Help, k.Quit}
 }
 
 // mainShort is the status-line hint list for the main pane; component holds
-// the Code page's own hints.
+// the Code page's or the Pipeline page's own hints.
 func (k KeyMap) mainShort(tab Tab, component []key.Binding) []key.Binding {
-	if tab == TabCode {
+	switch tab {
+	case TabCode:
 		out := append([]key.Binding(nil), component...)
 		return append(out, k.Back, k.Overview, k.Help, k.Quit)
+	case TabPipeline:
+		out := append([]key.Binding(nil), component...)
+		return append(out, k.closePipeline(), k.Help, k.Quit)
 	}
-	return []key.Binding{k.Down, k.Up, k.jump(), k.RawLabels, k.Back, k.Code, k.Help, k.Quit}
+	return []key.Binding{k.Down, k.Up, k.jump(), k.RawLabels, k.Weights, k.Pipeline, k.Back, k.Code, k.Help, k.Quit}
 }

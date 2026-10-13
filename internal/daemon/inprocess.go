@@ -134,10 +134,18 @@ func (c *InProcess) send(e proto.Event) {
 
 // onStage turns "stage started" rows into item states and finished rows into
 // patch events (the stage's output is stored: re-read Detail), so screens
-// fill in as labels land. When aggregate finishes, the stored item (with the
-// picker fields the pipeline copied from the aggregate: urgency, minutes,
-// LabelsUnavailable, Breaking, NeedsEyes) goes out as an item event.
+// fill in as labels land. A progress row of a running stage
+// (pipeline.IsProgress: the review stage's "k/n reviewed" after every
+// routing-row change) is a patch event too, with no state change, so the
+// Pipeline page's routing table updates live. When aggregate finishes, the
+// stored item (with the picker fields the pipeline copied from the
+// aggregate: urgency, minutes, LabelsUnavailable, Breaking, NeedsEyes) goes
+// out as an item event.
 func (c *InProcess) onStage(rl model.RunLog) {
+	if pipeline.IsProgress(rl) {
+		c.send(proto.Event{Type: proto.EventPatch, ItemID: rl.ItemID, Stage: rl.Stage, RunLog: &rl})
+		return
+	}
 	switch rl.Status {
 	case model.StageDone, model.StageCached, model.StageFailed:
 		c.send(proto.Event{Type: proto.EventPatch, ItemID: rl.ItemID, Stage: rl.Stage})
@@ -284,7 +292,7 @@ func (c *InProcess) Detail(ctx context.Context, itemID string) (proto.Detail, er
 	if det.Groups, err = s.Groups(ctx, itemID); err != nil {
 		return det, err
 	}
-	if det.Reviews, err = s.Reviews(ctx, itemID); err != nil {
+	if det.Reviews, err = s.ItemReviews(ctx, itemID); err != nil {
 		return det, err
 	}
 	if det.Comments, err = s.Comments(ctx, itemID); err != nil {
@@ -293,6 +301,8 @@ func (c *InProcess) Detail(ctx context.Context, itemID string) (proto.Detail, er
 	if agg, ok, err := s.Agg(ctx, itemID); err == nil && ok {
 		det.Agg = &agg
 	}
+	info := c.routingInfo()
+	det.Routing = &info
 	det.RunLogs, err = s.RunLogs(ctx, itemID)
 	return det, err
 }
@@ -314,15 +324,27 @@ func labelSubjects(itemID string, files []model.File, units []model.ChangeUnit) 
 // Refresh implements Client: queues the item for analysis (deduplicated).
 // With p.Force (key `r`) the head is re-resolved first (local ref for
 // branches, GitHub for PRs) and the fetch cache is bypassed, so new commits
-// are analysed without waiting for the next discovery. p.FromStage is not
-// used yet.
+// are analysed without waiting for the next discovery. p.FromStage (the
+// Pipeline page's `r` on a stage) makes that stage and the later ones
+// ignore their caches; such a job follows a run in flight.
 func (c *InProcess) Refresh(ctx context.Context, p proto.ItemParams) error {
+	if p.FromStage != "" && !pipeline.ValidStage(p.FromStage) {
+		return fmt.Errorf("daemon: refresh %s: unknown stage %q", p.ItemID, p.FromStage)
+	}
 	if p.Force {
 		if err := c.refreshHead(ctx, p.ItemID); err != nil {
 			return err
 		}
 	}
-	return c.Analyse(ctx, p.Force, p.ItemID)
+	if p.FromStage == "" {
+		return c.Analyse(ctx, p.Force, p.ItemID)
+	}
+	it, err := c.d.Store.Item(ctx, p.ItemID)
+	if err != nil {
+		return fmt.Errorf("daemon: refresh %s: %w", p.ItemID, err)
+	}
+	c.q.push(job{itemID: it.ID, urgency: it.Urgency, force: p.Force, fromStage: p.FromStage, rerun: true})
+	return nil
 }
 
 // refreshHead re-reads one item's head (and, for PRs, its metadata). A
@@ -421,7 +443,7 @@ func (c *InProcess) analyse(j job) {
 		return
 	}
 	c.setState(it.ID, model.StateFetching, "")
-	head, err := c.p.RunHead(c.ctx, it, pipeline.RunOptions{Force: j.force})
+	head, err := c.p.RunHead(c.ctx, it, pipeline.RunOptions{Force: j.force, FromStage: j.fromStage})
 	c.finish(c.ctx, it.ID, head, err)
 }
 

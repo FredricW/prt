@@ -8,18 +8,26 @@
 // External calls go only through the interfaces in Deps, so the whole
 // pipeline runs offline in tests with fakes or recordings.
 //
-// Current state (M2): fetch (local git, GitHub diff fallback), parse (with
+// Current state (M3): fetch (local git, GitHub diff fallback), parse (with
 // file ownership from user.owns and CODEOWNERS), link (structural links),
 // embed (vectors cached by unit id and model; kNN and mechanical
 // candidates), jev (labels cached by unit id, and pair relations cached on
 // pair subjects, in parallel), cluster (groups, Jev names, split
-// suggestion) and aggregate run; route and review (M3) are recorded as
-// skipped. Failures after parse are soft: the item still aggregates (Jev
-// down: unknown labels and LabelsMissing; no embeddings: groups from
-// structural links only, with a note).
+// suggestion, fast-LLM titles for unnamed groups), route (prt.routing.toml
+// rules, user overrides, context, cost-capped plan), review (fast/deep
+// calls with retry, escalation and calibration) and aggregate (with the
+// TL;DR, review totals and calibration panel) run. Failures after parse are
+// soft: the item still aggregates (Jev down: unknown labels and
+// LabelsMissing; no embeddings: groups from structural links only, with a
+// note; no review key: rows skipped with a note).
 //
 // A stage function marks its row skipped (ran, but had nothing it could do,
 // e.g. no embedding model) with skipStage; runStage keeps that status.
+//
+// Cache namespaces (Store.CacheGet/CachePut) owned by this package:
+// nsOverride (per-group D/s overrides), nsCallLog (raw LLM calls per
+// routing row), nsTitle (group titles by request key) and nsTLDR (TL;DR
+// text by request key).
 package pipeline
 
 import (
@@ -44,11 +52,13 @@ import (
 	"github.com/fredricw/prt/internal/parse"
 	"github.com/fredricw/prt/internal/questions"
 	"github.com/fredricw/prt/internal/review"
+	"github.com/fredricw/prt/internal/route"
 	"github.com/fredricw/prt/internal/store"
 )
 
-// Deps are the pipeline's collaborators. GH, Jev and Embedder may be nil:
-// the pipeline then degrades as the spec's failure-handling section says.
+// Deps are the pipeline's collaborators. GH, Jev, Embedder and the
+// reviewers may be nil: the pipeline then degrades as the spec's
+// failure-handling section says.
 type Deps struct {
 	Git       gitx.Git
 	GH        gh.Client
@@ -57,9 +67,15 @@ type Deps struct {
 	Reviewers review.Tiers
 	Store     store.Store
 	Config    config.Config
-	Routing   config.Routing
-	Questions questions.Catalogue
-	Log       *log.Logger
+	// Routing is prt.routing.toml; a value without rules (the zero value)
+	// means config.DefaultRouting(). SetRouting swaps it at runtime.
+	Routing config.Routing
+	// ConfigDirs are the config lookup directories (config.Dirs: the repo's
+	// .git/prt first). The pipeline does not read them; the daemon uses
+	// them to find, write (Ensure) and reload prt.routing.toml. May be nil.
+	ConfigDirs []string
+	Questions  questions.Catalogue
+	Log        *log.Logger
 	// Emit receives every RunLog row (may be nil). It is never called while
 	// ItemLock is held.
 	Emit func(model.RunLog)
@@ -74,20 +90,59 @@ type Deps struct {
 // RunOptions tune one run.
 type RunOptions struct {
 	// Force bypasses the fetch cache (re-fetches the diff even when one is
-	// stored for the head SHA).
+	// stored for the head SHA) and regenerates the TL;DR (spec Overview:
+	// "`r` forces it").
 	Force bool
+	// FromStage, when set, makes that stage and every later one ignore its
+	// cache (Pipeline page `r`): fetch re-fetches, cluster re-asks group
+	// titles, review re-calls every routed group and aggregate regenerates
+	// the TL;DR. Parse, link and route have no cache; embeddings, Jev
+	// labels, pairs, names and split answers are content-keyed and kept
+	// (DECISIONS "Pipeline stages 6–8 (M3)").
+	FromStage model.Stage
 }
+
+// ignoresCache reports whether stage s must not use its cache in this run.
+func (o RunOptions) ignoresCache(s model.Stage) bool {
+	if o.FromStage == "" {
+		return false
+	}
+	return stageIndex(s) >= stageIndex(o.FromStage)
+}
+
+// stageIndex is s's position in model.Stages (len(model.Stages) when
+// unknown, so an unknown FromStage ignores nothing).
+func stageIndex(s model.Stage) int {
+	for i, st := range model.Stages {
+		if st == s {
+			return i
+		}
+	}
+	return len(model.Stages)
+}
+
+// ValidStage reports whether s names a pipeline stage.
+func ValidStage(s model.Stage) bool { return stageIndex(s) < len(model.Stages) }
 
 // Pipeline runs stages for items.
 type Pipeline struct {
 	d  Deps
-	fn stageFuncs // M2 stage implementations (substitutable in tests)
+	fn stageFuncs // stage implementations (substitutable in tests)
 
 	mu    sync.Mutex
 	login string // cached GitHub viewer login (see viewer)
+
+	// emitMu serialises Deps.Emit: the review stage reports progress from
+	// several goroutines.
+	emitMu sync.Mutex
+
+	rulesMu sync.RWMutex
+	rules   route.Rules // compiled Deps.Routing (see SetRouting)
 }
 
-// New builds a Pipeline.
+// New builds a Pipeline. The routing rules are compiled once here; when
+// they do not compile, the built-in rules are used and a warning logged
+// (SetRouting reports such errors to the caller instead).
 func New(d Deps) *Pipeline {
 	if d.Now == nil {
 		d.Now = time.Now
@@ -98,7 +153,33 @@ func New(d Deps) *Pipeline {
 	if d.ItemLock == nil {
 		d.ItemLock = &sync.Mutex{}
 	}
-	return &Pipeline{d: d, fn: defaultStages()}
+	if len(d.Routing.Rules) == 0 {
+		d.Routing = config.DefaultRouting()
+	}
+	p := &Pipeline{d: d, fn: defaultStages()}
+	p.rules = p.initialRules(d.Routing)
+	return p
+}
+
+// run is the state one RunHead call shares between the stages after fetch.
+type run struct {
+	it    model.Item
+	f     model.Fetch
+	opt   RunOptions
+	calls *callLog
+	// titleCost is what this run's group-title calls cost; the route plan
+	// counts it against the item's cap.
+	titleCost float64
+	// jevCalls and jevCost are this run's stage-4 totals (ReviewStats).
+	jevCalls int
+	jevCost  float64
+}
+
+// analysis is what stages 1–5 produced for the later stages.
+type analysis struct {
+	parsed parseOut
+	jo     jevOut
+	gro    groupOut
 }
 
 // Run executes all stages for an item with default options.
@@ -118,15 +199,17 @@ func (p *Pipeline) RunWith(ctx context.Context, it model.Item, opt RunOptions) e
 // fetch failed), so the caller can tell whether the item moved meanwhile.
 func (p *Pipeline) RunHead(ctx context.Context, it model.Item, opt RunOptions) (string, error) {
 	f, err := runStage(ctx, p, it.ID, model.StageFetch, func(rl *model.RunLog) (model.Fetch, error) {
-		return p.fetch(ctx, it, opt.Force, rl)
+		return p.fetch(ctx, it, opt.Force || opt.ignoresCache(model.StageFetch), rl)
 	})
 	if err != nil {
 		return "", err
 	}
-	return f.HeadSHA, p.runAfterFetch(ctx, it, f)
+	r := &run{it: it, f: f, opt: opt, calls: newCallLog()}
+	return f.HeadSHA, p.runAfterFetch(ctx, r)
 }
 
-func (p *Pipeline) runAfterFetch(ctx context.Context, it model.Item, f model.Fetch) error {
+func (p *Pipeline) runAfterFetch(ctx context.Context, r *run) error {
+	it, f := r.it, r.f
 	files, err := diff.Parse(f.Diff)
 	if err != nil {
 		p.d.Log.Warn("parse diff failed", "item", it.ID, "err", err)
@@ -159,7 +242,9 @@ func (p *Pipeline) runAfterFetch(ctx context.Context, it model.Item, f model.Fet
 		p.d.Log.Warn("embeddings failed; groups from structural links only", "item", it.ID, "err", err)
 	}
 	jo, err := runStage(ctx, p, it.ID, model.StageJev, func(rl *model.RunLog) (jevOut, error) {
-		return p.jevStage(ctx, p.currentItem(ctx, it), parsed, in.structural, in.em, rl)
+		out, err := p.jevStage(ctx, p.currentItem(ctx, it), parsed, in.structural, in.em, rl)
+		r.jevCalls, r.jevCost = rl.Calls, rl.Cost
+		return out, err
 	})
 	if err != nil {
 		// Soft failure (spec: failure handling): the RunLog row carries the
@@ -172,7 +257,7 @@ func (p *Pipeline) runAfterFetch(ctx context.Context, it model.Item, f model.Fet
 	}
 	in.pairs = jo.pairs
 	gro, err := runStage(ctx, p, it.ID, model.StageCluster, func(rl *model.RunLog) (groupOut, error) {
-		return p.clusterStage(ctx, p.currentItem(ctx, it), in, rl)
+		return p.clusterStage(ctx, r, p.currentItem(ctx, it), in, rl)
 	})
 	if err != nil {
 		if ctx.Err() != nil {
@@ -182,9 +267,37 @@ func (p *Pipeline) runAfterFetch(ctx context.Context, it model.Item, f model.Fet
 		gro = groupOut{links: in.keptLinks(), noStructural: in.structural == nil}
 		p.clearGroups(ctx, it.ID, gro.links)
 	}
-	p.skip(it.ID, "M3", model.StageRoute, model.StageReview)
-	_, err = runStage(ctx, p, it.ID, model.StageAggregate, func(rl *model.RunLog) (model.ItemAgg, error) {
-		return p.aggregate(ctx, it, f, parsed, jo, gro, rl)
+	return p.runReviewStages(ctx, r, analysis{parsed: parsed, jo: jo, gro: gro})
+}
+
+// runReviewStages runs stages 6–8. Route and review failures are soft: the
+// item still aggregates (with whatever rows exist).
+func (p *Pipeline) runReviewStages(ctx context.Context, r *run, a analysis) error {
+	itemID := r.it.ID
+	ro, err := runStage(ctx, p, itemID, model.StageRoute, func(rl *model.RunLog) (*routeOut, error) {
+		return p.routeStage(ctx, r, a, rl)
+	})
+	if err != nil {
+		if ctx.Err() != nil {
+			return err
+		}
+		p.d.Log.Warn("routing failed; no reviews", "item", itemID, "err", err)
+		ro = &routeOut{failed: true, capUSD: capFor(p.currentItem(ctx, r.it), p.Routing().Config)}
+		if serr := p.d.Store.PutItemReviews(ctx, itemID, nil); serr != nil {
+			p.d.Log.Warn("clear routing rows failed", "item", itemID, "err", serr)
+		}
+	}
+	rv, err := runStage(ctx, p, itemID, model.StageReview, func(rl *model.RunLog) (reviewOut, error) {
+		return p.reviewStage(ctx, r, ro, rl)
+	})
+	if err != nil {
+		if ctx.Err() != nil {
+			return err
+		}
+		p.d.Log.Warn("reviews failed; aggregating what landed", "item", itemID, "err", err)
+	}
+	_, err = runStage(ctx, p, itemID, model.StageAggregate, func(rl *model.RunLog) (model.ItemAgg, error) {
+		return p.aggregate(ctx, r, a, ro, rv, rl)
 	})
 	return err
 }
@@ -199,13 +312,6 @@ func (p *Pipeline) clearGroups(ctx context.Context, itemID string, links []model
 	}
 	if err := p.d.Store.PutLinks(ctx, itemID, links); err != nil {
 		p.d.Log.Warn("store links failed", "item", itemID, "err", err)
-	}
-}
-
-// skip records stages that are not built yet (note names the milestone).
-func (p *Pipeline) skip(itemID, milestone string, stages ...model.Stage) {
-	for _, s := range stages {
-		p.emit(model.RunLog{ItemID: itemID, Stage: s, Status: model.StageSkipped, StartedAt: p.d.Now(), Note: milestone})
 	}
 }
 
@@ -235,30 +341,62 @@ func (p *Pipeline) parse(ctx context.Context, itemID string, f model.Fetch, file
 	return parseOut{files: fs, units: us}, nil
 }
 
-// aggregate computes and stores the ItemAgg from files, units, groups,
-// links and the stored labels (overrides applied), adds the grouping record
-// and split suggestion from stage 5, then copies the picker fields onto the
-// stored Item.
-func (p *Pipeline) aggregate(ctx context.Context, it model.Item, f model.Fetch, in parseOut, jo jevOut, gro groupOut, rl *model.RunLog) (model.ItemAgg, error) {
-	cur := p.currentItem(ctx, it)
-	ls, err := p.itemLabels(ctx, cur, in.files, in.units)
+// aggInput is aggregate.Input for the item's current stored metadata, its
+// stored labels (current Ctx, overrides applied), groups and links; Reviews
+// are left to the caller.
+func (p *Pipeline) aggInput(ctx context.Context, r *run, a analysis) (aggregate.Input, error) {
+	cur := p.currentItem(ctx, r.it)
+	ls, err := p.itemLabels(ctx, cur, a.parsed.files, a.parsed.units)
+	if err != nil {
+		return aggregate.Input{}, err
+	}
+	age, release, ciRed := aggregate.Facts(cur, p.d.Config.GitHub.ReleaseBranches, p.d.Now())
+	return aggregate.Input{
+		Item: cur, Files: a.parsed.files, Units: a.parsed.units, Labels: ls,
+		Groups: a.gro.groups, Links: a.gro.aggLinks(),
+		Weights: p.d.Config.Rank, Pipeline: p.d.Config.Pipeline,
+		AgeDays: age, Release: release, CIRedAfterApproval: ciRed,
+		Owns: p.d.Config.User.Owns, LabelsMissing: a.jo.missing,
+	}, nil
+}
+
+// aggregate is stage 8: it computes the ItemAgg from files, units, groups,
+// links, the stored labels (overrides applied) and the routing rows, adds
+// the grouping record and split suggestion from stage 5, the TL;DR, the
+// review totals and the calibration panel, stores it with the raw call
+// log, then copies the picker fields onto the stored Item.
+func (p *Pipeline) aggregate(ctx context.Context, r *run, a analysis, ro *routeOut, rv reviewOut, rl *model.RunLog) (model.ItemAgg, error) {
+	in, err := p.aggInput(ctx, r, a)
 	if err != nil {
 		return model.ItemAgg{}, err
 	}
-	age, release, ciRed := aggregate.Facts(cur, p.d.Config.GitHub.ReleaseBranches, p.d.Now())
-	agg := p.fn.aggregate(aggregate.Input{
-		Item: cur, Files: in.files, Units: in.units, Labels: ls,
-		Groups: gro.groups, Links: gro.aggLinks(),
-		Weights: p.d.Config.Rank, Pipeline: p.d.Config.Pipeline,
-		AgeDays: age, Release: release, CIRedAfterApproval: ciRed,
-		Owns: p.d.Config.User.Owns, LabelsMissing: jo.missing,
-	})
-	agg.Grouping, agg.Split = gro.stats, gro.split
-	rl.In, rl.Out = len(in.units), len(ls)
+	rows := rv.rows
+	if rows == nil {
+		rows = ro.rows
+	}
+	in.Reviews = rows
+	agg := p.fn.aggregate(in)
+	agg.Grouping, agg.Split = a.gro.stats, a.gro.split
+	rl.Note = p.tldr(ctx, r, &agg, rl)
+	agg.Review = p.reviewStats(r, a.gro.groups, rows, ro, rv)
+	agg.Calibration = p.calibrationStats(ctx)
+	rl.In, rl.Out = len(a.parsed.units), len(in.Labels)
+	if err := r.calls.flush(ctx, p.d.Store, r.it.ID, groupIDs(a.gro.groups, "")); err != nil {
+		p.d.Log.Warn("store call log failed", "item", r.it.ID, "err", err)
+	}
 	if err := p.d.Store.PutAgg(ctx, agg); err != nil {
 		return agg, fmt.Errorf("pipeline: store agg: %w", err)
 	}
-	return agg, p.applyAgg(ctx, it, f, agg)
+	return agg, p.applyAgg(ctx, r.it, r.f, agg)
+}
+
+// groupIDs returns the ids of groups followed by extra.
+func groupIDs(groups []model.Group, extra ...string) []string {
+	out := make([]string, 0, len(groups)+len(extra))
+	for _, g := range groups {
+		out = append(out, g.ID)
+	}
+	return append(out, extra...)
 }
 
 // itemLabels loads every stored label of the item's units and of the item
@@ -353,6 +491,8 @@ func runStage[T any](ctx context.Context, p *Pipeline, itemID string, s model.St
 
 func (p *Pipeline) emit(rl model.RunLog) {
 	if p.d.Emit != nil {
+		p.emitMu.Lock()
+		defer p.emitMu.Unlock()
 		p.d.Emit(rl)
 	}
 }

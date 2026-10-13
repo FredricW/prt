@@ -185,10 +185,13 @@ func TestJevNilWritesUnknownLabels(t *testing.T) {
 	e := newLabelEnv(t)
 	e.run(t, e.pipeline(nil))
 	e.assertAllUnknown(t)
-	for _, s := range []model.Stage{model.StageRoute, model.StageReview} {
-		if rl := e.stage(t, s); rl.Status != model.StageSkipped || rl.Note != "M3" {
-			t.Errorf("%s row = %+v", s, rl)
-		}
+	// Labels unknown: routing sends the groups deep; with no reviewer the
+	// review stage is skipped with a note.
+	if rl := e.stage(t, model.StageRoute); rl.Status != model.StageDone || !strings.Contains(rl.Note, "labels unknown") {
+		t.Errorf("route row = %+v", rl)
+	}
+	if rl := e.stage(t, model.StageReview); rl.Status != model.StageSkipped || !strings.HasPrefix(rl.Note, "reviews skipped: no reviewer configured") {
+		t.Errorf("review row = %+v", rl)
 	}
 	for _, s := range []model.Stage{model.StageLink, model.StageCluster} {
 		if rl := e.stage(t, s); rl.Status != model.StageDone {

@@ -101,6 +101,8 @@
       {"module": "web/**", "owned": true, "units": 4, "eyes": 2},
       {"module": "server/*", "owned": false, "units": 2, "eyes": 1}
     ],
+    "tldr": "Refreshes session tokens before expiry and adds a device list; the auth refresh path is untested.",
+    "tldrKey": "k-tldr-1",
     "urgency": 9,
     "urgencyTerms": [],
     "why": "asked you · CI red · age",
