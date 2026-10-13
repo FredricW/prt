@@ -79,6 +79,11 @@ const (
 	InputTagCounts      = "tag_counts"
 	InputCommentAndDiff = "comment_and_diff"
 	InputBranchLog      = "branch_log"
+	// Branch-state inputs (M5, judge.BranchState): days since the head
+	// commit, commits not on the upstream, and open PR titles (≤ 30).
+	InputBranchAge    = "branch_age"
+	InputUnpushed     = "unpushed"
+	InputOpenPRTitles = "open_pr_titles"
 )
 
 // KnownInputs is the set of valid `inputs` names.
@@ -87,7 +92,7 @@ var KnownInputs = []string{
 	InputRole, InputOwnedGlobs, InputNeighbours, InputHelpers, InputLinks,
 	InputGroupList, InputBothUnits, InputAggregates, InputHeadlines,
 	InputFlagLabels, InputContractLabels, InputTagCounts, InputCommentAndDiff,
-	InputBranchLog,
+	InputBranchLog, InputBranchAge, InputUnpushed, InputOpenPRTitles,
 }
 
 // Question is one catalogue row.

@@ -126,6 +126,9 @@ func (p *Pipeline) reviewStage(ctx context.Context, r *run, ro *routeOut, rl *mo
 	}
 	rr.finalise()
 	out.rows = rr.snapshot()
+	if ctx.Err() == nil {
+		out.rows = p.keepStale(ctx, r, ro, out.rows)
+	}
 	if err := ctx.Err(); err != nil {
 		rr.persist(context.WithoutCancel(ctx))
 		return out, err
@@ -269,7 +272,12 @@ func (rr *reviewRun) phase1(ctx context.Context, fastErr, deepErr error) {
 		if fresh := pl.Tier == model.TierDeep && rr.ro.fresh[pl.GroupID]; !fresh {
 			if c, hit := rr.serveCached(ctx, pl.GroupID, pl.Tier, purposeRouted); hit {
 				res := fromCache(c)
-				rr.update(ctx, i, func(row *model.Review) { applyResult(row, res); row.QueueNote = "" })
+				rr.update(ctx, i, func(row *model.Review) {
+					applyResult(row, res)
+					// The cached review's time: stale-labels compares
+					// override times with it (keepStale).
+					row.QueueNote, row.StartedAt = "", c.StartedAt
+				})
 				continue
 			}
 		}
@@ -340,7 +348,7 @@ func (rr *reviewRun) runRouted(ctx context.Context, j reviewJob) {
 // applyResult copies a finished review onto a row (status done).
 func applyResult(row *model.Review, res reviewResult) {
 	row.Findings, row.Verdict, row.Confidence, row.Model = res.findings, res.verdict, res.conf, res.model
-	row.Status, row.Err = model.ReviewDone, ""
+	row.Status, row.Err, row.StaleNote = model.ReviewDone, "", ""
 	if res.attempts > 0 {
 		row.Attempts = res.attempts
 	}
@@ -390,11 +398,17 @@ func (p *Pipeline) parseResult(res review.Result, units []model.ChangeUnit) ([]m
 	return f, v, math.Max(0, math.Min(1, c)), nil
 }
 
-// cache stores a finished review in the review cache (group id + tier).
+// cache stores a finished review in the review cache (group id + tier),
+// with StartedAt the time its routed call started (now for a follow-up),
+// which stale-labels compares override times with.
 func (rr *reviewRun) cache(ctx context.Context, j reviewJob, res reviewResult) {
 	in := rr.ro.inputs[j.groupID]
+	started := rr.p.d.Now()
+	if row, _, ok := rr.row(j.groupID); ok && j.purpose == purposeRouted && !row.StartedAt.IsZero() {
+		started = row.StartedAt
+	}
 	c := model.Review{
-		GroupID: j.groupID, ItemID: rr.r.it.ID, GroupName: in.Group.Name, Tier: j.tier,
+		GroupID: j.groupID, ItemID: rr.r.it.ID, GroupName: in.Group.Name, Tier: j.tier, StartedAt: started,
 		Prompt: review.PromptReviewV1, Prompts: in.Prompts, Findings: res.findings, Verdict: res.verdict,
 		Confidence: res.conf, Model: res.model, Status: model.ReviewDone,
 		InputTokens: res.inTok, OutputTokens: res.outTok, Ms: res.ms, Cost: res.cost, Attempts: res.attempts,

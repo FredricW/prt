@@ -3,6 +3,7 @@ package link
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 
@@ -42,40 +43,61 @@ func indexKey(base string) string { return base + ":" + indexVersion }
 // (and caches) it from the source. Source problems give a partial or empty
 // index; only context cancellation is an error.
 func loadIndex(ctx context.Context, in Input) (*symIndex, error) {
-	if in.Cache != nil && in.BaseSHA != "" {
-		if b, ok, err := in.Cache.CacheGet(ctx, indexNS, indexKey(in.BaseSHA)); err == nil && ok {
-			var idx symIndex
-			if json.Unmarshal(b, &idx) == nil && idx.Files != nil {
-				return &idx, nil
-			}
-		}
-	}
-	idx, complete, err := buildIndex(ctx, in.Src, in.BaseSHA)
+	res, err := cachedIndex(ctx, in.Src, in.Cache, in.BaseSHA)
 	if err != nil {
 		return nil, err
 	}
-	if complete && in.Cache != nil && in.BaseSHA != "" {
-		if b, err := json.Marshal(idx); err == nil {
-			_ = in.Cache.CachePut(ctx, indexNS, indexKey(in.BaseSHA), b) // a failed put only costs a rebuild
-		}
-	}
-	return idx, nil
+	return res.idx, nil
 }
 
-// buildIndex parses every supported source file of rev (≤ maxIndexFiles, in
+// indexResult is one revision's index and how it was obtained.
+type indexResult struct {
+	idx *symIndex
+	// complete is false when the listing or a file read failed.
+	complete bool
+	// listErr is the listing error (nil when the tree was listed or the
+	// index came from the cache).
+	listErr error
+}
+
+// cachedIndex returns the symbol index of rev from the cache (ns symindex,
+// key rev:version), or builds it and caches a complete one.
+func cachedIndex(ctx context.Context, src Source, cache Cache, rev string) (indexResult, error) {
+	if cache != nil && rev != "" {
+		if b, ok, err := cache.CacheGet(ctx, indexNS, indexKey(rev)); err == nil && ok {
+			var idx symIndex
+			if json.Unmarshal(b, &idx) == nil && idx.Files != nil {
+				return indexResult{idx: &idx, complete: true}, nil
+			}
+		}
+	}
+	res, err := readIndex(ctx, src, rev)
+	if err != nil {
+		return indexResult{}, err
+	}
+	if res.complete && cache != nil && rev != "" {
+		if b, err := json.Marshal(res.idx); err == nil {
+			_ = cache.CachePut(ctx, indexNS, indexKey(rev), b) // a failed put only costs a rebuild
+		}
+	}
+	return res, nil
+}
+
+// readIndex parses every supported source file of rev (≤ maxIndexFiles, in
 // path order). complete is false when the listing or any file read failed,
-// so a transient error is not cached for the base SHA.
-func buildIndex(ctx context.Context, src Source, rev string) (*symIndex, bool, error) {
+// so a transient error is not cached for the revision; listErr says why the
+// listing failed.
+func readIndex(ctx context.Context, src Source, rev string) (indexResult, error) {
 	idx := &symIndex{Files: map[string]indexFile{}}
 	if src == nil || rev == "" {
-		return idx, false, nil
+		return indexResult{idx: idx, listErr: errors.New("no source")}, nil
 	}
 	all, err := src.ListFiles(ctx, rev)
 	if err != nil {
 		if cerr := ctx.Err(); cerr != nil {
-			return nil, false, fmt.Errorf("link: symbol index: %w", cerr)
+			return indexResult{}, fmt.Errorf("link: symbol index: %w", cerr)
 		}
-		return idx, false, nil
+		return indexResult{idx: idx, listErr: err}, nil
 	}
 	var files []string
 	for _, p := range all {
@@ -90,7 +112,7 @@ func buildIndex(ctx context.Context, src Source, rev string) (*symIndex, bool, e
 	complete := true
 	for _, p := range files {
 		if err := ctx.Err(); err != nil {
-			return nil, false, fmt.Errorf("link: symbol index: %w", err)
+			return indexResult{}, fmt.Errorf("link: symbol index: %w", err)
 		}
 		b, err := src.Show(ctx, rev, p)
 		if err != nil {
@@ -102,9 +124,9 @@ func buildIndex(ctx context.Context, src Source, rev string) (*symIndex, bool, e
 		}
 	}
 	if err := ctx.Err(); err != nil {
-		return nil, false, fmt.Errorf("link: symbol index: %w", err)
+		return indexResult{}, fmt.Errorf("link: symbol index: %w", err)
 	}
-	return idx, complete, nil
+	return indexResult{idx: idx, complete: complete}, nil
 }
 
 // indexEntry keeps the parts of a file's syntax the index needs.

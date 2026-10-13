@@ -1,0 +1,59 @@
+{
+  "key": "4fc2a1a6798ff40bc0e6233c",
+  "request": {
+    "model": "typesafe-ai/jev",
+    "state": {
+      "a": {
+        "path": "web/src/components/ThemeToggle.tsx",
+        "symbol": "ThemeToggle",
+        "signature": "export function ThemeToggle()",
+        "change": "added",
+        "diff": "+// TODO: respect prefers-color-scheme before anything is stored\n+export function ThemeToggle() {\n+  const [theme, setTheme] = useState\u003cTheme\u003e(() =\u003e (localStorage.getItem(\"portal.theme\") as Theme) ?? \"light\");\n+\n+  useEffect(() =\u003e {\n+    document.documentElement.dataset.theme = theme;\n+    localStorage.setItem(\"portal.theme\", theme);\n+  }, [theme]);\n+\n+  return (\n+    \u003cbutton aria-label=\"Toggle dark mode\" onClick={() =\u003e setTheme(theme === \"dark\" ? \"light\" : \"dark\")}\u003e\n+      {theme === \"dark\" ? \"☀\" : \"☾\"}\n+    \u003c/button\u003e\n+  );\n+}"
+      },
+      "b": {
+        "path": "web/src/components/ThemeToggle.tsx",
+        "change": "added",
+        "diff": "+import { useEffect, useState } from \"react\";\n+\n+type Theme = \"light\" | \"dark\";\n+"
+      }
+    },
+    "questions": {
+      "relation": {
+        "type": "choice",
+        "instructions": "How are these two changes related?",
+        "criteria": {
+          "caller update": "one change updates a caller or user of what the other change defines or changes",
+          "same intent": "both changes serve the same purpose or feature",
+          "same pattern": "both apply the same mechanical edit (rename, signature tweak, repeated pattern)",
+          "test for": "one change is a test that exercises the other change",
+          "unrelated": "the changes have nothing to do with each other"
+        }
+      }
+    }
+  },
+  "response": {
+    "model": "typesafe-ai/jev",
+    "answers": {
+      "relation": {
+        "type": "choice",
+        "choice": "same intent",
+        "probabilities": {
+          "caller update": 0.03,
+          "same intent": 0.97,
+          "same pattern": 0,
+          "test for": 0,
+          "unrelated": 0
+        }
+      }
+    },
+    "usage": {
+      "inputTokens": 697,
+      "outputTokens": 59
+    },
+    "providerMetadata": {
+      "gateway": {
+        "cost": "0.000029274",
+        "generationId": "gen_01M4T3QM3HH81C1CDM30JBCN1J"
+      }
+    }
+  }
+}

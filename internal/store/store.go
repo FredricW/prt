@@ -54,6 +54,10 @@ type Store interface {
 	// Labels are keyed by unit id (+ question + line), so they follow the code.
 	PutLabels(ctx context.Context, labels []model.Label) error
 	Labels(ctx context.Context, unitIDs []string) ([]model.Label, error)
+	// LabelCounts counts every stored label by question id (all subjects,
+	// lines and items; unknown answers included). Labels carry no time, so
+	// this is the denominator of the calibration panel's override rate.
+	LabelCounts(ctx context.Context) (map[string]int, error)
 
 	// Embeddings are keyed by unit id and embedding model id.
 	PutEmbedding(ctx context.Context, unitID, embedModel string, vec []float32) error

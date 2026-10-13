@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/fredricw/prt/internal/aggregate"
+	"github.com/fredricw/prt/internal/arch"
 	"github.com/fredricw/prt/internal/cluster"
 	"github.com/fredricw/prt/internal/config"
 	"github.com/fredricw/prt/internal/jev"
@@ -51,6 +52,13 @@ type stageFuncs struct {
 	buildGroupTitle func(model.Group, []model.ChangeUnit) review.Request
 	cleanTitle      func(string) string
 
+	// Stage 8 extras: the suggested PR title of a branch, the branch state
+	// question and the Architecture tab's module graph (M5).
+	buildPRTitle func([]string, string) review.Request
+	cleanPRTitle func(string) string
+	branchState  func(context.Context, jev.Client, judge.BranchStateInput) (judge.Result, error)
+	archBuild    func(context.Context, arch.Input) (*model.ArchGraph, error)
+
 	aggregate func(aggregate.Input) model.ItemAgg
 }
 
@@ -82,6 +90,11 @@ func defaultStages() stageFuncs {
 		cleanTLDR:       review.CleanTLDR,
 		buildGroupTitle: review.BuildGroupTitle,
 		cleanTitle:      review.CleanTitle,
+
+		buildPRTitle: review.BuildPRTitle,
+		cleanPRTitle: review.CleanPRTitle,
+		branchState:  judge.BranchState,
+		archBuild:    arch.Build,
 
 		aggregate: aggregate.Item,
 	}

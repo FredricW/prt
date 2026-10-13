@@ -1,0 +1,61 @@
+{
+  "key": "b0980ce8f58691ae09ba6b09",
+  "request": {
+    "model": "typesafe-ai/jev",
+    "state": {
+      "a": {
+        "path": "web/src/components/ThemeToggle.tsx",
+        "symbol": "ThemeToggle",
+        "signature": "export function ThemeToggle()",
+        "change": "added",
+        "diff": "+// TODO: respect prefers-color-scheme before anything is stored\n+export function ThemeToggle() {\n+  const [theme, setTheme] = useState\u003cTheme\u003e(() =\u003e (localStorage.getItem(\"portal.theme\") as Theme) ?? \"light\");\n+\n+  useEffect(() =\u003e {\n+    document.documentElement.dataset.theme = theme;\n+    localStorage.setItem(\"portal.theme\", theme);\n+  }, [theme]);\n+\n+  return (\n+    \u003cbutton aria-label=\"Toggle dark mode\" onClick={() =\u003e setTheme(theme === \"dark\" ? \"light\" : \"dark\")}\u003e\n+      {theme === \"dark\" ? \"☀\" : \"☾\"}\n+    \u003c/button\u003e\n+  );\n+}"
+      },
+      "b": {
+        "path": "web/src/App.tsx",
+        "symbol": "App",
+        "signature": "export function App()",
+        "change": "added",
+        "diff": "         \u003c/nav\u003e\n         \u003cSearchBox onPick={(kind, id) =\u003e kind === \"user\" \u0026\u0026 setRoute({ page: \"profile\", id })} /\u003e\n         \u003cNotificationBell /\u003e\n+        \u003cThemeToggle /\u003e\n       \u003c/header\u003e\n       {route.page === \"users\" \u0026\u0026 \u003cUserList /\u003e}\n       {route.page === \"profile\" \u0026\u0026 \u003cProfilePage userId={route.id} /\u003e}"
+      }
+    },
+    "questions": {
+      "relation": {
+        "type": "choice",
+        "instructions": "How are these two changes related?",
+        "criteria": {
+          "caller update": "one change updates a caller or user of what the other change defines or changes",
+          "same intent": "both changes serve the same purpose or feature",
+          "same pattern": "both apply the same mechanical edit (rename, signature tweak, repeated pattern)",
+          "test for": "one change is a test that exercises the other change",
+          "unrelated": "the changes have nothing to do with each other"
+        }
+      }
+    }
+  },
+  "response": {
+    "model": "typesafe-ai/jev",
+    "answers": {
+      "relation": {
+        "type": "choice",
+        "choice": "caller update",
+        "probabilities": {
+          "caller update": 0.99,
+          "same intent": 0.01,
+          "same pattern": 0,
+          "test for": 0,
+          "unrelated": 0
+        }
+      }
+    },
+    "usage": {
+      "inputTokens": 774,
+      "outputTokens": 59
+    },
+    "providerMetadata": {
+      "gateway": {
+        "cost": "0.000032508",
+        "generationId": "gen_01M4T3QM1HKFRFP5X74YN5CQQ1"
+      }
+    }
+  }
+}

@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"context"
+	"sort"
 	"time"
 
 	"github.com/fredricw/prt/internal/model"
@@ -137,6 +138,7 @@ func (p *Pipeline) calibrationStats(ctx context.Context) *model.CalibrationStats
 		last := samples[len(samples)-1]
 		agree := last.Agree
 		cs.LastAgree, cs.LastAt = &agree, last.At.UTC().Format(time.RFC3339)
+		cs.LastGroup = p.sampleGroupName(ctx, last)
 	}
 	ovs, err := p.d.Store.AllOverrides(ctx)
 	if err != nil {
@@ -147,5 +149,61 @@ func (p *Pipeline) calibrationStats(ctx context.Context) *model.CalibrationStats
 			cs.Overrides[o.Question]++
 		}
 	}
+	cs.FlagAbove = overrideFlagAbove
+	if len(cs.Overrides) > 0 {
+		counts, err := p.d.Store.LabelCounts(ctx)
+		if err != nil {
+			p.d.Log.Warn("load label counts failed", "err", err)
+		}
+		cs.Questions = questionRates(cs.Overrides, counts, overrideFlagAbove)
+	}
 	return cs
+}
+
+// overrideFlagAbove is the override rate above which the calibration panel
+// flags a question as a rewording candidate (spec: "A question over 15%
+// gets flagged").
+const overrideFlagAbove = 0.15
+
+// questionRates is the per-question override rate (spec "Calibration
+// metrics": overrides ÷ labels): one row per question with at least one
+// override, Labels from the store's label counts (all stored labels:
+// labels carry no time), Flagged when Rate > flagAbove; highest rate
+// first, ties by question. A question without stored labels has rate 0.
+func questionRates(overrides, labels map[string]int, flagAbove float64) []model.QuestionRate {
+	out := make([]model.QuestionRate, 0, len(overrides))
+	for q, n := range overrides {
+		if n <= 0 {
+			continue
+		}
+		qr := model.QuestionRate{Question: q, Overrides: n, Labels: labels[q]}
+		if qr.Labels > 0 {
+			qr.Rate = float64(n) / float64(qr.Labels)
+		}
+		qr.Flagged = qr.Rate > flagAbove
+		out = append(out, qr)
+	}
+	sort.Slice(out, func(a, b int) bool {
+		if out[a].Rate != out[b].Rate {
+			return out[a].Rate > out[b].Rate
+		}
+		return out[a].Question < out[b].Question
+	})
+	return out
+}
+
+// sampleGroupName is the name of the group a calibration sample
+// double-reviewed, from its item's routing row ("" when the row is gone).
+func (p *Pipeline) sampleGroupName(ctx context.Context, s model.CalibrationSample) string {
+	rows, err := p.d.Store.ItemReviews(ctx, s.ItemID)
+	if err != nil {
+		p.d.Log.Debug("load routing rows for calibration sample failed", "item", s.ItemID, "err", err)
+		return ""
+	}
+	for _, row := range rows {
+		if row.GroupID == s.GroupID {
+			return row.GroupName
+		}
+	}
+	return ""
 }

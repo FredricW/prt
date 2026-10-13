@@ -1,0 +1,17 @@
+TASK: pr-title
+TIER: fast
+GROUP: 
+MAX_TOKENS: 256
+
+=== SYSTEM ===
+You write the title of a pull request for a branch that has no pull request yet. Answer with one short title in the imperative mood that says what the change does, for example: Add dark mode toggle to settings. At most 72 characters, one line, no trailing period, no quotes, nothing else.
+
+=== USER (as sent) ===
+Branch: 05-spike-dark-mode
+
+Groups of related changes on the branch, in review order:
+- Dark mode palette
+- Theme toggle in settings
+- Ungrouped: styles.css
+
+Answer with the pull request title only.

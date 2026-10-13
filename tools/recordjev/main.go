@@ -55,6 +55,13 @@
 //	                           "anthropic" ledger row is appended after every
 //	                           run, also a failed one
 //
+// Branches (--branches, any mode; M5): after the PRs, the fixture's local
+// branches without a PR (pipelinetest.BranchRefs: 05-spike-dark-mode) run
+// as branch items in the same store, so their unit labels, pairs, names,
+// branch.state (Jev) and reviews, TL;DR, titles and suggested PR title
+// (review mode) are counted or recorded too. The dry run then prints an
+// "M5 requests" line.
+//
 // The Makefile targets are:
 //
 //	make record-review      go run ./tools/recordjev --live --review --embed replay
@@ -101,6 +108,10 @@ type config struct {
 	review    bool    // record review calls instead of Jev answers
 	reviewOut string  // review recordings directory
 	reviewCap float64 // cap on cumulative Anthropic spend in USD
+
+	// branches also runs the fixture's local branches without a PR
+	// (pipelinetest.BranchRefs, M5) after the PRs, in every mode.
+	branches bool
 }
 
 // env looks up an environment variable ("" when unset); injected for tests.
@@ -145,6 +156,7 @@ func parseFlags(args []string, stderr io.Writer) (config, error) {
 	fs.BoolVar(&c.review, "review", false, "record review LLM calls (Jev replayed from --out); with --live needs "+review.AnthropicKeyEnv)
 	fs.StringVar(&c.reviewOut, "review-out", filepath.Join(root, "testdata", "recordings", "review"), "review recordings directory")
 	fs.Float64Var(&c.reviewCap, "review-cap", 3.00, "cap on cumulative Anthropic spend in USD (ledger + this run)")
+	fs.BoolVar(&c.branches, "branches", false, "also run the fixture's local branches without a PR (05-spike-dark-mode) after the PRs")
 	if err := fs.Parse(args); err != nil {
 		return c, err
 	}
@@ -221,18 +233,23 @@ func execute(ctx context.Context, cfg config, getenv env, stdout io.Writer) erro
 // are approximate). With --embed live it also records embeddings.
 func dryRun(ctx context.Context, cfg config, repo, prs string, stdout io.Writer, opts []pipelinetest.Option) error {
 	c := &counter{next: &jev.Fake{}, dir: cfg.out}
-	outs, err := pipelinetest.FixtureRun(ctx, repo, prs, c, opts...)
+	outs, branches, err := fixtureRun(ctx, cfg, repo, prs, c, opts)
 	if err != nil {
 		return err
 	}
-	if err := checkOutcomes(outs); err != nil {
+	if err := checkRun(outs, branches); err != nil {
 		return err
 	}
 	fmt.Fprintf(stdout, "dry run (no Jev calls): %d Jev requests, ~%d tokens estimated, %d already recorded in %s, %d to record\n",
 		c.requests, c.tokens, c.recorded, cfg.out, c.requests-c.recorded)
 	fmt.Fprintln(stdout, c.m2Summary())
 	fmt.Fprintln(stdout, c.m4Summary())
-	fmt.Fprintln(stdout, "record with: go run ./tools/recordjev --live --embed "+cfg.embed+"   (needs JEV_API_KEY; cap $"+fmt.Sprintf("%.2f", cfg.capUSD)+")")
+	flags := "--live --embed " + cfg.embed
+	if cfg.branches {
+		fmt.Fprintln(stdout, c.m5Summary())
+		flags += " --branches"
+	}
+	fmt.Fprintln(stdout, "record with: go run ./tools/recordjev "+flags+"   (needs JEV_API_KEY; cap $"+fmt.Sprintf("%.2f", cfg.capUSD)+")")
 	return nil
 }
 
@@ -245,9 +262,9 @@ func recordLive(ctx context.Context, cfg config, repo, prs string, getenv env, s
 	}
 	live := jev.NewHTTP(getenv("JEV_BASE_URL"), getenv("JEV_API_KEY"))
 	g := &guard{next: &jev.Recorder{Live: live, Dir: cfg.out}, dir: cfg.out, capUSD: cfg.capUSD, prior: prior}
-	outs, runErr := pipelinetest.FixtureRun(ctx, repo, prs, g, opts...)
+	outs, branches, runErr := fixtureRun(ctx, cfg, repo, prs, g, opts)
 	if runErr == nil {
-		runErr = checkOutcomes(outs)
+		runErr = checkRun(outs, branches)
 	}
 	calls, reused, spent := g.totals()
 	row := ledgerRow{At: time.Now().UTC(), Service: "jev", Calls: calls, Cost: spent, Cumulative: prior + spent, Written: calls}
@@ -260,6 +277,7 @@ func recordLive(ctx context.Context, cfg config, repo, prs string, getenv env, s
 		warnExpectations(outs, stdout)
 		warnGroupExpectations(outs, stdout)
 		warnCommentExpectations(outs, stdout)
+		warnBranchExpectations(branches, stdout)
 	}
 	return runErr
 }
@@ -289,9 +307,9 @@ func warnCommentExpectations(outs map[int]pipelinetest.Outcome, stdout io.Writer
 func recordSynthetic(ctx context.Context, cfg config, repo, prs string, stdout io.Writer, opts []pipelinetest.Option) error {
 	fake := &jev.Fake{Answer: heuristicAnswer}
 	g := &guard{next: &jev.Recorder{Live: fake, Dir: cfg.out, Synthetic: true}, dir: cfg.out, capUSD: 1e9, acceptSynthetic: true}
-	outs, err := pipelinetest.FixtureRun(ctx, repo, prs, g, opts...)
+	outs, branches, err := fixtureRun(ctx, cfg, repo, prs, g, opts)
 	if err == nil {
-		err = checkOutcomes(outs)
+		err = checkRun(outs, branches)
 	}
 	calls, reused, _ := g.totals()
 	fmt.Fprintf(stdout, "synthetic: %d recordings written, %d reused, in %s\n", calls, reused, cfg.out)
@@ -350,6 +368,7 @@ type counter struct {
 	requests, tokens, recorded int
 	m2                         map[string]*kindCount // by m2Kind
 	addressed                  kindCount             // comment_addressed (M4)
+	branch                     kindCount             // branch.state (M5)
 }
 
 // isAddressed reports whether req asks comment_addressed (M4 "Since you
@@ -448,6 +467,12 @@ func (c *counter) Evaluate(ctx context.Context, req jev.Request) (jev.Response, 
 		c.addressed.requests++
 		if statErr == nil {
 			c.addressed.recorded++
+		}
+	}
+	if isBranchState(req) {
+		c.branch.requests++
+		if statErr == nil {
+			c.branch.recorded++
 		}
 	}
 	c.mu.Unlock()

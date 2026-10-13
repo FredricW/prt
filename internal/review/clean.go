@@ -100,6 +100,31 @@ func lastSpace(r []rune) int {
 	return -1
 }
 
+// CleanPRTitle returns a suggested PR title: the first non-empty line of
+// text with markdown, quotes and a "Title:" lead-in stripped, at most
+// MaxPRTitle runes (a longer line is cut at a word boundary when one is in
+// the second half), without trailing periods, commas, colons or dashes.
+func CleanPRTitle(text string) string {
+	line := ""
+	for _, ln := range strings.Split(text, "\n") {
+		t := strings.TrimSpace(ln)
+		if t == "" || strings.HasPrefix(t, "```") || strings.HasPrefix(t, "~~~") {
+			continue
+		}
+		if line = stripMarkdown(t); line != "" {
+			break
+		}
+	}
+	if r := []rune(line); len(r) > MaxPRTitle {
+		cut := r[:MaxPRTitle]
+		if i := lastSpace(r[:MaxPRTitle+1]); i > MaxPRTitle/2 {
+			cut = r[:i]
+		}
+		line = string(cut)
+	}
+	return strings.TrimRight(line, " .,;:-–—")
+}
+
 // CleanTitle returns a title of at most three words, without punctuation
 // or quotes: the first non-empty line of text with markdown and a
 // "Title:" lead-in stripped, apostrophes dropped and every other

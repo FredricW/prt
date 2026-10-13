@@ -166,6 +166,8 @@ func TestLiveSetMatchesDecisions(t *testing.T) {
 		// M4: comment_addressed, asked once per earlier comment by
 		// judge.CommentAddressed (DECISIONS "M4 shared contracts").
 		ScopeItem: {"comment_addressed"},
+		// M5: branch state, asked once per branch item by judge.BranchState.
+		ScopeBranch: {"state"},
 	}
 	for _, s := range Scopes {
 		var got []string

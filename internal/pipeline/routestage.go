@@ -197,6 +197,12 @@ type routeOut struct {
 	// fresh are the groups a user asked to re-review on deep (D, R): their
 	// routed deep review skips the review cache once.
 	fresh map[string]bool
+	// groups and units are the item's current groups and units; prevStale
+	// are the groups whose routing row was stale-labels before this run
+	// (stage 7 keeps that status on a cached review; see keepStale).
+	groups    []model.Group
+	units     []model.ChangeUnit
+	prevStale map[string]bool
 }
 
 // capFor is the effective per-item cost cap: Item.CapUSD, else the
@@ -240,6 +246,7 @@ func (p *Pipeline) routeStage(ctx context.Context, r *run, a analysis, rl *model
 	ro := &routeOut{
 		rules: rules, capUSD: capFor(in.Item, rules.Config),
 		inputs: map[string]review.GroupInput{}, reqs: map[string]review.Request{}, fresh: fresh,
+		groups: groups, units: a.parsed.units, prevStale: p.staleGroups(ctx, r.it.ID),
 	}
 	for _, d := range decs {
 		f, ok := byGroup[d.GroupID]

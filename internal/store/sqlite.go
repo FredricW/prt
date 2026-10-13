@@ -398,6 +398,33 @@ func (s *SQLite) Labels(ctx context.Context, unitIDs []string) ([]model.Label, e
 	return listDocs[model.Label](ctx, s, kLabel, unitIDs)
 }
 
+// LabelCounts implements Store. It reads only the label ids
+// ("<subject>|<question>|<line>", see labelID), not the bodies; question
+// ids never contain "|", so the question is the second field from the end.
+func (s *SQLite) LabelCounts(ctx context.Context) (map[string]int, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT id FROM docs WHERE kind=?`, kLabel)
+	if err != nil {
+		return nil, fmt.Errorf("store: label counts: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	out := map[string]int{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("store: label counts: %w", err)
+		}
+		parts := strings.Split(id, "|")
+		if len(parts) < 3 {
+			continue
+		}
+		out[parts[len(parts)-2]]++
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("store: label counts: %w", err)
+	}
+	return out, nil
+}
+
 // PutEmbedding implements Store; vectors are stored as little-endian float32.
 func (s *SQLite) PutEmbedding(ctx context.Context, unitID, embedModel string, vec []float32) error {
 	b := make([]byte, 4*len(vec))

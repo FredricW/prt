@@ -563,6 +563,33 @@ func BuildGroupTitle(g model.Group, units []model.ChangeUnit) Request {
 	return Request{Task: TaskGroupTitle, Tier: model.TierFast, GroupID: g.ID, System: titleSystem, Prompt: b.String(), MaxTokens: TitleMaxTokens}
 }
 
+// prTitleSystem is the system prompt of TaskPRTitle.
+const prTitleSystem = `You write the title of a pull request for a branch that has no pull request yet. Answer with one short title in the imperative mood that says what the change does, for example: Add dark mode toggle to settings. At most 72 characters, one line, no trailing period, no quotes, nothing else.`
+
+// MaxPRTitle is the suggested PR title cap in characters (runes).
+const MaxPRTitle = 72
+
+// prTitleGroups is the most group names a PR-title prompt lists.
+const prTitleGroups = 20
+
+// BuildPRTitle builds the TaskPRTitle request (spec Overview "Branches":
+// "the suggested PR title (fast LLM, from the group names)") from the
+// branch's group names in review order and its ref. Always TierFast; no
+// clock or cost inputs, so the request key is the title's cache key.
+func BuildPRTitle(groupNames []string, ref string) Request {
+	var b strings.Builder
+	fmt.Fprintf(&b, "Branch: %s\n\nGroups of related changes on the branch, in review order:\n", oneLine(ref))
+	for i, n := range groupNames {
+		if i == prTitleGroups {
+			fmt.Fprintf(&b, "(and %d more groups)\n", len(groupNames)-prTitleGroups)
+			break
+		}
+		fmt.Fprintf(&b, "- %s\n", truncate(oneLine(n), titleLineBytes))
+	}
+	b.WriteString("\nAnswer with the pull request title only.\n")
+	return Request{Task: TaskPRTitle, Tier: model.TierFast, System: prTitleSystem, Prompt: b.String(), MaxTokens: TitleMaxTokens}
+}
+
 // writeTitleUnit writes one unit of a group-title prompt.
 func writeTitleUnit(b *strings.Builder, u model.ChangeUnit) {
 	fmt.Fprintf(b, "\n## %s", u.Path)

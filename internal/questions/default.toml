@@ -435,8 +435,14 @@ feeds = ["since_you_looked"]
 scope = "branch"
 id = "state"
 type = "C"
-prompt = "What state is this branch in?"
+prompt = "Judging from this local branch's commit subjects, the days since its last commit, its unpushed commits and the repository's open pull request titles, what state is the branch in?"
 options = ["WIP", "ready for PR", "spike", "abandoned", "superseded"]
-inputs = ["branch_log"]
-feeds = ["picker"]
-deferred = "M5"
+inputs = ["branch_log", "branch_age", "unpushed", "open_pr_titles"]
+feeds = ["picker", "overview"]
+
+[question.criteria]
+"WIP" = "work in progress: the commits describe an unfinished change that is still being worked on"
+"ready for PR" = "the commits describe a finished, coherent change that could be opened as a pull request now"
+"spike" = "an exploratory experiment or prototype (spike, try, poc, hack, experiment) not meant to be merged as is"
+"abandoned" = "work that was started and then left: old, unfinished, and nothing suggests it will continue"
+"superseded" = "one of the open pull requests already does the same change, so this branch is no longer needed"

@@ -321,9 +321,20 @@ func TestCallLog(t *testing.T) {
 	if c := calls[0]; c.Purpose != "routed" || c.Tier != model.TierDeep || c.Prompt == "" || c.Response == "" || c.GroupID != row.GroupID {
 		t.Errorf("call = %+v", c)
 	}
-	tldr, err := e.c.CallLog(ctx, proto.CallLogParams{ItemID: e.id})
-	if err != nil || len(tldr) != 1 || tldr[0].Purpose != "tldr" {
-		t.Errorf("TL;DR call log = %+v, %v", tldr, err)
+	// Item-level calls: the TL;DR, plus (M5) the suggested PR title on a
+	// branch item.
+	items, err := e.c.CallLog(ctx, proto.CallLogParams{ItemID: e.id})
+	nTLDR := 0
+	for _, c := range items {
+		if c.GroupID != "" {
+			t.Errorf("item-level call log has a group call: %+v", c)
+		}
+		if c.Purpose == "tldr" {
+			nTLDR++
+		}
+	}
+	if err != nil || nTLDR != 1 {
+		t.Errorf("item call log = %+v, %v; want one tldr call", items, err)
 	}
 	if _, err := e.c.CallLog(ctx, proto.CallLogParams{}); err == nil {
 		t.Error("CallLog without an item: want error")

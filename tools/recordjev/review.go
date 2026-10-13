@@ -81,11 +81,11 @@ func reviewDryRun(ctx context.Context, cfg config, repo, prs string, jc jev.Clie
 		counters[i] = &reviewCounter{next: &review.Fake{Name: spec, Respond: review.FakeRespond(dryRunConfidence)}, dir: cfg.reviewOut}
 	}
 	tiers := review.Tiers{Fast: counters[0], Deep: counters[1]}
-	outs, err := pipelinetest.FixtureRun(ctx, repo, prs, jc, append(opts, pipelinetest.WithReviewers(tiers))...)
+	outs, branches, err := fixtureRun(ctx, cfg, repo, prs, jc, append(opts, pipelinetest.WithReviewers(tiers)))
 	if err != nil {
 		return err
 	}
-	if err := checkOutcomes(outs); err != nil {
+	if err := checkRun(outs, branches); err != nil {
 		return err
 	}
 	prior, err := ledgerSpent(cfg.spend, "anthropic")
@@ -101,7 +101,11 @@ func reviewDryRun(ctx context.Context, cfg config, repo, prs string, jc jev.Clie
 	fmt.Fprintf(stdout, "review recordings: %d already recorded in %s, %d to record (upper bound $%.4f); anthropic spent $%.4f of the $%.2f review cap\n",
 		sum.recorded, cfg.reviewOut, sum.requests-sum.recorded, sum.toRecordCost, prior, cfg.reviewCap)
 	fmt.Fprintf(stdout, "fake reviews answer confidence %.2f, so escalations do not show here; a live run may add deep calls within the cap\n", dryRunConfidence)
-	fmt.Fprintf(stdout, "record with: make record-review   (go run ./tools/recordjev --live --review --embed %s; needs %s)\n", cfg.embed, review.AnthropicKeyEnv)
+	branchFlag := ""
+	if cfg.branches {
+		branchFlag = " --branches"
+	}
+	fmt.Fprintf(stdout, "record with: make record-review   (go run ./tools/recordjev --live --review --embed %s%s; needs %s)\n", cfg.embed, branchFlag, review.AnthropicKeyEnv)
 	return nil
 }
 
@@ -127,9 +131,9 @@ func reviewLive(ctx context.Context, cfg config, repo, prs string, jc jev.Client
 		guards[i] = &reviewGuard{next: &review.Recorder{Live: live, Dir: cfg.reviewOut}, dir: cfg.reviewOut, budget: budget}
 	}
 	tiers := review.Tiers{Fast: guards[0], Deep: guards[1]}
-	outs, runErr := pipelinetest.FixtureRun(ctx, repo, prs, jc, append(opts, pipelinetest.WithReviewers(tiers))...)
+	outs, branches, runErr := fixtureRun(ctx, cfg, repo, prs, jc, append(opts, pipelinetest.WithReviewers(tiers)))
 	if runErr == nil {
-		runErr = checkOutcomes(outs)
+		runErr = checkRun(outs, branches)
 	}
 	var st guardStats
 	for _, g := range guards {
@@ -157,6 +161,7 @@ func reviewLive(ctx context.Context, cfg config, repo, prs string, jc jev.Client
 	}
 	if runErr == nil {
 		warnReviewExpectations(outs, stdout)
+		warnBranchExpectations(branches, stdout)
 	}
 	return runErr
 }

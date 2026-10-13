@@ -134,6 +134,7 @@ type Fixture struct {
 	Pipeline *pipeline.Pipeline
 	Store    store.Store
 
+	git     gitx.Git
 	prs     map[int]gh.PR
 	prsJSON string
 	closeFn func()
@@ -154,7 +155,7 @@ func Open(ctx context.Context, repoDir, prsJSON string, jc jev.Client, opts ...O
 		closeFn()
 		return nil, err
 	}
-	return &Fixture{Pipeline: pipeline.New(d), Store: d.Store, prs: prs, prsJSON: prsJSON, closeFn: closeFn}, nil
+	return &Fixture{Pipeline: pipeline.New(d), Store: d.Store, git: d.Git, prs: prs, prsJSON: prsJSON, closeFn: closeFn}, nil
 }
 
 // Close releases the store.
@@ -272,6 +273,9 @@ func collect(ctx context.Context, st store.Store, id string) (Outcome, error) {
 		return o, fmt.Errorf("pipelinetest: units %s: %w", id, err)
 	}
 	ids := []string{model.ItemSubject(id)}
+	if o.Item.Kind == model.KindBranch {
+		ids = append(ids, model.BranchSubject(id))
+	}
 	for _, u := range o.Units {
 		ids = append(ids, u.ID)
 	}

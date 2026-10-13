@@ -20,6 +20,9 @@ type labelTerms struct {
 	risk      float64 // RiskMax, 1..5, 0 unknown
 	testGap   float64 // TestGap
 	relevance float64 // max interpolated relevance over non-noise units
+	// readyForPR is set when the record's branch state is "ready for PR"
+	// (the w_ready_stale bonus applies).
+	readyForPR bool
 }
 
 // labelTermsOf reads the label factors from an aggregate record; a nil
@@ -39,19 +42,22 @@ func labelTermsOf(a *model.ItemAgg) labelTerms {
 		}
 	}
 	return labelTerms{
-		breaking:  float64(min(breaking, maxBreakingTerm)),
-		risk:      max(a.RiskMax, 0),
-		testGap:   float64(max(a.TestGap, 0)),
-		relevance: relevance,
+		breaking:   float64(min(breaking, maxBreakingTerm)),
+		risk:       max(a.RiskMax, 0),
+		testGap:    float64(max(a.TestGap, 0)),
+		relevance:  relevance,
+		readyForPR: a.Branch != nil && a.Branch.State == model.BranchReady,
 	}
 }
 
 // Urgency computes the urgency terms, their sum and the "why" line. Terms
 // that do not apply to the item's kind are omitted: PRs get review
 // requested, release and CI terms; branches get unpushed commits instead
-// (spec: "Branches replace the PR-only terms"). minutes enters negatively.
-// The label terms (breaking, risk, test gap, relevance) come from in.Prior,
-// the stored aggregate, and are 0 without one.
+// (spec: "Branches replace the PR-only terms"), plus w_ready_stale ×
+// log1p(in.IdleDays) when the branch state is ready for PR. minutes enters
+// negatively. The label terms (breaking, risk, test gap, relevance) and the
+// branch state come from in.Prior, the stored aggregate, and are 0 (no
+// bonus) without one.
 func Urgency(in Input, minutes float64) ([]model.UrgencyTerm, float64, string) {
 	return urgency(in, minutes, labelTermsOf(in.Prior))
 }
@@ -80,6 +86,9 @@ func urgency(in Input, minutes float64, lt labelTerms) ([]model.UrgencyTerm, flo
 	add("w_minutes", "size", minutes, w.WMinutes, -1)
 	if !isPR {
 		add("w_unpushed", "unpushed", float64(max(in.Item.Unpushed, 0)), w.WUnpushed, 1)
+		if lt.readyForPR {
+			add("w_ready_stale", "ready, waiting", math.Log1p(max(in.IdleDays, 0)), w.WReadyStale, 1)
+		}
 	}
 	total := 0.0
 	for _, t := range terms {

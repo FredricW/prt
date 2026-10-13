@@ -9,9 +9,15 @@
 //     bullets plus none; ApplyNames turns answers into group names.
 //   - SeparatePR: per changed file, the boolean "separate_pr" given the
 //     group list; Suggestion turns answers into the split suggestion.
+//   - CommentAddressed (M4): per earlier review comment, the boolean
+//     "comment_addressed" against the latest push.
+//   - BranchState (M5): per branch item, the Choice "state" (WIP, ready for
+//     PR, spike, abandoned, superseded) from its commit subjects, age,
+//     unpushed count and the open PR titles.
 //
 // Answers are model.Labels on subjects model.PairSubject,
-// model.GroupSubject and model.FileSubject, so the pipeline caches them in
+// model.GroupSubject, model.FileSubject, model.CommentSubject and
+// model.BranchSubject, so the pipeline caches them in
 // the label store like unit labels. Like internal/labels, this package does
 // no caching itself and never fails on a bad answer: missing or malformed
 // answers become unknown labels, and jev.ErrUnavailable is reported in

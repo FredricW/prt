@@ -11,6 +11,11 @@
 //   - hot-spot reasons from review findings (Input.Reviews), falling back to
 //     the label that fired;
 //   - the group fields routing needs: GroupAgg.Kind, HotSpot and Findings.
+//
+// M5: branches add w_ready_stale × log1p(IdleDays) when their state is
+// ready for PR (Input.Branch for Item, Prior.Branch for Urgency); Item
+// copies Input.Branch into the record. IdleDays is the shared idle-time
+// helper.
 package aggregate
 
 import (
@@ -38,10 +43,15 @@ type Input struct {
 	Links []model.Link
 	// Reviews are the routing-table rows (one per group, with findings):
 	// they give hot spots their finding reasons and GroupAgg.Findings.
-	Reviews            []model.Review
-	Weights            config.Rank
-	Pipeline           config.Pipeline
-	AgeDays            float64
+	Reviews  []model.Review
+	Weights  config.Rank
+	Pipeline config.Pipeline
+	AgeDays  float64
+	// IdleDays is the days since the branch's head commit
+	// (Item.LastCommitAt; 0 for PRs or when unknown). The ready-for-PR
+	// staleness bonus reads it (M5; filled by the pipeline and by
+	// discovery).
+	IdleDays           float64
 	Release            bool // base is a release branch
 	CIRedAfterApproval bool
 	// Owns are the user's owned globs (config user.owns), used for "Your
@@ -53,8 +63,24 @@ type Input struct {
 	// Prior, when set, is the item's stored aggregate: Urgency then takes
 	// its label terms (breaking, risk, test gap, relevance) from it instead
 	// of zeros. Discovery sets it so a poll keeps the label-based ranking
-	// (M3; DECISIONS "M3 shared contracts"). Item ignores it.
+	// (M3; DECISIONS "M3 shared contracts"). Item ignores it; Urgency also
+	// reads the branch state (ready-for-PR bonus) from Prior.Branch.
 	Prior *model.ItemAgg
+	// Branch is the branch state block the pipeline computed for a branch
+	// item (nil for PRs or when not computed). Item copies it into the
+	// record (ItemAgg.Branch) and its ready-for-PR state drives the
+	// staleness bonus (M5).
+	Branch *model.BranchInfo
+}
+
+// IdleDays is the days since a branch's head commit at now (0 when the
+// commit time is unknown or in the future): aggregate.Input.IdleDays, so
+// the pipeline and discovery compute it the same way.
+func IdleDays(lastCommitAt, now time.Time) float64 {
+	if lastCommitAt.IsZero() || !now.After(lastCommitAt) {
+		return 0
+	}
+	return now.Sub(lastCommitAt).Hours() / 24
 }
 
 // Item computes the overview record from units, labels and git facts: per
@@ -94,6 +120,7 @@ func Item(in Input) model.ItemAgg {
 		Groups:         groups(in.Groups, us, in.Reviews, unsureBelow),
 		Units:          make([]model.UnitAgg, 0, len(us)),
 		LabelsMissing:  in.LabelsMissing,
+		Branch:         in.Branch,
 	}
 	for _, f := range us {
 		countUnit(&agg, f)

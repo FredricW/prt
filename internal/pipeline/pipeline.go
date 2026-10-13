@@ -29,14 +29,23 @@
 // earlier comments). All of it is soft: a failure is logged or noted and
 // never fails a stage.
 //
+// M5 adds, in stage 8: the branch state block of branch items (Jev
+// branch.state, the abandoned? default, unpushed commits, SupersededBy and
+// a fast-LLM suggested PR title), the Architecture tab's module graph
+// (internal/arch), per-question override rates in the calibration panel,
+// and RunOptions.AggregateOnly (overrides: stage 8 alone, finished reviews
+// of overridden groups marked stale-labels, a status later normal runs keep
+// for a cached review).
+//
 // A stage function marks its row skipped (ran, but had nothing it could do,
 // e.g. no embedding model) with skipStage; runStage keeps that status.
 //
 // Cache namespaces (Store.CacheGet/CachePut) owned by this package:
 // nsOverride (per-group D/s overrides), nsCallLog (raw LLM calls per
 // routing row), nsTitle (group titles by request key), nsTLDR (TL;DR
-// text by request key) and nsSinceUnits (unit ids of a "Since you looked"
-// base head, by item and base SHA).
+// text by request key), nsPRTitle (suggested branch PR titles by request
+// key) and nsSinceUnits (unit ids of a "Since you looked" base head, by
+// item and base SHA).
 package pipeline
 
 import (
@@ -50,6 +59,7 @@ import (
 	"github.com/charmbracelet/log"
 
 	"github.com/fredricw/prt/internal/aggregate"
+	"github.com/fredricw/prt/internal/arch"
 	"github.com/fredricw/prt/internal/config"
 	"github.com/fredricw/prt/internal/diff"
 	"github.com/fredricw/prt/internal/embed"
@@ -123,6 +133,17 @@ type RunOptions struct {
 	// ignores the review cache. Queued, failed and skipped rows are routed
 	// again.
 	KeepReviewed bool
+	// AggregateOnly re-runs stage 8 alone on the stored analysis of the
+	// item's AnalysedSHA (files, units, labels, links, groups, routing
+	// rows), with the current label overrides applied (spec: "An override
+	// invalidates aggregate only, and marks the affected review as
+	// stale-labels without re-running it"). No fetch, no Jev or review
+	// call; the TL;DR is regenerated only when its inputs changed. Routing
+	// rows of groups containing an overridden unit whose override is newer
+	// than the row become model.ReviewStaleLabels (with StaleNote). With no
+	// stored analysis it falls back to a normal run. The daemon's Override
+	// queues such a run (M5; DECISIONS "M5 shared contracts").
+	AggregateOnly bool
 }
 
 // ignoresCache reports whether stage s must not use its cache in this run.
@@ -225,6 +246,12 @@ func (p *Pipeline) RunWith(ctx context.Context, it model.Item, opt RunOptions) e
 // RunHead is RunWith that also returns the head SHA the run analysed ("" if
 // fetch failed), so the caller can tell whether the item moved meanwhile.
 func (p *Pipeline) RunHead(ctx context.Context, it model.Item, opt RunOptions) (string, error) {
+	if opt.AggregateOnly {
+		if head, ok, err := p.runAggregateOnly(ctx, it, opt); ok {
+			return head, err
+		}
+		opt.AggregateOnly = false
+	}
 	f, err := runStage(ctx, p, it.ID, model.StageFetch, func(rl *model.RunLog) (model.Fetch, error) {
 		f, err := p.fetch(ctx, it, opt.Force || opt.ignoresCache(model.StageFetch), rl)
 		if err == nil {
@@ -396,7 +423,7 @@ func (p *Pipeline) aggInput(ctx context.Context, r *run, a analysis) (aggregate.
 		Item: cur, Files: a.parsed.files, Units: a.parsed.units, Labels: ls,
 		Groups: a.gro.groups, Links: a.gro.aggLinks(),
 		Weights: p.d.Config.Rank, Pipeline: p.d.Config.Pipeline,
-		AgeDays: age, Release: release, CIRedAfterApproval: ciRed,
+		AgeDays: age, IdleDays: p.idleNow(cur), Release: release, CIRedAfterApproval: ciRed,
 		Owns: p.d.Config.User.Owns, LabelsMissing: a.jo.missing,
 	}, nil
 }
@@ -408,40 +435,100 @@ func (p *Pipeline) aggInput(ctx context.Context, r *run, a analysis) (aggregate.
 // calls count on this row and in the review totals), stores it with the
 // raw call log, then copies the picker fields onto the stored Item.
 func (p *Pipeline) aggregate(ctx context.Context, r *run, a analysis, ro *routeOut, rv reviewOut, rl *model.RunLog) (model.ItemAgg, error) {
-	in, err := p.aggInput(ctx, r, a)
-	if err != nil {
-		return model.ItemAgg{}, err
-	}
 	rows := rv.rows
 	if rows == nil {
 		rows = ro.rows
 	}
-	in.Reviews = rows
-	agg := p.fn.aggregate(in)
-	agg.Grouping, agg.Split = a.gro.stats, a.gro.split
-	rl.Note = p.tldr(ctx, r, &agg, rl)
+	bo, err := p.branchBlock(ctx, r)
+	rl.Calls, rl.Cost = rl.Calls+bo.calls, rl.Cost+bo.cost
+	if err != nil {
+		return model.ItemAgg{}, err
+	}
+	agg, err := p.buildAgg(ctx, r, a, rows, bo.info, rl)
+	if err != nil {
+		return agg, err
+	}
 	agg.Review = p.reviewStats(r, a.gro.groups, rows, ro, rv)
 	if r.jevCalls == 0 && !a.jo.missing {
 		p.carryJevStats(ctx, r.it.ID, agg.Review)
 	}
-	agg.Calibration = p.calibrationStats(ctx)
 	so, err := p.sinceLooked(ctx, r, a.parsed.units)
 	if err != nil {
 		return agg, err
 	}
 	agg.Since = so.since
 	rl.Calls, rl.Cost = rl.Calls+so.calls, rl.Cost+so.cost
-	if agg.Review != nil && so.calls > 0 {
-		agg.Review.JevCalls, agg.Review.JevCost = agg.Review.JevCalls+so.calls, agg.Review.JevCost+so.cost
+	addJevStats(agg.Review, bo.calls+so.calls, bo.cost+so.cost)
+	if agg.Branch != nil {
+		p.suggestTitle(ctx, r, a.gro.groups, agg.Branch, rl)
 	}
+	return agg, p.finishAgg(ctx, r, a, &agg)
+}
+
+// buildAgg is the common part of stage 8 (normal and aggregate-only runs):
+// aggregate.Item over the stored labels (overrides applied), rows and the
+// branch block, the grouping record and split suggestion, the TL;DR and
+// the calibration panel.
+func (p *Pipeline) buildAgg(ctx context.Context, r *run, a analysis, rows []model.Review, branch *model.BranchInfo, rl *model.RunLog) (model.ItemAgg, error) {
+	in, err := p.aggInput(ctx, r, a)
+	if err != nil {
+		return model.ItemAgg{}, err
+	}
+	in.Reviews, in.Branch = rows, branch
+	agg := p.fn.aggregate(in)
+	agg.Grouping, agg.Split = a.gro.stats, a.gro.split
+	rl.Note = p.tldr(ctx, r, &agg, rl)
+	agg.Calibration = p.calibrationStats(ctx)
 	rl.In, rl.Out = len(a.parsed.units), len(in.Labels)
+	return agg, nil
+}
+
+// finishAgg adds the Architecture graph (built after the record, so it
+// feeds no model request), stores the call log and the aggregate, and
+// copies the picker fields onto the stored item.
+func (p *Pipeline) finishAgg(ctx context.Context, r *run, a analysis, agg *model.ItemAgg) error {
+	g, err := p.archGraph(ctx, r, a, agg)
+	if err != nil {
+		return err
+	}
+	agg.Arch = g
 	if err := r.calls.flush(ctx, p.d.Store, r.it.ID, groupIDs(a.gro.groups, "")); err != nil {
 		p.d.Log.Warn("store call log failed", "item", r.it.ID, "err", err)
 	}
-	if err := p.d.Store.PutAgg(ctx, agg); err != nil {
-		return agg, fmt.Errorf("pipeline: store agg: %w", err)
+	if err := p.d.Store.PutAgg(ctx, *agg); err != nil {
+		return fmt.Errorf("pipeline: store agg: %w", err)
 	}
-	return agg, p.applyAgg(ctx, r.it, r.f, agg)
+	return p.applyAgg(ctx, r.it, r.f, *agg)
+}
+
+// addJevStats adds stage-8 Jev calls (since you looked, branch state) to
+// the review totals.
+func addJevStats(s *model.ReviewStats, calls int, cost float64) {
+	if s != nil && calls > 0 {
+		s.JevCalls, s.JevCost = s.JevCalls+calls, s.JevCost+cost
+	}
+}
+
+// archGraph builds the Architecture tab's module graph (arch.Build) from
+// the item's files, units and the record. A build error degrades to an
+// empty graph whose Note says why; only cancellation is returned.
+func (p *Pipeline) archGraph(ctx context.Context, r *run, a analysis, agg *model.ItemAgg) (*model.ArchGraph, error) {
+	g, err := p.fn.archBuild(ctx, arch.Input{
+		ItemID: r.it.ID, BaseSHA: r.f.BaseSHA, HeadSHA: r.f.HeadSHA,
+		Files: a.parsed.files, Units: a.parsed.units, Agg: agg,
+		MaxHop: arch.DefaultMaxHop, Src: p.d.Git, Cache: p.d.Store,
+	})
+	if ctx.Err() != nil {
+		return nil, fmt.Errorf("pipeline: architecture graph: %w", ctx.Err())
+	}
+	if err != nil || g == nil {
+		if err == nil {
+			err = errors.New("no graph")
+		}
+		p.d.Log.Debug("architecture graph unavailable", "item", r.it.ID, "err", err)
+		return &model.ArchGraph{Note: "module graph unavailable: " + err.Error()}, nil
+	}
+	return g, nil
 }
 
 // carryJevStats fills s's Jev totals from the item's stored aggregate when
@@ -524,6 +611,10 @@ func (p *Pipeline) applyAgg(ctx context.Context, it model.Item, f model.Fetch, a
 		if h.Kind == HeadlineBreaking {
 			cur.Breaking++
 		}
+	}
+	cur.BranchState, cur.BranchStateP = "", 0
+	if agg.Branch != nil {
+		cur.BranchState, cur.BranchStateP = agg.Branch.State, agg.Branch.P
 	}
 	if err := p.d.Store.UpsertItem(ctx, cur); err != nil {
 		return fmt.Errorf("pipeline: store item %s: %w", cur.ID, err)
