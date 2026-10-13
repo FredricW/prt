@@ -161,20 +161,57 @@ func (p *Pipeline) calibrationStats(ctx context.Context) *model.CalibrationStats
 	if err != nil {
 		p.d.Log.Warn("load overrides failed", "err", err)
 	}
+	var recent []model.Override
 	for _, o := range ovs {
 		if o.At.IsZero() || !o.At.Before(since) {
 			cs.Overrides[o.Question]++
+			recent = append(recent, o)
 		}
 	}
 	cs.FlagAbove = overrideFlagAbove
-	if len(cs.Overrides) > 0 {
+	if len(recent) > 0 {
 		counts, err := p.d.Store.LabelCounts(ctx)
 		if err != nil {
 			p.d.Log.Warn("load label counts failed", "err", err)
 		}
-		cs.Questions = questionRates(cs.Overrides, counts, overrideFlagAbove)
+		cs.Questions = questionRates(p.liveOverrides(ctx, recent), counts, overrideFlagAbove)
 	}
 	return cs
+}
+
+// liveOverrides counts, by question, the overrides whose label is still
+// stored. The rate's denominator counts stored labels, and pruning (M5.2)
+// deletes the labels of removed items but keeps their overrides (user
+// data); counting those overrides too would inflate the rate with every
+// merged PR. A store error falls back to counting every override.
+func (p *Pipeline) liveOverrides(ctx context.Context, ovs []model.Override) map[string]int {
+	out := map[string]int{}
+	seen := map[string]bool{}
+	subjects := make([]string, 0, len(ovs))
+	for _, o := range ovs {
+		if !seen[o.UnitID] {
+			seen[o.UnitID] = true
+			subjects = append(subjects, o.UnitID)
+		}
+	}
+	labels, err := p.d.Store.Labels(ctx, subjects)
+	if err != nil {
+		p.d.Log.Warn("load overridden labels failed", "err", err)
+		for _, o := range ovs {
+			out[o.Question]++
+		}
+		return out
+	}
+	stored := make(map[string]bool, len(labels))
+	for _, l := range labels {
+		stored[l.UnitID+"\x00"+l.Question] = true
+	}
+	for _, o := range ovs {
+		if stored[o.UnitID+"\x00"+o.Question] {
+			out[o.Question]++
+		}
+	}
+	return out
 }
 
 // overrideFlagAbove is the override rate above which the calibration panel

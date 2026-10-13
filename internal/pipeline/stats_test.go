@@ -68,3 +68,42 @@ func TestCalibrationStatsQuestionsAndLastGroup(t *testing.T) {
 		t.Errorf("last sample: %+v", cs)
 	}
 }
+
+// Pruning the labels of a removed item keeps its overrides (user data), but
+// the per-question rate counts only overrides whose label is still stored,
+// so it does not climb with every merged PR.
+func TestCalibrationRatesIgnorePrunedLabels(t *testing.T) {
+	e := newLabelEnv(t)
+	p := e.pipeline(nil)
+	ctx := context.Background()
+	var ls []model.Label
+	for i := range 40 {
+		ls = append(ls, model.Label{UnitID: fmt.Sprintf("u%02d", i), Question: model.QBreaking, P: 0.6})
+	}
+	var gone []string
+	for i := range 5 {
+		gone = append(gone, fmt.Sprintf("merged%d", i))
+		ls = append(ls, model.Label{UnitID: gone[i], Question: model.QBreaking, P: 0.7})
+	}
+	if err := e.st.PutLabels(ctx, ls); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range append([]string{"u00", "u01", "u02", "u03", "u04"}, gone...) {
+		if err := e.st.PutOverride(ctx, model.Override{UnitID: id, Question: model.QBreaking, Value: "no", At: labelNow}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	before := p.calibrationStats(ctx).Questions
+	// The merged item is removed: its labels are pruned, its overrides kept.
+	if n, err := e.st.PruneLabels(ctx, gone); err != nil || n != len(gone) {
+		t.Fatalf("pruned %d (%v)", n, err)
+	}
+	cs := p.calibrationStats(ctx)
+	if cs.Overrides[model.QBreaking] != 10 {
+		t.Errorf("overrides in the window: %d, want 10", cs.Overrides[model.QBreaking])
+	}
+	want := []model.QuestionRate{{Question: model.QBreaking, Overrides: 5, Labels: 40, Rate: 0.125}}
+	if !reflect.DeepEqual(cs.Questions, want) {
+		t.Errorf("after pruning: %+v, want %+v (before: %+v)", cs.Questions, want, before)
+	}
+}
