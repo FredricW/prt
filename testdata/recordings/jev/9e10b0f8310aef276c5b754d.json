@@ -1,0 +1,101 @@
+{
+  "key": "9e10b0f8310aef276c5b754d",
+  "request": {
+    "model": "typesafe-ai/jev",
+    "state": {
+      "unit": {
+        "path": "web/src/components/InvoiceTable.tsx",
+        "symbol": "InvoiceTable",
+        "signature": "export function InvoiceTable()",
+        "change": "modified",
+        "diff": "   const [invoices, setInvoices] = useState\u003cInvoice[]\u003e([]);\n \n   useEffect(() =\u003e {\n-    fetchJSON\u003cInvoice[]\u003e(\"/billing/invoices\").then(setInvoices);\n+    requestJSON\u003cInvoice[]\u003e(\"/billing/invoices\").then(setInvoices);\n   }, []);\n \n   return ("
+      },
+      "lines": [
+        {
+          "slot": "l01",
+          "line": 11,
+          "text": "    requestJSON\u003cInvoice[]\u003e(\"/billing/invoices\").then(setInvoices);"
+        }
+      ]
+    },
+    "questions": {
+      "fmt__l01": {
+        "type": "boolean",
+        "instructions": "Is this added line a formatting or whitespace-only change (indentation, line wrapping, quotes, trailing commas) with no effect on what the code does?\nAnswer only about the added line in state.lines with slot \"l01\" (new-side line 11)."
+      },
+      "leftover__l01": {
+        "type": "boolean",
+        "instructions": "Is this added line a leftover that should not be merged: a debug print or log, commented-out code, or a TODO/FIXME/XXX note?\nAnswer only about the added line in state.lines with slot \"l01\" (new-side line 11)."
+      },
+      "pii_or_secret__l01": {
+        "type": "boolean",
+        "instructions": "Could this added line log, store, send or expose personal data (emails, names, addresses, ids) or a secret (password, token, API key)?\nAnswer only about the added line in state.lines with slot \"l01\" (new-side line 11)."
+      },
+      "suspicious__l01": {
+        "type": "score",
+        "instructions": "How likely is this added line to contain a bug?\nAnswer only about the added line in state.lines with slot \"l01\" (new-side line 11).",
+        "criteria": [
+          "1: almost certainly correct",
+          "2: probably correct",
+          "3: worth a second look",
+          "4: likely a bug",
+          "5: almost certainly a bug"
+        ]
+      },
+      "swallow__l01": {
+        "type": "boolean",
+        "instructions": "Does this added line ignore, discard or swallow an error or exception (empty catch, ignored return error, blanket except, error replaced by a default value)?\nAnswer only about the added line in state.lines with slot \"l01\" (new-side line 11)."
+      },
+      "value_tweak__l01": {
+        "type": "boolean",
+        "instructions": "Does this added line change the value of a literal such as a timeout, limit, size, URL, threshold or retry count, while leaving the surrounding logic the same?\nAnswer only about the added line in state.lines with slot \"l01\" (new-side line 11)."
+      }
+    }
+  },
+  "response": {
+    "model": "typesafe-ai/jev",
+    "answers": {
+      "fmt__l01": {
+        "type": "boolean",
+        "probability": 0.02
+      },
+      "leftover__l01": {
+        "type": "boolean",
+        "probability": 0.02
+      },
+      "pii_or_secret__l01": {
+        "type": "boolean",
+        "probability": 0.28
+      },
+      "suspicious__l01": {
+        "type": "score",
+        "score": 1.46,
+        "probabilities": {
+          "0": 0.17,
+          "1": 0.34,
+          "2": 0.36,
+          "3": 0.11,
+          "4": 0.02
+        }
+      },
+      "swallow__l01": {
+        "type": "boolean",
+        "probability": 0.37
+      },
+      "value_tweak__l01": {
+        "type": "boolean",
+        "probability": 0.08
+      }
+    },
+    "usage": {
+      "inputTokens": 876,
+      "outputTokens": 132
+    },
+    "providerMetadata": {
+      "gateway": {
+        "cost": "0.000036792",
+        "generationId": "gen_01M4SD1AM56RGMCQRGYNH09KVT"
+      }
+    }
+  }
+}

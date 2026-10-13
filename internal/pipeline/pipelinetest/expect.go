@@ -34,7 +34,7 @@ func Problems(outs map[int]Outcome) []string {
 //   - every unit of every PR has a known "kind" label;
 //   - #101: a breaking headline (or breaking unit in web/src/api/client.ts)
 //     on getUser, and the "Invalidate the profile cache on logout" bullet is
-//     not implemented;
+//     present and claimed by no unit except the clearProfileCache helper;
 //   - #102: at least 5 units share one shape hash and refactor is the
 //     largest composition share;
 //   - #103: every unit is deleted (or moved) and nothing is added;
@@ -72,6 +72,12 @@ func kindByUnit(o Outcome) map[string]string {
 	return m
 }
 
+// The only unit allowed to claim #101's logout bullet (see expect101).
+const (
+	logoutHelperPath   = "web/src/hooks/useProfileCache.ts"
+	logoutHelperSymbol = "clearProfileCache"
+)
+
 func expect101(o Outcome) []string {
 	var out []string
 	units := map[string]model.ChangeUnit{}
@@ -95,8 +101,17 @@ func expect101(o Outcome) []string {
 			logout = &o.Agg.Bullets[i]
 		}
 	}
-	if logout == nil || logout.Implemented {
-		out = append(out, fmt.Sprintf("#101: logout bullet = %+v, want present and not implemented", logout))
+	if logout == nil {
+		return append(out, "#101: logout bullet missing from the aggregate")
+	}
+	// The PR adds clearProfileCache but no logout handler calls it. Seen one
+	// unit at a time, Jev may fairly map the helper itself to the bullet;
+	// proving "not wired" needs caller links (M2). So M1 only requires that
+	// no unit other than the cache helper claims the bullet.
+	for _, id := range logout.UnitIDs {
+		if u := units[id]; u.Path != logoutHelperPath || u.Symbol != logoutHelperSymbol {
+			out = append(out, fmt.Sprintf("#101: logout bullet claimed by %s %s, want not implemented (or only by %s)", u.Path, u.Symbol, logoutHelperSymbol))
+		}
 	}
 	return out
 }

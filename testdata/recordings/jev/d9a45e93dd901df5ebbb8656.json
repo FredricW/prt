@@ -1,0 +1,341 @@
+{
+  "key": "d9a45e93dd901df5ebbb8656",
+  "request": {
+    "model": "typesafe-ai/jev",
+    "state": {
+      "unit": {
+        "path": "web/src/components/AuditLog.tsx",
+        "symbol": "AuditLog",
+        "signature": "export function AuditLog({ limit = 25 }: { limit?: number })",
+        "change": "modified",
+        "diff": "   const [entries, setEntries] = useState\u003cAuditEntry[]\u003e([]);\n \n   useEffect(() =\u003e {\n-    fetchJSON\u003cAuditEntry[]\u003e(\"/audit\", { query: { limit } }).then(setEntries);\n+    requestJSON\u003cAuditEntry[]\u003e(\"/audit\", { query: { limit } }).then(setEntries);\n   }, [limit]);\n \n   return ("
+      },
+      "pr": {
+        "title": "refactor(web): rename fetchJSON to requestJSON",
+        "bullets": [
+          {
+            "id": "b1",
+            "text": "Rename `fetchJSON` to `requestJSON` in `api/client.ts`"
+          },
+          {
+            "id": "b2",
+            "text": "Update every import and call site (19 files)"
+          }
+        ]
+      },
+      "reviewer": {
+        "role": "frontend",
+        "owns": [
+          "web/**"
+        ]
+      },
+      "tests_touched": [
+        "web/src/__tests__/client.test.ts",
+        "web/src/__tests__/users.test.ts"
+      ]
+    },
+    "questions": {
+      "behaviour": {
+        "type": "boolean",
+        "instructions": "Does this change alter runtime behaviour (not just names, formatting, comments or types)?"
+      },
+      "breaking": {
+        "type": "boolean",
+        "instructions": "Does this change break existing callers or consumers (removed or renamed export, changed parameters, changed return shape, stricter validation)?"
+      },
+      "contract": {
+        "type": "choice",
+        "instructions": "Which external contract, if any, does this change modify?",
+        "criteria": {
+          "api shape": "an HTTP/RPC request or response shape",
+          "env/flag": "an environment variable, config key or feature flag",
+          "event format": "the format of an emitted event, message or log consumed elsewhere",
+          "none": "no contract changes",
+          "schema/migration": "a database schema or a data migration",
+          "signature": "the signature of an exported function, method or type"
+        }
+      },
+      "covered": {
+        "type": "boolean",
+        "instructions": "Is this change exercised by any of the test files changed in this pull request (listed in the state)?"
+      },
+      "depth": {
+        "type": "choice",
+        "instructions": "How closely does a reviewer need to look at this change?",
+        "criteria": {
+          "read": "needs a careful line-by-line read",
+          "run locally": "needs to be run or tested by hand to be sure",
+          "skim": "a glance is enough",
+          "skip": "nothing to review (generated, formatting, trivial)"
+        }
+      },
+      "desc_bullet": {
+        "type": "choice",
+        "instructions": "Which bullet of the pull request description does this change implement?",
+        "criteria": {
+          "b1": "Rename `fetchJSON` to `requestJSON` in `api/client.ts`",
+          "b2": "Update every import and call site (19 files)",
+          "none": "implements none of the listed bullets"
+        }
+      },
+      "effect": {
+        "type": "choice",
+        "instructions": "Where would a user or client first notice the effect of this change?",
+        "criteria": {
+          "api response": "the shape or content of an API response",
+          "none": "no externally visible effect",
+          "performance": "speed, latency or resource use",
+          "stored data": "what is written to a database, file or cache",
+          "ui": "what the user interface shows or how it behaves"
+        }
+      },
+      "fail_mode": {
+        "type": "choice",
+        "instructions": "If this change is wrong, what is the most likely kind of failure?",
+        "criteria": {
+          "cosmetic": "a visual or textual glitch only",
+          "crash": "an exception, panic or failed request",
+          "security": "a vulnerability or data exposure",
+          "slowdown": "degraded performance or resource exhaustion",
+          "wrong data": "silently incorrect results or corrupted data"
+        }
+      },
+      "kind": {
+        "type": "choice",
+        "instructions": "What kind of change is this unit, judged by its main purpose?",
+        "criteria": {
+          "bugfix": "corrects behaviour that was wrong",
+          "config": "changes configuration, build, CI or environment settings",
+          "dependency": "adds, removes or bumps a dependency or lockfile entry",
+          "docs": "changes documentation or comments only",
+          "feature": "adds or extends user-visible or API-visible functionality",
+          "formatting": "whitespace, ordering or style only; no change in meaning",
+          "generated": "machine-generated output such as codegen, snapshots or vendored files",
+          "perf": "makes existing behaviour faster or cheaper",
+          "refactor": "restructures code without changing what it does",
+          "test": "adds or changes tests or test helpers"
+        }
+      },
+      "relevance": {
+        "type": "score",
+        "instructions": "How relevant is this change to the reviewer, given their role and the paths they own (listed in the state)?",
+        "criteria": [
+          "1: unrelated to their role and paths",
+          "2: tangential",
+          "3: adjacent to their area",
+          "4: inside their area",
+          "5: central to what they own"
+        ]
+      },
+      "reversible": {
+        "type": "boolean",
+        "instructions": "Could this change be reverted with a plain code revert, without a migration or a data fix?"
+      },
+      "risk": {
+        "type": "score",
+        "instructions": "How bad would it be if this change were wrong?",
+        "criteria": [
+          "1: negligible, nobody would notice",
+          "2: low, a minor annoyance that is easy to fix",
+          "3: moderate, a visible bug for some users",
+          "4: high, broken core flow or wrong data",
+          "5: severe, outage, data loss or security hole"
+        ]
+      },
+      "risk_tags__async": {
+        "type": "boolean",
+        "instructions": "Does this change touch the following area?\nasync: concurrency, async ordering or possible race conditions"
+      },
+      "risk_tags__auth": {
+        "type": "boolean",
+        "instructions": "Does this change touch the following area?\nauth: authentication, authorisation, sessions or permissions"
+      },
+      "risk_tags__data_write": {
+        "type": "boolean",
+        "instructions": "Does this change touch the following area?\ndata_write: writes, updates or deletes persisted data"
+      },
+      "risk_tags__date_tz": {
+        "type": "boolean",
+        "instructions": "Does this change touch the following area?\ndate_tz: dates, times or time zones"
+      },
+      "risk_tags__error_path": {
+        "type": "boolean",
+        "instructions": "Does this change touch the following area?\nerror_path: error handling or failure paths"
+      },
+      "risk_tags__io_in_loop": {
+        "type": "boolean",
+        "instructions": "Does this change touch the following area?\nio_in_loop: network, disk or database calls inside a loop"
+      },
+      "risk_tags__money": {
+        "type": "boolean",
+        "instructions": "Does this change touch the following area?\nmoney: prices, payments, billing or currency amounts"
+      },
+      "risk_tags__pii": {
+        "type": "boolean",
+        "instructions": "Does this change touch the following area?\npii: personal data about users"
+      },
+      "test_weakened": {
+        "type": "boolean",
+        "instructions": "Does this change skip, delete or weaken a test (removed assertions, looser expectations, added skip/only)?"
+      }
+    }
+  },
+  "response": {
+    "model": "typesafe-ai/jev",
+    "answers": {
+      "behaviour": {
+        "type": "boolean",
+        "probability": 0.18
+      },
+      "breaking": {
+        "type": "boolean",
+        "probability": 0.18
+      },
+      "contract": {
+        "type": "choice",
+        "choice": "none",
+        "probabilities": {
+          "api shape": 0,
+          "env/flag": 0,
+          "event format": 0,
+          "none": 0.9,
+          "schema/migration": 0,
+          "signature": 0.1
+        }
+      },
+      "covered": {
+        "type": "boolean",
+        "probability": 0.68
+      },
+      "depth": {
+        "type": "choice",
+        "choice": "skim",
+        "probabilities": {
+          "read": 0.08,
+          "run locally": 0.03,
+          "skim": 0.87,
+          "skip": 0.02
+        }
+      },
+      "desc_bullet": {
+        "type": "choice",
+        "choice": "b2",
+        "probabilities": {
+          "b1": 0.01,
+          "b2": 0.99,
+          "none": 0
+        }
+      },
+      "effect": {
+        "type": "choice",
+        "choice": "none",
+        "probabilities": {
+          "api response": 0,
+          "none": 0.97,
+          "performance": 0,
+          "stored data": 0,
+          "ui": 0.03
+        }
+      },
+      "fail_mode": {
+        "type": "choice",
+        "choice": "crash",
+        "probabilities": {
+          "cosmetic": 0,
+          "crash": 1,
+          "security": 0,
+          "slowdown": 0,
+          "wrong data": 0
+        }
+      },
+      "kind": {
+        "type": "choice",
+        "choice": "refactor",
+        "probabilities": {
+          "bugfix": 0,
+          "config": 0,
+          "dependency": 0,
+          "docs": 0,
+          "feature": 0,
+          "formatting": 0,
+          "generated": 0,
+          "perf": 0,
+          "refactor": 1,
+          "test": 0
+        }
+      },
+      "relevance": {
+        "type": "score",
+        "score": 3.92,
+        "probabilities": {
+          "0": 0,
+          "1": 0,
+          "2": 0,
+          "3": 0.05,
+          "4": 0.95
+        }
+      },
+      "reversible": {
+        "type": "boolean",
+        "probability": 0.96
+      },
+      "risk": {
+        "type": "score",
+        "score": 1.75,
+        "probabilities": {
+          "0": 0.04,
+          "1": 0.4,
+          "2": 0.33,
+          "3": 0.23,
+          "4": 0
+        }
+      },
+      "risk_tags__async": {
+        "type": "boolean",
+        "probability": 0.1
+      },
+      "risk_tags__auth": {
+        "type": "boolean",
+        "probability": 0.05
+      },
+      "risk_tags__data_write": {
+        "type": "boolean",
+        "probability": 0.04
+      },
+      "risk_tags__date_tz": {
+        "type": "boolean",
+        "probability": 0.03
+      },
+      "risk_tags__error_path": {
+        "type": "boolean",
+        "probability": 0.14
+      },
+      "risk_tags__io_in_loop": {
+        "type": "boolean",
+        "probability": 0.07
+      },
+      "risk_tags__money": {
+        "type": "boolean",
+        "probability": 0.02
+      },
+      "risk_tags__pii": {
+        "type": "boolean",
+        "probability": 0.09
+      },
+      "test_weakened": {
+        "type": "boolean",
+        "probability": 0.06
+      }
+    },
+    "usage": {
+      "inputTokens": 1948,
+      "outputTokens": 622
+    },
+    "providerMetadata": {
+      "gateway": {
+        "cost": "0.000081816",
+        "generationId": "gen_01M4SD1A8C4GSAMVVN5BBSQX1W"
+      }
+    }
+  }
+}
