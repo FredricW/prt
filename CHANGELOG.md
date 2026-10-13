@@ -429,7 +429,28 @@ exercised against `gh.Fake`.
   demo/snapshot shows it as "labels unavailable" (replay miss degrades, by
   design).
 
-### M5 — polish
+### M5 — polish (released 2026-10-13)
+
+Release gate: `go build ./...`, `go vet ./...`, `make lint` (0 issues),
+`make test` and `make snapshot` all green on `7df3e65`; `make demo` runs the
+TUI offline against `testdata/fixture-repo` with `testdata/fixtures/prs.json`
+and `testdata/fixtures/drafts.json`, replaying
+`testdata/recordings/{jev,embed,review}`. Branch-state Jev answers and
+embeddings were recorded ($0.0013; all services $0.8847 of $5.00).
+
+- **Shipped:** the design canvas look, search and add (`/`), the command
+  line (`:`), branch states with suggested PR titles, the Architecture tab,
+  side-by-side diffs with syntax colour, `e`/`o` on the Code page,
+  aggregate-only label overrides with "⚑ stale labels" reviews, and the v3
+  Pipeline page with per-question override rates.
+- **Deferred:** the overlap view for multi-selected items (`space` marks
+  only; M6); colour cycling on the Architecture tab; the ONNX embedder
+  (still a stub, falls back to Ollama).
+- **Blocked:** the 8 Anthropic calls for the local branch
+  `05-spike-dark-mode` are not recorded (Anthropic: "credit balance is too
+  low", retried at the release gate with the same answer, no spend). The
+  demo shows "title failed: review: no recording …" and one failed fast
+  review for that branch; see `docs/BLOCKED.md`.
 
 #### Added
 
@@ -474,3 +495,16 @@ exercised against `gh.Fake`.
 - Closed and merged PRs added from search are no longer sent to Jev as open
   PRs or named as superseding a branch.
 - Side-by-side needs a 140-column terminal, not a 140-column Code pane.
+
+#### Fixed (M5 review, round 2; details in DECISIONS)
+
+- Added and previewed items are analysed before automatic jobs; removing an
+  item cancels its run, so a discarded preview no longer pays for reviews.
+- A label override re-aggregates every item that shares the unit (a branch
+  and its PR, stacked PRs).
+- Remote-tracking refs report no unpushed commits; `w_unpushed` uses the
+  run's own count.
+- Clearing a fresh deep override is a compare-and-set (fixes a `-race`
+  flake); the TUI runs one Preview call at a time.
+- The branch Overview keeps Headlines; the Architecture legend lists box
+  colours and fact codes.
