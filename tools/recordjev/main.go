@@ -16,6 +16,20 @@
 //	                       "synthetic": true (only if live recording is
 //	                       blocked); no network
 //
+// Embeddings (--embed, any mode; pair requests depend on embed candidates,
+// so recording and replay must use the same choice):
+//
+//	--embed none    no embedder: stage 3 is skipped
+//	--embed replay  embed.Replay over --embed-out (the default when that
+//	                directory holds recordings, else none)
+//	--embed live    local Ollama (OLLAMA_HOST, default
+//	                http://127.0.0.1:11434; embeddinggemma-2) through
+//	                embed.Recorder, writing --embed-out; free, so allowed in
+//	                the dry run (which then records embeddings only); appends
+//	                an "ollama" ledger row with cost 0. If Ollama cannot be
+//	                reached the error, date and command go to --blocked
+//	                (docs/BLOCKED.md) and the tool exits non-zero.
+//
 // Recording files are written only by jev.Recorder, which never sees the
 // API key. The key is read from the environment and never printed.
 package main
@@ -35,6 +49,7 @@ import (
 
 	"github.com/fredricw/prt/internal/fixturegen"
 	"github.com/fredricw/prt/internal/jev"
+	"github.com/fredricw/prt/internal/model"
 	"github.com/fredricw/prt/internal/pipeline/pipelinetest"
 )
 
@@ -47,6 +62,9 @@ type config struct {
 	live, synthetic bool
 	out, spend, src string
 	capUSD          float64
+
+	embed, embedOut, blocked string
+	args                     []string // as given, for BLOCKED.md
 }
 
 // env looks up an environment variable ("" when unset); injected for tests.
@@ -81,13 +99,23 @@ func parseFlags(args []string, stderr io.Writer) (config, error) {
 	fs.StringVar(&c.spend, "spend", filepath.Join(root, "testdata", "recordings", "SPEND.md"), "spend ledger")
 	fs.Float64Var(&c.capUSD, "cap", 1.00, "cap on cumulative Jev spend in USD (ledger + this run)")
 	fs.StringVar(&c.src, "src", filepath.Join(root, "testdata", "fixtures"), "fixture sources (base/, prs/, prs.json, prt.toml)")
+	fs.StringVar(&c.embed, "embed", "", "embedder: none, replay or live (default: replay when --embed-out has recordings, else none)")
+	fs.StringVar(&c.embedOut, "embed-out", filepath.Join(root, "testdata", "recordings", "embed"), "embedding recordings directory")
+	fs.StringVar(&c.blocked, "blocked", filepath.Join(root, "docs", "BLOCKED.md"), "where an unreachable Ollama is recorded (--embed live)")
 	if err := fs.Parse(args); err != nil {
 		return c, err
 	}
+	c.args = args
 	if c.live && c.synthetic {
 		fmt.Fprintln(stderr, "recordjev: --live and --synthetic are exclusive")
 		return c, errors.New("exclusive flags")
 	}
+	mode, err := resolveEmbedMode(c.embed, c.embedOut)
+	if err != nil {
+		fmt.Fprintln(stderr, "recordjev:", err)
+		return c, err
+	}
+	c.embed = mode
 	return c, nil
 }
 
@@ -123,41 +151,51 @@ func execute(ctx context.Context, cfg config, getenv env, stdout io.Writer) erro
 		return fmt.Errorf("generate fixture repo: %w", err)
 	}
 	prs := filepath.Join(cfg.src, "prs.json")
+	emb, err := newEmbedRun(ctx, cfg, getenv)
+	if err != nil {
+		return err
+	}
+	opts := emb.options()
 	switch {
 	case cfg.live:
-		return recordLive(ctx, cfg, repo, prs, getenv, stdout)
+		err = recordLive(ctx, cfg, repo, prs, getenv, stdout, opts)
 	case cfg.synthetic:
-		return recordSynthetic(ctx, cfg, repo, prs, stdout)
+		err = recordSynthetic(ctx, cfg, repo, prs, stdout, opts)
+	default:
+		err = dryRun(ctx, cfg, repo, prs, stdout, opts)
 	}
-	return dryRun(ctx, cfg, repo, prs, stdout)
+	return errors.Join(err, emb.finish(stdout))
 }
 
-// dryRun counts the requests a recording run would send.
-func dryRun(ctx context.Context, cfg config, repo, prs string, stdout io.Writer) error {
+// dryRun counts the requests a recording run would send (with fake Jev
+// answers, so name and split requests, which depend on the pair answers,
+// are approximate). With --embed live it also records embeddings.
+func dryRun(ctx context.Context, cfg config, repo, prs string, stdout io.Writer, opts []pipelinetest.Option) error {
 	c := &counter{next: &jev.Fake{}, dir: cfg.out}
-	outs, err := pipelinetest.FixtureRun(ctx, repo, prs, c)
+	outs, err := pipelinetest.FixtureRun(ctx, repo, prs, c, opts...)
 	if err != nil {
 		return err
 	}
 	if err := checkOutcomes(outs); err != nil {
 		return err
 	}
-	fmt.Fprintf(stdout, "dry run (no network): %d Jev requests, ~%d tokens estimated, %d already recorded in %s, %d to record\n",
+	fmt.Fprintf(stdout, "dry run (no Jev calls): %d Jev requests, ~%d tokens estimated, %d already recorded in %s, %d to record\n",
 		c.requests, c.tokens, c.recorded, cfg.out, c.requests-c.recorded)
-	fmt.Fprintln(stdout, "record with: go run ./tools/recordjev --live   (needs JEV_API_KEY; cap $"+fmt.Sprintf("%.2f", cfg.capUSD)+")")
+	fmt.Fprintln(stdout, c.m2Summary())
+	fmt.Fprintln(stdout, "record with: go run ./tools/recordjev --live --embed "+cfg.embed+"   (needs JEV_API_KEY; cap $"+fmt.Sprintf("%.2f", cfg.capUSD)+")")
 	return nil
 }
 
 // recordLive records with the real endpoint behind the budget guard and
 // appends the run to the ledger, also when the run failed after spending.
-func recordLive(ctx context.Context, cfg config, repo, prs string, getenv env, stdout io.Writer) error {
+func recordLive(ctx context.Context, cfg config, repo, prs string, getenv env, stdout io.Writer, opts []pipelinetest.Option) error {
 	prior, err := ledgerSpent(cfg.spend, "jev")
 	if err != nil {
 		return err
 	}
 	live := jev.NewHTTP(getenv("JEV_BASE_URL"), getenv("JEV_API_KEY"))
 	g := &guard{next: &jev.Recorder{Live: live, Dir: cfg.out}, dir: cfg.out, capUSD: cfg.capUSD, prior: prior}
-	outs, runErr := pipelinetest.FixtureRun(ctx, repo, prs, g)
+	outs, runErr := pipelinetest.FixtureRun(ctx, repo, prs, g, opts...)
 	if runErr == nil {
 		runErr = checkOutcomes(outs)
 	}
@@ -170,15 +208,16 @@ func recordLive(ctx context.Context, cfg config, repo, prs string, getenv env, s
 		calls, reused, spent, prior+spent, cfg.capUSD, calls, cfg.out)
 	if runErr == nil {
 		warnExpectations(outs, stdout)
+		warnGroupExpectations(outs, stdout)
 	}
 	return runErr
 }
 
 // recordSynthetic writes heuristic recordings for requests not yet recorded.
-func recordSynthetic(ctx context.Context, cfg config, repo, prs string, stdout io.Writer) error {
+func recordSynthetic(ctx context.Context, cfg config, repo, prs string, stdout io.Writer, opts []pipelinetest.Option) error {
 	fake := &jev.Fake{Answer: heuristicAnswer}
 	g := &guard{next: &jev.Recorder{Live: fake, Dir: cfg.out, Synthetic: true}, dir: cfg.out, capUSD: 1e9, acceptSynthetic: true}
-	outs, err := pipelinetest.FixtureRun(ctx, repo, prs, g)
+	outs, err := pipelinetest.FixtureRun(ctx, repo, prs, g, opts...)
 	if err == nil {
 		err = checkOutcomes(outs)
 	}
@@ -214,6 +253,21 @@ func warnExpectations(outs map[int]pipelinetest.Outcome, stdout io.Writer) {
 	}
 }
 
+// warnGroupExpectations prints how the recorded run's grouping deviates
+// from pipelinetest.GroupExpectations (asserted by the replay test once M2
+// recordings exist).
+func warnGroupExpectations(outs map[int]pipelinetest.Outcome, stdout io.Writer) {
+	ps := pipelinetest.GroupExpectations(outs)
+	if len(ps) == 0 {
+		fmt.Fprintln(stdout, "grouping expectations: all hold")
+		return
+	}
+	fmt.Fprintf(stdout, "WARNING: %d grouping expectations do not hold with these recordings:\n", len(ps))
+	for _, p := range ps {
+		fmt.Fprintln(stdout, "  -", p)
+	}
+}
+
 // counter is the dry-run client: it counts requests, estimates their
 // tokens, notes which are already recorded and answers with next.
 type counter struct {
@@ -222,6 +276,47 @@ type counter struct {
 
 	mu                         sync.Mutex
 	requests, tokens, recorded int
+	m2                         map[string]*kindCount // by m2Kind
+}
+
+// kindCount counts requests of one M2 kind and how many are recorded.
+type kindCount struct{ requests, recorded int }
+
+// m2Kinds are the M2 request kinds in display order, by question id.
+var m2Kinds = []struct{ kind, question string }{
+	{"pairs", model.QRelation},
+	{"names", model.QNameBullet},
+	{"split", model.QSeparatePR},
+}
+
+// m2Kind returns the M2 kind of a request ("" for label requests): the
+// kind of its first question whose wire name is an M2 question id (or
+// "<id>__…").
+func m2Kind(req jev.Request) string {
+	for name := range req.Questions {
+		base, _, _ := strings.Cut(name, "__")
+		for _, k := range m2Kinds {
+			if base == k.question {
+				return k.kind
+			}
+		}
+	}
+	return ""
+}
+
+// m2Summary renders the M2 request counts.
+func (c *counter) m2Summary() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	parts := make([]string, 0, len(m2Kinds))
+	for _, k := range m2Kinds {
+		n := c.m2[k.kind]
+		if n == nil {
+			n = &kindCount{}
+		}
+		parts = append(parts, fmt.Sprintf("%s %d (%d recorded)", k.kind, n.requests, n.recorded))
+	}
+	return "M2 requests: " + strings.Join(parts, ", ") + " — names and split depend on the pair answers, so live counts may differ"
 }
 
 // Evaluate implements jev.Client.
@@ -243,6 +338,18 @@ func (c *counter) Evaluate(ctx context.Context, req jev.Request) (jev.Response, 
 	c.tokens += jev.EstimateTokens(string(b))
 	if statErr == nil {
 		c.recorded++
+	}
+	if k := m2Kind(req); k != "" {
+		if c.m2 == nil {
+			c.m2 = map[string]*kindCount{}
+		}
+		if c.m2[k] == nil {
+			c.m2[k] = &kindCount{}
+		}
+		c.m2[k].requests++
+		if statErr == nil {
+			c.m2[k].recorded++
+		}
 	}
 	c.mu.Unlock()
 	return c.next.Evaluate(ctx, req)

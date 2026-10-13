@@ -4,15 +4,19 @@ import (
 	"context"
 	"hash/fnv"
 	"strings"
+	"sync"
 	"unicode"
 )
 
 // Fake embeds text as a bag of hashed tokens (dimension Dim, default 64), so
 // texts sharing words get high cosine similarity. Deterministic, no I/O.
 type Fake struct {
-	Dim   int
-	Err   error
-	Calls int
+	Dim int
+	Err error
+	// Calls counts Embed calls and Texts the texts they carried.
+	Calls, Texts int
+
+	mu sync.Mutex
 }
 
 var _ Embedder = (*Fake)(nil)
@@ -22,7 +26,10 @@ func (f *Fake) Model() string { return "fake:bag-of-tokens" }
 
 // Embed implements Embedder.
 func (f *Fake) Embed(_ context.Context, texts []string) ([][]float32, error) {
+	f.mu.Lock()
 	f.Calls++
+	f.Texts += len(texts)
+	f.mu.Unlock()
 	if f.Err != nil {
 		return nil, f.Err
 	}

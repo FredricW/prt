@@ -21,6 +21,8 @@ type jevOut struct {
 	// call answered, circuit breaker tripped, or labels.Run failed):
 	// ItemAgg.LabelsMissing. A partial failure does not set it.
 	missing bool
+	// pairs is the outcome of the pair pass (see jevStage).
+	pairs pairOut
 }
 
 // catalogue returns the question catalogue (built-in when Deps has none).
@@ -31,7 +33,7 @@ func (p *Pipeline) catalogue() questions.Catalogue {
 	return p.d.Questions
 }
 
-// labelStage is stage 4 (labels half; pairs arrive in M2). Units whose
+// labelStage is the label pass of stage 4 (see jevStage). Units whose
 // stored labels already answer every live question are cache hits; the rest
 // go to labels.Run. Without Jev (nil client, ErrUnavailable) the affected
 // units get unknown labels and the item is marked labels-missing. A

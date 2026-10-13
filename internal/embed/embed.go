@@ -1,8 +1,10 @@
 // Package embed turns change-unit text into vectors (pipeline stage 3).
 //
 // Adapters: Ollama (/api/embed, implemented), ONNX (stub, see onnx.go) and
-// Fake (deterministic, for tests). If no adapter is available the pipeline
-// skips stage 3 and groups come from structural links only.
+// Fake (deterministic, for tests). Replay serves recorded vectors from
+// testdata/recordings/embed and Recorder writes them (see record.go). If no
+// adapter is available the pipeline skips stage 3 and groups come from
+// structural links only.
 package embed
 
 import (

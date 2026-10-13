@@ -8,3 +8,4 @@ cumulative.
 | When (UTC) | Service | Calls | Run cost | Cumulative | Recordings written |
 | --- | --- | --- | --- | --- | --- |
 | 2026-10-13T01:11:42Z | jev | 218 | $0.0197 | $0.0197 | 218 |
+| 2026-10-13T02:09:35Z | ollama | 4 | $0.0000 | $0.0000 | 111 |

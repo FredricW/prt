@@ -6,3 +6,9 @@ owns = ["web/**"]
 
 [github]
 repo = "acme/portal"
+
+# embeddinggemma-2 cosines are compressed (median .74–.80 within a fixture
+# PR), so the spec default 0.72 makes almost every pair a candidate. See
+# DECISIONS "embed_min_cosine for the fixture repo".
+[pipeline]
+embed_min_cosine = 0.88

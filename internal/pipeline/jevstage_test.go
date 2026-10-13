@@ -175,7 +175,7 @@ func (e *labelEnv) assertAllUnknown(t *testing.T) {
 	if !e.agg(t).LabelsMissing || !e.storedItem(t).LabelsUnavailable {
 		t.Error("agg.LabelsMissing / item.LabelsUnavailable not set")
 	}
-	if rl := e.stage(t, model.StageJev); rl.Status != model.StageDone || rl.Note != "Jev unavailable" {
+	if rl := e.stage(t, model.StageJev); rl.Status != model.StageDone || !strings.HasPrefix(rl.Note, "Jev unavailable") {
 		t.Errorf("jev row = %+v", rl)
 	}
 }
@@ -185,10 +185,18 @@ func TestJevNilWritesUnknownLabels(t *testing.T) {
 	e := newLabelEnv(t)
 	e.run(t, e.pipeline(nil))
 	e.assertAllUnknown(t)
-	for _, s := range []model.Stage{model.StageLink, model.StageEmbed, model.StageCluster, model.StageRoute, model.StageReview} {
-		if rl := e.stage(t, s); rl.Status != model.StageSkipped || (rl.Note != "M2" && rl.Note != "M3") {
+	for _, s := range []model.Stage{model.StageRoute, model.StageReview} {
+		if rl := e.stage(t, s); rl.Status != model.StageSkipped || rl.Note != "M3" {
 			t.Errorf("%s row = %+v", s, rl)
 		}
+	}
+	for _, s := range []model.Stage{model.StageLink, model.StageCluster} {
+		if rl := e.stage(t, s); rl.Status != model.StageDone {
+			t.Errorf("%s row = %+v, want done", s, rl)
+		}
+	}
+	if rl := e.stage(t, model.StageEmbed); rl.Status != model.StageSkipped || rl.Note != noteNoEmbedder {
+		t.Errorf("embed row = %+v, want skipped with %q", rl, noteNoEmbedder)
 	}
 }
 
@@ -216,8 +224,9 @@ func TestJevLabelsCachedByUnit(t *testing.T) {
 		}
 	}
 	rl := e.stage(t, model.StageJev)
-	if rl.Calls != first || rl.Status != model.StageDone || rl.Out == 0 {
-		t.Errorf("first jev row = %+v (fake saw %d calls)", rl, first)
+	// Name and split requests belong to the cluster row.
+	if want := first - countQuestion(fake.Calls, model.QNameBullet, model.QSeparatePR); rl.Calls != want || rl.Status != model.StageDone || rl.Out == 0 {
+		t.Errorf("first jev row = %+v (fake saw %d label and pair calls)", rl, want)
 	}
 	if e.agg(t).LabelsMissing || e.storedItem(t).LabelsUnavailable {
 		t.Error("labels-missing set after a working run")
@@ -230,6 +239,24 @@ func TestJevLabelsCachedByUnit(t *testing.T) {
 	if rl := e.stage(t, model.StageJev); !rl.CacheHit || rl.Status != model.StageCached || rl.Calls != 0 {
 		t.Errorf("second jev row = %+v, want cache hit", rl)
 	}
+}
+
+// countQuestion counts the requests that carry any of the question ids
+// (wire names equal to the id or starting with "<id>__").
+func countQuestion(reqs []jev.Request, ids ...string) int {
+	n := 0
+	for _, r := range reqs {
+		found := false
+		for name := range r.Questions {
+			for _, id := range ids {
+				found = found || name == id || strings.HasPrefix(name, id+"__")
+			}
+		}
+		if found {
+			n++
+		}
+	}
+	return n
 }
 
 // Regression: answers that depend on item-level inputs (desc_bullet on the

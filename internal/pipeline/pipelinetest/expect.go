@@ -35,6 +35,8 @@ func Problems(outs map[int]Outcome) []string {
 //   - #101: a breaking headline (or breaking unit in web/src/api/client.ts)
 //     on getUser, and the "Invalidate the profile cache on logout" bullet is
 //     present and claimed by no unit except the clearProfileCache helper;
+//     once structural links exist (M2) the bullet must also be not
+//     implemented, since nothing calls the helper;
 //   - #102: at least 5 units share one shape hash and refactor is the
 //     largest composition share;
 //   - #103: every unit is deleted (or moved) and nothing is added;
@@ -105,9 +107,15 @@ func expect101(o Outcome) []string {
 		return append(out, "#101: logout bullet missing from the aggregate")
 	}
 	// The PR adds clearProfileCache but no logout handler calls it. Seen one
-	// unit at a time, Jev may fairly map the helper itself to the bullet;
-	// proving "not wired" needs caller links (M2). So M1 only requires that
-	// no unit other than the cache helper claims the bullet.
+	// unit at a time, Jev may fairly map the helper itself to the bullet
+	// (DECISIONS "M1 Jev recordings: result and the logout expectation").
+	// With structural links (M2) the aggregate sees that nothing calls the
+	// helper, so the bullet must read "not implemented". Without them (stage
+	// 2 failed or not built) only the M1 rule applies: no unit other than
+	// the cache helper claims the bullet.
+	if hasStructural(o.Links) && logout.Implemented {
+		out = append(out, fmt.Sprintf("#101: logout bullet implemented by %v, want not implemented (no caller wires %s)", logout.UnitIDs, logoutHelperSymbol))
+	}
 	for _, id := range logout.UnitIDs {
 		if u := units[id]; u.Path != logoutHelperPath || u.Symbol != logoutHelperSymbol {
 			out = append(out, fmt.Sprintf("#101: logout bullet claimed by %s %s, want not implemented (or only by %s)", u.Path, u.Symbol, logoutHelperSymbol))

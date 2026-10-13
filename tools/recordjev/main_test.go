@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/fredricw/prt/internal/embed"
 	"github.com/fredricw/prt/internal/jev"
 	"github.com/fredricw/prt/internal/model"
 )
@@ -159,6 +160,125 @@ func TestDryRunOffline(t *testing.T) {
 	}
 }
 
+// fakeOllama serves /api/embed with deterministic vectors (embed.Fake) and
+// counts the texts it embedded.
+func fakeOllama(t *testing.T) (*httptest.Server, *int) {
+	t.Helper()
+	var mu sync.Mutex
+	texts := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Model string   `json:"model"`
+			Input []string `json:"input"`
+		}
+		if r.URL.Path != "/api/embed" || json.NewDecoder(r.Body).Decode(&req) != nil || req.Model != "embeddinggemma-2" {
+			http.Error(w, `{"error":"bad"}`, http.StatusBadRequest)
+			return
+		}
+		vecs, _ := (&embed.Fake{}).Embed(r.Context(), req.Input)
+		mu.Lock()
+		texts += len(req.Input)
+		mu.Unlock()
+		_ = json.NewEncoder(w).Encode(map[string]any{"embeddings": vecs})
+	}))
+	t.Cleanup(srv.Close)
+	return srv, &texts
+}
+
+// TestEmbedLiveDryRun records embeddings through a local fake Ollama in the
+// dry run (no Jev spend), appends an ollama ledger row, and a replay run
+// then finds everything recorded.
+func TestEmbedLiveDryRun(t *testing.T) {
+	srv, served := fakeOllama(t)
+	dir := t.TempDir()
+	embedDir, spend := filepath.Join(dir, "embed"), filepath.Join(dir, "SPEND.md")
+	getenv := func(k string) string { return map[string]string{"OLLAMA_HOST": srv.URL}[k] }
+	args := []string{"--out", filepath.Join(dir, "jev"), "--spend", spend, "--embed-out", embedDir, "--blocked", filepath.Join(dir, "BLOCKED.md")}
+	var stdout, stderr bytes.Buffer
+	if code := run(context.Background(), append(args, "--embed", "live"), getenv, &stdout, &stderr); code != 0 {
+		t.Fatalf("code %d, stderr %s", code, stderr.String())
+	}
+	recs, _ := filepath.Glob(filepath.Join(embedDir, "*.json"))
+	if len(recs) == 0 || len(recs) != *served-1 { // -1: the preflight text is not recorded
+		t.Fatalf("%d embedding recordings for %d served texts", len(recs), *served)
+	}
+	out := stdout.String()
+	if !strings.Contains(out, "embeddings (live, ollama:embeddinggemma-2)") || !strings.Contains(out, "M2 requests: pairs") {
+		t.Errorf("stdout:\n%s", out)
+	}
+	b, _ := os.ReadFile(spend)
+	if !strings.Contains(string(b), "| ollama | ") || !strings.Contains(string(b), "| $0.0000 |") {
+		t.Errorf("ledger:\n%s", b)
+	}
+	if got, err := ledgerSpent(spend, "jev"); err != nil || got != 0 {
+		t.Errorf("jev spend %v, %v", got, err)
+	}
+
+	// Default mode is now replay, and nothing is left to record.
+	stdout.Reset()
+	if code := run(context.Background(), args, func(string) string { return "" }, &stdout, &stderr); code != 0 {
+		t.Fatalf("replay code %d, stderr %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "embeddings (replay, ollama:embeddinggemma-2)") || !strings.Contains(stdout.String(), ", 0 to record") {
+		t.Errorf("replay stdout:\n%s", stdout.String())
+	}
+}
+
+// TestEmbedLiveUnreachable: a dead Ollama is written to BLOCKED.md with the
+// command and the tool exits non-zero before any run.
+func TestEmbedLiveUnreachable(t *testing.T) {
+	srv := httptest.NewServer(http.NotFoundHandler())
+	host := srv.URL
+	srv.Close()
+	dir := t.TempDir()
+	blocked := filepath.Join(dir, "docs", "BLOCKED.md")
+	args := []string{"--embed", "live", "--out", filepath.Join(dir, "jev"), "--spend", filepath.Join(dir, "SPEND.md"),
+		"--embed-out", filepath.Join(dir, "embed"), "--blocked", blocked}
+	var stdout, stderr bytes.Buffer
+	code := run(context.Background(), args, func(k string) string { return map[string]string{"OLLAMA_HOST": host}[k] }, &stdout, &stderr)
+	if code == 0 {
+		t.Fatal("want a non-zero exit")
+	}
+	b, err := os.ReadFile(blocked)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(b)
+	if !strings.Contains(text, "# Blocked") || !strings.Contains(text, "go run ./tools/recordjev --embed live") || !strings.Contains(text, "embed: model unavailable") {
+		t.Errorf("BLOCKED.md:\n%s", text)
+	}
+	if recs, _ := filepath.Glob(filepath.Join(dir, "embed", "*.json")); len(recs) != 0 {
+		t.Errorf("%d recordings written", len(recs))
+	}
+}
+
+func TestEmbedFlag(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	if code := run(context.Background(), []string{"--embed", "bogus"}, func(string) string { return "" }, &stdout, &stderr); code == 0 {
+		t.Fatal("bad --embed accepted")
+	}
+	empty := t.TempDir()
+	if m, err := resolveEmbedMode("", empty); err != nil || m != embedNone {
+		t.Errorf("default with no recordings = %q, %v", m, err)
+	}
+	if err := os.WriteFile(filepath.Join(empty, "k.json"), []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if m, err := resolveEmbedMode("", empty); err != nil || m != embedReplay {
+		t.Errorf("default with recordings = %q, %v", m, err)
+	}
+}
+
+func TestM2Kind(t *testing.T) {
+	cases := map[string]string{model.QRelation: "pairs", model.QNameBullet: "names", model.QSeparatePR: "split", model.QKind: "", "fmt__l01": ""}
+	for name, want := range cases {
+		r := jev.Request{Questions: map[string]jev.Question{name: {}}}
+		if got := m2Kind(r); got != want {
+			t.Errorf("m2Kind(%s) = %q, want %q", name, got, want)
+		}
+	}
+}
+
 // TestLiveAgainstLocalServer runs live mode against an httptest server (no
 // real network): every request is recorded and the spend lands in the
 // ledger. The key is a dummy.
@@ -188,7 +308,7 @@ func TestLiveAgainstLocalServer(t *testing.T) {
 		return map[string]string{"JEV_API_KEY": "dummy", "JEV_BASE_URL": srv.URL}[k]
 	}
 	var stdout, stderr bytes.Buffer
-	if code := run(context.Background(), []string{"--live", "--out", out, "--spend", spend, "--cap", "5"}, getenv, &stdout, &stderr); code != 0 {
+	if code := run(context.Background(), []string{"--live", "--embed", "none", "--out", out, "--spend", spend, "--cap", "5"}, getenv, &stdout, &stderr); code != 0 {
 		t.Fatalf("code %d, stderr %s", code, stderr.String())
 	}
 	recs, _ := filepath.Glob(filepath.Join(out, "*.json"))
@@ -212,7 +332,7 @@ func TestLiveAgainstLocalServer(t *testing.T) {
 	// A second run sends nothing: everything is recorded.
 	before := served
 	stdout.Reset()
-	if code := run(context.Background(), []string{"--live", "--out", out, "--spend", spend, "--cap", "5"}, getenv, &stdout, &stderr); code != 0 {
+	if code := run(context.Background(), []string{"--live", "--embed", "none", "--out", out, "--spend", spend, "--cap", "5"}, getenv, &stdout, &stderr); code != 0 {
 		t.Fatalf("second run code %d, stderr %s", code, stderr.String())
 	}
 	if served != before {
@@ -226,7 +346,7 @@ func TestLiveAgainstLocalServer(t *testing.T) {
 func TestSyntheticSatisfiesExpectations(t *testing.T) {
 	out := t.TempDir()
 	var stdout, stderr bytes.Buffer
-	if code := run(context.Background(), []string{"--synthetic", "--out", out}, func(string) string { return "" }, &stdout, &stderr); code != 0 {
+	if code := run(context.Background(), []string{"--synthetic", "--embed", "none", "--out", out}, func(string) string { return "" }, &stdout, &stderr); code != 0 {
 		t.Fatalf("code %d, stderr %s", code, stderr.String())
 	}
 	if !strings.Contains(stdout.String(), "replay expectations: all hold") {
@@ -234,7 +354,7 @@ func TestSyntheticSatisfiesExpectations(t *testing.T) {
 	}
 	recs, _ := filepath.Glob(filepath.Join(out, "*.json"))
 	stdout.Reset()
-	if code := run(context.Background(), []string{"--synthetic", "--out", out}, func(string) string { return "" }, &stdout, &stderr); code != 0 {
+	if code := run(context.Background(), []string{"--synthetic", "--embed", "none", "--out", out}, func(string) string { return "" }, &stdout, &stderr); code != 0 {
 		t.Fatalf("second run code %d", code)
 	}
 	if !strings.Contains(stdout.String(), "synthetic: 0 recordings written") || len(recs) == 0 {

@@ -8,11 +8,18 @@
 // External calls go only through the interfaces in Deps, so the whole
 // pipeline runs offline in tests with fakes or recordings.
 //
-// Current state (M1): fetch (local git, GitHub diff fallback), parse (with
-// file ownership from user.owns and CODEOWNERS), jev labels (cached by unit
-// id) and aggregate run; link and embed (M2), cluster (M2), route and review
-// (M3) are recorded as skipped. Stage 4 failures are soft: the item still
-// aggregates, with unknown labels and LabelsMissing set.
+// Current state (M2): fetch (local git, GitHub diff fallback), parse (with
+// file ownership from user.owns and CODEOWNERS), link (structural links),
+// embed (vectors cached by unit id and model; kNN and mechanical
+// candidates), jev (labels cached by unit id, and pair relations cached on
+// pair subjects, in parallel), cluster (groups, Jev names, split
+// suggestion) and aggregate run; route and review (M3) are recorded as
+// skipped. Failures after parse are soft: the item still aggregates (Jev
+// down: unknown labels and LabelsMissing; no embeddings: groups from
+// structural links only, with a note).
+//
+// A stage function marks its row skipped (ran, but had nothing it could do,
+// e.g. no embedding model) with skipStage; runStage keeps that status.
 package pipeline
 
 import (
@@ -73,7 +80,8 @@ type RunOptions struct {
 
 // Pipeline runs stages for items.
 type Pipeline struct {
-	d Deps
+	d  Deps
+	fn stageFuncs // M2 stage implementations (substitutable in tests)
 
 	mu    sync.Mutex
 	login string // cached GitHub viewer login (see viewer)
@@ -90,7 +98,7 @@ func New(d Deps) *Pipeline {
 	if d.ItemLock == nil {
 		d.ItemLock = &sync.Mutex{}
 	}
-	return &Pipeline{d: d}
+	return &Pipeline{d: d, fn: defaultStages()}
 }
 
 // Run executes all stages for an item with default options.
@@ -130,9 +138,28 @@ func (p *Pipeline) runAfterFetch(ctx context.Context, it model.Item, f model.Fet
 	if err != nil {
 		return err
 	}
-	p.skip(it.ID, "M2", model.StageLink, model.StageEmbed)
+	in := clusterIn{parsed: parsed}
+	in.structural, err = runStage(ctx, p, it.ID, model.StageLink, func(rl *model.RunLog) ([]model.Link, error) {
+		return p.linkStage(ctx, it.ID, f, parsed, rl)
+	})
+	if err != nil {
+		if ctx.Err() != nil {
+			return err
+		}
+		p.d.Log.Warn("structural links failed; continuing without them", "item", it.ID, "err", err)
+		in.structural = nil
+	}
+	in.em, err = runStage(ctx, p, it.ID, model.StageEmbed, func(rl *model.RunLog) (embedOut, error) {
+		return p.embedStage(ctx, parsed.units, rl)
+	})
+	if err != nil {
+		if ctx.Err() != nil {
+			return err
+		}
+		p.d.Log.Warn("embeddings failed; groups from structural links only", "item", it.ID, "err", err)
+	}
 	jo, err := runStage(ctx, p, it.ID, model.StageJev, func(rl *model.RunLog) (jevOut, error) {
-		return p.labelStage(ctx, p.currentItem(ctx, it), parsed.files, parsed.units, rl)
+		return p.jevStage(ctx, p.currentItem(ctx, it), parsed, in.structural, in.em, rl)
 	})
 	if err != nil {
 		// Soft failure (spec: failure handling): the RunLog row carries the
@@ -143,10 +170,20 @@ func (p *Pipeline) runAfterFetch(ctx context.Context, it model.Item, f model.Fet
 		p.d.Log.Warn("labels failed; continuing with unknown labels", "item", it.ID, "err", err)
 		jo.missing = true
 	}
-	p.skip(it.ID, "M2", model.StageCluster)
+	in.pairs = jo.pairs
+	gro, err := runStage(ctx, p, it.ID, model.StageCluster, func(rl *model.RunLog) (groupOut, error) {
+		return p.clusterStage(ctx, p.currentItem(ctx, it), in, rl)
+	})
+	if err != nil {
+		if ctx.Err() != nil {
+			return err
+		}
+		p.d.Log.Warn("clustering failed; no groups", "item", it.ID, "err", err)
+		gro = groupOut{links: in.keptLinks()}
+	}
 	p.skip(it.ID, "M3", model.StageRoute, model.StageReview)
 	_, err = runStage(ctx, p, it.ID, model.StageAggregate, func(rl *model.RunLog) (model.ItemAgg, error) {
-		return p.aggregate(ctx, it, f, parsed, jo, rl)
+		return p.aggregate(ctx, it, f, parsed, jo, gro, rl)
 	})
 	return err
 }
@@ -184,22 +221,25 @@ func (p *Pipeline) parse(ctx context.Context, itemID string, f model.Fetch, file
 	return parseOut{files: fs, units: us}, nil
 }
 
-// aggregate computes and stores the ItemAgg from files, units and the
-// stored labels (overrides applied), then copies the picker fields onto the
+// aggregate computes and stores the ItemAgg from files, units, groups,
+// links and the stored labels (overrides applied), adds the grouping record
+// and split suggestion from stage 5, then copies the picker fields onto the
 // stored Item.
-func (p *Pipeline) aggregate(ctx context.Context, it model.Item, f model.Fetch, in parseOut, jo jevOut, rl *model.RunLog) (model.ItemAgg, error) {
+func (p *Pipeline) aggregate(ctx context.Context, it model.Item, f model.Fetch, in parseOut, jo jevOut, gro groupOut, rl *model.RunLog) (model.ItemAgg, error) {
 	cur := p.currentItem(ctx, it)
 	ls, err := p.itemLabels(ctx, cur, in.files, in.units)
 	if err != nil {
 		return model.ItemAgg{}, err
 	}
 	age, release, ciRed := aggregate.Facts(cur, p.d.Config.GitHub.ReleaseBranches, p.d.Now())
-	agg := aggregate.Item(aggregate.Input{
+	agg := p.fn.aggregate(aggregate.Input{
 		Item: cur, Files: in.files, Units: in.units, Labels: ls,
+		Groups: gro.groups, Links: gro.links,
 		Weights: p.d.Config.Rank, Pipeline: p.d.Config.Pipeline,
 		AgeDays: age, Release: release, CIRedAfterApproval: ciRed,
 		Owns: p.d.Config.User.Owns, LabelsMissing: jo.missing,
 	})
+	agg.Grouping, agg.Split = gro.stats, gro.split
 	rl.In, rl.Out = len(in.units), len(ls)
 	if err := p.d.Store.PutAgg(ctx, agg); err != nil {
 		return agg, fmt.Errorf("pipeline: store agg: %w", err)
@@ -268,7 +308,10 @@ func (p *Pipeline) applyAgg(ctx context.Context, it model.Item, f model.Fetch, a
 	return nil
 }
 
-// runStage wraps one stage with RunLog bookkeeping and logging.
+// runStage wraps one stage with RunLog bookkeeping and logging. A stage
+// that returns an error is failed (with Err); one that called skipStage is
+// skipped (with its note); otherwise it is done, or skipped-cache when it
+// set CacheHit.
 func runStage[T any](ctx context.Context, p *Pipeline, itemID string, s model.Stage, fn func(*model.RunLog) (T, error)) (T, error) {
 	rl := model.RunLog{ItemID: itemID, Stage: s, Status: model.StageRunning, StartedAt: p.d.Now()}
 	p.d.Log.Debug("stage start", "item", itemID, "stage", s)
@@ -279,6 +322,8 @@ func runStage[T any](ctx context.Context, p *Pipeline, itemID string, s model.St
 	case err != nil:
 		rl.Status, rl.Err = model.StageFailed, err.Error()
 		p.d.Log.Warn("stage failed", "item", itemID, "stage", s, "err", err)
+	case rl.Status == model.StageSkipped:
+		rl.CacheHit = false
 	case rl.CacheHit:
 		rl.Status = model.StageCached
 	default:
