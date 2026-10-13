@@ -192,25 +192,33 @@ func (e *groupEnv) tag(sub string) Tri {
 }
 
 // maxScore is the max over units of the integer rung (rung) or the
-// interpolated score; Unknown when any unit's label is unknown or missing.
+// interpolated score. When some units' labels are unknown, missing or
+// malformed it is Unknown with a lower bound (AtLeast, N = the known max)
+// when at least one unit is known, so `risk >= 4` with a known 5 is still
+// True (Kleene: the max is ≥ 5 whatever the unknown units say).
 func (e *groupEnv) maxScore(q string, rung bool) Value {
-	if len(e.f.Units) == 0 {
-		return Value{}
-	}
-	best := 0.0
+	best, known, unknown := 0.0, false, false
 	for _, u := range e.f.Units {
 		l, ok := e.label(u.ID, q)
 		if !ok {
-			return Value{}
+			unknown = true
+			continue
 		}
 		n := float64(model.ScoreLevel(l))
 		if !rung && l.Score > 0 {
 			n = l.Score
 		}
 		if n <= 0 {
-			return Value{} // malformed answer
+			unknown = true // malformed answer
+			continue
 		}
-		best = max(best, n)
+		best, known = max(best, n), true
+	}
+	switch {
+	case !known:
+		return Value{}
+	case unknown:
+		return Value{N: best, AtLeast: true}
 	}
 	return Value{Kind: KindNum, N: best}
 }

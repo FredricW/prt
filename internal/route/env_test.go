@@ -50,8 +50,12 @@ func TestEnvNumbers(t *testing.T) {
 		t.Errorf("relevance = %+v, want 4.3", got)
 	}
 	f.Labels = set(clone(labels), unknownLabel("c", model.QRisk))
+	if got := lookup(t, f, model.QRisk); got != (Value{N: 4, AtLeast: true}) {
+		t.Errorf("risk with an unknown unit = %+v, want unknown, at least 4", got)
+	}
+	f.Labels = set(set(clone(labels), unknownLabel("c", model.QRisk)), unknownLabel("a", model.QRisk))
 	if got := lookup(t, f, model.QRisk); got != unk {
-		t.Errorf("risk with an unknown unit = %+v, want unknown", got)
+		t.Errorf("risk with no known unit = %+v, want unknown", got)
 	}
 	if got := lookup(t, f, nameUnits); got != n(2) {
 		t.Errorf("units = %+v", got)

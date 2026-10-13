@@ -156,7 +156,7 @@ func (n *cmpNode) val(env Env) (Value, error) {
 		return Value{}, err
 	}
 	if lv.Kind == KindUnknown || rv.Kind == KindUnknown {
-		return triValue(Unknown), nil
+		return triValue(boundCompare(n.op, lv, rv)), nil
 	}
 	switch n.op {
 	case "==", "!=":
@@ -183,6 +183,42 @@ func (n *cmpNode) val(env Env) (Value, error) {
 		b = lv.N < rv.N
 	}
 	return Value{Kind: KindBool, B: b}, nil
+}
+
+// boundCompare decides an ordering comparison between a lower-bounded
+// Unknown (Value.AtLeast: the true value is ≥ N) and a known number when
+// the bound settles it: `x >= c` / `x > c` are True once N already
+// satisfies them, `x <= c` / `x < c` False; the mirrored forms (`c <= x`)
+// likewise. Everything else is Unknown.
+func boundCompare(op string, lv, rv Value) Tri {
+	switch {
+	case lv.AtLeast && rv.Kind == KindNum:
+	case rv.AtLeast && lv.Kind == KindNum:
+		// Mirror `c op x` into `x op' c`.
+		lv, rv = rv, lv
+		op = map[string]string{">=": "<=", "<=": ">=", ">": "<", "<": ">"}[op]
+	default:
+		return Unknown
+	}
+	switch op {
+	case ">=":
+		if lv.N >= rv.N {
+			return True
+		}
+	case ">":
+		if lv.N > rv.N {
+			return True
+		}
+	case "<=":
+		if lv.N > rv.N {
+			return False
+		}
+	case "<":
+		if lv.N >= rv.N {
+			return False
+		}
+	}
+	return Unknown
 }
 
 // inNode is `x in [a, b]`, compared by string form.

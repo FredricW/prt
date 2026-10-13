@@ -170,6 +170,42 @@ func TestRouteNoMatchAndTypeErrors(t *testing.T) {
 	}
 }
 
+// A known unit that already settles a max comparison decides it even when
+// another unit's label is unknown (Kleene: max ≥ 5 ≥ 4).
+func TestRouteKnownMaxSettlesComparison(t *testing.T) {
+	rs, err := Compile(config.Routing{Rules: []config.Rule{
+		{When: "risk >= 4 || tag.auth", Tier: "deep", Context: []string{"tests"}},
+		{When: "true", Tier: "fast"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, c := unit("a", 1), unit("c", 2)
+	ls := append(set(fullLabels("a", "feature"), score("a", model.QRisk, 5, 5)), fullLabels("c", "feature")...)
+	ls = set(ls, unknownLabel("c", model.QRisk))
+	d := Route(rs, []GroupFacts{group([]model.ChangeUnit{a, c}, ls)})[0]
+	if d.Tier != model.TierDeep || d.Unknown || d.RuleIndex != 1 || !slices.Contains(d.Context, model.CtxTests) {
+		t.Errorf("{5, unknown} vs risk >= 4: %+v, want rule 1 deep with its context", d)
+	}
+	for _, tc := range []struct {
+		when string
+		want Tri
+	}{
+		{"risk >= 4", True}, {"risk > 4", True}, {"risk >= 6", Unknown},
+		{"risk < 5", False}, {"risk <= 4", False}, {"risk <= 5", Unknown},
+		{"4 <= risk", True}, {"6 < risk", Unknown}, {"5 > risk", False},
+		{"risk == 5", Unknown}, {"risk in [5]", Unknown},
+	} {
+		e, err := Parse(tc.when)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got, err := e.Eval(NewEnv(group([]model.ChangeUnit{a, c}, ls))); err != nil || got != tc.want {
+			t.Errorf("%s = %v (%v), want %v", tc.when, got, err, tc.want)
+		}
+	}
+}
+
 func TestRoutePrompts(t *testing.T) {
 	rs, err := Compile(config.Routing{Rules: []config.Rule{
 		{When: "true", Tier: "deep", Prompts: []string{"security", "performance", "tests", "security"}},

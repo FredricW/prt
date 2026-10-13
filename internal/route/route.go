@@ -74,6 +74,11 @@ type Value struct {
 	B    bool
 	N    float64
 	S    string
+	// AtLeast marks an Unknown number whose true value is at least N: a max
+	// over units where some units are unknown and the known ones reach N.
+	// Comparisons the bound settles (`risk >= 4` with a known 5) decide;
+	// the rest stay Unknown.
+	AtLeast bool
 }
 
 // Env is what a rule expression is evaluated against for one group.
@@ -299,6 +304,11 @@ func kindIs(e *groupEnv, k string) bool {
 	v := e.kind()
 	return v.Kind == KindStr && v.S == k
 }
+
+// AutoContext is the stage-6 context of a group on its own (no rule's
+// context): what a review the user forces deep gets when no rule attached
+// any.
+func AutoContext(f GroupFacts) []string { return autoContext(newGroupEnv(f), nil) }
 
 // autoContext is the rule's context ∪ the stage-6 decisions, in canonical
 // order: callers when any unit is breaking, types when any unit's contract
