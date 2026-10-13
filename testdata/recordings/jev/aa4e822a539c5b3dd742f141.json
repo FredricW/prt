@@ -1,0 +1,61 @@
+{
+  "key": "aa4e822a539c5b3dd742f141",
+  "request": {
+    "model": "typesafe-ai/jev",
+    "state": {
+      "a": {
+        "path": "server/internal/billing/legacy.go",
+        "symbol": "toLegacy",
+        "signature": "func toLegacy(inv Invoice) LegacyExport",
+        "change": "deleted",
+        "diff": "-// toLegacy converts an Invoice to the legacy export row.\n-func toLegacy(inv Invoice) LegacyExport {\n-\treturn LegacyExport{\n-\t\tNumber: inv.Number,\n-\t\tOrgID:  inv.OrgID,\n-\t\tAmount: fmt.Sprintf(\"%.2f\", float64(inv.AmountCents)/100),\n-\t\tIssued: inv.IssuedAt.Format(\"02.01.2006\"),\n-\t\tIsPaid: inv.Status == StatusPaid,\n-\t}\n-}\n-"
+      },
+      "b": {
+        "path": "server/internal/billing/tax.go",
+        "symbol": "legacyTaxCents",
+        "signature": "func legacyTaxCents(country string, netCents int64) int64",
+        "change": "deleted",
+        "diff": " \t}\n \treturn (netCents*bp + 5000) / 10000\n }\n-\n-// legacyTaxCents is the float-based calculation used before basis points.\n-// Deprecated: kept for the 2023 reconciliation, which has been closed.\n-func legacyTaxCents(country string, netCents int64) int64 {\n-\trate := float64(vatRates[strings.ToUpper(country)]) / 10000\n-\treturn int64(math.Round(float64(netCents) * rate))\n-}"
+      }
+    },
+    "questions": {
+      "relation": {
+        "type": "choice",
+        "instructions": "How are these two changes related?",
+        "criteria": {
+          "caller update": "one change updates a caller or user of what the other change defines or changes",
+          "same intent": "both changes serve the same purpose or feature",
+          "same pattern": "both apply the same mechanical edit (rename, signature tweak, repeated pattern)",
+          "test for": "one change is a test that exercises the other change",
+          "unrelated": "the changes have nothing to do with each other"
+        }
+      }
+    }
+  },
+  "response": {
+    "model": "typesafe-ai/jev",
+    "answers": {
+      "relation": {
+        "type": "choice",
+        "choice": "same intent",
+        "probabilities": {
+          "caller update": 0,
+          "same intent": 0.84,
+          "same pattern": 0.14,
+          "test for": 0,
+          "unrelated": 0.02
+        }
+      }
+    },
+    "usage": {
+      "inputTokens": 794,
+      "outputTokens": 59
+    },
+    "providerMetadata": {
+      "gateway": {
+        "cost": "0.000033348",
+        "generationId": "gen_01M4SH1SAXVM57K4C9234YB0K4"
+      }
+    }
+  }
+}

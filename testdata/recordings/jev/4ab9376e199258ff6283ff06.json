@@ -1,0 +1,59 @@
+{
+  "key": "4ab9376e199258ff6283ff06",
+  "request": {
+    "model": "typesafe-ai/jev",
+    "state": {
+      "a": {
+        "path": "web/src/components/StatusFooter.tsx",
+        "symbol": "StatusFooter",
+        "signature": "export function StatusFooter()",
+        "change": "modified",
+        "diff": " export function StatusFooter() {\n   const [health, setHealth] = useState\u003cHealth | null\u003e(null);\n \n   useEffect(() =\u003e {\n-    fetchJSON\u003cHealth\u003e(\"/health\")\n+    requestJSON\u003cHealth\u003e(\"/health\")\n       .then(setHealth)\n       .catch(() =\u003e setHealth({ status: \"degraded\", version: \"?\" }));\n   }, []);"
+      },
+      "b": {
+        "path": "web/src/components/StatusFooter.tsx",
+        "change": "modified",
+        "diff": " import { useEffect, useState } from \"react\";\n \n-import { fetchJSON } from \"../api/client\";\n+import { requestJSON } from \"../api/client\";\n import { type Health } from \"../api/health\";\n "
+      }
+    },
+    "questions": {
+      "relation": {
+        "type": "choice",
+        "instructions": "How are these two changes related?",
+        "criteria": {
+          "caller update": "one change updates a caller or user of what the other change defines or changes",
+          "same intent": "both changes serve the same purpose or feature",
+          "same pattern": "both apply the same mechanical edit (rename, signature tweak, repeated pattern)",
+          "test for": "one change is a test that exercises the other change",
+          "unrelated": "the changes have nothing to do with each other"
+        }
+      }
+    }
+  },
+  "response": {
+    "model": "typesafe-ai/jev",
+    "answers": {
+      "relation": {
+        "type": "choice",
+        "choice": "caller update",
+        "probabilities": {
+          "caller update": 0.49,
+          "same intent": 0.16,
+          "same pattern": 0.35,
+          "test for": 0,
+          "unrelated": 0
+        }
+      }
+    },
+    "usage": {
+      "inputTokens": 645,
+      "outputTokens": 59
+    },
+    "providerMetadata": {
+      "gateway": {
+        "cost": "0.00002709",
+        "generationId": "gen_01M4SH1J63BTBCE7TX362YSGCW"
+      }
+    }
+  }
+}

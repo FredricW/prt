@@ -1,0 +1,57 @@
+{
+  "key": "4c6b1438ee2635300f3cbe60",
+  "request": {
+    "model": "typesafe-ai/jev",
+    "state": {
+      "a": {
+        "path": "web/src/__tests__/users.test.ts",
+        "change": "modified",
+        "diff": " });\n \n describe(\"users api\", () =\u003e {\n-  it(\"passes cursor and limit to fetchJSON\", async () =\u003e {\n-    const spy = vi.spyOn(client, \"fetchJSON\").mockResolvedValue({ users: [], nextCursor: null });\n+  it(\"passes cursor and limit to requestJSON\", async () =\u003e {\n+    const spy = vi.spyOn(client, \"requestJSON\").mockResolvedValue({ users: [], nextCursor: null });\n     await listUsers(\"c1\", 10);\n     expect(spy).toHaveBeenCalledWith(\"/users\", { query: { cursor: \"c1\", limit: 10 } });\n   });"
+      },
+      "b": {
+        "path": "web/src/__tests__/client.test.ts",
+        "change": "modified",
+        "diff": "   vi.restoreAllMocks();\n });\n \n-describe(\"fetchJSON\", () =\u003e {\n+describe(\"requestJSON\", () =\u003e {\n   it(\"prefixes the API base and encodes the query\", async () =\u003e {\n     const spy = mockFetch(200, { ok: true });\n-    await fetchJSON(\"/things\", { query: { b: 2, a: \"x y\" } });\n+    await requestJSON(\"/things\", { query: { b: 2, a: \"x y\" } });\n     expect(spy.mock.calls[0]![0]).toBe(\"/api/v1/things?a=x%20y\u0026b=2\");\n   });\n \n   it(\"maps error payloads to ApiError\", async () =\u003e {\n     mockFetch(404, { code: \"not_found\", message: \"no such user\" });\n-    await expect(fetchJSON(\"/users/nope\")).rejects.toEqual(new ApiError(404, \"not_found\", \"no such user\"));\n+    await expect(requestJSON(\"/users/nope\")).rejects.toEqual(new ApiError(404, \"not_found\", \"no such user\"));\n   });\n \n   it(\"returns undefined for 204\", async () =\u003e {\n     mockFetch(204, undefined);\n-    await expect(fetchJSON(\"/noop\", { method: \"POST\" })).resolves.toBeUndefined();\n+    await expect(requestJSON(\"/noop\", { method: \"POST\" })).resolves.toBeUndefined();\n   });\n });\n "
+      }
+    },
+    "questions": {
+      "relation": {
+        "type": "choice",
+        "instructions": "How are these two changes related?",
+        "criteria": {
+          "caller update": "one change updates a caller or user of what the other change defines or changes",
+          "same intent": "both changes serve the same purpose or feature",
+          "same pattern": "both apply the same mechanical edit (rename, signature tweak, repeated pattern)",
+          "test for": "one change is a test that exercises the other change",
+          "unrelated": "the changes have nothing to do with each other"
+        }
+      }
+    }
+  },
+  "response": {
+    "model": "typesafe-ai/jev",
+    "answers": {
+      "relation": {
+        "type": "choice",
+        "choice": "same pattern",
+        "probabilities": {
+          "caller update": 0.16,
+          "same intent": 0.03,
+          "same pattern": 0.65,
+          "test for": 0.16,
+          "unrelated": 0
+        }
+      }
+    },
+    "usage": {
+      "inputTokens": 992,
+      "outputTokens": 59
+    },
+    "providerMetadata": {
+      "gateway": {
+        "cost": "0.000041664",
+        "generationId": "gen_01M4SH1CYHPXVTAZ21AEJY2XCP"
+      }
+    }
+  }
+}

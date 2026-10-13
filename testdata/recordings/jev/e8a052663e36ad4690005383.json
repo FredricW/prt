@@ -1,0 +1,57 @@
+{
+  "key": "e8a052663e36ad4690005383",
+  "request": {
+    "model": "typesafe-ai/jev",
+    "state": {
+      "a": {
+        "path": "server/go.mod",
+        "change": "modified",
+        "diff": " go 1.22\n \n require (\n-\tgithub.com/go-chi/chi/v5 v5.0.10\n+\tgithub.com/go-chi/chi/v5 v5.0.12\n \tgolang.org/x/sync v0.7.0\n )"
+      },
+      "b": {
+        "path": "server/go.sum",
+        "change": "modified",
+        "diff": "-github.com/go-chi/chi/v5 v5.0.10 h1:rLz5avzKpjqxrYwXNfmjkrYYXOyLJd37pz53UFHC6vk=\n-github.com/go-chi/chi/v5 v5.0.10/go.mod h1:DslCQbL2OYiznFReuXYUmQ2hGd1aDpCnlMNITLSKoi8=\n+github.com/go-chi/chi/v5 v5.0.12 h1:9euLV5sTrTNTRUU9POmDUvfxyj6LAABLUcEWO+JJb4s=\n+github.com/go-chi/chi/v5 v5.0.12/go.mod h1:DslCQbL2OYiznFReuXYUmQ2hGd1aDpCnlMNITLSKoi8=\n golang.org/x/sync v0.7.0 h1:YsImfSBoP9QPYL0xyKJPq0gcaJdG3rInoqxTWbfQu9M=\n golang.org/x/sync v0.7.0/go.mod h1:Czt+wKu1gCyEFDUtn0jG5QVvpJ6rzVqr5aXyt9drQfk="
+      }
+    },
+    "questions": {
+      "relation": {
+        "type": "choice",
+        "instructions": "How are these two changes related?",
+        "criteria": {
+          "caller update": "one change updates a caller or user of what the other change defines or changes",
+          "same intent": "both changes serve the same purpose or feature",
+          "same pattern": "both apply the same mechanical edit (rename, signature tweak, repeated pattern)",
+          "test for": "one change is a test that exercises the other change",
+          "unrelated": "the changes have nothing to do with each other"
+        }
+      }
+    }
+  },
+  "response": {
+    "model": "typesafe-ai/jev",
+    "answers": {
+      "relation": {
+        "type": "choice",
+        "choice": "same intent",
+        "probabilities": {
+          "caller update": 0.01,
+          "same intent": 0.95,
+          "same pattern": 0.04,
+          "test for": 0,
+          "unrelated": 0
+        }
+      }
+    },
+    "usage": {
+      "inputTokens": 829,
+      "outputTokens": 59
+    },
+    "providerMetadata": {
+      "gateway": {
+        "cost": "0.000034818",
+        "generationId": "gen_01M4SH1V1CAEKBFTBZGFT5J8SV"
+      }
+    }
+  }
+}

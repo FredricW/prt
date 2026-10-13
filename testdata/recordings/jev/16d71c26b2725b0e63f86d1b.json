@@ -1,0 +1,137 @@
+{
+  "key": "16d71c26b2725b0e63f86d1b",
+  "request": {
+    "model": "typesafe-ai/jev",
+    "state": {
+      "file": {
+        "path": "web/src/__tests__/useProfileCache.test.ts",
+        "units": [
+          {
+            "path": "web/src/__tests__/useProfileCache.test.ts",
+            "change": "added",
+            "diff": "+import { afterEach, beforeEach, describe, expect, it, vi } from \"vitest\";\n+\n+import * as client from \"../api/client\";\n+import { clearProfileCache, loadProfile, primeProfile, PROFILE_TTL_MS } from \"../hooks/useProfileCache\";\n+\n+const ada = {\n+  id: \"u1\",\n+  email: \"ada@example.com\",\n+  displayName: \"Ada\",\n+  teamId: null,\n+  createdAt: \"2025-03-01T12:00:00Z\",\n+} satisfies client.User;\n+\n+beforeEach(() =\u003e {\n+  clearProfileCache();\n+});\n+\n+afterEach(() =\u003e {\n+  vi.useRealTimers();\n+  vi.restoreAllMocks();\n+});\n+\n+describe(\"loadProfile\", () =\u003e {\n+  it(\"fetches once and serves later calls from cache\", async () =\u003e {\n+    const spy = vi.spyOn(client, \"getUser\").mockResolvedValue(ada);\n+    await loadProfile(\"u1\");\n+    await loadProfile(\"u1\");\n+    expect(spy).toHaveBeenCalledTimes(1);\n+    expect(spy).toHaveBeenCalledWith(\"u1\", { include: [\"team\", \"avatar\"], fresh: false });\n+  });\n+\n+  it(\"shares one request between concurrent callers\", async () =\u003e {\n+    const spy = vi.spyOn(client, \"getUser\").mockResolvedValue(ada);\n+    const [a, b] = await Promise.all([loadProfile(\"u1\"), loadProfile(\"u1\")]);\n+    expect(a).toBe(b);\n+    expect(spy).toHaveBeenCalledTimes(1);\n+  });\n+\n+  it(\"refetches after the TTL\", async () =\u003e {\n+    vi.useFakeTimers();\n+    vi.setSystemTime(0);\n+    primeProfile(ada, 0);\n+    const spy = vi.spyOn(client, \"getUser\").mockResolvedValue({ ...ada, displayName: \"Ada L.\" });\n+    vi.setSystemTime(PROFILE_TTL_MS + 1);\n+    const user = await loadProfile(\"u1\");\n+    expect(user.displayName).toBe(\"Ada L.\");\n+    expect(spy).toHaveBeenCalledTimes(1);\n+  });\n+\n+  it(\"bypasses the cache when fresh is set\", async () =\u003e {\n+    primeProfile(ada);\n+    const spy = vi.spyOn(client, \"getUser\").mockResolvedValue(ada);\n+    await loadProfile(\"u1\", true);\n+    expect(spy).toHaveBeenCalledWith(\"u1\", { include: [\"team\", \"avatar\"], fresh: true });\n+  });\n+});"
+          }
+        ]
+      },
+      "groups": [
+        {
+          "name": "server: return `avatarUrl` when `include=avatar` is request…",
+          "files": [
+            "server/internal/users/users.go"
+          ],
+          "units": 6
+        },
+        {
+          "name": "Move `ApiError`, auth headers and error parsing into `api/e…",
+          "files": [
+            "web/src/__tests__/client.test.ts",
+            "web/src/api/client.ts",
+            "web/src/api/errors.ts"
+          ],
+          "units": 7
+        },
+        {
+          "name": "Add `useProfileCache`: stale-while-revalidate cache with a …",
+          "files": [
+            "web/src/__tests__/useProfileCache.test.ts",
+            "web/src/components/ProfilePage.tsx",
+            "web/src/hooks/useProfileCache.ts"
+          ],
+          "units": 8
+        },
+        {
+          "name": "`getUser` takes a required `GetUserOptions` argument (`incl…",
+          "files": [
+            "web/src/api/client.ts",
+            "web/src/api/users.ts",
+            "web/src/components/UserList.tsx",
+            "web/src/hooks/useProfileCache.ts",
+            "web/src/hooks/useUser.ts"
+          ],
+          "units": 7
+        },
+        {
+          "name": "Move `ApiError`, auth headers and error parsing into `api/e…",
+          "files": [
+            "web/src/api/errors.ts",
+            "web/src/api/index.ts"
+          ],
+          "units": 2
+        },
+        {
+          "name": "Add `Avatar` and `ProfileHeader` components; `ProfilePage` …",
+          "files": [
+            "web/src/components/Avatar.tsx",
+            "web/src/components/ProfileHeader.tsx",
+            "web/src/components/UserCard.tsx"
+          ],
+          "units": 3
+        },
+        {
+          "name": "Add `Avatar` and `ProfileHeader` components; `ProfilePage` …",
+          "files": [
+            "web/src/components/ProfileHeader.tsx",
+            "web/src/components/ProfilePage.tsx",
+            "web/src/hooks/useUser.ts"
+          ],
+          "units": 3
+        },
+        {
+          "name": "Move `ApiError`, auth headers and error parsing into `api/e…",
+          "files": [
+            "web/src/__tests__/client.test.ts",
+            "web/src/api/client.ts"
+          ],
+          "units": 2
+        },
+        {
+          "name": "client.ts (+1)",
+          "files": [
+            "web/src/api/client.ts"
+          ],
+          "units": 2
+        },
+        {
+          "name": "Move `ApiError`, auth headers and error parsing into `api/e…",
+          "files": [
+            "web/src/api/client.ts",
+            "web/src/api/errors.ts"
+          ],
+          "units": 2
+        },
+        {
+          "name": "UserCard (+1)",
+          "files": [
+            "web/src/components/UserCard.tsx"
+          ],
+          "units": 2
+        }
+      ]
+    },
+    "questions": {
+      "separate_pr": {
+        "type": "boolean",
+        "instructions": "Should the changes to this file be split into their own pull request, given the other change groups listed?"
+      }
+    }
+  },
+  "response": {
+    "model": "typesafe-ai/jev",
+    "answers": {
+      "separate_pr": {
+        "type": "boolean",
+        "probability": 0.33
+      }
+    },
+    "usage": {
+      "inputTokens": 1682,
+      "outputTokens": 23
+    },
+    "providerMetadata": {
+      "gateway": {
+        "cost": "0.000070644",
+        "generationId": "gen_01M4SH1AETXR5P4S1A2QQQ3ZWK"
+      }
+    }
+  }
+}

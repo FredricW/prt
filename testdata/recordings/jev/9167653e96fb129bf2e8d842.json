@@ -1,0 +1,65 @@
+{
+  "key": "9167653e96fb129bf2e8d842",
+  "request": {
+    "model": "typesafe-ai/jev",
+    "state": {
+      "pr": {
+        "title": "refactor(web): rename fetchJSON to requestJSON"
+      },
+      "group": {
+        "units": [
+          {
+            "path": "web/src/api/teams.ts",
+            "change": "modified",
+            "diff": "-import { fetchJSON, type User } from \"./client\";\n+import { requestJSON, type User } from \"./client\";\n \n export interface Team {\n   id: string;"
+          },
+          {
+            "path": "web/src/components/TeamPanel.tsx",
+            "change": "modified",
+            "diff": " import { useEffect, useState } from \"react\";\n \n-import { fetchJSON, type User } from \"../api/client\";\n+import { requestJSON, type User } from \"../api/client\";\n import { type Team } from \"../api/teams\";\n import { UserCard } from \"./UserCard\";\n "
+          },
+          {
+            "path": "web/src/hooks/useFetch.ts",
+            "change": "modified",
+            "diff": " import { useEffect, useState } from \"react\";\n \n-import { fetchJSON, type RequestOptions } from \"../api/client\";\n+import { requestJSON, type RequestOptions } from \"../api/client\";\n \n export interface FetchState\u003cT\u003e {\n   data: T | null;"
+          }
+        ]
+      }
+    },
+    "questions": {
+      "name_bullet": {
+        "type": "choice",
+        "instructions": "Which bullet of the pull request description does this group of changes implement?",
+        "criteria": {
+          "b1": "Rename `fetchJSON` to `requestJSON` in `api/client.ts`",
+          "b2": "Update every import and call site (19 files)",
+          "none": "implements none of the listed bullets"
+        }
+      }
+    }
+  },
+  "response": {
+    "model": "typesafe-ai/jev",
+    "answers": {
+      "name_bullet": {
+        "type": "choice",
+        "choice": "b1",
+        "probabilities": {
+          "b1": 0.43,
+          "b2": 0.41,
+          "none": 0.16
+        }
+      }
+    },
+    "usage": {
+      "inputTokens": 670,
+      "outputTokens": 43
+    },
+    "providerMetadata": {
+      "gateway": {
+        "cost": "0.00002814",
+        "generationId": "gen_01M4SH1PM404JRWZYAWGTKV5NB"
+      }
+    }
+  }
+}

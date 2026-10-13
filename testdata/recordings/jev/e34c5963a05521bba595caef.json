@@ -1,0 +1,112 @@
+{
+  "key": "e34c5963a05521bba595caef",
+  "request": {
+    "model": "typesafe-ai/jev",
+    "state": {
+      "pr": {
+        "title": "feat(web): cached user profiles with team and avatar"
+      },
+      "group": {
+        "units": [
+          {
+            "path": "web/src/hooks/useProfileCache.ts",
+            "symbol": "clearProfileCache",
+            "signature": "export function clearProfileCache(): void",
+            "change": "added",
+            "diff": "+export function clearProfileCache(): void {\n+  cache.clear();\n+  inflight.clear();\n+}\n+"
+          },
+          {
+            "path": "web/src/hooks/useProfileCache.ts",
+            "symbol": "primeProfile",
+            "signature": "export function primeProfile(user: User, now = Date.now()): void",
+            "change": "added",
+            "diff": "+export function primeProfile(user: User, now = Date.now()): void {\n+  cache.set(user.id, { user, fetchedAt: now });\n+}\n+"
+          },
+          {
+            "path": "web/src/hooks/useProfileCache.ts",
+            "symbol": "isFresh",
+            "signature": "function isFresh(entry: Entry | undefined, now: number): entry is Entry",
+            "change": "added",
+            "diff": "+function isFresh(entry: Entry | undefined, now: number): entry is Entry {\n+  return entry !== undefined \u0026\u0026 now - entry.fetchedAt \u003c PROFILE_TTL_MS;\n+}\n+"
+          },
+          {
+            "path": "web/src/hooks/useProfileCache.ts",
+            "symbol": "loadProfile",
+            "signature": "export async function loadProfile(id: string, fresh = false): Promise\u003cUser\u003e",
+            "change": "added",
+            "diff": "+// loadProfile returns the cached profile when fresh, otherwise fetches it,\n+// sharing one request between concurrent callers for the same id.\n+export async function loadProfile(id: string, fresh = false): Promise\u003cUser\u003e {\n+  const now = Date.now();\n+  const hit = cache.get(id);\n+  if (!fresh \u0026\u0026 isFresh(hit, now)) {\n+    return hit.user;\n+  }\n+  const pending = inflight.get(id);\n+  if (pending) {\n+    return pending;\n+  }\n+  const req = getUser(id, { include: [\"team\", \"avatar\"], fresh })\n+    .then((user) =\u003e {\n+      cache.set(id, { user, fetchedAt: Date.now() });\n+      return user;\n+    })\n+    .finally(() =\u003e inflight.delete(id));\n+  inflight.set(id, req);\n+  return req;\n+}\n+"
+          },
+          {
+            "path": "web/src/hooks/useProfileCache.ts",
+            "symbol": "useProfileCache",
+            "signature": "export function useProfileCache(id: string): ProfileCacheState",
+            "change": "added",
+            "diff": "+// useProfileCache serves the cached profile immediately (stale-while-\n+// revalidate) and refreshes it in the background when it is older than the TTL.\n+export function useProfileCache(id: string): ProfileCacheState {\n+  const cached = cache.get(id);\n+  const [profile, setProfile] = useState\u003cUser | null\u003e(cached?.user ?? null);\n+  const [loading, setLoading] = useState(!cached);\n+  const [stale, setStale] = useState(cached !== undefined \u0026\u0026 !isFresh(cached, Date.now()));\n+  const [nonce, setNonce] = useState(0);\n+\n+  useEffect(() =\u003e {\n+    setLoading(true);\n+    loadProfile(id, nonce \u003e 0)\n+      .then((user) =\u003e {\n+        setProfile(user);\n+        setStale(false);\n+        setLoading(false);\n+      })\n+      .catch(() =\u003e {});\n+  }, [id, nonce]);\n+\n+  const refresh = useCallback(() =\u003e setNonce((n) =\u003e n + 1), []);\n+\n+  return { profile, loading, stale, refresh };\n+}"
+          },
+          {
+            "path": "web/src/components/ProfilePage.tsx",
+            "symbol": "ProfilePage",
+            "signature": "export function ProfilePage({ userId }: Props)",
+            "change": "modified",
+            "diff": " export function ProfilePage({ userId }: Props) {\n-  const { user, error } = useUser(userId);\n+  const { profile, loading, stale, refresh } = useProfileCache(userId);\n   const [name, setName] = useState(\"\");\n   const [saving, setSaving] = useState(false);\n+  const [saveError, setSaveError] = useState\u003cstring | null\u003e(null);\n \n-  if (error) {\n-    return \u003cp role=\"alert\"\u003eCould not load profile: {error.message}\u003c/p\u003e;\n-  }\n-  if (!user) {\n-    return \u003cp\u003eLoading…\u003c/p\u003e;\n+  if (!profile) {\n+    return \u003cp aria-busy={loading}\u003eLoading…\u003c/p\u003e;\n   }\n \n   const save = async () =\u003e {\n     setSaving(true);\n+    setSaveError(null);\n     try {\n-      await updateUser(user.id, { displayName: name || user.displayName });\n+      const updated = await updateUser(profile.id, { displayName: name || profile.displayName });\n+      primeProfile({ ...profile, ...updated });\n+      refresh();\n+    } catch (err) {\n+      setSaveError(err instanceof Error ? err.message : String(err));\n     } finally {\n       setSaving(false);\n     }"
+          },
+          {
+            "path": "web/src/components/ProfilePage.tsx",
+            "symbol": "ProfilePage",
+            "signature": "export function ProfilePage({ userId }: Props)",
+            "change": "modified",
+            "diff": " \n   return (\n     \u003cmain className=\"profile\"\u003e\n-      \u003ch1\u003e{user.displayName}\u003c/h1\u003e\n-      \u003cp className=\"muted\"\u003e\n-        {user.email} · member since {formatDate(user.createdAt)}\n-      \u003c/p\u003e\n+      \u003cProfileHeader user={profile} stale={stale} onRefresh={refresh} /\u003e\n       \u003clabel\u003e\n         Display name\n-        \u003cinput value={name} placeholder={user.displayName} onChange={(e) =\u003e setName(e.target.value)} /\u003e\n+        \u003cinput value={name} placeholder={profile.displayName} onChange={(e) =\u003e setName(e.target.value)} /\u003e\n       \u003c/label\u003e\n       \u003cbutton disabled={saving} onClick={save}\u003e\n         {saving ? \"Saving…\" : \"Save\"}\n       \u003c/button\u003e\n+      {saveError \u0026\u0026 \u003cp role=\"alert\"\u003eCould not save: {saveError}\u003c/p\u003e}\n     \u003c/main\u003e\n   );\n }"
+          },
+          {
+            "path": "web/src/__tests__/useProfileCache.test.ts",
+            "change": "added",
+            "diff": "+import { afterEach, beforeEach, describe, expect, it, vi } from \"vitest\";\n+\n+import * as client from \"../api/client\";\n+import { clearProfileCache, loadProfile, primeProfile, PROFILE_TTL_MS } from \"../hooks/useProfileCache\";\n+\n+const ada = {\n+  id: \"u1\",\n+  email: \"ada@example.com\",\n+  displayName: \"Ada\",\n+  teamId: null,\n+  createdAt: \"2025-03-01T12:00:00Z\",\n+} satisfies client.User;\n+\n+beforeEach(() =\u003e {\n+  clearProfileCache();\n+});\n+\n+afterEach(() =\u003e {\n+  vi.useRealTimers();\n+  vi.restoreAllMocks();\n+});\n+\n+describe(\"loadProfile\", () =\u003e {\n+  it(\"fetches once and serves later calls from cache\", async () =\u003e {\n+    const spy = vi.spyOn(client, \"getUser\").mockResolvedValue(ada);\n+    await loadProfile(\"u1\");\n+    await loadProfile(\"u1\");\n+    expect(spy).toHaveBeenCalledTimes(1);\n+    expect(spy).toHaveBeenCalledWith(\"u1\", { include: [\"team\", \"avatar\"], fresh: false });\n+  });\n+\n+  it(\"shares one request between concurrent callers\", async () =\u003e {\n+    const spy = vi.spyOn(client, \"getUser\").mockResolvedValue(ada);\n+    const [a, b] = await Promise.all([loadProfile(\"u1\"), loadProfile(\"u1\")]);\n+    expect(a).toBe(b);\n+    expect(spy).toHaveBeenCalledTimes(1);\n+  });\n+\n+  it(\"refetches after the TTL\", async () =\u003e {\n+    vi.useFakeTimers();\n+    vi.setSystemTime(0);\n+    primeProfile(ada, 0);\n+    const spy = vi.spyOn(client, \"getUser\").mockResolvedValue({ ...ada, displayName: \"Ada L.\" });\n+    vi.setSystemTime(PROFILE_TTL_MS + 1);\n+    const user = await loadProfile(\"u1\");\n+    expect(user.displayName).toBe(\"Ada L.\");\n+    expect(spy).toHaveBeenCalledTimes(1);\n+  });\n+\n+  it(\"bypasses the cache when fresh is set\", async () =\u003e {\n+    primeProfile(ada);\n+    const spy = vi.spyOn(client, \"getUser\").mockResolvedValue(ada);\n+    await loadProfile(\"u1\", true);\n+    expect(spy).toHaveBeenCalledWith(\"u1\", { include: [\"team\", \"avatar\"], fresh: true });\n+  });\n+});"
+          }
+        ]
+      }
+    },
+    "questions": {
+      "name_bullet": {
+        "type": "choice",
+        "instructions": "Which bullet of the pull request description does this group of changes implement?",
+        "criteria": {
+          "b1": "`getUser` takes a required `GetUserOptions` argument (`include`, `fresh`, `signal`); all callers updated",
+          "b2": "Move `ApiError`, auth headers and error parsing into `api/errors.ts` and add `isNotFound`",
+          "b3": "Add `useProfileCache`: stale-while-revalidate cache with a 5 minute TTL and request de-duplication",
+          "b4": "Add `Avatar` and `ProfileHeader` components; `ProfilePage` uses the cache and shows save errors",
+          "b5": "Invalidate the profile cache on logout",
+          "b6": "server: return `avatarUrl` when `include=avatar` is requested",
+          "none": "implements none of the listed bullets"
+        }
+      }
+    }
+  },
+  "response": {
+    "model": "typesafe-ai/jev",
+    "answers": {
+      "name_bullet": {
+        "type": "choice",
+        "choice": "b3",
+        "probabilities": {
+          "b1": 0,
+          "b2": 0,
+          "b3": 0.9,
+          "b4": 0.09,
+          "b5": 0,
+          "b6": 0,
+          "none": 0.01
+        }
+      }
+    },
+    "usage": {
+      "inputTokens": 2790,
+      "outputTokens": 75
+    },
+    "providerMetadata": {
+      "gateway": {
+        "cost": "0.00011718",
+        "generationId": "gen_01M4SH19PRN52F8VGAS99S0PVV"
+      }
+    }
+  }
+}

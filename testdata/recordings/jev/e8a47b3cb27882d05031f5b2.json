@@ -1,0 +1,61 @@
+{
+  "key": "e8a47b3cb27882d05031f5b2",
+  "request": {
+    "model": "typesafe-ai/jev",
+    "state": {
+      "a": {
+        "path": "web/src/api/client.ts",
+        "symbol": "getCurrentUser",
+        "signature": "export async function getCurrentUser(): Promise\u003cUser\u003e",
+        "change": "modified",
+        "diff": " \n export async function getCurrentUser(): Promise\u003cUser\u003e {\n-  return fetchJSON\u003cUser\u003e(\"/users/me\");\n+  return requestJSON\u003cUser\u003e(\"/users/me\");\n }"
+      },
+      "b": {
+        "path": "web/src/api/teams.ts",
+        "symbol": "teamMembers",
+        "signature": "export async function teamMembers(teamId: string): Promise\u003cUser[]\u003e",
+        "change": "modified",
+        "diff": " \n export async function teamMembers(teamId: string): Promise\u003cUser[]\u003e {\n-  return fetchJSON\u003cUser[]\u003e(`/teams/${encodeURIComponent(teamId)}/members`);\n+  return requestJSON\u003cUser[]\u003e(`/teams/${encodeURIComponent(teamId)}/members`);\n }"
+      }
+    },
+    "questions": {
+      "relation": {
+        "type": "choice",
+        "instructions": "How are these two changes related?",
+        "criteria": {
+          "caller update": "one change updates a caller or user of what the other change defines or changes",
+          "same intent": "both changes serve the same purpose or feature",
+          "same pattern": "both apply the same mechanical edit (rename, signature tweak, repeated pattern)",
+          "test for": "one change is a test that exercises the other change",
+          "unrelated": "the changes have nothing to do with each other"
+        }
+      }
+    }
+  },
+  "response": {
+    "model": "typesafe-ai/jev",
+    "answers": {
+      "relation": {
+        "type": "choice",
+        "choice": "same pattern",
+        "probabilities": {
+          "caller update": 0,
+          "same intent": 0,
+          "same pattern": 1,
+          "test for": 0,
+          "unrelated": 0
+        }
+      }
+    },
+    "usage": {
+      "inputTokens": 643,
+      "outputTokens": 59
+    },
+    "providerMetadata": {
+      "gateway": {
+        "cost": "0.000027006",
+        "generationId": "gen_01M4SH1KA7452AJJ926R6VTJ3R"
+      }
+    }
+  }
+}

@@ -1,0 +1,59 @@
+{
+  "key": "0b130bd382a48a6d1a99710f",
+  "request": {
+    "model": "typesafe-ai/jev",
+    "state": {
+      "a": {
+        "path": "web/src/components/Avatar.tsx",
+        "change": "added",
+        "diff": "+import { useState } from \"react\";\n+\n+import { initials } from \"../utils/format\";\n+\n+interface Props {\n+  name: string;\n+  url?: string | null;\n+  size?: number;\n+}\n+"
+      },
+      "b": {
+        "path": "web/src/components/Avatar.tsx",
+        "symbol": "Avatar",
+        "signature": "export function Avatar({ name, url, size = 32 }: Props)",
+        "change": "added",
+        "diff": "+// Avatar shows the user's picture, falling back to initials when there is\n+// none or it fails to load.\n+export function Avatar({ name, url, size = 32 }: Props) {\n+  const [broken, setBroken] = useState(false);\n+  const style = { width: size, height: size };\n+\n+  if (!url || broken) {\n+    return (\n+      \u003cspan className=\"avatar\" style={style} aria-label={name}\u003e\n+        {initials(name)}\n+      \u003c/span\u003e\n+    );\n+  }\n+  return \u003cimg className=\"avatar\" style={style} src={url} alt={name} onError={() =\u003e setBroken(true)} /\u003e;\n+}"
+      }
+    },
+    "questions": {
+      "relation": {
+        "type": "choice",
+        "instructions": "How are these two changes related?",
+        "criteria": {
+          "caller update": "one change updates a caller or user of what the other change defines or changes",
+          "same intent": "both changes serve the same purpose or feature",
+          "same pattern": "both apply the same mechanical edit (rename, signature tweak, repeated pattern)",
+          "test for": "one change is a test that exercises the other change",
+          "unrelated": "the changes have nothing to do with each other"
+        }
+      }
+    }
+  },
+  "response": {
+    "model": "typesafe-ai/jev",
+    "answers": {
+      "relation": {
+        "type": "choice",
+        "choice": "same intent",
+        "probabilities": {
+          "caller update": 0,
+          "same intent": 1,
+          "same pattern": 0,
+          "test for": 0,
+          "unrelated": 0
+        }
+      }
+    },
+    "usage": {
+      "inputTokens": 718,
+      "outputTokens": 59
+    },
+    "providerMetadata": {
+      "gateway": {
+        "cost": "0.000030156",
+        "generationId": "gen_01M4SH16ESYB872ZPQM39M4DVN"
+      }
+    }
+  }
+}

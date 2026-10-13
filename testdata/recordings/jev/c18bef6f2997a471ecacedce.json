@@ -1,0 +1,75 @@
+{
+  "key": "c18bef6f2997a471ecacedce",
+  "request": {
+    "model": "typesafe-ai/jev",
+    "state": {
+      "pr": {
+        "title": "feat(web): cached user profiles with team and avatar"
+      },
+      "group": {
+        "units": [
+          {
+            "path": "web/src/components/Avatar.tsx",
+            "symbol": "Avatar",
+            "signature": "export function Avatar({ name, url, size = 32 }: Props)",
+            "change": "added",
+            "diff": "+// Avatar shows the user's picture, falling back to initials when there is\n+// none or it fails to load.\n+export function Avatar({ name, url, size = 32 }: Props) {\n+  const [broken, setBroken] = useState(false);\n+  const style = { width: size, height: size };\n+\n+  if (!url || broken) {\n+    return (\n+      \u003cspan className=\"avatar\" style={style} aria-label={name}\u003e\n+        {initials(name)}\n+      \u003c/span\u003e\n+    );\n+  }\n+  return \u003cimg className=\"avatar\" style={style} src={url} alt={name} onError={() =\u003e setBroken(true)} /\u003e;\n+}"
+          },
+          {
+            "path": "web/src/components/ProfileHeader.tsx",
+            "change": "added",
+            "diff": "+import { type User } from \"../api/client\";\n+import { formatDate } from \"../utils/format\";\n+import { Avatar } from \"./Avatar\";\n+\n+interface Props {\n+  user: User;\n+  stale: boolean;\n+  onRefresh: () =\u003e void;\n+}\n+"
+          },
+          {
+            "path": "web/src/components/UserCard.tsx",
+            "change": "modified",
+            "diff": " import { useEffect, useState } from \"react\";\n \n import { getUser, type User } from \"../api/client\";\n-import { formatDate, initials } from \"../utils/format\";\n+import { formatDate } from \"../utils/format\";\n+import { Avatar } from \"./Avatar\";\n \n interface Props {\n   userId: string;"
+          }
+        ]
+      }
+    },
+    "questions": {
+      "name_bullet": {
+        "type": "choice",
+        "instructions": "Which bullet of the pull request description does this group of changes implement?",
+        "criteria": {
+          "b1": "`getUser` takes a required `GetUserOptions` argument (`include`, `fresh`, `signal`); all callers updated",
+          "b2": "Move `ApiError`, auth headers and error parsing into `api/errors.ts` and add `isNotFound`",
+          "b3": "Add `useProfileCache`: stale-while-revalidate cache with a 5 minute TTL and request de-duplication",
+          "b4": "Add `Avatar` and `ProfileHeader` components; `ProfilePage` uses the cache and shows save errors",
+          "b5": "Invalidate the profile cache on logout",
+          "b6": "server: return `avatarUrl` when `include=avatar` is requested",
+          "none": "implements none of the listed bullets"
+        }
+      }
+    }
+  },
+  "response": {
+    "model": "typesafe-ai/jev",
+    "answers": {
+      "name_bullet": {
+        "type": "choice",
+        "choice": "b4",
+        "probabilities": {
+          "b1": 0,
+          "b2": 0,
+          "b3": 0.01,
+          "b4": 0.97,
+          "b5": 0,
+          "b6": 0,
+          "none": 0.02
+        }
+      }
+    },
+    "usage": {
+      "inputTokens": 979,
+      "outputTokens": 75
+    },
+    "providerMetadata": {
+      "gateway": {
+        "cost": "0.000041118",
+        "generationId": "gen_01M4SH19CZDJP2TMC758QD2S97"
+      }
+    }
+  }
+}

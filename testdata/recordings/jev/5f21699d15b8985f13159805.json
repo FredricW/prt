@@ -1,0 +1,97 @@
+{
+  "key": "5f21699d15b8985f13159805",
+  "request": {
+    "model": "typesafe-ai/jev",
+    "state": {
+      "pr": {
+        "title": "chore(billing): remove legacy finance export and dead helpers"
+      },
+      "group": {
+        "units": [
+          {
+            "path": "server/internal/billing/legacy.go",
+            "symbol": "toLegacy",
+            "signature": "func toLegacy(inv Invoice) LegacyExport",
+            "change": "deleted",
+            "diff": "-// toLegacy converts an Invoice to the legacy export row.\n-func toLegacy(inv Invoice) LegacyExport {\n-\treturn LegacyExport{\n-\t\tNumber: inv.Number,\n-\t\tOrgID:  inv.OrgID,\n-\t\tAmount: fmt.Sprintf(\"%.2f\", float64(inv.AmountCents)/100),\n-\t\tIssued: inv.IssuedAt.Format(\"02.01.2006\"),\n-\t\tIsPaid: inv.Status == StatusPaid,\n-\t}\n-}\n-"
+          },
+          {
+            "path": "server/internal/billing/invoice.go",
+            "symbol": "renumberLegacy",
+            "signature": "func renumberLegacy(invs []Invoice) []Invoice",
+            "change": "deleted",
+            "diff": " \treturn inv, s.ledger.Save(inv)\n }\n \n-// renumberLegacy rewrites pre-2024 invoice numbers to the YYYY-NNNN scheme.\n-// Deprecated: the migration ran in March 2024; nothing calls this any more.\n-func renumberLegacy(invs []Invoice) []Invoice {\n-\tout := make([]Invoice, len(invs))\n-\tfor i, inv := range invs {\n-\t\tif inv.IssuedAt.Year() \u003c 2024 {\n-\t\t\tinv.Number = fmt.Sprintf(\"%d-%04d\", inv.IssuedAt.Year(), i+1)\n-\t\t}\n-\t\tout[i] = inv\n-\t}\n-\treturn out\n-}\n-\n // Routes mounts the billing endpoints.\n func Routes(s *Service) http.Handler {\n \tr := chi.NewRouter()"
+          },
+          {
+            "path": "server/internal/billing/legacy.go",
+            "change": "deleted",
+            "diff": "-package billing\n-\n-import (\n-\t\"encoding/csv\"\n-\t\"fmt\"\n-\t\"io\"\n-\t\"strconv\"\n-\t\"time\"\n-)\n-\n-// LegacyExport is the CSV row format the old finance system imported.\n-//\n-// Deprecated: finance moved to the ledger API in 2024; no route serves this.\n-type LegacyExport struct {\n-\tNumber  string\n-\tOrgID   string\n-\tAmount  string\n-\tIssued  string\n-\tIsPaid  bool\n-\tComment string\n-}\n-"
+          },
+          {
+            "path": "server/internal/billing/legacy.go",
+            "symbol": "WriteLegacyCSV",
+            "signature": "func WriteLegacyCSV(w io.Writer, invs []Invoice) error",
+            "change": "deleted",
+            "diff": "-// WriteLegacyCSV writes invoices in the legacy finance CSV format.\n-//\n-// Deprecated: see LegacyExport.\n-func WriteLegacyCSV(w io.Writer, invs []Invoice) error {\n-\tcw := csv.NewWriter(w)\n-\tcw.Comma = ';'\n-\tif err := cw.Write([]string{\"nr\", \"org\", \"amount\", \"issued\", \"paid\", \"comment\"}); err != nil {\n-\t\treturn err\n-\t}\n-\tfor _, inv := range invs {\n-\t\trow := toLegacy(inv)\n-\t\trec := []string{row.Number, row.OrgID, row.Amount, row.Issued, strconv.FormatBool(row.IsPaid), row.Comment}\n-\t\tif err := cw.Write(rec); err != nil {\n-\t\t\treturn fmt.Errorf(\"legacy csv %s: %w\", inv.Number, err)\n-\t\t}\n-\t}\n-\tcw.Flush()\n-\treturn cw.Error()\n-}\n-"
+          },
+          {
+            "path": "server/internal/billing/legacy.go",
+            "symbol": "parseLegacyDate",
+            "signature": "func parseLegacyDate(s string) (time.Time, error)",
+            "change": "deleted",
+            "diff": "-// parseLegacyDate parses the dd.mm.yyyy dates the old system produced.\n-func parseLegacyDate(s string) (time.Time, error) {\n-\treturn time.Parse(\"02.01.2006\", s)\n-}"
+          },
+          {
+            "path": "server/internal/billing/tax.go",
+            "change": "deleted",
+            "diff": " package billing\n \n import (\n-\t\"math\"\n \t\"strings\"\n )\n "
+          },
+          {
+            "path": "server/internal/billing/tax.go",
+            "symbol": "legacyTaxCents",
+            "signature": "func legacyTaxCents(country string, netCents int64) int64",
+            "change": "deleted",
+            "diff": " \t}\n \treturn (netCents*bp + 5000) / 10000\n }\n-\n-// legacyTaxCents is the float-based calculation used before basis points.\n-// Deprecated: kept for the 2023 reconciliation, which has been closed.\n-func legacyTaxCents(country string, netCents int64) int64 {\n-\trate := float64(vatRates[strings.ToUpper(country)]) / 10000\n-\treturn int64(math.Round(float64(netCents) * rate))\n-}"
+          }
+        ]
+      }
+    },
+    "questions": {
+      "name_bullet": {
+        "type": "choice",
+        "instructions": "Which bullet of the pull request description does this group of changes implement?",
+        "criteria": {
+          "b1": "Delete `server/internal/billing/legacy.go` (`LegacyExport`, `WriteLegacyCSV`, `parseLegacyDate`)",
+          "b2": "Remove `renumberLegacy` from `invoice.go`",
+          "b3": "Remove `legacyTaxCents` and the now-unused `math` import from `tax.go`",
+          "none": "implements none of the listed bullets"
+        }
+      }
+    }
+  },
+  "response": {
+    "model": "typesafe-ai/jev",
+    "answers": {
+      "name_bullet": {
+        "type": "choice",
+        "choice": "b1",
+        "probabilities": {
+          "b1": 0.69,
+          "b2": 0.01,
+          "b3": 0.02,
+          "none": 0.28
+        }
+      }
+    },
+    "usage": {
+      "inputTokens": 1682,
+      "outputTokens": 51
+    },
+    "providerMetadata": {
+      "gateway": {
+        "cost": "0.000070644",
+        "generationId": "gen_01M4SH1TA7H7YDTW32PWPPF5J1"
+      }
+    }
+  }
+}

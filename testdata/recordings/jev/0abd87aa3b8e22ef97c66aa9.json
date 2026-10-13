@@ -1,0 +1,61 @@
+{
+  "key": "0abd87aa3b8e22ef97c66aa9",
+  "request": {
+    "model": "typesafe-ai/jev",
+    "state": {
+      "a": {
+        "path": "web/src/api/errors.ts",
+        "symbol": "isNotFound",
+        "signature": "export function isNotFound(err: unknown): boolean",
+        "change": "added",
+        "diff": "+export function isNotFound(err: unknown): boolean {\n+  return err instanceof ApiError \u0026\u0026 err.status === 404;\n+}"
+      },
+      "b": {
+        "path": "web/src/api/errors.ts",
+        "symbol": "readError",
+        "signature": "export async function readError(res: Response): Promise\u003cApiError\u003e",
+        "change": "added",
+        "diff": "+// readError turns a non-2xx response into an ApiError, using the JSON error\n+// payload when the server sent one.\n+export async function readError(res: Response): Promise\u003cApiError\u003e {\n+  let code = \"unknown\";\n+  let message = res.statusText;\n+  try {\n+    const payload = (await res.json()) as { code?: string; message?: string };\n+    code = payload.code ?? code;\n+    message = payload.message ?? message;\n+  } catch {\n+    // body was not JSON; keep the status text\n+  }\n+  return new ApiError(res.status, code, message);\n+}\n+"
+      }
+    },
+    "questions": {
+      "relation": {
+        "type": "choice",
+        "instructions": "How are these two changes related?",
+        "criteria": {
+          "caller update": "one change updates a caller or user of what the other change defines or changes",
+          "same intent": "both changes serve the same purpose or feature",
+          "same pattern": "both apply the same mechanical edit (rename, signature tweak, repeated pattern)",
+          "test for": "one change is a test that exercises the other change",
+          "unrelated": "the changes have nothing to do with each other"
+        }
+      }
+    }
+  },
+  "response": {
+    "model": "typesafe-ai/jev",
+    "answers": {
+      "relation": {
+        "type": "choice",
+        "choice": "same intent",
+        "probabilities": {
+          "caller update": 0.07,
+          "same intent": 0.91,
+          "same pattern": 0,
+          "test for": 0.01,
+          "unrelated": 0.01
+        }
+      }
+    },
+    "usage": {
+      "inputTokens": 710,
+      "outputTokens": 59
+    },
+    "providerMetadata": {
+      "gateway": {
+        "cost": "0.00002982",
+        "generationId": "gen_01M4SH18AV017V6Q5C169HPHEJ"
+      }
+    }
+  }
+}

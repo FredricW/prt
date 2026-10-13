@@ -1,0 +1,57 @@
+{
+  "key": "611b6c860964614d393aa628",
+  "request": {
+    "model": "typesafe-ai/jev",
+    "state": {
+      "a": {
+        "path": "web/package-lock.json",
+        "change": "modified",
+        "diff": "       }\n     },\n     \"node_modules/react-dom\": {\n-      \"version\": \"18.2.0\",\n-      \"resolved\": \"https://registry.npmjs.org/react-dom/-/react-dom-18.2.0.tgz\",\n-      \"integrity\": \"sha512-6IMTriUmvsjHUjNtEDudZfuDQUoWXVxKHhlEGSk81n4YFS+r/Kl99wXiwlVXtPBtJenozv2P+hxDsw9eA7Xo6g==\",\n+      \"version\": \"18.3.1\",\n+      \"resolved\": \"https://registry.npmjs.org/react-dom/-/react-dom-18.3.1.tgz\",\n+      \"integrity\": \"sha512-5m4nQKp+rZRb09LNH59GM4BxTh9251/ylbKIbpe7TpGxfJ+9kv6BLkLBXIjjspbgbnIBNqlI23tRnTWT0snUIw==\",\n       \"dependencies\": {\n         \"loose-envify\": \"^1.1.0\",\n-        \"scheduler\": \"^0.23.0\"\n+        \"scheduler\": \"^0.23.2\"\n       },\n       \"peerDependencies\": {\n-        \"react\": \"^18.2.0\"\n+        \"react\": \"^18.3.1\"\n       }\n     },\n     \"node_modules/scheduler\": {\n-      \"version\": \"0.23.0\",\n-      \"resolved\": \"https://registry.npmjs.org/scheduler/-/scheduler-0.23.0.tgz\",\n-      \"integrity\": \"sha512-CtuThmgHNg7zIZWAXi3AsyIzA3n4xx7aNyjwC2VJldO2LMVDhFK+63xGqq6CsJH4rTAt6/M+N4GhZiDYPx9eUw==\",\n+      \"version\": \"0.23.2\",\n+      \"resolved\": \"https://registry.npmjs.org/scheduler/-/scheduler-0.23.2.tgz\",\n+      \"integrity\": \"sha512-UOShsPwz7NrMUqhR6t0hWjFduvOzbtv7toDH1/hIrfRNIDBnnBWd0CwJTGvTpngVlmwGCdP9/Zl/tVrDqcuYzQ==\",\n       \"dependencies\": {\n         \"loose-envify\": \"^1.1.0\"\n       }\n     },\n     \"node_modules/zod\": {\n-      \"version\": \"3.22.4\",\n-      \"resolved\": \"https://registry.npmjs.org/zod/-/zod-3.22.4.tgz\",\n-      \"integrity\": \"sha512-iC+8Io04lddc+mVqQ9AZ7OQ2MrUKGN+oIQyq1vemgt46jwCwLfhq7/pwnBnNXXXZb8VTVLKwp9EDkx+ryxIWmg==\",\n+      \"version\": \"3.23.8\",\n+      \"resolved\": \"https://registry.npmjs.org/zod/-/zod-3.23.8.tgz\",\n+      \"integrity\": \"sha512-XBx9AXhXktjUqnepgTiE5flcKIYWi/rme0Eaj+5Y0lftuGBq+jyRu/md4WnuxqgP1ubdpNCsYEYPxrzVHD8d6g==\",\n       \"funding\": {\n         \"url\": \"https://github.com/sponsors/colinhacks\"\n       }"
+      },
+      "b": {
+        "path": "server/go.sum",
+        "change": "modified",
+        "diff": "-github.com/go-chi/chi/v5 v5.0.10 h1:rLz5avzKpjqxrYwXNfmjkrYYXOyLJd37pz53UFHC6vk=\n-github.com/go-chi/chi/v5 v5.0.10/go.mod h1:DslCQbL2OYiznFReuXYUmQ2hGd1aDpCnlMNITLSKoi8=\n+github.com/go-chi/chi/v5 v5.0.12 h1:9euLV5sTrTNTRUU9POmDUvfxyj6LAABLUcEWO+JJb4s=\n+github.com/go-chi/chi/v5 v5.0.12/go.mod h1:DslCQbL2OYiznFReuXYUmQ2hGd1aDpCnlMNITLSKoi8=\n golang.org/x/sync v0.7.0 h1:YsImfSBoP9QPYL0xyKJPq0gcaJdG3rInoqxTWbfQu9M=\n golang.org/x/sync v0.7.0/go.mod h1:Czt+wKu1gCyEFDUtn0jG5QVvpJ6rzVqr5aXyt9drQfk="
+      }
+    },
+    "questions": {
+      "relation": {
+        "type": "choice",
+        "instructions": "How are these two changes related?",
+        "criteria": {
+          "caller update": "one change updates a caller or user of what the other change defines or changes",
+          "same intent": "both changes serve the same purpose or feature",
+          "same pattern": "both apply the same mechanical edit (rename, signature tweak, repeated pattern)",
+          "test for": "one change is a test that exercises the other change",
+          "unrelated": "the changes have nothing to do with each other"
+        }
+      }
+    }
+  },
+  "response": {
+    "model": "typesafe-ai/jev",
+    "answers": {
+      "relation": {
+        "type": "choice",
+        "choice": "unrelated",
+        "probabilities": {
+          "caller update": 0,
+          "same intent": 0.34,
+          "same pattern": 0.19,
+          "test for": 0,
+          "unrelated": 0.47
+        }
+      }
+    },
+    "usage": {
+      "inputTokens": 1630,
+      "outputTokens": 60
+    },
+    "providerMetadata": {
+      "gateway": {
+        "cost": "0.00006846",
+        "generationId": "gen_01M4SH1VCAB06H7C7Z3YGB99HP"
+      }
+    }
+  }
+}

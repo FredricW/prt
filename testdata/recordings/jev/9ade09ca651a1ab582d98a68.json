@@ -1,0 +1,59 @@
+{
+  "key": "9ade09ca651a1ab582d98a68",
+  "request": {
+    "model": "typesafe-ai/jev",
+    "state": {
+      "a": {
+        "path": "web/src/hooks/useProfileCache.ts",
+        "change": "added",
+        "diff": "+import { useCallback, useEffect, useState } from \"react\";\n+\n+import { getUser, type User } from \"../api/client\";\n+\n+// How long a cached profile is served without revalidating.\n+export const PROFILE_TTL_MS = 5 * 60 * 1000;\n+\n+interface Entry {\n+  user: User;\n+  fetchedAt: number;\n+}\n+\n+const cache = new Map\u003cstring, Entry\u003e();\n+const inflight = new Map\u003cstring, Promise\u003cUser\u003e\u003e();\n+"
+      },
+      "b": {
+        "path": "web/src/hooks/useProfileCache.ts",
+        "symbol": "useProfileCache",
+        "signature": "export function useProfileCache(id: string): ProfileCacheState",
+        "change": "added",
+        "diff": "+// useProfileCache serves the cached profile immediately (stale-while-\n+// revalidate) and refreshes it in the background when it is older than the TTL.\n+export function useProfileCache(id: string): ProfileCacheState {\n+  const cached = cache.get(id);\n+  const [profile, setProfile] = useState\u003cUser | null\u003e(cached?.user ?? null);\n+  const [loading, setLoading] = useState(!cached);\n+  const [stale, setStale] = useState(cached !== undefined \u0026\u0026 !isFresh(cached, Date.now()));\n+  const [nonce, setNonce] = useState(0);\n+\n+  useEffect(() =\u003e {\n+    setLoading(true);\n+    loadProfile(id, nonce \u003e 0)\n+      .then((user) =\u003e {\n+        setProfile(user);\n+        setStale(false);\n+        setLoading(false);\n+      })\n+      .catch(() =\u003e {});\n+  }, [id, nonce]);\n+\n+  const refresh = useCallback(() =\u003e setNonce((n) =\u003e n + 1), []);\n+\n+  return { profile, loading, stale, refresh };\n+}"
+      }
+    },
+    "questions": {
+      "relation": {
+        "type": "choice",
+        "instructions": "How are these two changes related?",
+        "criteria": {
+          "caller update": "one change updates a caller or user of what the other change defines or changes",
+          "same intent": "both changes serve the same purpose or feature",
+          "same pattern": "both apply the same mechanical edit (rename, signature tweak, repeated pattern)",
+          "test for": "one change is a test that exercises the other change",
+          "unrelated": "the changes have nothing to do with each other"
+        }
+      }
+    }
+  },
+  "response": {
+    "model": "typesafe-ai/jev",
+    "answers": {
+      "relation": {
+        "type": "choice",
+        "choice": "same intent",
+        "probabilities": {
+          "caller update": 0,
+          "same intent": 1,
+          "same pattern": 0,
+          "test for": 0,
+          "unrelated": 0
+        }
+      }
+    },
+    "usage": {
+      "inputTokens": 903,
+      "outputTokens": 59
+    },
+    "providerMetadata": {
+      "gateway": {
+        "cost": "0.000037926",
+        "generationId": "gen_01M4SH13KJM2H77245CP7DR9PY"
+      }
+    }
+  }
+}

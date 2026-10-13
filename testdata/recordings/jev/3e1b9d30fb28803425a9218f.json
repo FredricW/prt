@@ -1,0 +1,59 @@
+{
+  "key": "3e1b9d30fb28803425a9218f",
+  "request": {
+    "model": "typesafe-ai/jev",
+    "state": {
+      "a": {
+        "path": "web/src/api/settings.ts",
+        "symbol": "getSettings",
+        "signature": "export async function getSettings(): Promise\u003cSettings\u003e",
+        "change": "modified",
+        "diff": " }\n \n export async function getSettings(): Promise\u003cSettings\u003e {\n-  return fetchJSON\u003cSettings\u003e(\"/settings\");\n+  return requestJSON\u003cSettings\u003e(\"/settings\");\n }"
+      },
+      "b": {
+        "path": "web/src/api/settings.ts",
+        "change": "modified",
+        "diff": "-import { fetchJSON } from \"./client\";\n+import { requestJSON } from \"./client\";\n \n export interface Settings {\n   locale: string;"
+      }
+    },
+    "questions": {
+      "relation": {
+        "type": "choice",
+        "instructions": "How are these two changes related?",
+        "criteria": {
+          "caller update": "one change updates a caller or user of what the other change defines or changes",
+          "same intent": "both changes serve the same purpose or feature",
+          "same pattern": "both apply the same mechanical edit (rename, signature tweak, repeated pattern)",
+          "test for": "one change is a test that exercises the other change",
+          "unrelated": "the changes have nothing to do with each other"
+        }
+      }
+    }
+  },
+  "response": {
+    "model": "typesafe-ai/jev",
+    "answers": {
+      "relation": {
+        "type": "choice",
+        "choice": "caller update",
+        "probabilities": {
+          "caller update": 0.61,
+          "same intent": 0.12,
+          "same pattern": 0.27,
+          "test for": 0,
+          "unrelated": 0
+        }
+      }
+    },
+    "usage": {
+      "inputTokens": 573,
+      "outputTokens": 59
+    },
+    "providerMetadata": {
+      "gateway": {
+        "cost": "0.000024066",
+        "generationId": "gen_01M4SH1DV7PA9P7FC747VS2QXE"
+      }
+    }
+  }
+}

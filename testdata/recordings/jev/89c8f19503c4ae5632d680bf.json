@@ -1,0 +1,68 @@
+{
+  "key": "89c8f19503c4ae5632d680bf",
+  "request": {
+    "model": "typesafe-ai/jev",
+    "state": {
+      "pr": {
+        "title": "feat(web): cached user profiles with team and avatar"
+      },
+      "group": {
+        "units": [
+          {
+            "path": "web/src/api/client.ts",
+            "change": "deleted",
+            "diff": "   query?: Record\u003cstring, string | number | boolean | undefined\u003e;\n   body?: unknown;\n   signal?: AbortSignal;\n-}\n-"
+          },
+          {
+            "path": "web/src/api/client.ts",
+            "change": "added",
+            "diff": "+  headers?: Record\u003cstring, string\u003e;\n }\n \n export async function fetchJSON\u003cT\u003e(path: string, opts: RequestOptions = {}): Promise\u003cT\u003e {"
+          }
+        ]
+      }
+    },
+    "questions": {
+      "name_bullet": {
+        "type": "choice",
+        "instructions": "Which bullet of the pull request description does this group of changes implement?",
+        "criteria": {
+          "b1": "`getUser` takes a required `GetUserOptions` argument (`include`, `fresh`, `signal`); all callers updated",
+          "b2": "Move `ApiError`, auth headers and error parsing into `api/errors.ts` and add `isNotFound`",
+          "b3": "Add `useProfileCache`: stale-while-revalidate cache with a 5 minute TTL and request de-duplication",
+          "b4": "Add `Avatar` and `ProfileHeader` components; `ProfilePage` uses the cache and shows save errors",
+          "b5": "Invalidate the profile cache on logout",
+          "b6": "server: return `avatarUrl` when `include=avatar` is requested",
+          "none": "implements none of the listed bullets"
+        }
+      }
+    }
+  },
+  "response": {
+    "model": "typesafe-ai/jev",
+    "answers": {
+      "name_bullet": {
+        "type": "choice",
+        "choice": "none",
+        "probabilities": {
+          "b1": 0.01,
+          "b2": 0.01,
+          "b3": 0.02,
+          "b4": 0,
+          "b5": 0,
+          "b6": 0,
+          "none": 0.96
+        }
+      }
+    },
+    "usage": {
+      "inputTokens": 669,
+      "outputTokens": 74
+    },
+    "providerMetadata": {
+      "gateway": {
+        "cost": "0.000028098",
+        "generationId": "gen_01M4SH19DA4PKHX7CF2498X5C3"
+      }
+    }
+  }
+}

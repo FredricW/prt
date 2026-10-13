@@ -1,0 +1,168 @@
+{
+  "key": "850cd1d4559e1f284fcdc4bf",
+  "request": {
+    "model": "typesafe-ai/jev",
+    "state": {
+      "file": {
+        "path": "server/internal/users/users.go",
+        "units": [
+          {
+            "path": "server/internal/users/users.go",
+            "change": "added",
+            "diff": " \t\"encoding/json\"\n \t\"errors\"\n \t\"net/http\"\n+\t\"strings\"\n \t\"sync\"\n \t\"time\"\n "
+          },
+          {
+            "path": "server/internal/users/users.go",
+            "change": "added",
+            "diff": " \tEmail       string\n \tDisplayName string\n \tTeamID      string\n+\tAvatarURL   string\n \tCreatedAt   time.Time\n }\n "
+          },
+          {
+            "path": "server/internal/users/users.go",
+            "change": "added",
+            "diff": " \tEmail       string  `json:\"email\"`\n \tDisplayName string  `json:\"displayName\"`\n \tTeamID      *string `json:\"teamId\"`\n+\tAvatarURL   *string `json:\"avatarUrl,omitempty\"`\n \tCreatedAt   string  `json:\"createdAt\"`\n }\n "
+          },
+          {
+            "path": "server/internal/users/users.go",
+            "symbol": "toResponse",
+            "signature": "func toResponse(u User, includeAvatar bool) userResponse",
+            "change": "modified",
+            "diff": "-func toResponse(u User) userResponse {\n+func toResponse(u User, includeAvatar bool) userResponse {\n \tr := userResponse{\n \t\tID:          u.ID,\n \t\tEmail:       u.Email,"
+          },
+          {
+            "path": "server/internal/users/users.go",
+            "symbol": "toResponse",
+            "signature": "func toResponse(u User, includeAvatar bool) userResponse",
+            "change": "added",
+            "diff": " \t\tteam := u.TeamID\n \t\tr.TeamID = \u0026team\n \t}\n+\tif includeAvatar \u0026\u0026 u.AvatarURL != \"\" {\n+\t\tavatar := u.AvatarURL\n+\t\tr.AvatarURL = \u0026avatar\n+\t}\n \treturn r\n }\n "
+          },
+          {
+            "path": "server/internal/users/users.go",
+            "symbol": "Routes",
+            "signature": "func Routes(store Store) http.Handler",
+            "change": "modified",
+            "diff": " \t\t\twriteError(w, http.StatusInternalServerError, \"internal\", err.Error())\n \t\t\treturn\n \t\t}\n-\t\twriteJSON(w, http.StatusOK, toResponse(u))\n+\t\tincludeAvatar := strings.Contains(req.URL.Query().Get(\"include\"), \"avatar\")\n+\t\twriteJSON(w, http.StatusOK, toResponse(u, includeAvatar))\n \t})\n \treturn r\n }"
+          }
+        ]
+      },
+      "groups": [
+        {
+          "name": "server: return `avatarUrl` when `include=avatar` is request…",
+          "files": [
+            "server/internal/users/users.go"
+          ],
+          "units": 6
+        },
+        {
+          "name": "Move `ApiError`, auth headers and error parsing into `api/e…",
+          "files": [
+            "web/src/__tests__/client.test.ts",
+            "web/src/api/client.ts",
+            "web/src/api/errors.ts"
+          ],
+          "units": 7
+        },
+        {
+          "name": "Add `useProfileCache`: stale-while-revalidate cache with a …",
+          "files": [
+            "web/src/__tests__/useProfileCache.test.ts",
+            "web/src/components/ProfilePage.tsx",
+            "web/src/hooks/useProfileCache.ts"
+          ],
+          "units": 8
+        },
+        {
+          "name": "`getUser` takes a required `GetUserOptions` argument (`incl…",
+          "files": [
+            "web/src/api/client.ts",
+            "web/src/api/users.ts",
+            "web/src/components/UserList.tsx",
+            "web/src/hooks/useProfileCache.ts",
+            "web/src/hooks/useUser.ts"
+          ],
+          "units": 7
+        },
+        {
+          "name": "Move `ApiError`, auth headers and error parsing into `api/e…",
+          "files": [
+            "web/src/api/errors.ts",
+            "web/src/api/index.ts"
+          ],
+          "units": 2
+        },
+        {
+          "name": "Add `Avatar` and `ProfileHeader` components; `ProfilePage` …",
+          "files": [
+            "web/src/components/Avatar.tsx",
+            "web/src/components/ProfileHeader.tsx",
+            "web/src/components/UserCard.tsx"
+          ],
+          "units": 3
+        },
+        {
+          "name": "Add `Avatar` and `ProfileHeader` components; `ProfilePage` …",
+          "files": [
+            "web/src/components/ProfileHeader.tsx",
+            "web/src/components/ProfilePage.tsx",
+            "web/src/hooks/useUser.ts"
+          ],
+          "units": 3
+        },
+        {
+          "name": "Move `ApiError`, auth headers and error parsing into `api/e…",
+          "files": [
+            "web/src/__tests__/client.test.ts",
+            "web/src/api/client.ts"
+          ],
+          "units": 2
+        },
+        {
+          "name": "client.ts (+1)",
+          "files": [
+            "web/src/api/client.ts"
+          ],
+          "units": 2
+        },
+        {
+          "name": "Move `ApiError`, auth headers and error parsing into `api/e…",
+          "files": [
+            "web/src/api/client.ts",
+            "web/src/api/errors.ts"
+          ],
+          "units": 2
+        },
+        {
+          "name": "UserCard (+1)",
+          "files": [
+            "web/src/components/UserCard.tsx"
+          ],
+          "units": 2
+        }
+      ]
+    },
+    "questions": {
+      "separate_pr": {
+        "type": "boolean",
+        "instructions": "Should the changes to this file be split into their own pull request, given the other change groups listed?"
+      }
+    }
+  },
+  "response": {
+    "model": "typesafe-ai/jev",
+    "answers": {
+      "separate_pr": {
+        "type": "boolean",
+        "probability": 0.36
+      }
+    },
+    "usage": {
+      "inputTokens": 1600,
+      "outputTokens": 23
+    },
+    "providerMetadata": {
+      "gateway": {
+        "cost": "0.0000672",
+        "generationId": "gen_01M4SH1AFG2XPEMY5RJJ56WDNG"
+      }
+    }
+  }
+}

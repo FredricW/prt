@@ -335,7 +335,7 @@ func (c *counter) Evaluate(ctx context.Context, req jev.Request) (jev.Response, 
 	_, statErr := os.Stat(filepath.Join(c.dir, key+".json"))
 	c.mu.Lock()
 	c.requests++
-	c.tokens += jev.EstimateTokens(string(b))
+	c.tokens += jev.EstimateRequestTokensLen(len(b))
 	if statErr == nil {
 		c.recorded++
 	}

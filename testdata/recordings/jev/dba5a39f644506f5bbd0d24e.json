@@ -1,0 +1,59 @@
+{
+  "key": "dba5a39f644506f5bbd0d24e",
+  "request": {
+    "model": "typesafe-ai/jev",
+    "state": {
+      "a": {
+        "path": "server/internal/users/users.go",
+        "change": "added",
+        "diff": " \tEmail       string\n \tDisplayName string\n \tTeamID      string\n+\tAvatarURL   string\n \tCreatedAt   time.Time\n }\n "
+      },
+      "b": {
+        "path": "server/internal/users/users.go",
+        "symbol": "Routes",
+        "signature": "func Routes(store Store) http.Handler",
+        "change": "modified",
+        "diff": " \t\t\twriteError(w, http.StatusInternalServerError, \"internal\", err.Error())\n \t\t\treturn\n \t\t}\n-\t\twriteJSON(w, http.StatusOK, toResponse(u))\n+\t\tincludeAvatar := strings.Contains(req.URL.Query().Get(\"include\"), \"avatar\")\n+\t\twriteJSON(w, http.StatusOK, toResponse(u, includeAvatar))\n \t})\n \treturn r\n }"
+      }
+    },
+    "questions": {
+      "relation": {
+        "type": "choice",
+        "instructions": "How are these two changes related?",
+        "criteria": {
+          "caller update": "one change updates a caller or user of what the other change defines or changes",
+          "same intent": "both changes serve the same purpose or feature",
+          "same pattern": "both apply the same mechanical edit (rename, signature tweak, repeated pattern)",
+          "test for": "one change is a test that exercises the other change",
+          "unrelated": "the changes have nothing to do with each other"
+        }
+      }
+    }
+  },
+  "response": {
+    "model": "typesafe-ai/jev",
+    "answers": {
+      "relation": {
+        "type": "choice",
+        "choice": "same intent",
+        "probabilities": {
+          "caller update": 0.39,
+          "same intent": 0.61,
+          "same pattern": 0,
+          "test for": 0,
+          "unrelated": 0
+        }
+      }
+    },
+    "usage": {
+      "inputTokens": 629,
+      "outputTokens": 59
+    },
+    "providerMetadata": {
+      "gateway": {
+        "cost": "0.000026418",
+        "generationId": "gen_01M4SH14JCCA7TJS82CX0V92ZZ"
+      }
+    }
+  }
+}

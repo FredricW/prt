@@ -1,0 +1,151 @@
+{
+  "key": "649999093fe9ca71f2904296",
+  "request": {
+    "model": "typesafe-ai/jev",
+    "state": {
+      "file": {
+        "path": "web/src/components/UserCard.tsx",
+        "units": [
+          {
+            "path": "web/src/components/UserCard.tsx",
+            "change": "modified",
+            "diff": " import { useEffect, useState } from \"react\";\n \n import { getUser, type User } from \"../api/client\";\n-import { formatDate, initials } from \"../utils/format\";\n+import { formatDate } from \"../utils/format\";\n+import { Avatar } from \"./Avatar\";\n \n interface Props {\n   userId: string;"
+          },
+          {
+            "path": "web/src/components/UserCard.tsx",
+            "symbol": "UserCard",
+            "signature": "export function UserCard({ userId, compact = false }: Props)",
+            "change": "modified",
+            "diff": " \n   useEffect(() =\u003e {\n     let live = true;\n-    getUser(userId).then((u) =\u003e {\n+    getUser(userId, { include: [\"avatar\"] }).then((u) =\u003e {\n       if (live) setUser(u);\n     });\n     return () =\u003e {"
+          },
+          {
+            "path": "web/src/components/UserCard.tsx",
+            "symbol": "UserCard",
+            "signature": "export function UserCard({ userId, compact = false }: Props)",
+            "change": "modified",
+            "diff": "   }\n   return (\n     \u003cdiv className={compact ? \"user-card user-card--compact\" : \"user-card\"}\u003e\n-      \u003cspan className=\"avatar\"\u003e{initials(user.displayName)}\u003c/span\u003e\n+      \u003cAvatar name={user.displayName} url={user.avatarUrl} size={compact ? 24 : 32} /\u003e\n       \u003cdiv\u003e\n         \u003cstrong\u003e{user.displayName}\u003c/strong\u003e\n         {!compact \u0026\u0026 \u003cdiv className=\"muted\"\u003e{user.email}\u003c/div\u003e}"
+          }
+        ]
+      },
+      "groups": [
+        {
+          "name": "server: return `avatarUrl` when `include=avatar` is request…",
+          "files": [
+            "server/internal/users/users.go"
+          ],
+          "units": 6
+        },
+        {
+          "name": "Move `ApiError`, auth headers and error parsing into `api/e…",
+          "files": [
+            "web/src/__tests__/client.test.ts",
+            "web/src/api/client.ts",
+            "web/src/api/errors.ts"
+          ],
+          "units": 7
+        },
+        {
+          "name": "Add `useProfileCache`: stale-while-revalidate cache with a …",
+          "files": [
+            "web/src/__tests__/useProfileCache.test.ts",
+            "web/src/components/ProfilePage.tsx",
+            "web/src/hooks/useProfileCache.ts"
+          ],
+          "units": 8
+        },
+        {
+          "name": "`getUser` takes a required `GetUserOptions` argument (`incl…",
+          "files": [
+            "web/src/api/client.ts",
+            "web/src/api/users.ts",
+            "web/src/components/UserList.tsx",
+            "web/src/hooks/useProfileCache.ts",
+            "web/src/hooks/useUser.ts"
+          ],
+          "units": 7
+        },
+        {
+          "name": "Move `ApiError`, auth headers and error parsing into `api/e…",
+          "files": [
+            "web/src/api/errors.ts",
+            "web/src/api/index.ts"
+          ],
+          "units": 2
+        },
+        {
+          "name": "Add `Avatar` and `ProfileHeader` components; `ProfilePage` …",
+          "files": [
+            "web/src/components/Avatar.tsx",
+            "web/src/components/ProfileHeader.tsx",
+            "web/src/components/UserCard.tsx"
+          ],
+          "units": 3
+        },
+        {
+          "name": "Add `Avatar` and `ProfileHeader` components; `ProfilePage` …",
+          "files": [
+            "web/src/components/ProfileHeader.tsx",
+            "web/src/components/ProfilePage.tsx",
+            "web/src/hooks/useUser.ts"
+          ],
+          "units": 3
+        },
+        {
+          "name": "Move `ApiError`, auth headers and error parsing into `api/e…",
+          "files": [
+            "web/src/__tests__/client.test.ts",
+            "web/src/api/client.ts"
+          ],
+          "units": 2
+        },
+        {
+          "name": "client.ts (+1)",
+          "files": [
+            "web/src/api/client.ts"
+          ],
+          "units": 2
+        },
+        {
+          "name": "Move `ApiError`, auth headers and error parsing into `api/e…",
+          "files": [
+            "web/src/api/client.ts",
+            "web/src/api/errors.ts"
+          ],
+          "units": 2
+        },
+        {
+          "name": "UserCard (+1)",
+          "files": [
+            "web/src/components/UserCard.tsx"
+          ],
+          "units": 2
+        }
+      ]
+    },
+    "questions": {
+      "separate_pr": {
+        "type": "boolean",
+        "instructions": "Should the changes to this file be split into their own pull request, given the other change groups listed?"
+      }
+    }
+  },
+  "response": {
+    "model": "typesafe-ai/jev",
+    "answers": {
+      "separate_pr": {
+        "type": "boolean",
+        "probability": 0.29
+      }
+    },
+    "usage": {
+      "inputTokens": 1383,
+      "outputTokens": 23
+    },
+    "providerMetadata": {
+      "gateway": {
+        "cost": "0.000058086",
+        "generationId": "gen_01M4SH1B2WM58SD8FDYRA1F4RH"
+      }
+    }
+  }
+}

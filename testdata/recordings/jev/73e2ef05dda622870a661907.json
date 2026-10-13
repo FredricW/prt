@@ -1,0 +1,64 @@
+{
+  "key": "73e2ef05dda622870a661907",
+  "request": {
+    "model": "typesafe-ai/jev",
+    "state": {
+      "pr": {
+        "title": "refactor(web): rename fetchJSON to requestJSON"
+      },
+      "group": {
+        "units": [
+          {
+            "path": "web/src/hooks/useFetch.ts",
+            "symbol": "useFetch",
+            "signature": "export function useFetch\u003cT\u003e(path: string | null, opts: Omit\u003cRequestOptions, \"signal\"\u003e = {}): FetchState\u003cT\u003e",
+            "change": "modified",
+            "diff": "   loading: boolean;\n }\n \n-// useFetch loads `path` with fetchJSON and aborts the request on unmount or\n+// useFetch loads `path` with requestJSON and aborts the request on unmount or\n // when the path changes.\n export function useFetch\u003cT\u003e(path: string | null, opts: Omit\u003cRequestOptions, \"signal\"\u003e = {}): FetchState\u003cT\u003e {\n   const [state, setState] = useState\u003cFetchState\u003cT\u003e\u003e({ data: null, error: null, loading: path !== null });"
+          },
+          {
+            "path": "web/src/hooks/useFetch.ts",
+            "symbol": "useFetch",
+            "signature": "export function useFetch\u003cT\u003e(path: string | null, opts: Omit\u003cRequestOptions, \"signal\"\u003e = {}): FetchState\u003cT\u003e",
+            "change": "modified",
+            "diff": "     }\n     const ctrl = new AbortController();\n     setState((s) =\u003e ({ ...s, loading: true }));\n-    fetchJSON\u003cT\u003e(path, { ...opts, signal: ctrl.signal })\n+    requestJSON\u003cT\u003e(path, { ...opts, signal: ctrl.signal })\n       .then((data) =\u003e setState({ data, error: null, loading: false }))\n       .catch((error: Error) =\u003e {\n         if (error.name !== \"AbortError\") {"
+          }
+        ]
+      }
+    },
+    "questions": {
+      "name_bullet": {
+        "type": "choice",
+        "instructions": "Which bullet of the pull request description does this group of changes implement?",
+        "criteria": {
+          "b1": "Rename `fetchJSON` to `requestJSON` in `api/client.ts`",
+          "b2": "Update every import and call site (19 files)",
+          "none": "implements none of the listed bullets"
+        }
+      }
+    }
+  },
+  "response": {
+    "model": "typesafe-ai/jev",
+    "answers": {
+      "name_bullet": {
+        "type": "choice",
+        "choice": "b2",
+        "probabilities": {
+          "b1": 0.33,
+          "b2": 0.36,
+          "none": 0.31
+        }
+      }
+    },
+    "usage": {
+      "inputTokens": 801,
+      "outputTokens": 43
+    },
+    "providerMetadata": {
+      "gateway": {
+        "cost": "0.000033642",
+        "generationId": "gen_01M4SH1PJFJVN8KGRTKP6KYMRD"
+      }
+    }
+  }
+}

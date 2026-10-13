@@ -1,0 +1,78 @@
+{
+  "key": "e7a412501fc05b8c66cd01ef",
+  "request": {
+    "model": "typesafe-ai/jev",
+    "state": {
+      "pr": {
+        "title": "refactor(web): rename fetchJSON to requestJSON"
+      },
+      "group": {
+        "units": [
+          {
+            "path": "web/src/api/client.ts",
+            "symbol": "getUser",
+            "signature": "export async function getUser(id: string): Promise\u003cUser\u003e",
+            "change": "modified",
+            "diff": " }\n \n export async function getUser(id: string): Promise\u003cUser\u003e {\n-  return fetchJSON\u003cUser\u003e(`/users/${encodeURIComponent(id)}`);\n+  return requestJSON\u003cUser\u003e(`/users/${encodeURIComponent(id)}`);\n }"
+          },
+          {
+            "path": "web/src/api/client.ts",
+            "symbol": "getCurrentUser",
+            "signature": "export async function getCurrentUser(): Promise\u003cUser\u003e",
+            "change": "modified",
+            "diff": " \n export async function getCurrentUser(): Promise\u003cUser\u003e {\n-  return fetchJSON\u003cUser\u003e(\"/users/me\");\n+  return requestJSON\u003cUser\u003e(\"/users/me\");\n }"
+          },
+          {
+            "path": "web/src/api/orgs.ts",
+            "symbol": "currentOrg",
+            "signature": "export async function currentOrg(): Promise\u003cOrg\u003e",
+            "change": "modified",
+            "diff": " }\n \n export async function currentOrg(): Promise\u003cOrg\u003e {\n-  return fetchJSON\u003cOrg\u003e(\"/orgs/current\");\n+  return requestJSON\u003cOrg\u003e(\"/orgs/current\");\n }"
+          },
+          {
+            "path": "web/src/api/settings.ts",
+            "symbol": "getSettings",
+            "signature": "export async function getSettings(): Promise\u003cSettings\u003e",
+            "change": "modified",
+            "diff": " }\n \n export async function getSettings(): Promise\u003cSettings\u003e {\n-  return fetchJSON\u003cSettings\u003e(\"/settings\");\n+  return requestJSON\u003cSettings\u003e(\"/settings\");\n }"
+          }
+        ]
+      }
+    },
+    "questions": {
+      "name_bullet": {
+        "type": "choice",
+        "instructions": "Which bullet of the pull request description does this group of changes implement?",
+        "criteria": {
+          "b1": "Rename `fetchJSON` to `requestJSON` in `api/client.ts`",
+          "b2": "Update every import and call site (19 files)",
+          "none": "implements none of the listed bullets"
+        }
+      }
+    }
+  },
+  "response": {
+    "model": "typesafe-ai/jev",
+    "answers": {
+      "name_bullet": {
+        "type": "choice",
+        "choice": "b1",
+        "probabilities": {
+          "b1": 0.83,
+          "b2": 0.08,
+          "none": 0.09
+        }
+      }
+    },
+    "usage": {
+      "inputTokens": 822,
+      "outputTokens": 43
+    },
+    "providerMetadata": {
+      "gateway": {
+        "cost": "0.000034524",
+        "generationId": "gen_01M4SH1PMBEXRCJ53PT4AN8STX"
+      }
+    }
+  }
+}

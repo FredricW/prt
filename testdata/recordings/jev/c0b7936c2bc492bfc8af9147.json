@@ -1,0 +1,59 @@
+{
+  "key": "c0b7936c2bc492bfc8af9147",
+  "request": {
+    "model": "typesafe-ai/jev",
+    "state": {
+      "a": {
+        "path": "web/src/hooks/useProfileCache.ts",
+        "change": "added",
+        "diff": "+import { useCallback, useEffect, useState } from \"react\";\n+\n+import { getUser, type User } from \"../api/client\";\n+\n+// How long a cached profile is served without revalidating.\n+export const PROFILE_TTL_MS = 5 * 60 * 1000;\n+\n+interface Entry {\n+  user: User;\n+  fetchedAt: number;\n+}\n+\n+const cache = new Map\u003cstring, Entry\u003e();\n+const inflight = new Map\u003cstring, Promise\u003cUser\u003e\u003e();\n+"
+      },
+      "b": {
+        "path": "web/src/hooks/useProfileCache.ts",
+        "symbol": "loadProfile",
+        "signature": "export async function loadProfile(id: string, fresh = false): Promise\u003cUser\u003e",
+        "change": "added",
+        "diff": "+// loadProfile returns the cached profile when fresh, otherwise fetches it,\n+// sharing one request between concurrent callers for the same id.\n+export async function loadProfile(id: string, fresh = false): Promise\u003cUser\u003e {\n+  const now = Date.now();\n+  const hit = cache.get(id);\n+  if (!fresh \u0026\u0026 isFresh(hit, now)) {\n+    return hit.user;\n+  }\n+  const pending = inflight.get(id);\n+  if (pending) {\n+    return pending;\n+  }\n+  const req = getUser(id, { include: [\"team\", \"avatar\"], fresh })\n+    .then((user) =\u003e {\n+      cache.set(id, { user, fetchedAt: Date.now() });\n+      return user;\n+    })\n+    .finally(() =\u003e inflight.delete(id));\n+  inflight.set(id, req);\n+  return req;\n+}\n+"
+      }
+    },
+    "questions": {
+      "relation": {
+        "type": "choice",
+        "instructions": "How are these two changes related?",
+        "criteria": {
+          "caller update": "one change updates a caller or user of what the other change defines or changes",
+          "same intent": "both changes serve the same purpose or feature",
+          "same pattern": "both apply the same mechanical edit (rename, signature tweak, repeated pattern)",
+          "test for": "one change is a test that exercises the other change",
+          "unrelated": "the changes have nothing to do with each other"
+        }
+      }
+    }
+  },
+  "response": {
+    "model": "typesafe-ai/jev",
+    "answers": {
+      "relation": {
+        "type": "choice",
+        "choice": "same intent",
+        "probabilities": {
+          "caller update": 0.01,
+          "same intent": 0.99,
+          "same pattern": 0,
+          "test for": 0,
+          "unrelated": 0
+        }
+      }
+    },
+    "usage": {
+      "inputTokens": 830,
+      "outputTokens": 59
+    },
+    "providerMetadata": {
+      "gateway": {
+        "cost": "0.00003486",
+        "generationId": "gen_01M4SH12VD4V3TB1EMXFDS3XZK"
+      }
+    }
+  }
+}

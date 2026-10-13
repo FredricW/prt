@@ -1,0 +1,61 @@
+{
+  "key": "8b0e99892d43b242c68f2471",
+  "request": {
+    "model": "typesafe-ai/jev",
+    "state": {
+      "file": {
+        "path": "server/go.mod",
+        "units": [
+          {
+            "path": "server/go.mod",
+            "change": "modified",
+            "diff": " go 1.22\n \n require (\n-\tgithub.com/go-chi/chi/v5 v5.0.10\n+\tgithub.com/go-chi/chi/v5 v5.0.12\n \tgolang.org/x/sync v0.7.0\n )"
+          }
+        ]
+      },
+      "groups": [
+        {
+          "name": "Bump `github.com/go-chi/chi/v5` from 5.0.10 to 5.0.12",
+          "files": [
+            "server/go.mod",
+            "server/go.sum"
+          ],
+          "units": 2
+        },
+        {
+          "name": "Bump `react` from 18.2.0 to 18.3.1",
+          "files": [
+            "web/package-lock.json",
+            "web/package.json"
+          ],
+          "units": 4
+        }
+      ]
+    },
+    "questions": {
+      "separate_pr": {
+        "type": "boolean",
+        "instructions": "Should the changes to this file be split into their own pull request, given the other change groups listed?"
+      }
+    }
+  },
+  "response": {
+    "model": "typesafe-ai/jev",
+    "answers": {
+      "separate_pr": {
+        "type": "boolean",
+        "probability": 0.55
+      }
+    },
+    "usage": {
+      "inputTokens": 522,
+      "outputTokens": 23
+    },
+    "providerMetadata": {
+      "gateway": {
+        "cost": "0.000021924",
+        "generationId": "gen_01M4SH1W1ZD82G8JKHWBC7MCH8"
+      }
+    }
+  }
+}

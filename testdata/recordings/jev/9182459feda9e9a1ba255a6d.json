@@ -1,0 +1,62 @@
+{
+  "key": "9182459feda9e9a1ba255a6d",
+  "request": {
+    "model": "typesafe-ai/jev",
+    "state": {
+      "pr": {
+        "title": "refactor(web): rename fetchJSON to requestJSON"
+      },
+      "group": {
+        "units": [
+          {
+            "path": "web/src/api/client.ts",
+            "symbol": "updateUser",
+            "signature": "export async function updateUser(id: string, patch: Partial\u003cPick\u003cUser, \"displayName\" | \"teamId\"\u003e\u003e): Promise\u003cUser\u003e",
+            "change": "modified",
+            "diff": " \n export async function updateUser(id: string, patch: Partial\u003cPick\u003cUser, \"displayName\" | \"teamId\"\u003e\u003e): Promise\u003cUser\u003e {\n-  return fetchJSON\u003cUser\u003e(`/users/${encodeURIComponent(id)}`, { method: \"PATCH\", body: patch });\n+  return requestJSON\u003cUser\u003e(`/users/${encodeURIComponent(id)}`, { method: \"PATCH\", body: patch });\n }"
+          },
+          {
+            "path": "web/src/api/index.ts",
+            "change": "modified",
+            "diff": "-export { API_BASE, ApiError, fetchJSON, getCurrentUser, getUser, updateUser } from \"./client\";\n+export { API_BASE, ApiError, requestJSON, getCurrentUser, getUser, updateUser } from \"./client\";\n export type { RequestOptions, User } from \"./client\";\n export * from \"./users\";\n export * from \"./teams\";"
+          }
+        ]
+      }
+    },
+    "questions": {
+      "name_bullet": {
+        "type": "choice",
+        "instructions": "Which bullet of the pull request description does this group of changes implement?",
+        "criteria": {
+          "b1": "Rename `fetchJSON` to `requestJSON` in `api/client.ts`",
+          "b2": "Update every import and call site (19 files)",
+          "none": "implements none of the listed bullets"
+        }
+      }
+    }
+  },
+  "response": {
+    "model": "typesafe-ai/jev",
+    "answers": {
+      "name_bullet": {
+        "type": "choice",
+        "choice": "b1",
+        "probabilities": {
+          "b1": 0.91,
+          "b2": 0.05,
+          "none": 0.04
+        }
+      }
+    },
+    "usage": {
+      "inputTokens": 692,
+      "outputTokens": 43
+    },
+    "providerMetadata": {
+      "gateway": {
+        "cost": "0.000029064",
+        "generationId": "gen_01M4SH1P9B8WG104SQ6WN49TN9"
+      }
+    }
+  }
+}

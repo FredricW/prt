@@ -141,3 +141,13 @@ func EstimateTokens(s string) int { return EstimateTokensLen(len(s)) }
 
 // EstimateTokensLen is EstimateTokens for a text of n bytes.
 func EstimateTokensLen(n int) int { return (2*n + 4) / 5 }
+
+// RequestOverheadTokens is the fixed input the gateway counts per request
+// beyond the request body. The M2 recordings (small pair/name requests of
+// about 1 KB) were counted up to ~330 tokens above 2.5 bytes per token of
+// their body; large M1 unit requests hid this under the per-byte margin.
+const RequestOverheadTokens = 400
+
+// EstimateRequestTokensLen bounds the input tokens of a whole request whose
+// compact JSON body is n bytes (TestEstimateTokensCoversRecordings).
+func EstimateRequestTokensLen(n int) int { return EstimateTokensLen(n) + RequestOverheadTokens }

@@ -1,0 +1,61 @@
+{
+  "key": "26db52d2ae9c866bf0ce6437",
+  "request": {
+    "model": "typesafe-ai/jev",
+    "state": {
+      "a": {
+        "path": "web/src/components/AuditLog.tsx",
+        "symbol": "AuditLog",
+        "signature": "export function AuditLog({ limit = 25 }: { limit?: number })",
+        "change": "modified",
+        "diff": "   const [entries, setEntries] = useState\u003cAuditEntry[]\u003e([]);\n \n   useEffect(() =\u003e {\n-    fetchJSON\u003cAuditEntry[]\u003e(\"/audit\", { query: { limit } }).then(setEntries);\n+    requestJSON\u003cAuditEntry[]\u003e(\"/audit\", { query: { limit } }).then(setEntries);\n   }, [limit]);\n \n   return ("
+      },
+      "b": {
+        "path": "web/src/components/TeamPanel.tsx",
+        "symbol": "TeamPanel",
+        "signature": "export function TeamPanel({ teamId }: Props)",
+        "change": "modified",
+        "diff": "   const [members, setMembers] = useState\u003cUser[]\u003e([]);\n \n   useEffect(() =\u003e {\n-    fetchJSON\u003cTeam\u003e(`/teams/${teamId}`).then(setTeam);\n-    fetchJSON\u003cUser[]\u003e(`/teams/${teamId}/members`).then(setMembers);\n+    requestJSON\u003cTeam\u003e(`/teams/${teamId}`).then(setTeam);\n+    requestJSON\u003cUser[]\u003e(`/teams/${teamId}/members`).then(setMembers);\n   }, [teamId]);\n \n   if (!team) return null;"
+      }
+    },
+    "questions": {
+      "relation": {
+        "type": "choice",
+        "instructions": "How are these two changes related?",
+        "criteria": {
+          "caller update": "one change updates a caller or user of what the other change defines or changes",
+          "same intent": "both changes serve the same purpose or feature",
+          "same pattern": "both apply the same mechanical edit (rename, signature tweak, repeated pattern)",
+          "test for": "one change is a test that exercises the other change",
+          "unrelated": "the changes have nothing to do with each other"
+        }
+      }
+    }
+  },
+  "response": {
+    "model": "typesafe-ai/jev",
+    "answers": {
+      "relation": {
+        "type": "choice",
+        "choice": "same pattern",
+        "probabilities": {
+          "caller update": 0,
+          "same intent": 0.01,
+          "same pattern": 0.99,
+          "test for": 0,
+          "unrelated": 0
+        }
+      }
+    },
+    "usage": {
+      "inputTokens": 751,
+      "outputTokens": 59
+    },
+    "providerMetadata": {
+      "gateway": {
+        "cost": "0.000031542",
+        "generationId": "gen_01M4SH1J0G6P4J6Y0F5FEER7AV"
+      }
+    }
+  }
+}

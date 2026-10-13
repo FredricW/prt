@@ -1,0 +1,59 @@
+{
+  "key": "591f71f68fa51a254a526219",
+  "request": {
+    "model": "typesafe-ai/jev",
+    "state": {
+      "a": {
+        "path": "web/src/api/settings.ts",
+        "change": "modified",
+        "diff": "-import { fetchJSON } from \"./client\";\n+import { requestJSON } from \"./client\";\n \n export interface Settings {\n   locale: string;"
+      },
+      "b": {
+        "path": "web/src/api/settings.ts",
+        "symbol": "saveSettings",
+        "signature": "export async function saveSettings(s: Settings): Promise\u003cSettings\u003e",
+        "change": "modified",
+        "diff": " \n export async function saveSettings(s: Settings): Promise\u003cSettings\u003e {\n-  return fetchJSON\u003cSettings\u003e(\"/settings\", { method: \"PUT\", body: s });\n+  return requestJSON\u003cSettings\u003e(\"/settings\", { method: \"PUT\", body: s });\n }"
+      }
+    },
+    "questions": {
+      "relation": {
+        "type": "choice",
+        "instructions": "How are these two changes related?",
+        "criteria": {
+          "caller update": "one change updates a caller or user of what the other change defines or changes",
+          "same intent": "both changes serve the same purpose or feature",
+          "same pattern": "both apply the same mechanical edit (rename, signature tweak, repeated pattern)",
+          "test for": "one change is a test that exercises the other change",
+          "unrelated": "the changes have nothing to do with each other"
+        }
+      }
+    }
+  },
+  "response": {
+    "model": "typesafe-ai/jev",
+    "answers": {
+      "relation": {
+        "type": "choice",
+        "choice": "caller update",
+        "probabilities": {
+          "caller update": 0.53,
+          "same intent": 0.06,
+          "same pattern": 0.41,
+          "test for": 0,
+          "unrelated": 0
+        }
+      }
+    },
+    "usage": {
+      "inputTokens": 598,
+      "outputTokens": 59
+    },
+    "providerMetadata": {
+      "gateway": {
+        "cost": "0.000025116",
+        "generationId": "gen_01M4SH1FSVN9FS4GGXJWB06VBC"
+      }
+    }
+  }
+}

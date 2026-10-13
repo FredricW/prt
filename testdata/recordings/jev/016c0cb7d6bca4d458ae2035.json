@@ -1,0 +1,57 @@
+{
+  "key": "016c0cb7d6bca4d458ae2035",
+  "request": {
+    "model": "typesafe-ai/jev",
+    "state": {
+      "a": {
+        "path": "web/src/components/NotificationBell.tsx",
+        "change": "modified",
+        "diff": " import { useState } from \"react\";\n \n-import { fetchJSON } from \"../api/client\";\n+import { requestJSON } from \"../api/client\";\n import { type Notification } from \"../api/notifications\";\n import { usePolling } from \"../hooks/usePolling\";\n "
+      },
+      "b": {
+        "path": "web/src/components/TeamPanel.tsx",
+        "change": "modified",
+        "diff": " import { useEffect, useState } from \"react\";\n \n-import { fetchJSON, type User } from \"../api/client\";\n+import { requestJSON, type User } from \"../api/client\";\n import { type Team } from \"../api/teams\";\n import { UserCard } from \"./UserCard\";\n "
+      }
+    },
+    "questions": {
+      "relation": {
+        "type": "choice",
+        "instructions": "How are these two changes related?",
+        "criteria": {
+          "caller update": "one change updates a caller or user of what the other change defines or changes",
+          "same intent": "both changes serve the same purpose or feature",
+          "same pattern": "both apply the same mechanical edit (rename, signature tweak, repeated pattern)",
+          "test for": "one change is a test that exercises the other change",
+          "unrelated": "the changes have nothing to do with each other"
+        }
+      }
+    }
+  },
+  "response": {
+    "model": "typesafe-ai/jev",
+    "answers": {
+      "relation": {
+        "type": "choice",
+        "choice": "same pattern",
+        "probabilities": {
+          "caller update": 0.01,
+          "same intent": 0.01,
+          "same pattern": 0.98,
+          "test for": 0,
+          "unrelated": 0
+        }
+      }
+    },
+    "usage": {
+      "inputTokens": 605,
+      "outputTokens": 59
+    },
+    "providerMetadata": {
+      "gateway": {
+        "cost": "0.00002541",
+        "generationId": "gen_01M4SH1GEE3AZE36T38A9XWK8A"
+      }
+    }
+  }
+}

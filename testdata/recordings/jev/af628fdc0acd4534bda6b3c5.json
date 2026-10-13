@@ -1,0 +1,61 @@
+{
+  "key": "af628fdc0acd4534bda6b3c5",
+  "request": {
+    "model": "typesafe-ai/jev",
+    "state": {
+      "a": {
+        "path": "server/internal/billing/invoice.go",
+        "symbol": "renumberLegacy",
+        "signature": "func renumberLegacy(invs []Invoice) []Invoice",
+        "change": "deleted",
+        "diff": " \treturn inv, s.ledger.Save(inv)\n }\n \n-// renumberLegacy rewrites pre-2024 invoice numbers to the YYYY-NNNN scheme.\n-// Deprecated: the migration ran in March 2024; nothing calls this any more.\n-func renumberLegacy(invs []Invoice) []Invoice {\n-\tout := make([]Invoice, len(invs))\n-\tfor i, inv := range invs {\n-\t\tif inv.IssuedAt.Year() \u003c 2024 {\n-\t\t\tinv.Number = fmt.Sprintf(\"%d-%04d\", inv.IssuedAt.Year(), i+1)\n-\t\t}\n-\t\tout[i] = inv\n-\t}\n-\treturn out\n-}\n-\n // Routes mounts the billing endpoints.\n func Routes(s *Service) http.Handler {\n \tr := chi.NewRouter()"
+      },
+      "b": {
+        "path": "server/internal/billing/legacy.go",
+        "symbol": "WriteLegacyCSV",
+        "signature": "func WriteLegacyCSV(w io.Writer, invs []Invoice) error",
+        "change": "deleted",
+        "diff": "-// WriteLegacyCSV writes invoices in the legacy finance CSV format.\n-//\n-// Deprecated: see LegacyExport.\n-func WriteLegacyCSV(w io.Writer, invs []Invoice) error {\n-\tcw := csv.NewWriter(w)\n-\tcw.Comma = ';'\n-\tif err := cw.Write([]string{\"nr\", \"org\", \"amount\", \"issued\", \"paid\", \"comment\"}); err != nil {\n-\t\treturn err\n-\t}\n-\tfor _, inv := range invs {\n-\t\trow := toLegacy(inv)\n-\t\trec := []string{row.Number, row.OrgID, row.Amount, row.Issued, strconv.FormatBool(row.IsPaid), row.Comment}\n-\t\tif err := cw.Write(rec); err != nil {\n-\t\t\treturn fmt.Errorf(\"legacy csv %s: %w\", inv.Number, err)\n-\t\t}\n-\t}\n-\tcw.Flush()\n-\treturn cw.Error()\n-}\n-"
+      }
+    },
+    "questions": {
+      "relation": {
+        "type": "choice",
+        "instructions": "How are these two changes related?",
+        "criteria": {
+          "caller update": "one change updates a caller or user of what the other change defines or changes",
+          "same intent": "both changes serve the same purpose or feature",
+          "same pattern": "both apply the same mechanical edit (rename, signature tweak, repeated pattern)",
+          "test for": "one change is a test that exercises the other change",
+          "unrelated": "the changes have nothing to do with each other"
+        }
+      }
+    }
+  },
+  "response": {
+    "model": "typesafe-ai/jev",
+    "answers": {
+      "relation": {
+        "type": "choice",
+        "choice": "same intent",
+        "probabilities": {
+          "caller update": 0,
+          "same intent": 0.88,
+          "same pattern": 0.12,
+          "test for": 0,
+          "unrelated": 0
+        }
+      }
+    },
+    "usage": {
+      "inputTokens": 936,
+      "outputTokens": 59
+    },
+    "providerMetadata": {
+      "gateway": {
+        "cost": "0.000039312",
+        "generationId": "gen_01M4SH1SZQNYX8Y40WSFWXYATR"
+      }
+    }
+  }
+}

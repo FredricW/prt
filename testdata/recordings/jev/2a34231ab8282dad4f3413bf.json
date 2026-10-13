@@ -1,0 +1,57 @@
+{
+  "key": "2a34231ab8282dad4f3413bf",
+  "request": {
+    "model": "typesafe-ai/jev",
+    "state": {
+      "a": {
+        "path": "web/src/api/client.ts",
+        "change": "added",
+        "diff": "   displayName: string;\n   teamId: string | null;\n   createdAt: string;\n+  avatarUrl?: string | null;\n+  team?: TeamSummary | null;\n+}\n+\n+export type UserInclude = \"team\" | \"avatar\";\n+\n+export interface GetUserOptions {\n+  // Related data to embed in the response.\n+  include?: UserInclude[];\n+  // Bypass HTTP caches (sends Cache-Control: no-cache).\n+  fresh?: boolean;\n+  signal?: AbortSignal;\n }\n \n export interface RequestOptions {"
+      },
+      "b": {
+        "path": "web/src/api/client.ts",
+        "change": "added",
+        "diff": "+export interface TeamSummary {\n+  id: string;\n+  name: string;\n }\n \n export interface User {"
+      }
+    },
+    "questions": {
+      "relation": {
+        "type": "choice",
+        "instructions": "How are these two changes related?",
+        "criteria": {
+          "caller update": "one change updates a caller or user of what the other change defines or changes",
+          "same intent": "both changes serve the same purpose or feature",
+          "same pattern": "both apply the same mechanical edit (rename, signature tweak, repeated pattern)",
+          "test for": "one change is a test that exercises the other change",
+          "unrelated": "the changes have nothing to do with each other"
+        }
+      }
+    }
+  },
+  "response": {
+    "model": "typesafe-ai/jev",
+    "answers": {
+      "relation": {
+        "type": "choice",
+        "choice": "same intent",
+        "probabilities": {
+          "caller update": 0.05,
+          "same intent": 0.95,
+          "same pattern": 0,
+          "test for": 0,
+          "unrelated": 0
+        }
+      }
+    },
+    "usage": {
+      "inputTokens": 627,
+      "outputTokens": 59
+    },
+    "providerMetadata": {
+      "gateway": {
+        "cost": "0.000026334",
+        "generationId": "gen_01M4SH1658YE8XDDNJQDQ4DS1Q"
+      }
+    }
+  }
+}

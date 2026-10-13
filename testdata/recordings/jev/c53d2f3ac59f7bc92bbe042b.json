@@ -1,0 +1,57 @@
+{
+  "key": "c53d2f3ac59f7bc92bbe042b",
+  "request": {
+    "model": "typesafe-ai/jev",
+    "state": {
+      "a": {
+        "path": "web/package-lock.json",
+        "change": "modified",
+        "diff": "       }\n     },\n     \"node_modules/react\": {\n-      \"version\": \"18.2.0\",\n-      \"resolved\": \"https://registry.npmjs.org/react/-/react-18.2.0.tgz\",\n-      \"integrity\": \"sha512-/3IjMdb2L9QbBdWiW5e3P2/npwMBaU9mHCSCUzNln0ZCYbcfTsGbTJrU/kGemdH2IWmB2ioZ+zkxtmq6g09fGQ==\",\n+      \"version\": \"18.3.1\",\n+      \"resolved\": \"https://registry.npmjs.org/react/-/react-18.3.1.tgz\",\n+      \"integrity\": \"sha512-wS+hAgJShR0KhEvPJArfuPVN1+Hz1t0Y6n5jLrGQbkb4urgPE/0Rve+1kMB1v/oWgHgm4WIcV+i7F2pTVj+2iQ==\",\n       \"dependencies\": {\n         \"loose-envify\": \"^1.1.0\"\n       },"
+      },
+      "b": {
+        "path": "web/package-lock.json",
+        "change": "modified",
+        "diff": "       \"name\": \"@acme/portal-web\",\n       \"version\": \"0.14.2\",\n       \"dependencies\": {\n-        \"react\": \"18.2.0\",\n-        \"react-dom\": \"18.2.0\",\n-        \"zod\": \"^3.22.4\"\n+        \"react\": \"18.3.1\",\n+        \"react-dom\": \"18.3.1\",\n+        \"zod\": \"^3.23.8\"\n       },\n       \"devDependencies\": {\n         \"typescript\": \"^5.4.5\","
+      }
+    },
+    "questions": {
+      "relation": {
+        "type": "choice",
+        "instructions": "How are these two changes related?",
+        "criteria": {
+          "caller update": "one change updates a caller or user of what the other change defines or changes",
+          "same intent": "both changes serve the same purpose or feature",
+          "same pattern": "both apply the same mechanical edit (rename, signature tweak, repeated pattern)",
+          "test for": "one change is a test that exercises the other change",
+          "unrelated": "the changes have nothing to do with each other"
+        }
+      }
+    }
+  },
+  "response": {
+    "model": "typesafe-ai/jev",
+    "answers": {
+      "relation": {
+        "type": "choice",
+        "choice": "same intent",
+        "probabilities": {
+          "caller update": 0.22,
+          "same intent": 0.75,
+          "same pattern": 0.03,
+          "test for": 0,
+          "unrelated": 0
+        }
+      }
+    },
+    "usage": {
+      "inputTokens": 866,
+      "outputTokens": 59
+    },
+    "providerMetadata": {
+      "gateway": {
+        "cost": "0.000036372",
+        "generationId": "gen_01M4SH1TQ2D7T8SM11GRTESQ88"
+      }
+    }
+  }
+}

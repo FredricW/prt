@@ -1,0 +1,110 @@
+{
+  "key": "d090de1ad40dbff2e13e45a3",
+  "request": {
+    "model": "typesafe-ai/jev",
+    "state": {
+      "pr": {
+        "title": "refactor(web): rename fetchJSON to requestJSON"
+      },
+      "group": {
+        "units": [
+          {
+            "path": "web/src/api/billing.ts",
+            "change": "modified",
+            "diff": "-import { fetchJSON } from \"./client\";\n+import { requestJSON } from \"./client\";\n \n export interface Invoice {\n   id: string;"
+          },
+          {
+            "path": "web/src/api/health.ts",
+            "change": "modified",
+            "diff": "-import { fetchJSON } from \"./client\";\n+import { requestJSON } from \"./client\";\n \n export interface Health {\n   status: \"ok\" | \"degraded\";"
+          },
+          {
+            "path": "web/src/api/notifications.ts",
+            "change": "modified",
+            "diff": "-import { fetchJSON } from \"./client\";\n+import { requestJSON } from \"./client\";\n \n export interface Notification {\n   id: string;"
+          },
+          {
+            "path": "web/src/api/orgs.ts",
+            "change": "modified",
+            "diff": "-import { fetchJSON } from \"./client\";\n+import { requestJSON } from \"./client\";\n \n export interface Org {\n   id: string;"
+          },
+          {
+            "path": "web/src/api/search.ts",
+            "change": "modified",
+            "diff": "-import { fetchJSON } from \"./client\";\n+import { requestJSON } from \"./client\";\n \n export interface SearchHit {\n   kind: \"user\" | \"team\" | \"invoice\";"
+          },
+          {
+            "path": "web/src/api/settings.ts",
+            "change": "modified",
+            "diff": "-import { fetchJSON } from \"./client\";\n+import { requestJSON } from \"./client\";\n \n export interface Settings {\n   locale: string;"
+          },
+          {
+            "path": "web/src/components/AuditLog.tsx",
+            "change": "modified",
+            "diff": " import { useEffect, useState } from \"react\";\n \n-import { fetchJSON } from \"../api/client\";\n+import { requestJSON } from \"../api/client\";\n import { formatDate } from \"../utils/format\";\n \n interface AuditEntry {"
+          },
+          {
+            "path": "web/src/components/InvoiceTable.tsx",
+            "change": "modified",
+            "diff": " import { useEffect, useState } from \"react\";\n \n-import { fetchJSON } from \"../api/client\";\n+import { requestJSON } from \"../api/client\";\n import { type Invoice } from \"../api/billing\";\n import { formatDate, formatMoney } from \"../utils/format\";\n "
+          },
+          {
+            "path": "web/src/components/NotificationBell.tsx",
+            "change": "modified",
+            "diff": " import { useState } from \"react\";\n \n-import { fetchJSON } from \"../api/client\";\n+import { requestJSON } from \"../api/client\";\n import { type Notification } from \"../api/notifications\";\n import { usePolling } from \"../hooks/usePolling\";\n "
+          },
+          {
+            "path": "web/src/components/SettingsForm.tsx",
+            "change": "modified",
+            "diff": " import { useEffect, useState } from \"react\";\n \n-import { fetchJSON } from \"../api/client\";\n+import { requestJSON } from \"../api/client\";\n import { type Settings } from \"../api/settings\";\n \n export function SettingsForm() {"
+          },
+          {
+            "path": "web/src/components/StatusFooter.tsx",
+            "change": "modified",
+            "diff": " import { useEffect, useState } from \"react\";\n \n-import { fetchJSON } from \"../api/client\";\n+import { requestJSON } from \"../api/client\";\n import { type Health } from \"../api/health\";\n "
+          },
+          {
+            "path": "web/src/hooks/usePolling.ts",
+            "change": "modified",
+            "diff": " import { useEffect, useRef, useState } from \"react\";\n \n-import { fetchJSON } from \"../api/client\";\n+import { requestJSON } from \"../api/client\";\n \n // usePolling re-fetches `path` every `intervalMs` while the tab is visible.\n export function usePolling\u003cT\u003e(path: string, intervalMs = 30_000): T | null {"
+          }
+        ]
+      }
+    },
+    "questions": {
+      "name_bullet": {
+        "type": "choice",
+        "instructions": "Which bullet of the pull request description does this group of changes implement?",
+        "criteria": {
+          "b1": "Rename `fetchJSON` to `requestJSON` in `api/client.ts`",
+          "b2": "Update every import and call site (19 files)",
+          "none": "implements none of the listed bullets"
+        }
+      }
+    }
+  },
+  "response": {
+    "model": "typesafe-ai/jev",
+    "answers": {
+      "name_bullet": {
+        "type": "choice",
+        "choice": "b2",
+        "probabilities": {
+          "b1": 0.23,
+          "b2": 0.62,
+          "none": 0.15
+        }
+      }
+    },
+    "usage": {
+      "inputTokens": 1396,
+      "outputTokens": 43
+    },
+    "providerMetadata": {
+      "gateway": {
+        "cost": "0.000058632",
+        "generationId": "gen_01M4SH1PA0CK14Q5V59BKCNCAC"
+      }
+    }
+  }
+}

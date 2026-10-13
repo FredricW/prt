@@ -1,0 +1,59 @@
+{
+  "key": "23d857360738cbc135d61f45",
+  "request": {
+    "model": "typesafe-ai/jev",
+    "state": {
+      "a": {
+        "path": "web/src/api/errors.ts",
+        "change": "added",
+        "diff": "+// Error mapping and auth headers shared by every API call.\n+\n+export class ApiError extends Error {"
+      },
+      "b": {
+        "path": "web/src/api/client.ts",
+        "symbol": "fetchJSON",
+        "signature": "export async function fetchJSON\u003cT\u003e(path: string, opts: RequestOptions = {}): Promise\u003cT\u003e",
+        "change": "modified",
+        "diff": "       \"Content-Type\": \"application/json\",\n       Accept: \"application/json\",\n       ...authHeader(),\n+      ...opts.headers,\n     },\n     body: opts.body === undefined ? undefined : JSON.stringify(opts.body),\n     signal: opts.signal,\n   });\n   if (!res.ok) {\n-    let code = \"unknown\";\n-    let message = res.statusText;\n-    try {\n-      const payload = (await res.json()) as { code?: string; message?: string };\n-      code = payload.code ?? code;\n-      message = payload.message ?? message;\n-    } catch {\n-      // body was not JSON; keep the status text\n-    }\n-    throw new ApiError(res.status, code, message);\n+    throw await readError(res);\n   }\n   if (res.status === 204) {\n     return undefined as T;"
+      }
+    },
+    "questions": {
+      "relation": {
+        "type": "choice",
+        "instructions": "How are these two changes related?",
+        "criteria": {
+          "caller update": "one change updates a caller or user of what the other change defines or changes",
+          "same intent": "both changes serve the same purpose or feature",
+          "same pattern": "both apply the same mechanical edit (rename, signature tweak, repeated pattern)",
+          "test for": "one change is a test that exercises the other change",
+          "unrelated": "the changes have nothing to do with each other"
+        }
+      }
+    }
+  },
+  "response": {
+    "model": "typesafe-ai/jev",
+    "answers": {
+      "relation": {
+        "type": "choice",
+        "choice": "caller update",
+        "probabilities": {
+          "caller update": 0.89,
+          "same intent": 0.11,
+          "same pattern": 0,
+          "test for": 0,
+          "unrelated": 0
+        }
+      }
+    },
+    "usage": {
+      "inputTokens": 717,
+      "outputTokens": 59
+    },
+    "providerMetadata": {
+      "gateway": {
+        "cost": "0.000030114",
+        "generationId": "gen_01M4SH175W10CD7RMSBPP8MC8Z"
+      }
+    }
+  }
+}

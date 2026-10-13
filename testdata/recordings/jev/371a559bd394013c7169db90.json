@@ -1,0 +1,57 @@
+{
+  "key": "371a559bd394013c7169db90",
+  "request": {
+    "model": "typesafe-ai/jev",
+    "state": {
+      "a": {
+        "path": "web/src/__tests__/useProfileCache.test.ts",
+        "change": "added",
+        "diff": "+import { afterEach, beforeEach, describe, expect, it, vi } from \"vitest\";\n+\n+import * as client from \"../api/client\";\n+import { clearProfileCache, loadProfile, primeProfile, PROFILE_TTL_MS } from \"../hooks/useProfileCache\";\n+\n+const ada = {\n+  id: \"u1\",\n+  email: \"ada@example.com\",\n+  displayName: \"Ada\",\n+  teamId: null,\n+  createdAt: \"2025-03-01T12:00:00Z\",\n+} satisfies client.User;\n+\n+beforeEach(() =\u003e {\n+  clearProfileCache();\n+});\n+\n+afterEach(() =\u003e {\n+  vi.useRealTimers();\n+  vi.restoreAllMocks();\n+});\n+\n+describe(\"loadProfile\", () =\u003e {\n+  it(\"fetches once and serves later calls from cache\", async () =\u003e {\n+    const spy = vi.spyOn(client, \"getUser\").mockResolvedValue(ada);\n+    await loadProfile(\"u1\");\n+    await loadProfile(\"u1\");\n+    expect(spy).toHaveBeenCalledTimes(1);\n+    expect(spy).toHaveBeenCalledWith(\"u1\", { include: [\"team\", \"avatar\"], fresh: false });\n+  });\n+\n+  it(\"shares one request between concurrent callers\", async () =\u003e {\n+    const spy = vi.spyOn(client, \"getUser\").mockResolvedValue(ada);\n+    const [a, b] = await Promise.all([loadProfile(\"u1\"), loadProfile(\"u1\")]);\n+    expect(a).toBe(b);\n+    expect(spy).toHaveBeenCalledTimes(1);\n+  });\n+\n+  it(\"refetches after the TTL\", async () =\u003e {\n+    vi.useFakeTimers();\n+    vi.setSystemTime(0);\n+    primeProfile(ada, 0);\n+    const spy = vi.spyOn(client, \"getUser\").mockResolvedValue({ ...ada, displayName: \"Ada L.\" });\n+    vi.setSystemTime(PROFILE_TTL_MS + 1);\n+    const user = await loadProfile(\"u1\");\n+    expect(user.displayName).toBe(\"Ada L.\");\n+    expect(spy).toHaveBeenCalledTimes(1);\n+  });\n+\n+  it(\"bypasses the cache when fresh is set\", async () =\u003e {\n+    primeProfile(ada);\n+    const spy = vi.spyOn(client, \"getUser\").mockResolvedValue(ada);\n+    await loadProfile(\"u1\", true);\n+    expect(spy).toHaveBeenCalledWith(\"u1\", { include: [\"team\", \"avatar\"], fresh: true });\n+  });\n+});"
+      },
+      "b": {
+        "path": "web/src/__tests__/client.test.ts",
+        "change": "modified",
+        "diff": " \n   it(\"maps error payloads to ApiError\", async () =\u003e {\n     mockFetch(404, { code: \"not_found\", message: \"no such user\" });\n-    await expect(fetchJSON(\"/users/nope\")).rejects.toEqual(new ApiError(404, \"not_found\", \"no such user\"));\n+    const err = await fetchJSON(\"/users/nope\").catch((e: unknown) =\u003e e);\n+    expect(err).toEqual(new ApiError(404, \"not_found\", \"no such user\"));\n+    expect(isNotFound(err)).toBe(true);\n   });\n \n   it(\"returns undefined for 204\", async () =\u003e {\n     mockFetch(204, undefined);\n     await expect(fetchJSON(\"/noop\", { method: \"POST\" })).resolves.toBeUndefined();\n   });\n+\n+  it(\"merges extra headers\", async () =\u003e {\n+    const spy = mockFetch(200, {});\n+    await fetchJSON(\"/x\", { headers: { \"X-Trace\": \"1\" } });\n+    const init = spy.mock.calls[0]![1] as RequestInit;\n+    expect((init.headers as Record\u003cstring, string\u003e)[\"X-Trace\"]).toBe(\"1\");\n+  });\n });\n \n describe(\"getUser\", () =\u003e {\n   it(\"escapes the id\", async () =\u003e {\n     const spy = mockFetch(200, { id: \"a/b\" });\n-    await getUser(\"a/b\");\n+    await getUser(\"a/b\", {});\n     expect(spy.mock.calls[0]![0]).toBe(\"/api/v1/users/a%2Fb\");\n   });\n+\n+  it(\"sends a sorted include list\", async () =\u003e {\n+    const spy = mockFetch(200, { id: \"u1\" });\n+    await getUser(\"u1\", { include: [\"team\", \"avatar\"] });\n+    expect(spy.mock.calls[0]![0]).toBe(\"/api/v1/users/u1?include=avatar%2Cteam\");\n+  });\n+\n+  it(\"bypasses caches when fresh\", async () =\u003e {\n+    const spy = mockFetch(200, { id: \"u1\" });\n+    await getUser(\"u1\", { fresh: true });\n+    const init = spy.mock.calls[0]![1] as RequestInit;\n+    expect((init.headers as Record\u003cstring, string\u003e)[\"Cache-Control\"]).toBe(\"no-cache\");\n+  });\n });"
+      }
+    },
+    "questions": {
+      "relation": {
+        "type": "choice",
+        "instructions": "How are these two changes related?",
+        "criteria": {
+          "caller update": "one change updates a caller or user of what the other change defines or changes",
+          "same intent": "both changes serve the same purpose or feature",
+          "same pattern": "both apply the same mechanical edit (rename, signature tweak, repeated pattern)",
+          "test for": "one change is a test that exercises the other change",
+          "unrelated": "the changes have nothing to do with each other"
+        }
+      }
+    }
+  },
+  "response": {
+    "model": "typesafe-ai/jev",
+    "answers": {
+      "relation": {
+        "type": "choice",
+        "choice": "test for",
+        "probabilities": {
+          "caller update": 0.24,
+          "same intent": 0.18,
+          "same pattern": 0.05,
+          "test for": 0.52,
+          "unrelated": 0.01
+        }
+      }
+    },
+    "usage": {
+      "inputTokens": 1713,
+      "outputTokens": 59
+    },
+    "providerMetadata": {
+      "gateway": {
+        "cost": "0.000071946",
+        "generationId": "gen_01M4SH16HWW7J7816JF5XNR8M8"
+      }
+    }
+  }
+}

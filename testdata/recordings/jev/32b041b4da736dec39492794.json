@@ -1,0 +1,139 @@
+{
+  "key": "32b041b4da736dec39492794",
+  "request": {
+    "model": "typesafe-ai/jev",
+    "state": {
+      "file": {
+        "path": "web/src/__tests__/client.test.ts",
+        "units": [
+          {
+            "path": "web/src/__tests__/client.test.ts",
+            "change": "modified",
+            "diff": " import { afterEach, describe, expect, it, vi } from \"vitest\";\n \n-import { ApiError, fetchJSON, getUser } from \"../api/client\";\n+import { ApiError, requestJSON, getUser } from \"../api/client\";\n \n function mockFetch(status: number, body: unknown) {\n   const res = new Response(body === undefined ? null : JSON.stringify(body), { status });"
+          },
+          {
+            "path": "web/src/__tests__/client.test.ts",
+            "change": "modified",
+            "diff": "   vi.restoreAllMocks();\n });\n \n-describe(\"fetchJSON\", () =\u003e {\n+describe(\"requestJSON\", () =\u003e {\n   it(\"prefixes the API base and encodes the query\", async () =\u003e {\n     const spy = mockFetch(200, { ok: true });\n-    await fetchJSON(\"/things\", { query: { b: 2, a: \"x y\" } });\n+    await requestJSON(\"/things\", { query: { b: 2, a: \"x y\" } });\n     expect(spy.mock.calls[0]![0]).toBe(\"/api/v1/things?a=x%20y\u0026b=2\");\n   });\n \n   it(\"maps error payloads to ApiError\", async () =\u003e {\n     mockFetch(404, { code: \"not_found\", message: \"no such user\" });\n-    await expect(fetchJSON(\"/users/nope\")).rejects.toEqual(new ApiError(404, \"not_found\", \"no such user\"));\n+    await expect(requestJSON(\"/users/nope\")).rejects.toEqual(new ApiError(404, \"not_found\", \"no such user\"));\n   });\n \n   it(\"returns undefined for 204\", async () =\u003e {\n     mockFetch(204, undefined);\n-    await expect(fetchJSON(\"/noop\", { method: \"POST\" })).resolves.toBeUndefined();\n+    await expect(requestJSON(\"/noop\", { method: \"POST\" })).resolves.toBeUndefined();\n   });\n });\n "
+          }
+        ]
+      },
+      "groups": [
+        {
+          "name": "Update every import and call site (19 files)",
+          "files": [
+            "web/src/__tests__/client.test.ts",
+            "web/src/__tests__/users.test.ts",
+            "web/src/api/billing.ts",
+            "web/src/api/client.ts",
+            "web/src/api/notifications.ts",
+            "web/src/api/orgs.ts",
+            "web/src/api/search.ts",
+            "web/src/api/settings.ts",
+            "web/src/api/teams.ts",
+            "web/src/api/users.ts",
+            "web/src/components/AuditLog.tsx",
+            "web/src/components/InvoiceTable.tsx",
+            "web/src/components/SettingsForm.tsx",
+            "web/src/components/StatusFooter.tsx",
+            "web/src/components/TeamPanel.tsx"
+          ],
+          "units": 17
+        },
+        {
+          "name": "listUsers (+1)",
+          "files": [
+            "web/src/__tests__/users.test.ts",
+            "web/src/api/users.ts"
+          ],
+          "units": 2
+        },
+        {
+          "name": "Rename `fetchJSON` to `requestJSON` in `api/client.ts`",
+          "files": [
+            "web/src/api/client.ts",
+            "web/src/api/index.ts"
+          ],
+          "units": 2
+        },
+        {
+          "name": "useFetch (+1)",
+          "files": [
+            "web/src/hooks/useFetch.ts"
+          ],
+          "units": 2
+        },
+        {
+          "name": "Update every import and call site (19 files)",
+          "files": [
+            "web/src/api/billing.ts",
+            "web/src/api/health.ts",
+            "web/src/api/notifications.ts",
+            "web/src/api/orgs.ts",
+            "web/src/api/search.ts",
+            "web/src/api/settings.ts",
+            "web/src/components/AuditLog.tsx",
+            "web/src/components/InvoiceTable.tsx",
+            "web/src/components/NotificationBell.tsx",
+            "web/src/components/SettingsForm.tsx",
+            "web/src/components/StatusFooter.tsx",
+            "web/src/hooks/usePolling.ts"
+          ],
+          "units": 12
+        },
+        {
+          "name": "Rename `fetchJSON` to `requestJSON` in `api/client.ts`",
+          "files": [
+            "web/src/api/client.ts",
+            "web/src/api/orgs.ts",
+            "web/src/api/settings.ts"
+          ],
+          "units": 4
+        },
+        {
+          "name": "markRead ×3",
+          "files": [
+            "web/src/api/notifications.ts",
+            "web/src/api/users.ts",
+            "web/src/components/NotificationBell.tsx"
+          ],
+          "units": 3
+        },
+        {
+          "name": "teams.ts ×3",
+          "files": [
+            "web/src/api/teams.ts",
+            "web/src/components/TeamPanel.tsx",
+            "web/src/hooks/useFetch.ts"
+          ],
+          "units": 3
+        }
+      ]
+    },
+    "questions": {
+      "separate_pr": {
+        "type": "boolean",
+        "instructions": "Should the changes to this file be split into their own pull request, given the other change groups listed?"
+      }
+    }
+  },
+  "response": {
+    "model": "typesafe-ai/jev",
+    "answers": {
+      "separate_pr": {
+        "type": "boolean",
+        "probability": 0.29
+      }
+    },
+    "usage": {
+      "inputTokens": 1498,
+      "outputTokens": 23
+    },
+    "providerMetadata": {
+      "gateway": {
+        "cost": "0.000062916",
+        "generationId": "gen_01M4SH1Q660B2ZNKJ67C3BAX12"
+      }
+    }
+  }
+}

@@ -1,0 +1,94 @@
+{
+  "key": "f7c67bb3715d0881e1046cf6",
+  "request": {
+    "model": "typesafe-ai/jev",
+    "state": {
+      "pr": {
+        "title": "feat(web): cached user profiles with team and avatar"
+      },
+      "group": {
+        "units": [
+          {
+            "path": "server/internal/users/users.go",
+            "symbol": "toResponse",
+            "signature": "func toResponse(u User, includeAvatar bool) userResponse",
+            "change": "modified",
+            "diff": "-func toResponse(u User) userResponse {\n+func toResponse(u User, includeAvatar bool) userResponse {\n \tr := userResponse{\n \t\tID:          u.ID,\n \t\tEmail:       u.Email,"
+          },
+          {
+            "path": "server/internal/users/users.go",
+            "symbol": "toResponse",
+            "signature": "func toResponse(u User, includeAvatar bool) userResponse",
+            "change": "added",
+            "diff": " \t\tteam := u.TeamID\n \t\tr.TeamID = \u0026team\n \t}\n+\tif includeAvatar \u0026\u0026 u.AvatarURL != \"\" {\n+\t\tavatar := u.AvatarURL\n+\t\tr.AvatarURL = \u0026avatar\n+\t}\n \treturn r\n }\n "
+          },
+          {
+            "path": "server/internal/users/users.go",
+            "change": "added",
+            "diff": " \t\"encoding/json\"\n \t\"errors\"\n \t\"net/http\"\n+\t\"strings\"\n \t\"sync\"\n \t\"time\"\n "
+          },
+          {
+            "path": "server/internal/users/users.go",
+            "change": "added",
+            "diff": " \tEmail       string\n \tDisplayName string\n \tTeamID      string\n+\tAvatarURL   string\n \tCreatedAt   time.Time\n }\n "
+          },
+          {
+            "path": "server/internal/users/users.go",
+            "change": "added",
+            "diff": " \tEmail       string  `json:\"email\"`\n \tDisplayName string  `json:\"displayName\"`\n \tTeamID      *string `json:\"teamId\"`\n+\tAvatarURL   *string `json:\"avatarUrl,omitempty\"`\n \tCreatedAt   string  `json:\"createdAt\"`\n }\n "
+          },
+          {
+            "path": "server/internal/users/users.go",
+            "symbol": "Routes",
+            "signature": "func Routes(store Store) http.Handler",
+            "change": "modified",
+            "diff": " \t\t\twriteError(w, http.StatusInternalServerError, \"internal\", err.Error())\n \t\t\treturn\n \t\t}\n-\t\twriteJSON(w, http.StatusOK, toResponse(u))\n+\t\tincludeAvatar := strings.Contains(req.URL.Query().Get(\"include\"), \"avatar\")\n+\t\twriteJSON(w, http.StatusOK, toResponse(u, includeAvatar))\n \t})\n \treturn r\n }"
+          }
+        ]
+      }
+    },
+    "questions": {
+      "name_bullet": {
+        "type": "choice",
+        "instructions": "Which bullet of the pull request description does this group of changes implement?",
+        "criteria": {
+          "b1": "`getUser` takes a required `GetUserOptions` argument (`include`, `fresh`, `signal`); all callers updated",
+          "b2": "Move `ApiError`, auth headers and error parsing into `api/errors.ts` and add `isNotFound`",
+          "b3": "Add `useProfileCache`: stale-while-revalidate cache with a 5 minute TTL and request de-duplication",
+          "b4": "Add `Avatar` and `ProfileHeader` components; `ProfilePage` uses the cache and shows save errors",
+          "b5": "Invalidate the profile cache on logout",
+          "b6": "server: return `avatarUrl` when `include=avatar` is requested",
+          "none": "implements none of the listed bullets"
+        }
+      }
+    }
+  },
+  "response": {
+    "model": "typesafe-ai/jev",
+    "answers": {
+      "name_bullet": {
+        "type": "choice",
+        "choice": "b6",
+        "probabilities": {
+          "b1": 0,
+          "b2": 0,
+          "b3": 0,
+          "b4": 0,
+          "b5": 0,
+          "b6": 1,
+          "none": 0
+        }
+      }
+    },
+    "usage": {
+      "inputTokens": 1169,
+      "outputTokens": 75
+    },
+    "providerMetadata": {
+      "gateway": {
+        "cost": "0.000049098",
+        "generationId": "gen_01M4SH19D7TG7P770Z8XJQPX72"
+      }
+    }
+  }
+}

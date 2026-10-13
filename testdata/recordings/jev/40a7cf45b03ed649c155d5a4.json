@@ -1,0 +1,71 @@
+{
+  "key": "40a7cf45b03ed649c155d5a4",
+  "request": {
+    "model": "typesafe-ai/jev",
+    "state": {
+      "pr": {
+        "title": "refactor(web): rename fetchJSON to requestJSON"
+      },
+      "group": {
+        "units": [
+          {
+            "path": "web/src/api/notifications.ts",
+            "symbol": "markRead",
+            "signature": "export async function markRead(id: string): Promise\u003cvoid\u003e",
+            "change": "modified",
+            "diff": " \n export async function markRead(id: string): Promise\u003cvoid\u003e {\n-  await fetchJSON\u003cvoid\u003e(`/notifications/${encodeURIComponent(id)}/read`, { method: \"POST\" });\n+  await requestJSON\u003cvoid\u003e(`/notifications/${encodeURIComponent(id)}/read`, { method: \"POST\" });\n }"
+          },
+          {
+            "path": "web/src/api/users.ts",
+            "symbol": "deactivateUser",
+            "signature": "export async function deactivateUser(id: string): Promise\u003cvoid\u003e",
+            "change": "modified",
+            "diff": " }\n \n export async function deactivateUser(id: string): Promise\u003cvoid\u003e {\n-  await fetchJSON\u003cvoid\u003e(`/users/${encodeURIComponent(id)}/deactivate`, { method: \"POST\" });\n+  await requestJSON\u003cvoid\u003e(`/users/${encodeURIComponent(id)}/deactivate`, { method: \"POST\" });\n }"
+          },
+          {
+            "path": "web/src/components/NotificationBell.tsx",
+            "symbol": "NotificationBell",
+            "signature": "export function NotificationBell()",
+            "change": "modified",
+            "diff": "   const [open, setOpen] = useState(false);\n \n   const dismiss = async (id: string) =\u003e {\n-    await fetchJSON\u003cvoid\u003e(`/notifications/${id}/read`, { method: \"POST\" });\n+    await requestJSON\u003cvoid\u003e(`/notifications/${id}/read`, { method: \"POST\" });\n   };\n \n   return ("
+          }
+        ]
+      }
+    },
+    "questions": {
+      "name_bullet": {
+        "type": "choice",
+        "instructions": "Which bullet of the pull request description does this group of changes implement?",
+        "criteria": {
+          "b1": "Rename `fetchJSON` to `requestJSON` in `api/client.ts`",
+          "b2": "Update every import and call site (19 files)",
+          "none": "implements none of the listed bullets"
+        }
+      }
+    }
+  },
+  "response": {
+    "model": "typesafe-ai/jev",
+    "answers": {
+      "name_bullet": {
+        "type": "choice",
+        "choice": "none",
+        "probabilities": {
+          "b1": 0.24,
+          "b2": 0.35,
+          "none": 0.41
+        }
+      }
+    },
+    "usage": {
+      "inputTokens": 824,
+      "outputTokens": 42
+    },
+    "providerMetadata": {
+      "gateway": {
+        "cost": "0.000034608",
+        "generationId": "gen_01M4SH1P9VE4WKA2HYANJZNXGB"
+      }
+    }
+  }
+}

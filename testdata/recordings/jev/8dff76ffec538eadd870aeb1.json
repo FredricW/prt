@@ -1,0 +1,57 @@
+{
+  "key": "8dff76ffec538eadd870aeb1",
+  "request": {
+    "model": "typesafe-ai/jev",
+    "state": {
+      "a": {
+        "path": "web/src/api/users.ts",
+        "change": "modified",
+        "diff": "-import { fetchJSON, getUser, type User } from \"./client\";\n+import { fetchJSON, getUser, type GetUserOptions, type User } from \"./client\";\n \n export interface UserPage {\n   users: User[];"
+      },
+      "b": {
+        "path": "web/src/api/index.ts",
+        "change": "modified",
+        "diff": " export { API_BASE, ApiError, fetchJSON, getCurrentUser, getUser, updateUser } from \"./client\";\n-export type { RequestOptions, User } from \"./client\";\n+export type { GetUserOptions, RequestOptions, TeamSummary, User, UserInclude } from \"./client\";\n+export { isNotFound } from \"./errors\";\n export * from \"./users\";\n export * from \"./teams\";\n export * from \"./billing\";"
+      }
+    },
+    "questions": {
+      "relation": {
+        "type": "choice",
+        "instructions": "How are these two changes related?",
+        "criteria": {
+          "caller update": "one change updates a caller or user of what the other change defines or changes",
+          "same intent": "both changes serve the same purpose or feature",
+          "same pattern": "both apply the same mechanical edit (rename, signature tweak, repeated pattern)",
+          "test for": "one change is a test that exercises the other change",
+          "unrelated": "the changes have nothing to do with each other"
+        }
+      }
+    }
+  },
+  "response": {
+    "model": "typesafe-ai/jev",
+    "answers": {
+      "relation": {
+        "type": "choice",
+        "choice": "caller update",
+        "probabilities": {
+          "caller update": 0.71,
+          "same intent": 0.27,
+          "same pattern": 0.02,
+          "test for": 0,
+          "unrelated": 0
+        }
+      }
+    },
+    "usage": {
+      "inputTokens": 626,
+      "outputTokens": 59
+    },
+    "providerMetadata": {
+      "gateway": {
+        "cost": "0.000026292",
+        "generationId": "gen_01M4SH15JZXR5GBRRKRW8EGX38"
+      }
+    }
+  }
+}

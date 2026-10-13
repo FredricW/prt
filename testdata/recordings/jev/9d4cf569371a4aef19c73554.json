@@ -1,0 +1,62 @@
+{
+  "key": "9d4cf569371a4aef19c73554",
+  "request": {
+    "model": "typesafe-ai/jev",
+    "state": {
+      "pr": {
+        "title": "refactor(web): rename fetchJSON to requestJSON"
+      },
+      "group": {
+        "units": [
+          {
+            "path": "web/src/api/users.ts",
+            "symbol": "listUsers",
+            "signature": "export async function listUsers(cursor?: string, limit = 50): Promise\u003cUserPage\u003e",
+            "change": "modified",
+            "diff": " }\n \n export async function listUsers(cursor?: string, limit = 50): Promise\u003cUserPage\u003e {\n-  return fetchJSON\u003cUserPage\u003e(\"/users\", { query: { cursor, limit } });\n+  return requestJSON\u003cUserPage\u003e(\"/users\", { query: { cursor, limit } });\n }\n \n export async function getUsers(ids: string[]): Promise\u003cUser[]\u003e {"
+          },
+          {
+            "path": "web/src/__tests__/users.test.ts",
+            "change": "modified",
+            "diff": " });\n \n describe(\"users api\", () =\u003e {\n-  it(\"passes cursor and limit to fetchJSON\", async () =\u003e {\n-    const spy = vi.spyOn(client, \"fetchJSON\").mockResolvedValue({ users: [], nextCursor: null });\n+  it(\"passes cursor and limit to requestJSON\", async () =\u003e {\n+    const spy = vi.spyOn(client, \"requestJSON\").mockResolvedValue({ users: [], nextCursor: null });\n     await listUsers(\"c1\", 10);\n     expect(spy).toHaveBeenCalledWith(\"/users\", { query: { cursor: \"c1\", limit: 10 } });\n   });"
+          }
+        ]
+      }
+    },
+    "questions": {
+      "name_bullet": {
+        "type": "choice",
+        "instructions": "Which bullet of the pull request description does this group of changes implement?",
+        "criteria": {
+          "b1": "Rename `fetchJSON` to `requestJSON` in `api/client.ts`",
+          "b2": "Update every import and call site (19 files)",
+          "none": "implements none of the listed bullets"
+        }
+      }
+    }
+  },
+  "response": {
+    "model": "typesafe-ai/jev",
+    "answers": {
+      "name_bullet": {
+        "type": "choice",
+        "choice": "b2",
+        "probabilities": {
+          "b1": 0.32,
+          "b2": 0.35,
+          "none": 0.33
+        }
+      }
+    },
+    "usage": {
+      "inputTokens": 741,
+      "outputTokens": 43
+    },
+    "providerMetadata": {
+      "gateway": {
+        "cost": "0.000031122",
+        "generationId": "gen_01M4SH1PMQGX0XWA76NK6EAC91"
+      }
+    }
+  }
+}

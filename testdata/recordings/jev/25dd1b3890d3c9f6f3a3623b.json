@@ -1,0 +1,61 @@
+{
+  "key": "25dd1b3890d3c9f6f3a3623b",
+  "request": {
+    "model": "typesafe-ai/jev",
+    "state": {
+      "file": {
+        "path": "server/go.sum",
+        "units": [
+          {
+            "path": "server/go.sum",
+            "change": "modified",
+            "diff": "-github.com/go-chi/chi/v5 v5.0.10 h1:rLz5avzKpjqxrYwXNfmjkrYYXOyLJd37pz53UFHC6vk=\n-github.com/go-chi/chi/v5 v5.0.10/go.mod h1:DslCQbL2OYiznFReuXYUmQ2hGd1aDpCnlMNITLSKoi8=\n+github.com/go-chi/chi/v5 v5.0.12 h1:9euLV5sTrTNTRUU9POmDUvfxyj6LAABLUcEWO+JJb4s=\n+github.com/go-chi/chi/v5 v5.0.12/go.mod h1:DslCQbL2OYiznFReuXYUmQ2hGd1aDpCnlMNITLSKoi8=\n golang.org/x/sync v0.7.0 h1:YsImfSBoP9QPYL0xyKJPq0gcaJdG3rInoqxTWbfQu9M=\n golang.org/x/sync v0.7.0/go.mod h1:Czt+wKu1gCyEFDUtn0jG5QVvpJ6rzVqr5aXyt9drQfk="
+          }
+        ]
+      },
+      "groups": [
+        {
+          "name": "Bump `github.com/go-chi/chi/v5` from 5.0.10 to 5.0.12",
+          "files": [
+            "server/go.mod",
+            "server/go.sum"
+          ],
+          "units": 2
+        },
+        {
+          "name": "Bump `react` from 18.2.0 to 18.3.1",
+          "files": [
+            "web/package-lock.json",
+            "web/package.json"
+          ],
+          "units": 4
+        }
+      ]
+    },
+    "questions": {
+      "separate_pr": {
+        "type": "boolean",
+        "instructions": "Should the changes to this file be split into their own pull request, given the other change groups listed?"
+      }
+    }
+  },
+  "response": {
+    "model": "typesafe-ai/jev",
+    "answers": {
+      "separate_pr": {
+        "type": "boolean",
+        "probability": 0.47
+      }
+    },
+    "usage": {
+      "inputTokens": 761,
+      "outputTokens": 23
+    },
+    "providerMetadata": {
+      "gateway": {
+        "cost": "0.000031962",
+        "generationId": "gen_01M4SH1W1N68QMQDRC39DDGCVB"
+      }
+    }
+  }
+}

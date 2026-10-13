@@ -1,0 +1,59 @@
+{
+  "key": "9aac99e0a3c833dd0cc7408a",
+  "request": {
+    "model": "typesafe-ai/jev",
+    "state": {
+      "a": {
+        "path": "web/src/api/users.ts",
+        "symbol": "getUsers",
+        "signature": "export async function getUsers(ids: string[], opts: GetUserOptions = {}): Promise\u003cUser[]\u003e",
+        "change": "modified",
+        "diff": "   return fetchJSON\u003cUserPage\u003e(\"/users\", { query: { cursor, limit } });\n }\n \n-export async function getUsers(ids: string[]): Promise\u003cUser[]\u003e {\n-  return Promise.all(ids.map((id) =\u003e getUser(id)));\n+export async function getUsers(ids: string[], opts: GetUserOptions = {}): Promise\u003cUser[]\u003e {\n+  return Promise.all(ids.map((id) =\u003e getUser(id, opts)));\n }\n \n export async function deactivateUser(id: string): Promise\u003cvoid\u003e {"
+      },
+      "b": {
+        "path": "web/src/api/users.ts",
+        "change": "modified",
+        "diff": "-import { fetchJSON, getUser, type User } from \"./client\";\n+import { fetchJSON, getUser, type GetUserOptions, type User } from \"./client\";\n \n export interface UserPage {\n   users: User[];"
+      }
+    },
+    "questions": {
+      "relation": {
+        "type": "choice",
+        "instructions": "How are these two changes related?",
+        "criteria": {
+          "caller update": "one change updates a caller or user of what the other change defines or changes",
+          "same intent": "both changes serve the same purpose or feature",
+          "same pattern": "both apply the same mechanical edit (rename, signature tweak, repeated pattern)",
+          "test for": "one change is a test that exercises the other change",
+          "unrelated": "the changes have nothing to do with each other"
+        }
+      }
+    }
+  },
+  "response": {
+    "model": "typesafe-ai/jev",
+    "answers": {
+      "relation": {
+        "type": "choice",
+        "choice": "same intent",
+        "probabilities": {
+          "caller update": 0.11,
+          "same intent": 0.88,
+          "same pattern": 0.01,
+          "test for": 0,
+          "unrelated": 0
+        }
+      }
+    },
+    "usage": {
+      "inputTokens": 667,
+      "outputTokens": 59
+    },
+    "providerMetadata": {
+      "gateway": {
+        "cost": "0.000028014",
+        "generationId": "gen_01M4SH13Z4HPZR46V35NHSDRM0"
+      }
+    }
+  }
+}

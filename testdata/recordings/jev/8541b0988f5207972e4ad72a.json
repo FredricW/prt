@@ -1,0 +1,99 @@
+{
+  "key": "8541b0988f5207972e4ad72a",
+  "request": {
+    "model": "typesafe-ai/jev",
+    "state": {
+      "pr": {
+        "title": "feat(web): cached user profiles with team and avatar"
+      },
+      "group": {
+        "units": [
+          {
+            "path": "web/src/api/client.ts",
+            "change": "modified",
+            "diff": " // auth headers, base URL and error mapping live in one place.\n \n import { formatQuery } from \"../utils/format\";\n+import { ApiError, authHeader, readError } from \"./errors\";\n+\n+export { ApiError };\n \n export const API_BASE = \"/api/v1\";\n \n-export class ApiError extends Error {"
+          },
+          {
+            "path": "web/src/api/client.ts",
+            "symbol": "ApiError.constructor",
+            "signature": "constructor( public readonly status: number, public readonly code: string, message: string, )",
+            "change": "moved",
+            "diff": "-  constructor(\n-    public readonly status: number,\n-    public readonly code: string,\n-    message: string,\n-  ) {\n-    super(message);\n-    this.name = \"ApiError\";\n-  }"
+          },
+          {
+            "path": "web/src/api/errors.ts",
+            "symbol": "ApiError.constructor",
+            "signature": "constructor( public readonly status: number, public readonly code: string, message: string, )",
+            "change": "moved",
+            "diff": "+  constructor(\n+    public readonly status: number,\n+    public readonly code: string,\n+    message: string,\n+  ) {\n+    super(message);\n+    this.name = \"ApiError\";\n+  }"
+          },
+          {
+            "path": "web/src/api/errors.ts",
+            "symbol": "readError",
+            "signature": "export async function readError(res: Response): Promise\u003cApiError\u003e",
+            "change": "added",
+            "diff": "+// readError turns a non-2xx response into an ApiError, using the JSON error\n+// payload when the server sent one.\n+export async function readError(res: Response): Promise\u003cApiError\u003e {\n+  let code = \"unknown\";\n+  let message = res.statusText;\n+  try {\n+    const payload = (await res.json()) as { code?: string; message?: string };\n+    code = payload.code ?? code;\n+    message = payload.message ?? message;\n+  } catch {\n+    // body was not JSON; keep the status text\n+  }\n+  return new ApiError(res.status, code, message);\n+}\n+"
+          },
+          {
+            "path": "web/src/api/errors.ts",
+            "change": "added",
+            "diff": "+// Error mapping and auth headers shared by every API call.\n+\n+export class ApiError extends Error {"
+          },
+          {
+            "path": "web/src/api/errors.ts",
+            "change": "added",
+            "diff": "+}\n+"
+          },
+          {
+            "path": "web/src/__tests__/client.test.ts",
+            "change": "modified",
+            "diff": " \n   it(\"maps error payloads to ApiError\", async () =\u003e {\n     mockFetch(404, { code: \"not_found\", message: \"no such user\" });\n-    await expect(fetchJSON(\"/users/nope\")).rejects.toEqual(new ApiError(404, \"not_found\", \"no such user\"));\n+    const err = await fetchJSON(\"/users/nope\").catch((e: unknown) =\u003e e);\n+    expect(err).toEqual(new ApiError(404, \"not_found\", \"no such user\"));\n+    expect(isNotFound(err)).toBe(true);\n   });\n \n   it(\"returns undefined for 204\", async () =\u003e {\n     mockFetch(204, undefined);\n     await expect(fetchJSON(\"/noop\", { method: \"POST\" })).resolves.toBeUndefined();\n   });\n+\n+  it(\"merges extra headers\", async () =\u003e {\n+    const spy = mockFetch(200, {});\n+    await fetchJSON(\"/x\", { headers: { \"X-Trace\": \"1\" } });\n+    const init = spy.mock.calls[0]![1] as RequestInit;\n+    expect((init.headers as Record\u003cstring, string\u003e)[\"X-Trace\"]).toBe(\"1\");\n+  });\n });\n \n describe(\"getUser\", () =\u003e {\n   it(\"escapes the id\", async () =\u003e {\n     const spy = mockFetch(200, { id: \"a/b\" });\n-    await getUser(\"a/b\");\n+    await getUser(\"a/b\", {});\n     expect(spy.mock.calls[0]![0]).toBe(\"/api/v1/users/a%2Fb\");\n   });\n+\n+  it(\"sends a sorted include list\", async () =\u003e {\n+    const spy = mockFetch(200, { id: \"u1\" });\n+    await getUser(\"u1\", { include: [\"team\", \"avatar\"] });\n+    expect(spy.mock.calls[0]![0]).toBe(\"/api/v1/users/u1?include=avatar%2Cteam\");\n+  });\n+\n+  it(\"bypasses caches when fresh\", async () =\u003e {\n+    const spy = mockFetch(200, { id: \"u1\" });\n+    await getUser(\"u1\", { fresh: true });\n+    const init = spy.mock.calls[0]![1] as RequestInit;\n+    expect((init.headers as Record\u003cstring, string\u003e)[\"Cache-Control\"]).toBe(\"no-cache\");\n+  });\n });"
+          }
+        ]
+      }
+    },
+    "questions": {
+      "name_bullet": {
+        "type": "choice",
+        "instructions": "Which bullet of the pull request description does this group of changes implement?",
+        "criteria": {
+          "b1": "`getUser` takes a required `GetUserOptions` argument (`include`, `fresh`, `signal`); all callers updated",
+          "b2": "Move `ApiError`, auth headers and error parsing into `api/errors.ts` and add `isNotFound`",
+          "b3": "Add `useProfileCache`: stale-while-revalidate cache with a 5 minute TTL and request de-duplication",
+          "b4": "Add `Avatar` and `ProfileHeader` components; `ProfilePage` uses the cache and shows save errors",
+          "b5": "Invalidate the profile cache on logout",
+          "b6": "server: return `avatarUrl` when `include=avatar` is requested",
+          "none": "implements none of the listed bullets"
+        }
+      }
+    }
+  },
+  "response": {
+    "model": "typesafe-ai/jev",
+    "answers": {
+      "name_bullet": {
+        "type": "choice",
+        "choice": "b2",
+        "probabilities": {
+          "b1": 0.14,
+          "b2": 0.83,
+          "b3": 0.01,
+          "b4": 0,
+          "b5": 0,
+          "b6": 0,
+          "none": 0.02
+        }
+      }
+    },
+    "usage": {
+      "inputTokens": 1781,
+      "outputTokens": 75
+    },
+    "providerMetadata": {
+      "gateway": {
+        "cost": "0.000074802",
+        "generationId": "gen_01M4SH19QXQ9FHNWCVMQRRMXZV"
+      }
+    }
+  }
+}

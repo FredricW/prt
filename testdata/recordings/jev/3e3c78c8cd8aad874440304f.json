@@ -1,0 +1,74 @@
+{
+  "key": "3e3c78c8cd8aad874440304f",
+  "request": {
+    "model": "typesafe-ai/jev",
+    "state": {
+      "pr": {
+        "title": "build(deps): bump the production group with 4 updates"
+      },
+      "group": {
+        "units": [
+          {
+            "path": "web/package-lock.json",
+            "change": "modified",
+            "diff": "       \"name\": \"@acme/portal-web\",\n       \"version\": \"0.14.2\",\n       \"dependencies\": {\n-        \"react\": \"18.2.0\",\n-        \"react-dom\": \"18.2.0\",\n-        \"zod\": \"^3.22.4\"\n+        \"react\": \"18.3.1\",\n+        \"react-dom\": \"18.3.1\",\n+        \"zod\": \"^3.23.8\"\n       },\n       \"devDependencies\": {\n         \"typescript\": \"^5.4.5\","
+          },
+          {
+            "path": "web/package-lock.json",
+            "change": "modified",
+            "diff": "       }\n     },\n     \"node_modules/react\": {\n-      \"version\": \"18.2.0\",\n-      \"resolved\": \"https://registry.npmjs.org/react/-/react-18.2.0.tgz\",\n-      \"integrity\": \"sha512-/3IjMdb2L9QbBdWiW5e3P2/npwMBaU9mHCSCUzNln0ZCYbcfTsGbTJrU/kGemdH2IWmB2ioZ+zkxtmq6g09fGQ==\",\n+      \"version\": \"18.3.1\",\n+      \"resolved\": \"https://registry.npmjs.org/react/-/react-18.3.1.tgz\",\n+      \"integrity\": \"sha512-wS+hAgJShR0KhEvPJArfuPVN1+Hz1t0Y6n5jLrGQbkb4urgPE/0Rve+1kMB1v/oWgHgm4WIcV+i7F2pTVj+2iQ==\",\n       \"dependencies\": {\n         \"loose-envify\": \"^1.1.0\"\n       },"
+          },
+          {
+            "path": "web/package-lock.json",
+            "change": "modified",
+            "diff": "       }\n     },\n     \"node_modules/react-dom\": {\n-      \"version\": \"18.2.0\",\n-      \"resolved\": \"https://registry.npmjs.org/react-dom/-/react-dom-18.2.0.tgz\",\n-      \"integrity\": \"sha512-6IMTriUmvsjHUjNtEDudZfuDQUoWXVxKHhlEGSk81n4YFS+r/Kl99wXiwlVXtPBtJenozv2P+hxDsw9eA7Xo6g==\",\n+      \"version\": \"18.3.1\",\n+      \"resolved\": \"https://registry.npmjs.org/react-dom/-/react-dom-18.3.1.tgz\",\n+      \"integrity\": \"sha512-5m4nQKp+rZRb09LNH59GM4BxTh9251/ylbKIbpe7TpGxfJ+9kv6BLkLBXIjjspbgbnIBNqlI23tRnTWT0snUIw==\",\n       \"dependencies\": {\n         \"loose-envify\": \"^1.1.0\",\n-        \"scheduler\": \"^0.23.0\"\n+        \"scheduler\": \"^0.23.2\"\n       },\n       \"peerDependencies\": {\n-        \"react\": \"^18.2.0\"\n+        \"react\": \"^18.3.1\"\n       }\n     },\n     \"node_modules/scheduler\": {\n-      \"version\": \"0.23.0\",\n-      \"resolved\": \"https://registry.npmjs.org/scheduler/-/scheduler-0.23.0.tgz\",\n-      \"integrity\": \"sha512-CtuThmgHNg7zIZWAXi3AsyIzA3n4xx7aNyjwC2VJldO2LMVDhFK+63xGqq6CsJH4rTAt6/M+N4GhZiDYPx9eUw==\",\n+      \"version\": \"0.23.2\",\n+      \"resolved\": \"https://registry.npmjs.org/scheduler/-/scheduler-0.23.2.tgz\",\n+      \"integrity\": \"sha512-UOShsPwz7NrMUqhR6t0hWjFduvOzbtv7toDH1/hIrfRNIDBnnBWd0CwJTGvTpngVlmwGCdP9/Zl/tVrDqcuYzQ==\",\n       \"dependencies\": {\n         \"loose-envify\": \"^1.1.0\"\n       }\n     },\n     \"node_modules/zod\": {\n-      \"version\": \"3.22.4\",\n-      \"resolved\": \"https://registry.npmjs.org/zod/-/zod-3.22.4.tgz\",\n-      \"integrity\": \"sha512-iC+8Io04lddc+mVqQ9AZ7OQ2MrUKGN+oIQyq1vemgt46jwCwLfhq7/pwnBnNXXXZb8VTVLKwp9EDkx+ryxIWmg==\",\n+      \"version\": \"3.23.8\",\n+      \"resolved\": \"https://registry.npmjs.org/zod/-/zod-3.23.8.tgz\",\n+      \"integrity\": \"sha512-XBx9AXhXktjUqnepgTiE5flcKIYWi/rme0Eaj+5Y0lftuGBq+jyRu/md4WnuxqgP1ubdpNCsYEYPxrzVHD8d6g==\",\n       \"funding\": {\n         \"url\": \"https://github.com/sponsors/colinhacks\"\n       }"
+          },
+          {
+            "path": "web/package.json",
+            "change": "modified",
+            "diff": "     \"lint\": \"eslint src\"\n   },\n   \"dependencies\": {\n-    \"react\": \"18.2.0\",\n-    \"react-dom\": \"18.2.0\",\n-    \"zod\": \"^3.22.4\"\n+    \"react\": \"18.3.1\",\n+    \"react-dom\": \"18.3.1\",\n+    \"zod\": \"^3.23.8\"\n   },\n   \"devDependencies\": {\n     \"typescript\": \"^5.4.5\","
+          }
+        ]
+      }
+    },
+    "questions": {
+      "name_bullet": {
+        "type": "choice",
+        "instructions": "Which bullet of the pull request description does this group of changes implement?",
+        "criteria": {
+          "b1": "Bump `react` from 18.2.0 to 18.3.1",
+          "b2": "Bump `react-dom` from 18.2.0 to 18.3.1",
+          "b3": "Bump `zod` from 3.22.4 to 3.23.8",
+          "b4": "Bump `github.com/go-chi/chi/v5` from 5.0.10 to 5.0.12",
+          "none": "implements none of the listed bullets"
+        }
+      }
+    }
+  },
+  "response": {
+    "model": "typesafe-ai/jev",
+    "answers": {
+      "name_bullet": {
+        "type": "choice",
+        "choice": "b1",
+        "probabilities": {
+          "b1": 0.59,
+          "b2": 0.02,
+          "b3": 0.06,
+          "b4": 0.01,
+          "none": 0.32
+        }
+      }
+    },
+    "usage": {
+      "inputTokens": 1981,
+      "outputTokens": 59
+    },
+    "providerMetadata": {
+      "gateway": {
+        "cost": "0.000083202",
+        "generationId": "gen_01M4SH1VPXT5AHMG739P9HXNRX"
+      }
+    }
+  }
+}

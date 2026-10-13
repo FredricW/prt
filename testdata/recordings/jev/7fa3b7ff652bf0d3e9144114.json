@@ -1,0 +1,70 @@
+{
+  "key": "7fa3b7ff652bf0d3e9144114",
+  "request": {
+    "model": "typesafe-ai/jev",
+    "state": {
+      "pr": {
+        "title": "feat(web): cached user profiles with team and avatar"
+      },
+      "group": {
+        "units": [
+          {
+            "path": "web/src/api/errors.ts",
+            "symbol": "isNotFound",
+            "signature": "export function isNotFound(err: unknown): boolean",
+            "change": "added",
+            "diff": "+export function isNotFound(err: unknown): boolean {\n+  return err instanceof ApiError \u0026\u0026 err.status === 404;\n+}"
+          },
+          {
+            "path": "web/src/api/index.ts",
+            "change": "modified",
+            "diff": " export { API_BASE, ApiError, fetchJSON, getCurrentUser, getUser, updateUser } from \"./client\";\n-export type { RequestOptions, User } from \"./client\";\n+export type { GetUserOptions, RequestOptions, TeamSummary, User, UserInclude } from \"./client\";\n+export { isNotFound } from \"./errors\";\n export * from \"./users\";\n export * from \"./teams\";\n export * from \"./billing\";"
+          }
+        ]
+      }
+    },
+    "questions": {
+      "name_bullet": {
+        "type": "choice",
+        "instructions": "Which bullet of the pull request description does this group of changes implement?",
+        "criteria": {
+          "b1": "`getUser` takes a required `GetUserOptions` argument (`include`, `fresh`, `signal`); all callers updated",
+          "b2": "Move `ApiError`, auth headers and error parsing into `api/errors.ts` and add `isNotFound`",
+          "b3": "Add `useProfileCache`: stale-while-revalidate cache with a 5 minute TTL and request de-duplication",
+          "b4": "Add `Avatar` and `ProfileHeader` components; `ProfilePage` uses the cache and shows save errors",
+          "b5": "Invalidate the profile cache on logout",
+          "b6": "server: return `avatarUrl` when `include=avatar` is requested",
+          "none": "implements none of the listed bullets"
+        }
+      }
+    }
+  },
+  "response": {
+    "model": "typesafe-ai/jev",
+    "answers": {
+      "name_bullet": {
+        "type": "choice",
+        "choice": "b2",
+        "probabilities": {
+          "b1": 0.05,
+          "b2": 0.87,
+          "b3": 0,
+          "b4": 0,
+          "b5": 0,
+          "b6": 0,
+          "none": 0.08
+        }
+      }
+    },
+    "usage": {
+      "inputTokens": 770,
+      "outputTokens": 75
+    },
+    "providerMetadata": {
+      "gateway": {
+        "cost": "0.00003234",
+        "generationId": "gen_01M4SH1A2PY5XTPMEBMBSFYNEA"
+      }
+    }
+  }
+}

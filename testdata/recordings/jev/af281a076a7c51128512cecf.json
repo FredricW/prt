@@ -1,0 +1,72 @@
+{
+  "key": "af281a076a7c51128512cecf",
+  "request": {
+    "model": "typesafe-ai/jev",
+    "state": {
+      "pr": {
+        "title": "feat(web): cached user profiles with team and avatar"
+      },
+      "group": {
+        "units": [
+          {
+            "path": "web/src/components/UserCard.tsx",
+            "symbol": "UserCard",
+            "signature": "export function UserCard({ userId, compact = false }: Props)",
+            "change": "modified",
+            "diff": " \n   useEffect(() =\u003e {\n     let live = true;\n-    getUser(userId).then((u) =\u003e {\n+    getUser(userId, { include: [\"avatar\"] }).then((u) =\u003e {\n       if (live) setUser(u);\n     });\n     return () =\u003e {"
+          },
+          {
+            "path": "web/src/components/UserCard.tsx",
+            "symbol": "UserCard",
+            "signature": "export function UserCard({ userId, compact = false }: Props)",
+            "change": "modified",
+            "diff": "   }\n   return (\n     \u003cdiv className={compact ? \"user-card user-card--compact\" : \"user-card\"}\u003e\n-      \u003cspan className=\"avatar\"\u003e{initials(user.displayName)}\u003c/span\u003e\n+      \u003cAvatar name={user.displayName} url={user.avatarUrl} size={compact ? 24 : 32} /\u003e\n       \u003cdiv\u003e\n         \u003cstrong\u003e{user.displayName}\u003c/strong\u003e\n         {!compact \u0026\u0026 \u003cdiv className=\"muted\"\u003e{user.email}\u003c/div\u003e}"
+          }
+        ]
+      }
+    },
+    "questions": {
+      "name_bullet": {
+        "type": "choice",
+        "instructions": "Which bullet of the pull request description does this group of changes implement?",
+        "criteria": {
+          "b1": "`getUser` takes a required `GetUserOptions` argument (`include`, `fresh`, `signal`); all callers updated",
+          "b2": "Move `ApiError`, auth headers and error parsing into `api/errors.ts` and add `isNotFound`",
+          "b3": "Add `useProfileCache`: stale-while-revalidate cache with a 5 minute TTL and request de-duplication",
+          "b4": "Add `Avatar` and `ProfileHeader` components; `ProfilePage` uses the cache and shows save errors",
+          "b5": "Invalidate the profile cache on logout",
+          "b6": "server: return `avatarUrl` when `include=avatar` is requested",
+          "none": "implements none of the listed bullets"
+        }
+      }
+    }
+  },
+  "response": {
+    "model": "typesafe-ai/jev",
+    "answers": {
+      "name_bullet": {
+        "type": "choice",
+        "choice": "none",
+        "probabilities": {
+          "b1": 0.21,
+          "b2": 0,
+          "b3": 0.03,
+          "b4": 0.25,
+          "b5": 0,
+          "b6": 0.05,
+          "none": 0.46
+        }
+      }
+    },
+    "usage": {
+      "inputTokens": 840,
+      "outputTokens": 74
+    },
+    "providerMetadata": {
+      "gateway": {
+        "cost": "0.00003528",
+        "generationId": "gen_01M4SH19CZAA7BG5QKX02KY599"
+      }
+    }
+  }
+}

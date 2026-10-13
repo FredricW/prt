@@ -1,0 +1,59 @@
+{
+  "key": "67fc40fb7e3f5185b6f3be1e",
+  "request": {
+    "model": "typesafe-ai/jev",
+    "state": {
+      "a": {
+        "path": "web/src/api/client.ts",
+        "change": "modified",
+        "diff": " // auth headers, base URL and error mapping live in one place.\n \n import { formatQuery } from \"../utils/format\";\n+import { ApiError, authHeader, readError } from \"./errors\";\n+\n+export { ApiError };\n \n export const API_BASE = \"/api/v1\";\n \n-export class ApiError extends Error {"
+      },
+      "b": {
+        "path": "web/src/api/client.ts",
+        "symbol": "ApiError.constructor",
+        "signature": "constructor( public readonly status: number, public readonly code: string, message: string, )",
+        "change": "moved",
+        "diff": "-  constructor(\n-    public readonly status: number,\n-    public readonly code: string,\n-    message: string,\n-  ) {\n-    super(message);\n-    this.name = \"ApiError\";\n-  }"
+      }
+    },
+    "questions": {
+      "relation": {
+        "type": "choice",
+        "instructions": "How are these two changes related?",
+        "criteria": {
+          "caller update": "one change updates a caller or user of what the other change defines or changes",
+          "same intent": "both changes serve the same purpose or feature",
+          "same pattern": "both apply the same mechanical edit (rename, signature tweak, repeated pattern)",
+          "test for": "one change is a test that exercises the other change",
+          "unrelated": "the changes have nothing to do with each other"
+        }
+      }
+    }
+  },
+  "response": {
+    "model": "typesafe-ai/jev",
+    "answers": {
+      "relation": {
+        "type": "choice",
+        "choice": "same intent",
+        "probabilities": {
+          "caller update": 0.08,
+          "same intent": 0.81,
+          "same pattern": 0.11,
+          "test for": 0,
+          "unrelated": 0
+        }
+      }
+    },
+    "usage": {
+      "inputTokens": 629,
+      "outputTokens": 59
+    },
+    "providerMetadata": {
+      "gateway": {
+        "cost": "0.000026418",
+        "generationId": "gen_01M4SH1821S2DM1BP982J6Q4HE"
+      }
+    }
+  }
+}

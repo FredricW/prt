@@ -1,0 +1,139 @@
+{
+  "key": "a62b5a6578186a39477ce7f0",
+  "request": {
+    "model": "typesafe-ai/jev",
+    "state": {
+      "file": {
+        "path": "web/src/__tests__/users.test.ts",
+        "units": [
+          {
+            "path": "web/src/__tests__/users.test.ts",
+            "change": "modified",
+            "diff": " });\n \n describe(\"users api\", () =\u003e {\n-  it(\"passes cursor and limit to fetchJSON\", async () =\u003e {\n-    const spy = vi.spyOn(client, \"fetchJSON\").mockResolvedValue({ users: [], nextCursor: null });\n+  it(\"passes cursor and limit to requestJSON\", async () =\u003e {\n+    const spy = vi.spyOn(client, \"requestJSON\").mockResolvedValue({ users: [], nextCursor: null });\n     await listUsers(\"c1\", 10);\n     expect(spy).toHaveBeenCalledWith(\"/users\", { query: { cursor: \"c1\", limit: 10 } });\n   });"
+          },
+          {
+            "path": "web/src/__tests__/users.test.ts",
+            "change": "modified",
+            "diff": "   });\n \n   it(\"deactivates with POST\", async () =\u003e {\n-    const spy = vi.spyOn(client, \"fetchJSON\").mockResolvedValue(undefined);\n+    const spy = vi.spyOn(client, \"requestJSON\").mockResolvedValue(undefined);\n     await deactivateUser(\"u1\");\n     expect(spy).toHaveBeenCalledWith(\"/users/u1/deactivate\", { method: \"POST\" });\n   });"
+          }
+        ]
+      },
+      "groups": [
+        {
+          "name": "Update every import and call site (19 files)",
+          "files": [
+            "web/src/__tests__/client.test.ts",
+            "web/src/__tests__/users.test.ts",
+            "web/src/api/billing.ts",
+            "web/src/api/client.ts",
+            "web/src/api/notifications.ts",
+            "web/src/api/orgs.ts",
+            "web/src/api/search.ts",
+            "web/src/api/settings.ts",
+            "web/src/api/teams.ts",
+            "web/src/api/users.ts",
+            "web/src/components/AuditLog.tsx",
+            "web/src/components/InvoiceTable.tsx",
+            "web/src/components/SettingsForm.tsx",
+            "web/src/components/StatusFooter.tsx",
+            "web/src/components/TeamPanel.tsx"
+          ],
+          "units": 17
+        },
+        {
+          "name": "listUsers (+1)",
+          "files": [
+            "web/src/__tests__/users.test.ts",
+            "web/src/api/users.ts"
+          ],
+          "units": 2
+        },
+        {
+          "name": "Rename `fetchJSON` to `requestJSON` in `api/client.ts`",
+          "files": [
+            "web/src/api/client.ts",
+            "web/src/api/index.ts"
+          ],
+          "units": 2
+        },
+        {
+          "name": "useFetch (+1)",
+          "files": [
+            "web/src/hooks/useFetch.ts"
+          ],
+          "units": 2
+        },
+        {
+          "name": "Update every import and call site (19 files)",
+          "files": [
+            "web/src/api/billing.ts",
+            "web/src/api/health.ts",
+            "web/src/api/notifications.ts",
+            "web/src/api/orgs.ts",
+            "web/src/api/search.ts",
+            "web/src/api/settings.ts",
+            "web/src/components/AuditLog.tsx",
+            "web/src/components/InvoiceTable.tsx",
+            "web/src/components/NotificationBell.tsx",
+            "web/src/components/SettingsForm.tsx",
+            "web/src/components/StatusFooter.tsx",
+            "web/src/hooks/usePolling.ts"
+          ],
+          "units": 12
+        },
+        {
+          "name": "Rename `fetchJSON` to `requestJSON` in `api/client.ts`",
+          "files": [
+            "web/src/api/client.ts",
+            "web/src/api/orgs.ts",
+            "web/src/api/settings.ts"
+          ],
+          "units": 4
+        },
+        {
+          "name": "markRead ×3",
+          "files": [
+            "web/src/api/notifications.ts",
+            "web/src/api/users.ts",
+            "web/src/components/NotificationBell.tsx"
+          ],
+          "units": 3
+        },
+        {
+          "name": "teams.ts ×3",
+          "files": [
+            "web/src/api/teams.ts",
+            "web/src/components/TeamPanel.tsx",
+            "web/src/hooks/useFetch.ts"
+          ],
+          "units": 3
+        }
+      ]
+    },
+    "questions": {
+      "separate_pr": {
+        "type": "boolean",
+        "instructions": "Should the changes to this file be split into their own pull request, given the other change groups listed?"
+      }
+    }
+  },
+  "response": {
+    "model": "typesafe-ai/jev",
+    "answers": {
+      "separate_pr": {
+        "type": "boolean",
+        "probability": 0.25
+      }
+    },
+    "usage": {
+      "inputTokens": 1310,
+      "outputTokens": 23
+    },
+    "providerMetadata": {
+      "gateway": {
+        "cost": "0.00005502",
+        "generationId": "gen_01M4SH1Q4YBQP2G56XEWHVYQX4"
+      }
+    }
+  }
+}

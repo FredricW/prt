@@ -1,0 +1,61 @@
+{
+  "key": "c9d617b92d4680fa9c19998b",
+  "request": {
+    "model": "typesafe-ai/jev",
+    "state": {
+      "a": {
+        "path": "web/src/api/billing.ts",
+        "symbol": "downloadInvoiceUrl",
+        "signature": "export async function downloadInvoiceUrl(id: string): Promise\u003cstring\u003e",
+        "change": "modified",
+        "diff": " \n export async function downloadInvoiceUrl(id: string): Promise\u003cstring\u003e {\n-  const { url } = await fetchJSON\u003c{ url: string }\u003e(`/billing/invoices/${encodeURIComponent(id)}/pdf`);\n+  const { url } = await requestJSON\u003c{ url: string }\u003e(`/billing/invoices/${encodeURIComponent(id)}/pdf`);\n   return url;\n }"
+      },
+      "b": {
+        "path": "web/src/api/client.ts",
+        "symbol": "getUser",
+        "signature": "export async function getUser(id: string): Promise\u003cUser\u003e",
+        "change": "modified",
+        "diff": " }\n \n export async function getUser(id: string): Promise\u003cUser\u003e {\n-  return fetchJSON\u003cUser\u003e(`/users/${encodeURIComponent(id)}`);\n+  return requestJSON\u003cUser\u003e(`/users/${encodeURIComponent(id)}`);\n }"
+      }
+    },
+    "questions": {
+      "relation": {
+        "type": "choice",
+        "instructions": "How are these two changes related?",
+        "criteria": {
+          "caller update": "one change updates a caller or user of what the other change defines or changes",
+          "same intent": "both changes serve the same purpose or feature",
+          "same pattern": "both apply the same mechanical edit (rename, signature tweak, repeated pattern)",
+          "test for": "one change is a test that exercises the other change",
+          "unrelated": "the changes have nothing to do with each other"
+        }
+      }
+    }
+  },
+  "response": {
+    "model": "typesafe-ai/jev",
+    "answers": {
+      "relation": {
+        "type": "choice",
+        "choice": "same pattern",
+        "probabilities": {
+          "caller update": 0,
+          "same intent": 0,
+          "same pattern": 1,
+          "test for": 0,
+          "unrelated": 0
+        }
+      }
+    },
+    "usage": {
+      "inputTokens": 697,
+      "outputTokens": 59
+    },
+    "providerMetadata": {
+      "gateway": {
+        "cost": "0.000029274",
+        "generationId": "gen_01M4SH1F58G7W86SWACB3R6VXA"
+      }
+    }
+  }
+}

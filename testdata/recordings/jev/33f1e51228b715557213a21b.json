@@ -1,0 +1,170 @@
+{
+  "key": "33f1e51228b715557213a21b",
+  "request": {
+    "model": "typesafe-ai/jev",
+    "state": {
+      "file": {
+        "path": "web/src/api/errors.ts",
+        "units": [
+          {
+            "path": "web/src/api/errors.ts",
+            "change": "added",
+            "diff": "+// Error mapping and auth headers shared by every API call.\n+\n+export class ApiError extends Error {"
+          },
+          {
+            "path": "web/src/api/errors.ts",
+            "symbol": "ApiError.constructor",
+            "signature": "constructor( public readonly status: number, public readonly code: string, message: string, )",
+            "change": "moved",
+            "diff": "+  constructor(\n+    public readonly status: number,\n+    public readonly code: string,\n+    message: string,\n+  ) {\n+    super(message);\n+    this.name = \"ApiError\";\n+  }"
+          },
+          {
+            "path": "web/src/api/errors.ts",
+            "change": "added",
+            "diff": "+}\n+"
+          },
+          {
+            "path": "web/src/api/errors.ts",
+            "symbol": "authHeader",
+            "signature": "export function authHeader(): Record\u003cstring, string\u003e",
+            "change": "added",
+            "diff": "+export function authHeader(): Record\u003cstring, string\u003e {\n+  const token = window.localStorage.getItem(\"portal.token\");\n+  return token ? { Authorization: `Bearer ${token}` } : {};\n+}\n+"
+          },
+          {
+            "path": "web/src/api/errors.ts",
+            "symbol": "readError",
+            "signature": "export async function readError(res: Response): Promise\u003cApiError\u003e",
+            "change": "added",
+            "diff": "+// readError turns a non-2xx response into an ApiError, using the JSON error\n+// payload when the server sent one.\n+export async function readError(res: Response): Promise\u003cApiError\u003e {\n+  let code = \"unknown\";\n+  let message = res.statusText;\n+  try {\n+    const payload = (await res.json()) as { code?: string; message?: string };\n+    code = payload.code ?? code;\n+    message = payload.message ?? message;\n+  } catch {\n+    // body was not JSON; keep the status text\n+  }\n+  return new ApiError(res.status, code, message);\n+}\n+"
+          },
+          {
+            "path": "web/src/api/errors.ts",
+            "symbol": "isNotFound",
+            "signature": "export function isNotFound(err: unknown): boolean",
+            "change": "added",
+            "diff": "+export function isNotFound(err: unknown): boolean {\n+  return err instanceof ApiError \u0026\u0026 err.status === 404;\n+}"
+          }
+        ]
+      },
+      "groups": [
+        {
+          "name": "server: return `avatarUrl` when `include=avatar` is request…",
+          "files": [
+            "server/internal/users/users.go"
+          ],
+          "units": 6
+        },
+        {
+          "name": "Move `ApiError`, auth headers and error parsing into `api/e…",
+          "files": [
+            "web/src/__tests__/client.test.ts",
+            "web/src/api/client.ts",
+            "web/src/api/errors.ts"
+          ],
+          "units": 7
+        },
+        {
+          "name": "Add `useProfileCache`: stale-while-revalidate cache with a …",
+          "files": [
+            "web/src/__tests__/useProfileCache.test.ts",
+            "web/src/components/ProfilePage.tsx",
+            "web/src/hooks/useProfileCache.ts"
+          ],
+          "units": 8
+        },
+        {
+          "name": "`getUser` takes a required `GetUserOptions` argument (`incl…",
+          "files": [
+            "web/src/api/client.ts",
+            "web/src/api/users.ts",
+            "web/src/components/UserList.tsx",
+            "web/src/hooks/useProfileCache.ts",
+            "web/src/hooks/useUser.ts"
+          ],
+          "units": 7
+        },
+        {
+          "name": "Move `ApiError`, auth headers and error parsing into `api/e…",
+          "files": [
+            "web/src/api/errors.ts",
+            "web/src/api/index.ts"
+          ],
+          "units": 2
+        },
+        {
+          "name": "Add `Avatar` and `ProfileHeader` components; `ProfilePage` …",
+          "files": [
+            "web/src/components/Avatar.tsx",
+            "web/src/components/ProfileHeader.tsx",
+            "web/src/components/UserCard.tsx"
+          ],
+          "units": 3
+        },
+        {
+          "name": "Add `Avatar` and `ProfileHeader` components; `ProfilePage` …",
+          "files": [
+            "web/src/components/ProfileHeader.tsx",
+            "web/src/components/ProfilePage.tsx",
+            "web/src/hooks/useUser.ts"
+          ],
+          "units": 3
+        },
+        {
+          "name": "Move `ApiError`, auth headers and error parsing into `api/e…",
+          "files": [
+            "web/src/__tests__/client.test.ts",
+            "web/src/api/client.ts"
+          ],
+          "units": 2
+        },
+        {
+          "name": "client.ts (+1)",
+          "files": [
+            "web/src/api/client.ts"
+          ],
+          "units": 2
+        },
+        {
+          "name": "Move `ApiError`, auth headers and error parsing into `api/e…",
+          "files": [
+            "web/src/api/client.ts",
+            "web/src/api/errors.ts"
+          ],
+          "units": 2
+        },
+        {
+          "name": "UserCard (+1)",
+          "files": [
+            "web/src/components/UserCard.tsx"
+          ],
+          "units": 2
+        }
+      ]
+    },
+    "questions": {
+      "separate_pr": {
+        "type": "boolean",
+        "instructions": "Should the changes to this file be split into their own pull request, given the other change groups listed?"
+      }
+    }
+  },
+  "response": {
+    "model": "typesafe-ai/jev",
+    "answers": {
+      "separate_pr": {
+        "type": "boolean",
+        "probability": 0.39
+      }
+    },
+    "usage": {
+      "inputTokens": 1586,
+      "outputTokens": 23
+    },
+    "providerMetadata": {
+      "gateway": {
+        "cost": "0.000066612",
+        "generationId": "gen_01M4SH1ARG2YW56ZGW8VEQG0C8"
+      }
+    }
+  }
+}

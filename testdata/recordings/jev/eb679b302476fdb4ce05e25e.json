@@ -1,0 +1,61 @@
+{
+  "key": "eb679b302476fdb4ce05e25e",
+  "request": {
+    "model": "typesafe-ai/jev",
+    "state": {
+      "a": {
+        "path": "server/internal/billing/legacy.go",
+        "symbol": "parseLegacyDate",
+        "signature": "func parseLegacyDate(s string) (time.Time, error)",
+        "change": "deleted",
+        "diff": "-// parseLegacyDate parses the dd.mm.yyyy dates the old system produced.\n-func parseLegacyDate(s string) (time.Time, error) {\n-\treturn time.Parse(\"02.01.2006\", s)\n-}"
+      },
+      "b": {
+        "path": "server/internal/billing/invoice.go",
+        "symbol": "renumberLegacy",
+        "signature": "func renumberLegacy(invs []Invoice) []Invoice",
+        "change": "deleted",
+        "diff": " \treturn inv, s.ledger.Save(inv)\n }\n \n-// renumberLegacy rewrites pre-2024 invoice numbers to the YYYY-NNNN scheme.\n-// Deprecated: the migration ran in March 2024; nothing calls this any more.\n-func renumberLegacy(invs []Invoice) []Invoice {\n-\tout := make([]Invoice, len(invs))\n-\tfor i, inv := range invs {\n-\t\tif inv.IssuedAt.Year() \u003c 2024 {\n-\t\t\tinv.Number = fmt.Sprintf(\"%d-%04d\", inv.IssuedAt.Year(), i+1)\n-\t\t}\n-\t\tout[i] = inv\n-\t}\n-\treturn out\n-}\n-\n // Routes mounts the billing endpoints.\n func Routes(s *Service) http.Handler {\n \tr := chi.NewRouter()"
+      }
+    },
+    "questions": {
+      "relation": {
+        "type": "choice",
+        "instructions": "How are these two changes related?",
+        "criteria": {
+          "caller update": "one change updates a caller or user of what the other change defines or changes",
+          "same intent": "both changes serve the same purpose or feature",
+          "same pattern": "both apply the same mechanical edit (rename, signature tweak, repeated pattern)",
+          "test for": "one change is a test that exercises the other change",
+          "unrelated": "the changes have nothing to do with each other"
+        }
+      }
+    }
+  },
+  "response": {
+    "model": "typesafe-ai/jev",
+    "answers": {
+      "relation": {
+        "type": "choice",
+        "choice": "same intent",
+        "probabilities": {
+          "caller update": 0.01,
+          "same intent": 0.87,
+          "same pattern": 0.1,
+          "test for": 0,
+          "unrelated": 0.02
+        }
+      }
+    },
+    "usage": {
+      "inputTokens": 777,
+      "outputTokens": 59
+    },
+    "providerMetadata": {
+      "gateway": {
+        "cost": "0.000032634",
+        "generationId": "gen_01M4SH1S27EDGEJQ4RV3N3XHRY"
+      }
+    }
+  }
+}

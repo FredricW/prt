@@ -1,0 +1,57 @@
+{
+  "key": "a9205f5115b795139e58629c",
+  "request": {
+    "model": "typesafe-ai/jev",
+    "state": {
+      "a": {
+        "path": "web/src/api/users.ts",
+        "change": "modified",
+        "diff": "-import { fetchJSON, getUser, type User } from \"./client\";\n+import { requestJSON, getUser, type User } from \"./client\";\n \n export interface UserPage {\n   users: User[];"
+      },
+      "b": {
+        "path": "web/src/__tests__/users.test.ts",
+        "change": "modified",
+        "diff": "   });\n \n   it(\"deactivates with POST\", async () =\u003e {\n-    const spy = vi.spyOn(client, \"fetchJSON\").mockResolvedValue(undefined);\n+    const spy = vi.spyOn(client, \"requestJSON\").mockResolvedValue(undefined);\n     await deactivateUser(\"u1\");\n     expect(spy).toHaveBeenCalledWith(\"/users/u1/deactivate\", { method: \"POST\" });\n   });"
+      }
+    },
+    "questions": {
+      "relation": {
+        "type": "choice",
+        "instructions": "How are these two changes related?",
+        "criteria": {
+          "caller update": "one change updates a caller or user of what the other change defines or changes",
+          "same intent": "both changes serve the same purpose or feature",
+          "same pattern": "both apply the same mechanical edit (rename, signature tweak, repeated pattern)",
+          "test for": "one change is a test that exercises the other change",
+          "unrelated": "the changes have nothing to do with each other"
+        }
+      }
+    }
+  },
+  "response": {
+    "model": "typesafe-ai/jev",
+    "answers": {
+      "relation": {
+        "type": "choice",
+        "choice": "test for",
+        "probabilities": {
+          "caller update": 0.2,
+          "same intent": 0.01,
+          "same pattern": 0.22,
+          "test for": 0.57,
+          "unrelated": 0
+        }
+      }
+    },
+    "usage": {
+      "inputTokens": 623,
+      "outputTokens": 59
+    },
+    "providerMetadata": {
+      "gateway": {
+        "cost": "0.000026166",
+        "generationId": "gen_01M4SH1EDB9EXWTT5R3YCFTYQW"
+      }
+    }
+  }
+}

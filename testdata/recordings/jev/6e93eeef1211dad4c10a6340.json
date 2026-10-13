@@ -1,0 +1,61 @@
+{
+  "key": "6e93eeef1211dad4c10a6340",
+  "request": {
+    "model": "typesafe-ai/jev",
+    "state": {
+      "a": {
+        "path": "web/src/api/orgs.ts",
+        "symbol": "currentOrg",
+        "signature": "export async function currentOrg(): Promise\u003cOrg\u003e",
+        "change": "modified",
+        "diff": " }\n \n export async function currentOrg(): Promise\u003cOrg\u003e {\n-  return fetchJSON\u003cOrg\u003e(\"/orgs/current\");\n+  return requestJSON\u003cOrg\u003e(\"/orgs/current\");\n }"
+      },
+      "b": {
+        "path": "web/src/api/orgs.ts",
+        "symbol": "renameOrg",
+        "signature": "export async function renameOrg(name: string): Promise\u003cOrg\u003e",
+        "change": "modified",
+        "diff": " \n export async function renameOrg(name: string): Promise\u003cOrg\u003e {\n-  return fetchJSON\u003cOrg\u003e(\"/orgs/current\", { method: \"PATCH\", body: { name } });\n+  return requestJSON\u003cOrg\u003e(\"/orgs/current\", { method: \"PATCH\", body: { name } });\n }"
+      }
+    },
+    "questions": {
+      "relation": {
+        "type": "choice",
+        "instructions": "How are these two changes related?",
+        "criteria": {
+          "caller update": "one change updates a caller or user of what the other change defines or changes",
+          "same intent": "both changes serve the same purpose or feature",
+          "same pattern": "both apply the same mechanical edit (rename, signature tweak, repeated pattern)",
+          "test for": "one change is a test that exercises the other change",
+          "unrelated": "the changes have nothing to do with each other"
+        }
+      }
+    }
+  },
+  "response": {
+    "model": "typesafe-ai/jev",
+    "answers": {
+      "relation": {
+        "type": "choice",
+        "choice": "same pattern",
+        "probabilities": {
+          "caller update": 0,
+          "same intent": 0.01,
+          "same pattern": 0.99,
+          "test for": 0,
+          "unrelated": 0
+        }
+      }
+    },
+    "usage": {
+      "inputTokens": 643,
+      "outputTokens": 59
+    },
+    "providerMetadata": {
+      "gateway": {
+        "cost": "0.000027006",
+        "generationId": "gen_01M4SH1JB5KY2P4NWXRBP1YRAS"
+      }
+    }
+  }
+}

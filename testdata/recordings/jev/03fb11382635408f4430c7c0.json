@@ -1,0 +1,57 @@
+{
+  "key": "03fb11382635408f4430c7c0",
+  "request": {
+    "model": "typesafe-ai/jev",
+    "state": {
+      "a": {
+        "path": "server/internal/users/users.go",
+        "change": "added",
+        "diff": " \tEmail       string\n \tDisplayName string\n \tTeamID      string\n+\tAvatarURL   string\n \tCreatedAt   time.Time\n }\n "
+      },
+      "b": {
+        "path": "server/internal/users/users.go",
+        "change": "added",
+        "diff": " \t\"encoding/json\"\n \t\"errors\"\n \t\"net/http\"\n+\t\"strings\"\n \t\"sync\"\n \t\"time\"\n "
+      }
+    },
+    "questions": {
+      "relation": {
+        "type": "choice",
+        "instructions": "How are these two changes related?",
+        "criteria": {
+          "caller update": "one change updates a caller or user of what the other change defines or changes",
+          "same intent": "both changes serve the same purpose or feature",
+          "same pattern": "both apply the same mechanical edit (rename, signature tweak, repeated pattern)",
+          "test for": "one change is a test that exercises the other change",
+          "unrelated": "the changes have nothing to do with each other"
+        }
+      }
+    }
+  },
+  "response": {
+    "model": "typesafe-ai/jev",
+    "answers": {
+      "relation": {
+        "type": "choice",
+        "choice": "same intent",
+        "probabilities": {
+          "caller update": 0.1,
+          "same intent": 0.87,
+          "same pattern": 0,
+          "test for": 0,
+          "unrelated": 0.03
+        }
+      }
+    },
+    "usage": {
+      "inputTokens": 534,
+      "outputTokens": 59
+    },
+    "providerMetadata": {
+      "gateway": {
+        "cost": "0.000022428",
+        "generationId": "gen_01M4SH14GVCMNN1QBYHAKDK73T"
+      }
+    }
+  }
+}

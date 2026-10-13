@@ -36,7 +36,7 @@ func TestEstimateTokensCoversRecordings(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if est := EstimateTokensLen(len(body)); est < rec.Response.Usage.InputTokens {
+		if est := EstimateRequestTokensLen(len(body)); est < rec.Response.Usage.InputTokens {
 			t.Errorf("%s: %d bytes estimated at %d tokens, gateway counted %d", filepath.Base(p), len(body), est, rec.Response.Usage.InputTokens)
 		}
 		checked++

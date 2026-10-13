@@ -1,0 +1,162 @@
+{
+  "key": "36111fd6301d07aa6690ba99",
+  "request": {
+    "model": "typesafe-ai/jev",
+    "state": {
+      "file": {
+        "path": "web/src/api/client.ts",
+        "units": [
+          {
+            "path": "web/src/api/client.ts",
+            "change": "modified",
+            "diff": "-// Thin HTTP client for the portal API. Every request goes through fetchJSON so\n+// Thin HTTP client for the portal API. Every request goes through requestJSON so\n // auth headers, base URL and error mapping live in one place.\n \n import { formatQuery } from \"../utils/format\";"
+          },
+          {
+            "path": "web/src/api/client.ts",
+            "symbol": "requestJSON",
+            "signature": "export async function requestJSON\u003cT\u003e(path: string, opts: RequestOptions = {}): Promise\u003cT\u003e",
+            "change": "modified",
+            "diff": "   return token ? { Authorization: `Bearer ${token}` } : {};\n }\n \n-export async function fetchJSON\u003cT\u003e(path: string, opts: RequestOptions = {}): Promise\u003cT\u003e {\n+export async function requestJSON\u003cT\u003e(path: string, opts: RequestOptions = {}): Promise\u003cT\u003e {\n   const url = API_BASE + path + formatQuery(opts.query ?? {});\n   const res = await fetch(url, {\n     method: opts.method ?? \"GET\","
+          },
+          {
+            "path": "web/src/api/client.ts",
+            "symbol": "getUser",
+            "signature": "export async function getUser(id: string): Promise\u003cUser\u003e",
+            "change": "modified",
+            "diff": " }\n \n export async function getUser(id: string): Promise\u003cUser\u003e {\n-  return fetchJSON\u003cUser\u003e(`/users/${encodeURIComponent(id)}`);\n+  return requestJSON\u003cUser\u003e(`/users/${encodeURIComponent(id)}`);\n }"
+          },
+          {
+            "path": "web/src/api/client.ts",
+            "symbol": "getCurrentUser",
+            "signature": "export async function getCurrentUser(): Promise\u003cUser\u003e",
+            "change": "modified",
+            "diff": " \n export async function getCurrentUser(): Promise\u003cUser\u003e {\n-  return fetchJSON\u003cUser\u003e(\"/users/me\");\n+  return requestJSON\u003cUser\u003e(\"/users/me\");\n }"
+          },
+          {
+            "path": "web/src/api/client.ts",
+            "symbol": "updateUser",
+            "signature": "export async function updateUser(id: string, patch: Partial\u003cPick\u003cUser, \"displayName\" | \"teamId\"\u003e\u003e): Promise\u003cUser\u003e",
+            "change": "modified",
+            "diff": " \n export async function updateUser(id: string, patch: Partial\u003cPick\u003cUser, \"displayName\" | \"teamId\"\u003e\u003e): Promise\u003cUser\u003e {\n-  return fetchJSON\u003cUser\u003e(`/users/${encodeURIComponent(id)}`, { method: \"PATCH\", body: patch });\n+  return requestJSON\u003cUser\u003e(`/users/${encodeURIComponent(id)}`, { method: \"PATCH\", body: patch });\n }"
+          }
+        ]
+      },
+      "groups": [
+        {
+          "name": "Update every import and call site (19 files)",
+          "files": [
+            "web/src/__tests__/client.test.ts",
+            "web/src/__tests__/users.test.ts",
+            "web/src/api/billing.ts",
+            "web/src/api/client.ts",
+            "web/src/api/notifications.ts",
+            "web/src/api/orgs.ts",
+            "web/src/api/search.ts",
+            "web/src/api/settings.ts",
+            "web/src/api/teams.ts",
+            "web/src/api/users.ts",
+            "web/src/components/AuditLog.tsx",
+            "web/src/components/InvoiceTable.tsx",
+            "web/src/components/SettingsForm.tsx",
+            "web/src/components/StatusFooter.tsx",
+            "web/src/components/TeamPanel.tsx"
+          ],
+          "units": 17
+        },
+        {
+          "name": "listUsers (+1)",
+          "files": [
+            "web/src/__tests__/users.test.ts",
+            "web/src/api/users.ts"
+          ],
+          "units": 2
+        },
+        {
+          "name": "Rename `fetchJSON` to `requestJSON` in `api/client.ts`",
+          "files": [
+            "web/src/api/client.ts",
+            "web/src/api/index.ts"
+          ],
+          "units": 2
+        },
+        {
+          "name": "useFetch (+1)",
+          "files": [
+            "web/src/hooks/useFetch.ts"
+          ],
+          "units": 2
+        },
+        {
+          "name": "Update every import and call site (19 files)",
+          "files": [
+            "web/src/api/billing.ts",
+            "web/src/api/health.ts",
+            "web/src/api/notifications.ts",
+            "web/src/api/orgs.ts",
+            "web/src/api/search.ts",
+            "web/src/api/settings.ts",
+            "web/src/components/AuditLog.tsx",
+            "web/src/components/InvoiceTable.tsx",
+            "web/src/components/NotificationBell.tsx",
+            "web/src/components/SettingsForm.tsx",
+            "web/src/components/StatusFooter.tsx",
+            "web/src/hooks/usePolling.ts"
+          ],
+          "units": 12
+        },
+        {
+          "name": "Rename `fetchJSON` to `requestJSON` in `api/client.ts`",
+          "files": [
+            "web/src/api/client.ts",
+            "web/src/api/orgs.ts",
+            "web/src/api/settings.ts"
+          ],
+          "units": 4
+        },
+        {
+          "name": "markRead ×3",
+          "files": [
+            "web/src/api/notifications.ts",
+            "web/src/api/users.ts",
+            "web/src/components/NotificationBell.tsx"
+          ],
+          "units": 3
+        },
+        {
+          "name": "teams.ts ×3",
+          "files": [
+            "web/src/api/teams.ts",
+            "web/src/components/TeamPanel.tsx",
+            "web/src/hooks/useFetch.ts"
+          ],
+          "units": 3
+        }
+      ]
+    },
+    "questions": {
+      "separate_pr": {
+        "type": "boolean",
+        "instructions": "Should the changes to this file be split into their own pull request, given the other change groups listed?"
+      }
+    }
+  },
+  "response": {
+    "model": "typesafe-ai/jev",
+    "answers": {
+      "separate_pr": {
+        "type": "boolean",
+        "probability": 0.35
+      }
+    },
+    "usage": {
+      "inputTokens": 1645,
+      "outputTokens": 23
+    },
+    "providerMetadata": {
+      "gateway": {
+        "cost": "0.00006909",
+        "generationId": "gen_01M4SH1Q54X5RGR2FS63A0HJQX"
+      }
+    }
+  }
+}
