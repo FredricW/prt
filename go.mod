@@ -71,7 +71,3 @@ require (
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.12.1 // indirect
 )
-
-// The javascript grammar was briefly published as its own module, which makes
-// the import path ambiguous with the main go-tree-sitter module.
-exclude github.com/smacker/go-tree-sitter/javascript v0.0.1
