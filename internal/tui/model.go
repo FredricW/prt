@@ -636,6 +636,13 @@ func (m Model) handleKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	m.note = ""
 	km := m.keys
 	if k.String() == "ctrl+c" {
+		// Quitting keeps an open composer's text as a draft (spec: drafts
+		// are saved): send the save, then quit.
+		if m.code.SaveOpenComposer() {
+			if cmd := m.sendComment(); cmd != nil {
+				return m, tea.Sequence(cmd, tea.Quit)
+			}
+		}
 		return m, tea.Quit
 	}
 	if m.form != nil {

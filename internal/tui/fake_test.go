@@ -234,6 +234,9 @@ type fakePane struct {
 	// consumed and the op handed out (once) by PendingComment.
 	opKeys    map[string]codeview.CommentOp
 	pendingOp *codeview.CommentOp
+	// composerOp stands for an open composer's text: SaveOpenComposer
+	// queues it.
+	composerOp *codeview.CommentOp
 	// hasStrip is reported by HasStrip; stripFocus by StripFocused and
 	// stripCalls records every SetStripFocus.
 	hasStrip, stripFocus bool
@@ -247,6 +250,15 @@ func (p *fakePane) PendingComment() (codeview.CommentOp, bool) {
 	op := *p.pendingOp
 	p.pendingOp = nil
 	return op, true
+}
+
+// SaveOpenComposer hands out composerOp (once) as the pending comment.
+func (p *fakePane) SaveOpenComposer() bool {
+	if p.composerOp == nil {
+		return false
+	}
+	p.pendingOp, p.composerOp = p.composerOp, nil
+	return true
 }
 
 func (p *fakePane) HasStrip() bool     { return p.hasStrip }

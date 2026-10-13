@@ -68,6 +68,19 @@ func (m *Model) PendingComment() (CommentOp, bool) {
 	return op, true
 }
 
+// SaveOpenComposer queues the open inline composer's text as a draft save
+// (CommentOpSave, read with PendingComment) and closes it, so quitting
+// keeps it (spec: quit saves drafts). It reports whether a save was queued:
+// false when no composer is open or its body is blank. An unsent thread
+// panel reply is not a draft and is not posted on quit.
+func (m *Model) SaveOpenComposer() bool {
+	if m.comp == nil || tidyBody(m.comp.ta.Value()) == "" {
+		return false
+	}
+	m.saveComposer()
+	return m.pendingComment != nil
+}
+
 // HasStrip reports whether the Comments strip is shown (the item has at
 // least one comment of any kind), so the root's tab cycle includes it.
 // The plain diff fallback (no units yet) has no comments layer.

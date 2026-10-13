@@ -133,6 +133,19 @@ func TestCommentOps(t *testing.T) {
 				t.Errorf("note %q", m.Note())
 			}
 		}, nil},
+		{"quit saves the open composer", func(t *testing.T, m *Model) {
+			press(t, m, "C")
+			typeText(t, m, "unsent")
+			if !m.SaveOpenComposer() || m.Capturing() {
+				t.Error("SaveOpenComposer did not queue and close")
+			}
+		}, &CommentOp{Kind: CommentOpSave, Comment: model.Comment{ItemID: "pr:7", UnitID: "u1", Path: client, Line: 11, Side: model.SideOld, Body: "unsent"}}},
+		{"quit with a blank composer saves nothing", func(t *testing.T, m *Model) {
+			press(t, m, "C")
+			if m.SaveOpenComposer() {
+				t.Error("blank composer queued a save")
+			}
+		}, nil},
 		{"esc discards", func(t *testing.T, m *Model) {
 			press(t, m, "C")
 			typeText(t, m, "draft")

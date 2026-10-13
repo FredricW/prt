@@ -40,6 +40,9 @@ type codePane interface {
 	// PendingComment returns and clears the comments-layer write made by the
 	// last key (draft saved, ai-draft accepted, reply, …).
 	PendingComment() (codeview.CommentOp, bool)
+	// SaveOpenComposer queues an open composer's non-blank text as a draft
+	// save (handed out by PendingComment); used on quit.
+	SaveOpenComposer() bool
 	// HasStrip reports whether the Comments strip is shown, so the root's
 	// tab cycle includes it; SetStripFocus and StripFocused move and report
 	// keyboard focus on it.
@@ -85,6 +88,7 @@ func (p *codeviewPane) StripFocused() bool                   { return p.m.StripF
 
 func (p *codeviewPane) JumpToComment(id string) bool               { return p.m.JumpToComment(id) }
 func (p *codeviewPane) PendingComment() (codeview.CommentOp, bool) { return p.m.PendingComment() }
+func (p *codeviewPane) SaveOpenComposer() bool                     { return p.m.SaveOpenComposer() }
 func (p *codeviewPane) HelpBindings() [][]key.Binding              { return p.m.HelpBindings() }
 func (p *codeviewPane) ShortBindings() []key.Binding               { return p.m.ShortBindings() }
 func (p *codeviewPane) View() string                               { return p.m.View() }

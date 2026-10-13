@@ -144,6 +144,59 @@ func TestCommentOpsReachClient(t *testing.T) {
 	}
 }
 
+// ctrl+c with the composer open saves its text as a draft, then quits
+// (spec: quit saves drafts; regression: the text was dropped).
+func TestQuitSavesOpenComposer(t *testing.T) {
+	m, f, p, _ := m4Model(t)
+	m.tab, m.focus = TabCode, FocusMain
+	draft := model.Comment{Path: "web/src/session.ts", Line: 20, Side: model.SideNew, UnitID: "u-refresh", Body: "half-typed"}
+	p.composerOp = &codeview.CommentOp{Kind: codeview.CommentOpSave, Comment: draft}
+	_, cmd := updateCmd(t, m, keyMsg("ctrl+c"))
+	if cmd == nil {
+		t.Fatal("no command")
+	}
+	// Run batches and sequences (both slices of commands) in order.
+	var msgs []tea.Msg
+	var flat func(c tea.Cmd)
+	flat = func(c tea.Cmd) {
+		if c == nil {
+			return
+		}
+		msg := c()
+		if v := reflect.ValueOf(msg); v.Kind() == reflect.Slice {
+			for i := range v.Len() {
+				if sub, ok := v.Index(i).Interface().(tea.Cmd); ok {
+					flat(sub)
+				}
+			}
+			return
+		}
+		msgs = append(msgs, msg)
+	}
+	flat(cmd)
+	saved, quit := -1, -1
+	for i, msg := range msgs {
+		switch msg.(type) {
+		case commentDoneMsg:
+			saved = i
+		case tea.QuitMsg:
+			quit = i
+		}
+	}
+	if saved < 0 || quit < saved {
+		t.Errorf("messages %v: want the save done, then quit", msgs)
+	}
+	want := draft
+	want.ItemID = "pr:1"
+	if !reflect.DeepEqual(f.cc.saves, []proto.CommentParams{{ItemID: "pr:1", Comment: want}}) {
+		t.Errorf("saves = %+v", f.cc.saves)
+	}
+	// Nothing open: plain quit.
+	if _, cmd := updateCmd(t, m, keyMsg("ctrl+c")); !isQuit(cmd) {
+		t.Error("ctrl+c without a composer must quit at once")
+	}
+}
+
 func TestCommentOpError(t *testing.T) {
 	m, f, p, _ := m4Model(t)
 	f.cc.commentErr = errors.New("boom")
