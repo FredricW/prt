@@ -429,13 +429,48 @@ func (c *InProcess) normaliseOverride(o model.Override) (model.Override, error) 
 // applyOverride stores o and queues an aggregate-only run of the item
 // (spec: "An override invalidates aggregate only"); as a rerun job it
 // follows a run already in flight, and merged with a queued full run it
-// becomes part of that run.
+// becomes part of that run. Overrides are keyed by unit, not item (spec
+// Data model), so every other stored item holding the unit (a branch and
+// its PR, stacked PRs) is re-aggregated too.
 func (c *InProcess) applyOverride(ctx context.Context, it model.Item, o model.Override) error {
 	if err := c.d.Store.PutOverride(ctx, o); err != nil {
 		return fmt.Errorf("daemon: override %s/%s: %w", o.UnitID, o.Question, err)
 	}
-	c.q.push(job{itemID: it.ID, urgency: it.Urgency, rerun: true, aggOnly: true})
+	jobs := []job{{itemID: it.ID, urgency: it.Urgency, rerun: true, aggOnly: true}}
+	for _, other := range c.itemsWithUnit(ctx, o.UnitID, it.ID) {
+		jobs = append(jobs, job{itemID: other.ID, urgency: other.Urgency, rerun: true, aggOnly: true})
+	}
+	c.q.push(jobs...)
 	return nil
+}
+
+// itemsWithUnit returns the stored, analysed items other than skip whose
+// units include unitID (previews left out). Errors are logged and yield
+// fewer items: the others catch up on their next run.
+func (c *InProcess) itemsWithUnit(ctx context.Context, unitID, skip string) []model.Item {
+	items, err := c.d.Store.Items(ctx)
+	if err != nil {
+		c.log.Warn("override: items", "err", err)
+		return nil
+	}
+	var out []model.Item
+	for _, it := range items {
+		if it.ID == skip || it.Source == model.SourcePreview || it.AnalysedSHA == "" {
+			continue
+		}
+		us, err := c.d.Store.Units(ctx, it.ID)
+		if err != nil {
+			c.log.Warn("override: units", "item", it.ID, "err", err)
+			continue
+		}
+		for _, u := range us {
+			if u.ID == unitID {
+				out = append(out, it)
+				break
+			}
+		}
+	}
+	return out
 }
 
 // lockComments serialises comment writes of one item (the pipeline's

@@ -209,6 +209,35 @@ func TestSearchNotes(t *testing.T) {
 	})
 }
 
+// Removing an item (x) or discarding a preview cancels its running
+// analysis, so its paid stages do not run (M5 review finding).
+func TestRemoveCancelsRunningAnalysis(t *testing.T) {
+	ctx := context.Background()
+	st := newTestStore(t)
+	added := model.Item{ID: model.BranchItemID("spike"), Kind: model.KindBranch, Ref: "spike", Source: model.SourceAdded, Section: model.SectionAdded}
+	prev := model.Item{ID: model.PRItemID(483), Kind: model.KindPR, Number: 483, Source: model.SourcePreview}
+	put(t, st, added)
+	c := newClient(t, st, searchGit(), searchGH(), nil)
+	put(t, st, prev) // after start-up, which deletes leftover previews
+	running := func(id string) context.Context {
+		rctx, cancel := context.WithCancel(ctx)
+		c.runMu.Lock()
+		c.runs[id] = cancel
+		c.runMu.Unlock()
+		return rctx
+	}
+	a, p := running(added.ID), running(prev.ID)
+	if err := c.Remove(ctx, added.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.RemovePreview(ctx, prev.ID); err != nil {
+		t.Fatal(err)
+	}
+	if a.Err() == nil || p.Err() == nil {
+		t.Errorf("runs not cancelled: removed %v, preview %v", a.Err(), p.Err())
+	}
+}
+
 func TestSearchListed(t *testing.T) {
 	ctx := context.Background()
 	st := newTestStore(t)
@@ -270,8 +299,11 @@ func TestPreviewLifecycle(t *testing.T) {
 	if err != nil || b.Source != model.SourcePreview || b.Kind != model.KindBranch {
 		t.Fatalf("branch preview = %+v, %v", b, err)
 	}
-	if b.Title != "Add login form" || b.Upstream != "origin/feat/login" || !b.LastCommitAt.Equal(hoursAgo(5)) {
+	if b.Title != "Add login form" || b.Upstream != "origin/feat/login" || !b.LastCommitAt.Equal(hoursAgo(5)) || b.RemoteRef {
 		t.Errorf("branch facts = %+v", b)
+	}
+	if r, err := c.addBranch(ctx, "origin/feat/remote", "r1", model.SourcePreview); err != nil || !r.RemoteRef {
+		t.Errorf("remote-tracking ref not marked: %+v, %v", r, err)
 	}
 	if _, err := c.d.Store.Item(ctx, p.ID); err == nil {
 		t.Error("previous preview not removed")

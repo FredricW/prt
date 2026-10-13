@@ -256,9 +256,7 @@ func (c *InProcess) Preview(ctx context.Context, query string) (model.Item, erro
 		return model.Item{}, err
 	}
 	c.removePreviews(ctx, it.ID)
-	if err := c.Analyse(ctx, false, it.ID); err != nil {
-		return it, err
-	}
+	c.analyseNow(it)
 	return it, nil
 }
 
@@ -304,5 +302,6 @@ func (c *InProcess) removePreview(ctx context.Context, id string) error {
 	if err := c.d.Store.RemoveItem(ctx, id); err != nil {
 		return fmt.Errorf("daemon: remove preview %s: %w", id, err)
 	}
+	c.cancelRun(id)
 	return nil
 }

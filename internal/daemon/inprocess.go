@@ -62,6 +62,12 @@ type InProcess struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 	once   sync.Once
+
+	// runs holds the cancel func of each item's running analysis, so
+	// removing the item (x, a discarded preview) stops it before the paid
+	// stages run (see cancelRun).
+	runMu sync.Mutex
+	runs  map[string]context.CancelFunc
 }
 
 var _ Client = (*InProcess)(nil)
@@ -74,6 +80,7 @@ func NewInProcess(d pipeline.Deps) *InProcess {
 	c := &InProcess{
 		events: make(chan proto.Event, 256), ctx: ctx, cancel: cancel,
 		itemMu: &sync.Mutex{}, commentLock: pipeline.NewKeyedLock(),
+		runs: map[string]context.CancelFunc{},
 	}
 	// A random start keeps draft ids unique across processes too: with a
 	// fixed clock (--now) every process would otherwise count from 1 and
@@ -486,9 +493,31 @@ func (c *InProcess) analyse(j job) {
 		c.log.Warn("analyse: item gone", "item", j.itemID, "err", err)
 		return
 	}
+	runCtx, cancel := context.WithCancel(c.ctx)
+	c.runMu.Lock()
+	c.runs[it.ID] = cancel
+	c.runMu.Unlock()
+	defer func() {
+		c.runMu.Lock()
+		delete(c.runs, it.ID)
+		c.runMu.Unlock()
+		cancel()
+	}()
 	c.setState(it.ID, model.StateFetching, "")
-	head, err := c.p.RunHead(c.ctx, it, j.options())
-	c.finish(c.ctx, it.ID, head, err)
+	head, err := c.p.RunHead(runCtx, it, j.options())
+	c.finish(runCtx, it.ID, head, err)
+}
+
+// cancelRun stops the item's running analysis, if any: the item was
+// removed, so its later stages (Jev, paid reviews) must not run. The queue
+// never runs two jobs for one item at once, so the entry is that run's.
+func (c *InProcess) cancelRun(id string) {
+	c.runMu.Lock()
+	cancel := c.runs[id]
+	c.runMu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
 }
 
 // finish records the outcome of a run that analysed head. If discovery
@@ -637,10 +666,14 @@ func (c *InProcess) Add(ctx context.Context, query string) (model.Item, error) {
 	if err != nil {
 		return model.Item{}, err
 	}
-	if err := c.Analyse(ctx, false, it.ID); err != nil {
-		return it, err
-	}
+	c.analyseNow(it)
 	return it, nil
+}
+
+// analyseNow queues it ahead of every automatic job (job.user): the user
+// asked for it by hand, so it starts in the next free slot.
+func (c *InProcess) analyseNow(it model.Item) {
+	c.q.push(job{itemID: it.ID, urgency: it.Urgency, user: true})
 }
 
 // resolveAdd finds the item q names ("#N"/"N", a ref, or the first open PR
@@ -698,6 +731,10 @@ func (c *InProcess) addBranch(ctx context.Context, ref, sha string, src model.It
 		if found {
 			it.Title, it.Author, it.Upstream = r.Subject, r.Author, r.Upstream
 			it.LastCommitAt, it.UpdatedAt = r.CommitDate, r.CommitDate
+			it.RemoteRef = r.Remote
+		}
+		if strings.HasPrefix(ref, "refs/remotes/") {
+			it.RemoteRef = true
 		}
 		if it.Title == "" {
 			it.Title = ref
@@ -781,6 +818,7 @@ func (c *InProcess) Remove(ctx context.Context, itemID string) error {
 	if err != nil {
 		return fmt.Errorf("daemon: remove %s: %w", itemID, err)
 	}
+	c.cancelRun(itemID)
 	if !preview {
 		c.send(proto.Event{Type: proto.EventRemove, ItemID: itemID})
 	}

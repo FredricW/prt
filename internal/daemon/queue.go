@@ -28,7 +28,12 @@ type job struct {
 	// after a label override. A merged job keeps it only when both jobs had
 	// it: any other job is a full run, which aggregates too.
 	aggOnly bool
-	seq     int // enqueue order, breaks urgency ties
+	// user marks a job the user asked for by hand (search-and-add enter,
+	// tab preview, :add): it starts before every automatic job, whatever
+	// the urgencies (spec: "starts analysis immediately"). A merged job
+	// keeps it when either job had it.
+	user bool
+	seq  int // enqueue order, breaks urgency ties
 }
 
 // options are the pipeline run options of the job.
@@ -102,6 +107,7 @@ func (q *queue) push(jobs ...job) {
 			q.waiting[i].urgency = j.urgency
 			q.waiting[i].keepReviewed = q.waiting[i].keepReviewed && j.keepReviewed
 			q.waiting[i].aggOnly = q.waiting[i].aggOnly && j.aggOnly
+			q.waiting[i].user = q.waiting[i].user || j.user
 			continue
 		}
 		if q.coveredLocked(j) {
@@ -118,6 +124,9 @@ func (q *queue) push(jobs ...job) {
 
 func (q *queue) sortLocked() {
 	sort.SliceStable(q.waiting, func(a, b int) bool {
+		if q.waiting[a].user != q.waiting[b].user {
+			return q.waiting[a].user
+		}
 		if q.waiting[a].urgency != q.waiting[b].urgency {
 			return q.waiting[a].urgency > q.waiting[b].urgency
 		}

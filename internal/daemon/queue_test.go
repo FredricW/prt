@@ -66,6 +66,25 @@ func blockingQueue(t *testing.T) (*queue, chan struct{}, func() []job, *sync.Wai
 	}, &wg
 }
 
+// A job the user asked for (search-and-add, preview) starts before every
+// waiting automatic job, however urgent (M5 review finding).
+func TestQueueUserJobsStartFirst(t *testing.T) {
+	q, release, ran, wg := blockingQueue(t)
+	q.push(job{itemID: "hot", urgency: 9}, job{itemID: "warm", urgency: 5})
+	q.push(job{itemID: "added", urgency: 0.1, user: true})
+	// A later automatic job for a waiting user job keeps it first.
+	q.push(job{itemID: "added", urgency: 0.1})
+	close(release)
+	wg.Wait()
+	var order []string
+	for _, j := range ran() {
+		order = append(order, j.itemID)
+	}
+	if len(order) != 4 || order[1] != "added" || order[2] != "hot" || order[3] != "warm" {
+		t.Errorf("order = %v, want busy added hot warm", order)
+	}
+}
+
 func TestQueueMergeAggregateOnly(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -155,6 +174,33 @@ func TestJobOptions(t *testing.T) {
 	}
 	if got := (job{}).options(); got != (pipeline.RunOptions{}) {
 		t.Errorf("zero job options = %+v", got)
+	}
+}
+
+// An override follows the unit: every other analysed item holding it is
+// re-aggregated too (M5 review finding).
+func TestOverrideReaggregatesItemsSharingTheUnit(t *testing.T) {
+	ctx := context.Background()
+	c, st, jobs := commentClient(t, nil)
+	shared := model.Item{ID: model.BranchItemID("feat/x"), Kind: model.KindBranch, Ref: "feat/x", AnalysedSHA: "h1", Source: model.SourceAdded, Section: model.SectionAdded}
+	other := model.Item{ID: model.PRItemID(99), Kind: model.KindPR, Number: 99, AnalysedSHA: "h9", Source: model.SourceRanked}
+	put(t, st, shared, other)
+	if err := st.PutUnits(ctx, shared.ID, []model.ChangeUnit{{ID: "u1"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.PutUnits(ctx, other.ID, []model.ChangeUnit{{ID: "u2"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Override(ctx, proto.OverrideParams{ItemID: cItem, Override: model.Override{UnitID: "u1", Question: "risk", Value: "2"}}); err != nil {
+		t.Fatal(err)
+	}
+	js := jobs.waitJobs(t, 2)
+	got := map[string]bool{}
+	for _, j := range js {
+		got[j.itemID] = j.aggOnly
+	}
+	if len(got) != 2 || !got[cItem] || !got[shared.ID] {
+		t.Errorf("override jobs = %+v; want aggregate-only for %s and %s", js, cItem, shared.ID)
 	}
 }
 
