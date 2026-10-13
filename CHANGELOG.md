@@ -340,10 +340,13 @@ findings".
 - Group titles are only as good as three words allow ("Switch to
   requestJSON").
 
-### M4 — comments (integrated 2026-10-13; review pending)
+### M4 — comments (released 2026-10-13)
 
-Integration gate: `go build ./...`, `go vet ./...` (also `-tags live`),
-`make lint` (0 issues), `make test` and `make snapshot` green. Two real Jev
+Release gate: `go build ./...`, `go vet ./...` (also `-tags live`),
+`make lint` (0 issues), `make test` and `make snapshot` all green on
+`8fc7718`; `make demo` runs the TUI offline against `testdata/fixture-repo`
+with `testdata/fixtures/prs.json` and `testdata/fixtures/drafts.json`,
+replaying `testdata/recordings/{jev,embed,review}`. Two real Jev
 `comment_addressed` answers were recorded ($0.0001; Jev ledger $0.0294 of
 $1.00). No GitHub write was made against real GitHub: every write is
 exercised against `gh.Fake`.
@@ -404,11 +407,26 @@ exercised against `gh.Fake`.
 - `ctrl+c` with the composer open saves the text as a draft before quitting.
 - README covers the M4 keys and `--drafts`.
 
+#### Fixed (M4 review, round 2; details in DECISIONS)
+
+- Drafts are posted on the commit their lines describe (`Item.UnitsSHA`);
+  submit and create-PR skip drafts from another commit, and create-PR
+  refuses unpushed branches.
+- Comment offsets count from the unit's first non-blank line; off-diff
+  ai-drafts are outdated; posted copies without a GitHub id match by
+  content; "Since you looked" prefers a newer GitHub review.
+- `!` dismisses label-less ai-drafts and the Comments strip can
+  accept/dismiss; `a` on a branch needs a PR; submit forms wait for the
+  item's detail.
+
 #### Known limitations
 
 - Without colour Glamour shows bold as literal `**` (ai-draft bodies start
   with "**low**").
 - Over the socket a partly failed create-PR returns only the error; the TUI
   re-reads items.
+- The local branch `05-spike-dark-mode` has no Jev recording, so the offline
+  demo/snapshot shows it as "labels unavailable" (replay miss degrades, by
+  design).
 
 ### M5 — polish
