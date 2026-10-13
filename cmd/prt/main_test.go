@@ -20,9 +20,13 @@ import (
 )
 
 // isolate keeps tests away from the user's config, state (workspace logs
-// and sockets, pane widths), keys and GitHub login.
+// and sockets, pane widths), keys and GitHub login, and stops git's
+// upward search at the test's temp root, so a temp dir meant to be outside
+// every repository is, even when $TMPDIR lies inside a checkout (every git
+// prt runs inherits it; repositories made under the root are still found).
 func isolate(t *testing.T) {
 	t.Helper()
+	t.Setenv("GIT_CEILING_DIRECTORIES", filepath.Dir(t.TempDir()))
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	t.Setenv("JEV_API_KEY", "")

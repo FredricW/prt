@@ -1,12 +1,16 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -253,11 +257,121 @@ func shortTemp(t *testing.T) string {
 	return dir
 }
 
+// daemonRun is a `prt daemon` started through runCtx by startDaemon.
+type daemonRun struct {
+	cancel context.CancelFunc
+	code   chan int
+	stderr *bytes.Buffer // read only after stop
+	once   sync.Once
+	exit   int
+}
+
+// startDaemon runs `prt daemon args...` through runCtx in the background;
+// stop (also at cleanup) ends it and returns its exit code.
+func startDaemon(t *testing.T, args ...string) *daemonRun {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	d := &daemonRun{cancel: cancel, code: make(chan int, 1), stderr: &bytes.Buffer{}}
+	go func() { d.code <- runCtx(ctx, append([]string{"daemon"}, args...), io.Discard, d.stderr) }()
+	t.Cleanup(func() { d.stop(t) })
+	return d
+}
+
+func (d *daemonRun) stop(t *testing.T) int {
+	t.Helper()
+	d.once.Do(func() {
+		d.cancel()
+		select {
+		case d.exit = <-d.code:
+		case <-time.After(20 * time.Second):
+			t.Fatal("prt daemon did not stop")
+		}
+	})
+	return d.exit
+}
+
+// waitDaemon waits until a daemon answers on the socket that the pipeline
+// lock file of the repo at gitDir names (read, never locked, so the daemon
+// can always take the lock); it returns the lock error a later prt gets
+// (naming the daemon) and a client of the socket (closed at cleanup). It
+// fails early when the daemon exits.
+func waitDaemon(t *testing.T, d *daemonRun, gitDir string) (*daemon.BusyError, *daemon.Socket) {
+	t.Helper()
+	ctx := context.Background()
+	lockFile := filepath.Join(gitDir, "prt", daemon.LockFile)
+	deadline := time.Now().Add(15 * time.Second)
+	for {
+		select {
+		case code := <-d.code:
+			d.code <- code
+			t.Fatalf("prt daemon exited with %d: %s", code, d.stderr)
+		default:
+		}
+		var o daemon.LockOwner
+		if b, err := os.ReadFile(lockFile); err == nil && json.Unmarshal(b, &o) == nil && o.Socket != "" {
+			if c, err := daemon.Dial(ctx, o.Socket); err == nil {
+				t.Cleanup(func() { _ = c.Close() })
+				// Serving, so the lock is held: a later prt is refused with the owner.
+				release, err := daemon.LockRepo(gitDir, daemon.LockOwner{What: "prt (no daemon)"})
+				var busy *daemon.BusyError
+				if !errors.As(err, &busy) {
+					if err == nil {
+						release()
+					}
+					t.Fatalf("lock of a served repo: %v, want it held by the daemon", err)
+				}
+				return busy, c
+			}
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("no daemon serving %s", gitDir)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// `prt daemon` in a repo takes its pipeline lock as "prt daemon" with its
+// socket, so a later prt attaches through the lock, a second daemon is
+// refused naming the first, and a run that must stay in-process
+// (--snapshot) says how to get the repo back.
+func TestDaemonModeSingleRepo(t *testing.T) {
+	isolate(t)
+	t.Setenv("TMPDIR", shortTemp(t))
+	repo := testutil.FixtureRepo(t)
+	d := startDaemon(t, "--offline", "--repo", repo, "--fixtures", testutil.FixturePRs(t))
+	busy, c := waitDaemon(t, d, filepath.Join(repo, ".git"))
+	if busy.Owner.What != "prt daemon" || busy.Owner.Root != "" {
+		t.Errorf("lock owner = %+v, want prt daemon", busy.Owner)
+	}
+	ctx := context.Background()
+	if info, err := c.Workspace(ctx); err != nil || info.Multi {
+		t.Errorf("daemon answers %+v, %v; want the single repo", info, err)
+	}
+	att, err := attachOwner(ctx, busy, options{})
+	if err != nil {
+		t.Fatalf("attach through the lock: %v", err)
+	}
+	if _, err := att.Items(ctx); err != nil {
+		t.Errorf("attached client: %v", err)
+	}
+	_ = att.Close()
+	if code, _, errOut := runPrt("daemon", "--offline", "--repo", repo); code != 1 ||
+		!strings.Contains(errOut, "prt daemon: ") || !strings.Contains(errOut, "already analysed by pid") || !strings.Contains(errOut, "(prt daemon)") {
+		t.Errorf("second daemon: code %d err %q", code, errOut)
+	}
+	if code, _, errOut := runPrt("--offline", "--snapshot", "--repo", repo); code != 1 || !strings.Contains(errOut, "(prt daemon)") || !strings.Contains(errOut, "--snapshot") {
+		t.Errorf("snapshot on a served repo: code %d err %q", code, errOut)
+	}
+	if code := d.stop(t); code != 0 {
+		t.Errorf("daemon exit %d: %s", code, d.stderr)
+	}
+}
+
 // One daemon serves a workspace on its state-dir socket: a client dialling
 // WorkspaceSocketPath(root) sees every repo, with prefixed ids. A
 // single-repo prt started in one of its repos finds the daemon through the
 // repo's pipeline lock and attaches to it instead of analysing the repo a
-// second time.
+// second time; a second workspace daemon opens none of the repos.
 func TestWorkspaceDaemon(t *testing.T) {
 	isolate(t)
 	tmp := shortTemp(t)
@@ -265,32 +379,19 @@ func TestWorkspaceDaemon(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", tmp)
 	root := workspaceRoot(testutil.FixtureWorkspace(t))
 	manifest := testutil.FixtureWorkspaceManifest(t)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := context.Background()
 	sock := daemon.WorkspaceSocketPath(root)
 	if !strings.HasPrefix(sock, tmp) {
 		t.Fatalf("socket %s is outside the test's temp dir %s", sock, tmp)
 	}
-	owner := daemon.LockOwner{What: "prt daemon --root " + root, Socket: sock, Root: root}
-	ws, err := openWorkspace(ctx, options{offline: true, fixtures: manifest}, root, config.Defaults(), owner, log.New(io.Discard))
+	d := startDaemon(t, "--offline", "--root", root, "--fixtures", manifest)
+	busy, _ := waitDaemon(t, d, filepath.Join(root, "portal", ".git"))
+	if want := daemonOwner(root, sock); busy.Owner.What != want.What || busy.Owner.Socket != sock || busy.Owner.Root != root {
+		t.Errorf("portal's lock owner = %+v, want %+v", busy.Owner, want)
+	}
+	c, err := daemon.Dial(ctx, sock)
 	if err != nil {
 		t.Fatal(err)
-	}
-	defer ws.close()
-	defer func() { _ = ws.client.Close() }()
-	served := make(chan error, 1)
-	go func() { served <- serveWorkspace(ctx, ws.client, sock, 0, log.New(io.Discard)) }()
-
-	var c *daemon.Socket
-	deadline := time.Now().Add(10 * time.Second)
-	for {
-		if c, err = daemon.Dial(ctx, sock); err == nil {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("dial %s: %v", sock, err)
-		}
-		time.Sleep(20 * time.Millisecond)
 	}
 	defer func() { _ = c.Close() }()
 	info, err := c.Workspace(ctx)
@@ -336,14 +437,13 @@ func TestWorkspaceDaemon(t *testing.T) {
 	if _, err := attachOwner(ctx, lockErr, options{noDaemon: true}); err == nil || !strings.Contains(err.Error(), "already analysed by pid") {
 		t.Errorf("--no-daemon on a served repo: %v", err)
 	}
-	cancel()
-	select {
-	case err := <-served:
-		if err != nil {
-			t.Errorf("serve: %v", err)
-		}
-	case <-time.After(10 * time.Second):
-		t.Fatal("daemon did not stop")
+	// A second workspace daemon on the same root opens none of the repos.
+	if code, _, errOut := runPrt("daemon", "--offline", "--root", root, "--fixtures", manifest); code != 1 ||
+		!strings.Contains(errOut, "prt daemon: no repository under") || !strings.Contains(errOut, "(prt daemon --root "+root+")") {
+		t.Errorf("second workspace daemon: code %d err %q", code, errOut)
+	}
+	if code := d.stop(t); code != 0 {
+		t.Errorf("daemon exit %d: %s", code, d.stderr)
 	}
 }
 

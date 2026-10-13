@@ -58,6 +58,13 @@ var newGitHubAPI = func(ctx context.Context, repo gh.Repo, token string) gh.Clie
 
 func main() { os.Exit(run(os.Args[1:], os.Stdout, os.Stderr)) }
 
+// run is runCtx until SIGINT or SIGTERM.
+func run(args []string, stdout, stderr io.Writer) int {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	return runCtx(ctx, args, stdout, stderr)
+}
+
 type options struct {
 	repo string
 	// root is the workspace root (--root, or the --repo directory when it
@@ -108,7 +115,9 @@ func (o options) tokenFunc() func(context.Context) (string, error) {
 	return ghToken
 }
 
-func run(args []string, stdout, stderr io.Writer) int {
+// runCtx runs prt with args until it is done or ctx ends (a daemon serves
+// until then) and returns the exit code.
+func runCtx(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	daemonMode := len(args) > 0 && args[0] == "daemon"
 	if daemonMode {
 		args = args[1:]
@@ -164,9 +173,6 @@ func run(args []string, stdout, stderr io.Writer) int {
 		o.nowFn = nowFn
 	}
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-
 	if o.root == "" && outsideRepo(ctx, o.repo) {
 		o.root = o.repo
 	}
@@ -201,7 +207,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 
 	if daemonMode {
-		if err := lockRepo(env, daemon.LockOwner{What: "prt daemon", Socket: daemon.SocketPath(env.gitDir)}); err != nil {
+		if err := lockRepo(env, daemonOwner("", daemon.SocketPath(env.gitDir))); err != nil {
 			_, _ = fmt.Fprintln(stderr, "prt daemon:", err)
 			return 1
 		}
@@ -265,6 +271,16 @@ func run(args []string, stdout, stderr io.Writer) int {
 	return runTUI(ctx, client, topts, env.cfg.Keys, env.deps.Log, stderr)
 }
 
+// daemonOwner is the pipeline-lock owner of `prt daemon` serving on sock:
+// a single repo (root "") or the workspace under root. A later prt finds
+// the daemon's socket through it and attaches (attachOwner).
+func daemonOwner(root, sock string) daemon.LockOwner {
+	if root == "" {
+		return daemon.LockOwner{What: "prt daemon", Socket: sock}
+	}
+	return daemon.LockOwner{What: "prt daemon --root " + root, Socket: sock, Root: root}
+}
+
 // lockRepo takes env's repo pipeline lock for owner (daemon.LockRepo); it is
 // released by env.close, after the client using the store is closed.
 func lockRepo(env *environment, owner daemon.LockOwner) error {
@@ -316,7 +332,8 @@ func runTUI(ctx context.Context, client daemon.Client, topts tui.Options, keys m
 	} else {
 		topts.Layout = l
 	}
-	topts.SaveLayout = func(l uistate.Layout) error { return uistate.Save(layoutPath, l) }
+	// Another prt may resize the other pane meanwhile: write only ours.
+	topts.SaveLayout = uistate.NewSaver(layoutPath, topts.Layout).Save
 	p := tea.NewProgram(tui.NewWithOptions(client, nil, topts), tea.WithAltScreen(), tea.WithContext(ctx), tea.WithMouseCellMotion())
 	final, err := p.Run()
 	// A resize just before quitting may still be saving on a command
@@ -333,9 +350,11 @@ func runTUI(ctx context.Context, client daemon.Client, topts tui.Options, keys m
 	return 0
 }
 
-// outsideRepo reports whether dir is an existing directory that is not
-// inside a git work tree: prt then serves it as a workspace root (M5.3).
-// Any other failure (a missing directory) is left for setup to report.
+// outsideRepo reports whether dir is an existing directory that git says is
+// not inside a repository: prt then serves it as a workspace root (M5.3).
+// Any other failure (a missing directory, git missing from PATH, a
+// repository git refuses for dubious ownership) is left for setup to
+// report.
 func outsideRepo(ctx context.Context, dir string) bool {
 	if _, err := gitx.Open(ctx, dir); err == nil || !errors.Is(err, gitx.ErrNotWorkTree) {
 		return false

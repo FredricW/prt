@@ -71,7 +71,7 @@ func runWorkspace(ctx context.Context, o options, daemonMode bool, stdout, stder
 	if client == nil {
 		owner := daemon.LockOwner{What: "prt --root " + root + " (no daemon)", Root: root}
 		if daemonMode {
-			owner = daemon.LockOwner{What: "prt daemon --root " + root, Socket: sock, Root: root}
+			owner = daemonOwner(root, sock)
 		}
 		ws, err := openWorkspace(ctx, o, root, wcfg, owner, logger)
 		if err != nil {
