@@ -83,10 +83,12 @@ prt                 # picker on the left, the selected PR/branch on the right
   as dimmed drafts: `a` accepts one, `d` dismisses it, `!` dismisses it and
   marks a label wrong. `t` opens a GitHub thread in the side panel (type a
   reply and `ctrl-s` sends it; `ctrl-r` resolves). `tab` reaches the Comments strip at the bottom, which
-  lists every draft and thread. `S` submits your drafts as one review (`a`
+  lists every draft and thread (with the strip focused, `a`/`d` act on the
+  selected AI finding). `S` submits your drafts as one review (`a`
   approve, `A` request changes preselect the verdict); on a branch without
   a PR, `S` opens the create-PR form instead and posts the branch's drafts
-  on the new PR. The Overview's "Since you looked" lists what changed since
+  on the new PR (`a` and `A` need a PR). Push the branch first: prt refuses
+  to open a PR while it has commits that are not on its upstream. The Overview's "Since you looked" lists what changed since
   your last review or visit and which of your comments look addressed.
 - `r` re-runs analysis for the selected item; `?` shows every key; `q` quits.
 - `prt daemon` keeps analysis warm in the background (one per repo); `prt`
