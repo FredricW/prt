@@ -1,0 +1,78 @@
+# Regression guard for the label-quality scoreboard (TestScoreboardRegression).
+#
+# Values are the M5.2 final board (docs/QUALITY.md, "After"), per item and
+# metric key (quality.Metrics; "headlines" is the headline row count). A
+# higher-is-better metric must stay at or above its value minus tolerance, a
+# lower-is-better one at or below its value plus tolerance, and the headline
+# count at or below its value. Metrics that do not apply, and metrics at 0
+# that can only rise, are left out. After a deliberate change (new
+# recordings, a tuning rule), run `go run ./tools/quality` and update the
+# values with the reason in docs/QUALITY.md.
+
+tolerance = 0.02
+
+[items."pr:101"]
+headlines = 6
+eyes_recall = 1.00
+eyes_precision = 0.42
+headline_precision = 0.50
+headline_recall = 1.00
+fidelity = 1.00
+unsure_labels = 0.02
+unsure_units = 0.77
+lines_to_read = 0.56
+file_kind = 1.00
+
+[items."pr:102"]
+headlines = 3
+eyes_precision = 0.67
+headline_precision = 0.67
+headline_recall = 1.00
+fidelity = 1.00
+unsure_labels = 0.03
+unsure_units = 0.90
+lines_to_read = 0.05
+must_read = 1.00
+file_kind = 1.00
+
+[items."pr:103"]
+headlines = 1
+headline_precision = 1.00
+fidelity = 1.00
+unsure_labels = 0.01
+unsure_units = 0.29
+lines_to_read = 0.26
+file_kind = 1.00
+
+[items."pr:104"]
+headlines = 0
+hot_spots_top3 = 0.50
+fidelity = 0.75
+unsure_labels = 0.01
+unsure_units = 0.50
+lines_to_read = 0.00
+file_kind = 1.00
+
+[items."pr:106"]
+headlines = 5
+eyes_recall = 1.00
+eyes_precision = 0.80
+headline_precision = 1.00
+headline_recall = 0.86
+fidelity = 1.00
+unsure_labels = 0.01
+unsure_units = 0.48
+lines_to_read = 0.51
+file_kind = 1.00
+
+[items."branch:05-spike-dark-mode"]
+headlines = 0
+eyes_recall = 1.00
+eyes_precision = 1.00
+hot_spots_top3 = 0.67
+unsure_labels = 0.01
+unsure_units = 0.60
+lines_to_read = 0.50
+must_read = 1.00
+branch_state = 1.00
+file_kind = 1.00

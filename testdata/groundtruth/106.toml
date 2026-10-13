@@ -1,0 +1,455 @@
+# Ground truth for PR #106, written blind to pipeline output (see README.md).
+# Sources: fixtures/prs/06-user-preferences-api.patch, fixtures/base/, fixtures/prs.json.
+# Written in M5.2 before any Jev answer, embedding or review of #106 was recorded.
+
+item = "pr:106"
+title = "feat(server): user preferences API and ops health check"
+patch = "testdata/fixtures/prs/06-user-preferences-api.patch"
+written_blind = true
+
+[summary]
+shape = "mixed"
+shape_ok = ["mixed"]
+risk_max = 4
+risk_band = "HIGH"
+risk_band_ok = ["HIGH", "MED"]
+breaking = 2
+breaking_ok = [1, 2, 3]
+needs_eyes_max = 8
+one_line = "Preferences endpoints behind PORTAL_PREFERENCES_API whose PUT lets any signed-in user overwrite anyone's preferences, a one-way migration, and a health-check move that leaves the web status footer calling a removed endpoint."
+
+[lines_that_matter]
+total_changed = 212
+must_read = 70
+skim = 130
+skip = 12
+tolerance = 0.35
+est_minutes = 48
+note = "Eyes: putPreferences (20), the routes behind the switch and the Routes signature in users.go (7), main.go's removed health route, env switch and ops listener (22), the migration (14), SettingsForm's preferences fetch and save (7). Skim: the Preferences types and memory store, getPreferences, preferences.ts, flags.ts, the theme picker markup, users_test.go, the barrel export. Skip: imports and blank lines."
+
+# ---------------------------------------------------------------------------
+# needs_eyes: everything not listed here is skim or skip.
+# ---------------------------------------------------------------------------
+
+[[needs_eyes]]
+path = "server/internal/users/preferences.go"
+lines = [70, 89]
+symbol = "putPreferences"
+depth = "read"
+certainty = "firm"
+reason = "Writes the preferences of the {id} in the path without comparing it with the session user (auth.UserID), so any signed-in user can overwrite anyone's; emailDigest is not validated and the body size is unbounded."
+
+[[needs_eyes]]
+path = "server/internal/users/users.go"
+lines = [100, 103]
+symbol = "Routes"
+depth = "read"
+certainty = "firm"
+reason = "Mounts GET and PUT /{id}/preferences behind withPreferences, under the /api/v1 auth middleware only (authentication, no ownership check)."
+
+[[needs_eyes]]
+path = "server/cmd/api/main.go"
+side = "old"
+lines = [25, 28]
+symbol = "main (GET /api/v1/health)"
+depth = "read"
+certainty = "firm"
+reason = "The public health route is removed, but web/src/api/health.ts (ping) and StatusFooter.tsx still fetch /health; anything probing /api/v1/health (the old load balancer check) now gets a 404, and the middleware's /health exemption is left behind."
+
+[[needs_eyes]]
+path = "server/cmd/api/main.go"
+lines = [30, 44]
+symbol = "main (ops listener)"
+depth = "read"
+certainty = "firm"
+reason = "New unauthenticated ops listener on PORTAL_OPS_ADDR (default :9090) started in a goroutine with http.ListenAndServe: no timeouts, and a bind failure is only logged while the API keeps serving."
+
+[[needs_eyes]]
+path = "server/migrations/20261010_user_preferences.sql"
+lines = [4, 14]
+symbol = "migration"
+depth = "read"
+certainty = "firm"
+reason = "New table with a cascading FK to users, an index on a three-value column, an unrelated avatar_url column for #101, and DROP COLUMN legacy_theme, which cannot be rolled back without a data restore."
+
+[[needs_eyes]]
+path = "server/internal/users/users.go"
+lines = [84, 86]
+symbol = "Routes"
+depth = "skim"
+certainty = "soft"
+reason = "Signature change of an exported function in an internal package; both callers (main.go, users_test.go) are updated."
+
+[[needs_eyes]]
+path = "server/cmd/api/main.go"
+lines = [26, 26]
+symbol = "main (PORTAL_PREFERENCES_API)"
+depth = "skim"
+certainty = "soft"
+reason = "The server switch reads PORTAL_PREFERENCES_API once at start and only the exact value \"on\" enables it."
+
+[[needs_eyes]]
+path = "server/internal/users/preferences.go"
+lines = [59, 68]
+symbol = "getPreferences"
+depth = "read"
+certainty = "soft"
+reason = "Any signed-in user can read any user's preferences (low sensitivity: theme and digest); a store error is returned to the client verbatim."
+
+[[needs_eyes]]
+path = "web/src/components/SettingsForm.tsx"
+lines = [14, 19]
+symbol = "SettingsForm"
+depth = "read"
+certainty = "soft"
+also_at = ["web/src/components/SettingsForm.tsx:27-29"]
+reason = "getPreferences has no catch (a 404 while the server switch is off is an unhandled rejection), and a failing savePreferences aborts submit after the settings were already saved, so 'Saved' never shows."
+
+# ---------------------------------------------------------------------------
+# headlines: contract-level items. This PR has many on purpose.
+# ---------------------------------------------------------------------------
+
+[[headlines]]
+path = "server/internal/users/users.go"
+lines = [84, 86]
+symbol = "Routes"
+contract = "signature"
+breaking = true
+certainty = "firm"
+summary = "users.Routes(store) becomes Routes(store, prefs, withPreferences); main.go and users_test.go are updated, any other caller (another branch) breaks at compile time."
+
+[[headlines]]
+path = "server/internal/users/users.go"
+lines = [100, 103]
+symbol = "GET/PUT /api/v1/users/{id}/preferences"
+contract = "api shape"
+breaking = false
+certainty = "firm"
+also_at = ["server/internal/users/preferences.go:59-89"]
+summary = "New endpoints GET and PUT /api/v1/users/{id}/preferences (additive), mounted only when PORTAL_PREFERENCES_API=on."
+
+[[headlines]]
+path = "server/cmd/api/main.go"
+side = "old"
+lines = [25, 28]
+symbol = "GET /api/v1/health"
+contract = "api shape"
+breaking = true
+certainty = "firm"
+summary = "GET /api/v1/health is removed; web/src/api/health.ts and StatusFooter.tsx still call it, and so may the load balancer until it is switched to /healthz."
+
+[[headlines]]
+path = "server/migrations/20261010_user_preferences.sql"
+lines = [4, 14]
+symbol = "migration 20261010_user_preferences"
+contract = "schema/migration"
+breaking = false
+certainty = "firm"
+summary = "Creates user_preferences (FK to users, theme index), adds users.avatar_url and drops users.legacy_theme (one-way)."
+
+[[headlines]]
+path = "server/cmd/api/main.go"
+lines = [26, 26]
+symbol = "PORTAL_PREFERENCES_API"
+contract = "env/flag"
+breaking = false
+certainty = "firm"
+summary = "New environment switch PORTAL_PREFERENCES_API (\"on\" mounts the preferences endpoints)."
+
+[[headlines]]
+path = "server/cmd/api/main.go"
+lines = [36, 39]
+symbol = "PORTAL_OPS_ADDR"
+contract = "env/flag"
+breaking = false
+certainty = "firm"
+also_at = ["server/cmd/api/main.go:32-35"]
+summary = "New environment variable PORTAL_OPS_ADDR (default :9090) for the ops listener serving GET /healthz."
+
+[[headlines]]
+path = "web/src/components/SettingsForm.tsx"
+lines = [12, 12]
+symbol = "user-preferences-v2"
+contract = "env/flag"
+breaking = false
+certainty = "firm"
+also_at = ["web/src/utils/flags.ts:1-13"]
+summary = "New feature flag user-preferences-v2 (read from window.__PORTAL_FLAGS__, which nothing sets yet) gates the theme picker."
+
+[[not_headlines]]
+path = "web/src/api/index.ts"
+lines = [11, 11]
+symbol = "api barrel exports"
+why = "Only adds the preferences exports."
+
+[[not_headlines]]
+path = "web/src/api/preferences.ts"
+lines = [1, 16]
+symbol = "getPreferences / savePreferences"
+why = "New client functions; nothing outside this PR depends on them yet."
+
+[[not_headlines]]
+path = "web/src/components/SettingsForm.tsx"
+lines = [8, 8]
+symbol = "SettingsForm"
+why = "New optional userId prop with a default; the existing <SettingsForm /> in App.tsx still compiles."
+
+[[not_headlines]]
+path = "server/internal/users/users_test.go"
+lines = [15, 15]
+symbol = "TestGetUser"
+why = "Test caller updated to the new Routes signature."
+
+[[not_headlines]]
+path = "server/internal/users/preferences.go"
+lines = [12, 55]
+symbol = "Preferences / PreferencesStore / MemoryPreferences"
+why = "New types in the users package; additive."
+
+# ---------------------------------------------------------------------------
+# hot_spots: top real risks, most important first.
+# ---------------------------------------------------------------------------
+
+[[hot_spots]]
+rank = 1
+path = "server/internal/users/preferences.go"
+lines = [70, 89]
+symbol = "putPreferences"
+risk = 4
+fail_mode = "security"
+risk_tags = ["auth", "data write"]
+certainty = "firm"
+also_at = ["server/internal/users/users.go:100-103"]
+reason = "any user can overwrite others' preferences"
+detail = "p.UserID comes from the path and is never compared with auth.UserID(r.Context()); the middleware only checks that some session exists. Behind PORTAL_PREFERENCES_API, so live only once the switch is on, and PUT is untested."
+
+[[hot_spots]]
+rank = 2
+path = "server/cmd/api/main.go"
+side = "old"
+lines = [25, 28]
+symbol = "GET /api/v1/health"
+risk = 3
+fail_mode = "wrong data"
+fail_mode_ok = ["wrong data", "cosmetic", "crash"]
+risk_tags = ["error path"]
+certainty = "firm"
+reason = "removed health route still called"
+detail = "health.ts ping() and StatusFooter.tsx fetch /api/v1/health; after this PR the auth middleware still lets any path ending in /health through, but the router has no such route, so the request gets 404 and every page's footer shows 'API degraded · v?'. A load balancer still probing the old path marks every instance unhealthy."
+
+[[hot_spots]]
+rank = 3
+path = "server/migrations/20261010_user_preferences.sql"
+lines = [14, 14]
+symbol = "DROP COLUMN legacy_theme"
+risk = 3
+fail_mode = "wrong data"
+risk_tags = ["data write"]
+certainty = "firm"
+reason = "one-way column drop, no rollback"
+detail = "Dropping users.legacy_theme destroys its data; reverting the PR does not bring it back. Nothing in the base tree reads it, but it ships in the same migration as additive changes, so the whole migration becomes one-way."
+
+[[hot_spots]]
+rank = 4
+path = "server/internal/users/users.go"
+lines = [84, 86]
+symbol = "Routes"
+risk = 2
+fail_mode = "crash"
+risk_tags = []
+certainty = "soft"
+reason = "Routes signature changed, callers updated"
+detail = "Both in-repo callers are updated and the package is internal, so only other branches break at compile time."
+
+[[hot_spots]]
+rank = 5
+path = "web/src/components/SettingsForm.tsx"
+lines = [16, 18]
+symbol = "SettingsForm"
+risk = 2
+fail_mode = "crash"
+fail_mode_ok = ["crash", "cosmetic"]
+risk_tags = ["error path"]
+certainty = "soft"
+also_at = ["web/src/components/SettingsForm.tsx:27-29"]
+reason = "client flag and server switch disagree"
+detail = "The UI flag (user-preferences-v2) and the server switch (PORTAL_PREFERENCES_API) are independent: flag on with the switch off gives a 404 the fetch does not catch, and a failing save stops submit before 'Saved'."
+
+[[hot_spots]]
+rank = 6
+path = "web/src/components/SettingsForm.tsx"
+lines = [8, 8]
+symbol = "SettingsForm"
+risk = 2
+fail_mode = "wrong data"
+risk_tags = []
+certainty = "soft"
+also_at = ["server/internal/users/preferences.go:81-81"]
+reason = "userId defaults to literal me"
+detail = "App renders <SettingsForm /> without userId, so preferences go to /users/me/preferences and the server stores them under the literal id 'me', shared by every user (with the SQL table the FK to users would reject it). getCurrentUser already calls /users/me, so the server may resolve 'me' elsewhere; nothing in the diff shows it."
+
+[[hot_spots]]
+rank = 7
+path = "server/cmd/api/main.go"
+lines = [40, 44]
+symbol = "main (ops listener)"
+risk = 2
+fail_mode = "crash"
+risk_tags = []
+certainty = "soft"
+reason = "ops listener failure only logged"
+detail = "If :9090 is taken the ops listener logs and exits while the API serves on, so health probes fail although the API is up; http.ListenAndServe also has no read timeouts."
+
+# ---------------------------------------------------------------------------
+# coverage: expected `covered` answers for the risky units.
+# ---------------------------------------------------------------------------
+
+[[coverage]]
+path = "server/internal/users/preferences.go"
+lines = [70, 89]
+symbol = "putPreferences"
+covered = false
+by = "TestPreferencesDefaults only sends a GET."
+
+[[coverage]]
+path = "server/internal/users/preferences.go"
+lines = [59, 68]
+symbol = "getPreferences"
+covered = true
+by = "server/internal/users/users_test.go TestPreferencesDefaults (defaults for an unknown user)."
+
+[[coverage]]
+path = "server/internal/users/users.go"
+lines = [100, 103]
+symbol = "Routes"
+covered = true
+by = "TestPreferencesDefaults mounts Routes with withPreferences = true."
+
+[[coverage]]
+path = "server/cmd/api/main.go"
+lines = [30, 44]
+symbol = "main (ops listener)"
+covered = false
+by = "No test for main."
+
+[[coverage]]
+path = "web/src/components/SettingsForm.tsx"
+lines = [14, 29]
+symbol = "SettingsForm"
+covered = false
+by = "No component test."
+
+# ---------------------------------------------------------------------------
+# fidelity
+# ---------------------------------------------------------------------------
+
+[fidelity]
+applicable = true
+bullets_total = 5
+implemented = 5
+undocumented_firm = 0
+notes = "Every bullet is done as written. The description does not say that the web client still calls the removed /api/v1/health (a defect, listed as a hot spot) nor that preferences carry an emailDigest that duplicates Settings.emailDigest, which the form keeps editing."
+
+[[fidelity.bullets]]
+text = "Migration `20261010_user_preferences.sql`: new `user_preferences` table, `users.avatar_url` column (for #101), drop the unused `users.legacy_theme` column"
+status = "implemented"
+evidence = "server/migrations/20261010_user_preferences.sql:4-14."
+
+[[fidelity.bullets]]
+text = "`GET` and `PUT /api/v1/users/{id}/preferences`, enabled with `PORTAL_PREFERENCES_API=on`"
+status = "implemented"
+evidence = "server/internal/users/preferences.go:59-89, users.go:100-103, main.go:26."
+
+[[fidelity.bullets]]
+text = "`users.Routes` takes the preferences store and the switch; `main` and tests updated"
+status = "implemented"
+evidence = "users.go:86, main.go:26, users_test.go:15 and 50-66."
+
+[[fidelity.bullets]]
+text = "Health checks move from `GET /api/v1/health` to `GET /healthz` on the ops listener (`PORTAL_OPS_ADDR`, default `:9090`)"
+status = "implemented"
+evidence = "main.go old 25-28 removed, new 30-44."
+
+[[fidelity.bullets]]
+text = "Settings page: theme picker behind the `user-preferences-v2` flag"
+status = "implemented"
+evidence = "SettingsForm.tsx:12, 46-58; web/src/utils/flags.ts."
+
+[[fidelity.undocumented]]
+path = "server/migrations/20261010_user_preferences.sql"
+lines = [11, 11]
+symbol = "user_preferences_theme_idx"
+certainty = "soft"
+what = "An index on user_preferences.theme the description does not mention."
+
+[[fidelity.undocumented]]
+path = "web/src/components/SettingsForm.tsx"
+lines = [8, 8]
+symbol = "SettingsForm"
+certainty = "soft"
+what = "SettingsForm gains a userId prop defaulting to 'me'."
+
+[[fidelity.undocumented]]
+path = "web/src/components/SettingsForm.tsx"
+lines = [27, 29]
+symbol = "SettingsForm.submit"
+certainty = "soft"
+what = "Submitting the settings form now also saves preferences, and a failing save leaves the form without 'Saved'."
+
+# ---------------------------------------------------------------------------
+# files
+# ---------------------------------------------------------------------------
+
+[[files]]
+path = "server/cmd/api/main.go"
+kind = "feature"
+also = ["config", "refactor"]
+role = "glue"
+
+[[files]]
+path = "server/internal/users/preferences.go"
+kind = "feature"
+also = []
+role = "core"
+
+[[files]]
+path = "server/internal/users/users.go"
+kind = "feature"
+also = ["refactor"]
+role = "core"
+
+[[files]]
+path = "server/internal/users/users_test.go"
+kind = "test"
+also = []
+role = "test"
+
+[[files]]
+path = "server/migrations/20261010_user_preferences.sql"
+kind = "feature"
+also = ["config", "refactor"]
+role = "config"
+
+[[files]]
+path = "web/src/api/index.ts"
+kind = "feature"
+also = ["refactor"]
+role = "glue"
+
+[[files]]
+path = "web/src/api/preferences.ts"
+kind = "feature"
+also = []
+role = "glue"
+
+[[files]]
+path = "web/src/components/SettingsForm.tsx"
+kind = "feature"
+also = []
+role = "ui"
+
+[[files]]
+path = "web/src/utils/flags.ts"
+kind = "feature"
+also = ["config"]
+role = "core"

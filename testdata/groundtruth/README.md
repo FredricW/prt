@@ -9,11 +9,18 @@ per fixture item:
 | `102.toml` | PR #102 `refactor(web): rename fetchJSON to requestJSON` | `fixtures/prs/02-rename-fetchjson.patch` |
 | `103.toml` | PR #103 `chore(billing): remove legacy finance export and dead helpers` | `fixtures/prs/03-remove-legacy-billing.patch` |
 | `104.toml` | PR #104 `build(deps): bump the production group with 4 updates` | `fixtures/prs/04-bump-deps.patch` |
+| `106.toml` | PR #106 `feat(server): user preferences API and ops health check` | `fixtures/prs/06-user-preferences-api.patch` |
 | `05-spike-dark-mode.toml` | branch `05-spike-dark-mode` (no PR) | `fixtures/prs/05-spike-dark-mode.patch` |
+
+The label-quality check that consumes them is `internal/quality` (`go run
+./tools/quality`); `docs/QUALITY.md` defines its metrics and keeps the
+scoreboards.
 
 ## Written blind
 
-These files were written on 2026-10-13 by reading only the fixture sources:
+These files were written on 2026-10-13 by reading only the fixture sources
+(`106.toml` in M5.2, before any Jev answer, embedding or review of #106 was
+recorded):
 
 - `testdata/fixtures/prs/*.patch` (the diffs),
 - `testdata/fixtures/base/` (the tree the patches apply to, used to check
