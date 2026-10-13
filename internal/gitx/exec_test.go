@@ -49,8 +49,35 @@ func TestOpenOutsideWorkTree(t *testing.T) {
 	dir := t.TempDir()
 	// Stop git's upward search at the temp dir, in case it sits in a repo.
 	t.Setenv("GIT_CEILING_DIRECTORIES", filepath.Dir(dir))
+	// A non-English locale must not hide git's message.
+	t.Setenv("LANG", "de_DE.UTF-8")
+	t.Setenv("LC_ALL", "de_DE.UTF-8")
 	if _, err := Open(context.Background(), dir); !errors.Is(err, ErrNotWorkTree) {
 		t.Fatalf("Open(non-repo) = %v, want ErrNotWorkTree", err)
+	}
+}
+
+// Only "not a git repository" is ErrNotWorkTree: git missing from PATH, a
+// missing directory or a cancelled context are other failures, so prt
+// reports them instead of serving the directory as a workspace.
+func TestOpenOtherFailuresAreNotNotWorkTree(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	dir := t.TempDir()
+	t.Setenv("GIT_CEILING_DIRECTORIES", filepath.Dir(dir))
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := Open(ctx, dir); err == nil || errors.Is(err, ErrNotWorkTree) {
+		t.Errorf("Open(cancelled) = %v, want another error", err)
+	}
+	if _, err := Open(context.Background(), filepath.Join(dir, "missing")); err == nil || errors.Is(err, ErrNotWorkTree) {
+		t.Errorf("Open(missing dir) = %v, want another error", err)
+	}
+	t.Setenv("PATH", t.TempDir()) // no git binary on it
+	_, err := Open(context.Background(), dir)
+	if err == nil || errors.Is(err, ErrNotWorkTree) || !errors.Is(err, exec.ErrNotFound) {
+		t.Errorf("Open(no git) = %v, want exec.ErrNotFound and not ErrNotWorkTree", err)
 	}
 }
 

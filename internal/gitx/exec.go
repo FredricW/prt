@@ -3,7 +3,9 @@ package gitx
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
@@ -20,12 +22,28 @@ type Exec struct {
 
 var _ Git = (*Exec)(nil)
 
-// Open returns an Exec for the work tree containing dir.
+// notRepoExit and notRepoMessage are how git (in the C locale) says that a
+// directory is not inside a repository: "fatal: not a git repository (or
+// any of the parent directories): .git", exit status 128.
+const (
+	notRepoExit    = 128
+	notRepoMessage = "not a git repository"
+)
+
+// Open returns an Exec for the work tree containing dir. The error wraps
+// ErrNotWorkTree only when git says dir is not inside a repository; git
+// missing, a repository git refuses (dubious ownership) or a cancelled
+// context come back as they are.
 func Open(ctx context.Context, dir string) (*Exec, error) {
 	g := &Exec{root: dir}
-	out, err := g.run(ctx, "rev-parse", "--show-toplevel")
+	// The C locale keeps git's message English, so it can be recognised.
+	out, stderr, err := g.runEnv(ctx, []string{"LC_ALL=C"}, "rev-parse", "--show-toplevel")
 	if err != nil {
-		return nil, fmt.Errorf("gitx: %s: %w: %w", dir, ErrNotWorkTree, err)
+		var exit *exec.ExitError
+		if errors.As(err, &exit) && exit.ExitCode() == notRepoExit && strings.Contains(stderr, notRepoMessage) {
+			return nil, fmt.Errorf("gitx: %s: %w: %w", dir, ErrNotWorkTree, err)
+		}
+		return nil, fmt.Errorf("gitx: %s: %w", dir, err)
 	}
 	g.root = strings.TrimSpace(out)
 	return g, nil
@@ -39,15 +57,27 @@ func (g *Exec) bin() string {
 }
 
 func (g *Exec) run(ctx context.Context, args ...string) (string, error) {
+	out, _, err := g.runEnv(ctx, nil, args...)
+	return out, err
+}
+
+// runEnv runs git with env added to the process environment and returns
+// its stdout and stderr; the error names the command and wraps the exec
+// error (an *exec.ExitError when git ran and failed).
+func (g *Exec) runEnv(ctx context.Context, env []string, args ...string) (string, string, error) {
 	full := append([]string{"-C", g.root, "-c", "core.quotepath=off", "-c", "color.ui=false"}, args...)
 	cmd := exec.CommandContext(ctx, g.bin(), full...)
+	if len(env) > 0 {
+		cmd.Env = append(os.Environ(), env...)
+	}
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		return stdout.String(), fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(stderr.String()))
+		msg := strings.TrimSpace(stderr.String())
+		return stdout.String(), msg, fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, msg)
 	}
-	return stdout.String(), nil
+	return stdout.String(), stderr.String(), nil
 }
 
 // Root implements Git.

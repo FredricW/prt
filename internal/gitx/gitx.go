@@ -16,9 +16,11 @@ import (
 // ErrNotFound is returned when a ref, path or revision does not exist.
 var ErrNotFound = errors.New("gitx: not found")
 
-// ErrNotWorkTree is wrapped by Open when the directory is not inside a git
-// work tree (or git cannot be run there). cmd/prt then treats the directory
-// as a workspace root (M5.3) when it exists.
+// ErrNotWorkTree is wrapped by Open when git reports that the directory is
+// not inside a git repository. cmd/prt then treats the directory as a
+// workspace root (M5.3) when it exists. Any other failure (git missing,
+// git refusing a repository it finds, a cancelled context) is returned
+// without it, so it is reported as is.
 var ErrNotWorkTree = errors.New("gitx: not a git work tree")
 
 // Ref is a local or remote-tracking branch.
