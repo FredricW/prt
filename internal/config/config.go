@@ -73,6 +73,10 @@ type Models struct {
 	JevBaseURL string `toml:"jev_base_url"` // overrides default; JEV_BASE_URL env wins
 	Fast       string `toml:"fast"`
 	Deep       string `toml:"deep"`
+	// JevEndpoint is the spec's original key. It is accepted so the spec's
+	// sample prt.toml loads, but ignored (Jev is reached through the AI
+	// Gateway at JevBaseURL); Load adds a warning when it is set.
+	JevEndpoint string `toml:"jev_endpoint"`
 }
 
 // Config is prt.toml.
@@ -86,6 +90,9 @@ type Config struct {
 
 	// Source is the path the config was read from, or "builtin".
 	Source string `toml:"-"`
+	// Warnings are non-fatal problems found while loading (unknown or
+	// deprecated keys); the caller logs them.
+	Warnings []string `toml:"-"`
 }
 
 // Defaults returns the built-in prt.toml values.
@@ -125,7 +132,8 @@ type Routing struct {
 	CalibrationSample float64 `toml:"calibration_sample"`
 	Rules             []Rule  `toml:"rule"`
 
-	Source string `toml:"-"`
+	Source   string   `toml:"-"`
+	Warnings []string `toml:"-"`
 }
 
 // DefaultRouting returns the built-in routing rules from the spec.
@@ -180,10 +188,14 @@ func Load(dirs []string) (Config, error) {
 	if p == "" {
 		return c, nil
 	}
-	if err := decodeFile(p, &c); err != nil {
+	warns, err := decodeFile(p, &c)
+	if err != nil {
 		return Defaults(), err
 	}
-	c.Source = p
+	if c.Models.JevEndpoint != "" {
+		warns = append(warns, fmt.Sprintf("%s: models.jev_endpoint is ignored; Jev is reached through models.jev_base_url (env JEV_BASE_URL)", p))
+	}
+	c.Source, c.Warnings = p, warns
 	return c, nil
 }
 
@@ -197,13 +209,14 @@ func LoadRouting(dirs []string) (Routing, error) {
 	}
 	defRules := r.Rules
 	r.Rules = nil
-	if err := decodeFile(p, &r); err != nil {
+	warns, err := decodeFile(p, &r)
+	if err != nil {
 		return DefaultRouting(), err
 	}
 	if len(r.Rules) == 0 {
 		r.Rules = defRules
 	}
-	r.Source = p
+	r.Source, r.Warnings = p, warns
 	return r, nil
 }
 
@@ -221,13 +234,16 @@ func ReadQuestions(dirs []string) ([]byte, string, error) {
 	return b, p, nil
 }
 
-func decodeFile(path string, v any) error {
+// decodeFile decodes a TOML file into v. Syntax and type errors are fatal;
+// unknown keys are returned as warnings so a config written for another
+// version of prt (or copied from the spec) still starts with defaults.
+func decodeFile(path string, v any) ([]string, error) {
 	md, err := toml.DecodeFile(path, v)
 	if err != nil {
-		return fmt.Errorf("config: %s: %w", path, err)
+		return nil, fmt.Errorf("config: %s: %w", path, err)
 	}
 	if und := md.Undecoded(); len(und) > 0 {
-		return fmt.Errorf("config: %s: unknown keys %v", path, und)
+		return []string{fmt.Sprintf("%s: unknown keys %v ignored", path, und)}, nil
 	}
-	return nil
+	return nil, nil
 }
