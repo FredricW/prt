@@ -1,0 +1,155 @@
+# Ground truth for PR #104, written blind to pipeline output (see README.md).
+# Sources: fixtures/prs/04-bump-deps.patch, fixtures/base/, fixtures/prs.json.
+
+item = "pr:104"
+title = "build(deps): bump the production group with 4 updates"
+patch = "testdata/fixtures/prs/04-bump-deps.patch"
+written_blind = true
+
+[summary]
+shape = "single-purpose"
+shape_ok = ["single-purpose"]
+risk_max = 2
+risk_band = "LOW"
+risk_band_ok = ["LOW", "MED"]
+breaking = 0
+needs_eyes_max = 2
+one_line = "Dependabot minor bumps of react, react-dom and zod plus a chi patch bump; you already approved it and CI is now red, so find out why before merging."
+
+[lines_that_matter]
+total_changed = 46
+must_read = 6
+skim = 2
+skip = 38
+tolerance = 0.5
+est_minutes = 3
+note = "Read the three version lines in package.json (react 18.2.0 to 18.3.1, react-dom likewise, zod ^3.22.4 to ^3.23.8), glance at go.mod (chi v5.0.10 to v5.0.12). The lockfile and go.sum are generated and consistent with them (scheduler 0.23.0 to 0.23.2 is the expected transitive bump)."
+
+# ---------------------------------------------------------------------------
+# needs_eyes
+# ---------------------------------------------------------------------------
+
+[[needs_eyes]]
+path = "web/package.json"
+lines = [13, 15]
+symbol = "dependencies"
+depth = "run locally"
+certainty = "firm"
+reason = "Two minor bumps (react/react-dom 18.3 adds deprecation warnings ahead of 19; zod 3.23) on a PR whose CI went red after your approval; run the web tests to see what fails."
+
+[[needs_eyes]]
+path = "server/go.mod"
+lines = [6, 6]
+symbol = "require github.com/go-chi/chi/v5"
+depth = "skim"
+certainty = "soft"
+reason = "Patch bump of the router; low risk, but it is the only server change if the red CI is on the Go side."
+
+# ---------------------------------------------------------------------------
+# headlines: dependency bumps are not contract changes.
+# ---------------------------------------------------------------------------
+
+[[not_headlines]]
+path = "web/package.json"
+lines = [13, 15]
+symbol = "dependencies"
+why = "Version bumps, not a contract, env or flag change."
+
+[[not_headlines]]
+path = "web/package-lock.json"
+lines = [11, 71]
+symbol = "lockfile"
+why = "Generated lockfile churn."
+
+[[not_headlines]]
+path = "server/go.mod"
+lines = [6, 6]
+symbol = "require"
+why = "Patch bump."
+
+# ---------------------------------------------------------------------------
+# hot_spots
+# ---------------------------------------------------------------------------
+
+[[hot_spots]]
+rank = 1
+path = "web/package.json"
+lines = [13, 15]
+symbol = "dependencies"
+risk = 2
+fail_mode = "crash"
+risk_tags = []
+certainty = "firm"
+reason = "CI red after your approval"
+detail = "prs.json: ci = red, viewerApproved = true. The diff alone does not say which job fails; the minor bumps (react 18.3 deprecation warnings, zod 3.23 type changes) are the likely cause. Re-check before merge rather than rely on the earlier approval."
+
+[[hot_spots]]
+rank = 2
+path = "server/go.mod"
+lines = [6, 6]
+symbol = "require github.com/go-chi/chi/v5"
+risk = 1
+fail_mode = "crash"
+risk_tags = []
+certainty = "soft"
+reason = "router patch bump"
+detail = "chi v5.0.10 to v5.0.12 is a patch release; go.sum hashes are updated to match."
+
+# ---------------------------------------------------------------------------
+# fidelity
+# ---------------------------------------------------------------------------
+
+[fidelity]
+applicable = true
+bullets_total = 4
+implemented = 4
+undocumented_firm = 0
+notes = "The scheduler bump in the lockfile is the expected transitive change from react-dom 18.3.1, not an undocumented behaviour change."
+
+[[fidelity.bullets]]
+text = "Bump `react` from 18.2.0 to 18.3.1"
+status = "implemented"
+evidence = "web/package.json:13, web/package-lock.json:11 and 38-40."
+
+[[fidelity.bullets]]
+text = "Bump `react-dom` from 18.2.0 to 18.3.1"
+status = "implemented"
+evidence = "web/package.json:14, web/package-lock.json:12 and 49-57."
+
+[[fidelity.bullets]]
+text = "Bump `zod` from 3.22.4 to 3.23.8"
+status = "implemented"
+evidence = "web/package.json:15, web/package-lock.json:13 and 69-71."
+
+[[fidelity.bullets]]
+text = "Bump `github.com/go-chi/chi/v5` from 5.0.10 to 5.0.12"
+status = "implemented"
+evidence = "server/go.mod:6, server/go.sum:1-2."
+
+# ---------------------------------------------------------------------------
+# files
+# ---------------------------------------------------------------------------
+
+[[files]]
+path = "server/go.mod"
+kind = "dependency"
+also = ["config"]
+role = "config"
+
+[[files]]
+path = "server/go.sum"
+kind = "dependency"
+also = ["generated"]
+role = "generated"
+
+[[files]]
+path = "web/package-lock.json"
+kind = "generated"
+also = ["dependency"]
+role = "generated"
+
+[[files]]
+path = "web/package.json"
+kind = "dependency"
+also = ["config"]
+role = "config"

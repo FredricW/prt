@@ -1,0 +1,485 @@
+# Ground truth for PR #101, written blind to pipeline output (see README.md).
+# Sources: fixtures/prs/01-user-profile-refactor.patch, fixtures/base/, fixtures/prs.json.
+
+item = "pr:101"
+title = "feat(web): cached user profiles with team and avatar"
+patch = "testdata/fixtures/prs/01-user-profile-refactor.patch"
+written_blind = true
+
+[summary]
+shape = "mixed"
+shape_ok = ["mixed", "single-purpose"]
+risk_max = 4
+risk_band = "HIGH"
+risk_band_ok = ["HIGH"]
+breaking = 1
+one_line = "Breaking getUser(id, opts) change plus a new module-level profile cache whose hook races on id change and swallows load errors; logout invalidation is promised but missing."
+
+[lines_that_matter]
+total_changed = 398
+must_read = 100
+skim = 260
+skip = 38
+tolerance = 0.35
+est_minutes = 76
+note = "Eyes: useProfileCache (cache, loadProfile, hook) ~52, getUser and its types ~23, ProfilePage load/save ~17, server avatar ~10. Skim: tests (83), Avatar/ProfileHeader (56), caller updates, useUser, readError. Skip: the verbatim ApiError/authHeader move and imports."
+
+# ---------------------------------------------------------------------------
+# needs_eyes: everything not listed here is skim or skip.
+# ---------------------------------------------------------------------------
+
+[[needs_eyes]]
+path = "web/src/hooks/useProfileCache.ts"
+lines = [60, 81]
+symbol = "useProfileCache"
+depth = "read"
+certainty = "firm"
+reason = "Effect has no cancellation, so a slow response for the previous id overwrites the profile; profile state is not reset on id change; .catch(() => {}) leaves loading true forever."
+
+[[needs_eyes]]
+path = "web/src/hooks/useProfileCache.ts"
+lines = [31, 49]
+symbol = "loadProfile"
+depth = "read"
+certainty = "firm"
+reason = "TTL check and in-flight de-duplication; a fresh request joins a non-fresh one already in flight, and a request that finishes after clearProfileCache repopulates the cache."
+
+[[needs_eyes]]
+path = "web/src/hooks/useProfileCache.ts"
+lines = [13, 23]
+symbol = "cache / clearProfileCache / primeProfile"
+depth = "read"
+certainty = "soft"
+reason = "Module-global cache shared by every caller and only cleared from tests; this is where the promised logout invalidation would have to hook in."
+
+[[needs_eyes]]
+path = "web/src/api/client.ts"
+lines = [66, 72]
+symbol = "getUser"
+depth = "read"
+certainty = "firm"
+reason = "Breaking signature change (opts now required); builds the sorted include query and the Cache-Control: no-cache header for fresh."
+
+[[needs_eyes]]
+path = "web/src/api/client.ts"
+lines = [22, 33]
+symbol = "User / UserInclude / GetUserOptions"
+depth = "read"
+certainty = "soft"
+reason = "Public type contract for the new options and the optional avatarUrl/team fields the server only partly fills."
+
+[[needs_eyes]]
+path = "web/src/api/client.ts"
+lines = [41, 52]
+symbol = "RequestOptions.headers / fetchJSON"
+depth = "read"
+certainty = "soft"
+reason = "New per-request headers are spread after authHeader(), so a caller can override Authorization or Content-Type."
+
+[[needs_eyes]]
+path = "web/src/components/ProfilePage.tsx"
+lines = [12, 19]
+symbol = "ProfilePage"
+depth = "read"
+certainty = "firm"
+reason = "The load-error branch is gone: a failed load now shows Loading… forever, and the page keeps rendering the previous user's profile while a new userId loads."
+
+[[needs_eyes]]
+path = "web/src/components/ProfilePage.tsx"
+lines = [21, 29]
+symbol = "ProfilePage.save"
+depth = "read"
+certainty = "soft"
+reason = "Data write path: merges the PATCH result into the cached profile, then forces a no-cache refetch; save errors now surface."
+
+[[needs_eyes]]
+path = "server/internal/users/users.go"
+lines = [69, 87]
+symbol = "userResponse / toResponse"
+depth = "read"
+certainty = "firm"
+reason = "API response shape: optional avatarUrl (omitempty) added to GET /users/{id} when requested."
+
+[[needs_eyes]]
+path = "server/internal/users/users.go"
+lines = [104, 105]
+symbol = "Routes GET /{id}"
+depth = "read"
+certainty = "firm"
+reason = "Parses include with strings.Contains(..., \"avatar\"): substring match, and include=team (which the client always sends) is ignored."
+
+# ---------------------------------------------------------------------------
+# headlines: contract-level only. Expected to be few.
+# ---------------------------------------------------------------------------
+
+[[headlines]]
+path = "web/src/api/client.ts"
+lines = [66, 72]
+symbol = "getUser"
+contract = "signature"
+breaking = true
+certainty = "firm"
+also_at = ["web/src/api/client.ts:28-33"]
+summary = "getUser(id) is now getUser(id, opts: GetUserOptions) with opts required; exported via api/index.ts, so every caller must change (pass {} for the old behaviour)."
+
+[[headlines]]
+path = "server/internal/users/users.go"
+lines = [69, 87]
+symbol = "userResponse / toResponse"
+contract = "api shape"
+breaking = false
+certainty = "firm"
+also_at = ["server/internal/users/users.go:104-105", "web/src/api/client.ts:22-23"]
+summary = "GET /api/v1/users/{id} gains an optional avatarUrl field when include=avatar is requested (additive, omitted otherwise)."
+
+[[not_headlines]]
+path = "web/src/api/errors.ts"
+lines = [3, 17]
+symbol = "ApiError / authHeader"
+why = "Verbatim move; client.ts re-exports ApiError (line 7), so imports and instanceof checks keep working."
+
+[[not_headlines]]
+path = "web/src/api/client.ts"
+lines = [41, 41]
+symbol = "RequestOptions.headers"
+why = "Additive optional field; existing callers are unaffected."
+
+[[not_headlines]]
+path = "web/src/api/index.ts"
+lines = [2, 3]
+symbol = "api barrel exports"
+why = "Only adds exports (GetUserOptions, TeamSummary, UserInclude, isNotFound)."
+
+[[not_headlines]]
+path = "web/src/api/users.ts"
+lines = [12, 13]
+symbol = "getUsers"
+why = "New optional opts parameter with a default; existing calls still compile."
+
+[[not_headlines]]
+path = "web/src/hooks/useUser.ts"
+lines = [5, 8]
+symbol = "useUser"
+why = "New optional include parameter with a default; existing calls still compile."
+
+[[not_headlines]]
+path = "server/internal/users/users.go"
+lines = [73, 73]
+symbol = "toResponse"
+why = "Unexported helper; its only caller is updated in the same file."
+
+# ---------------------------------------------------------------------------
+# hot_spots: top real risks, most important first.
+# ---------------------------------------------------------------------------
+
+[[hot_spots]]
+rank = 1
+path = "web/src/hooks/useProfileCache.ts"
+lines = [67, 76]
+symbol = "useProfileCache"
+risk = 4
+fail_mode = "wrong data"
+risk_tags = ["async/race"]
+certainty = "firm"
+reason = "stale response overwrites newer profile"
+detail = "The effect neither cancels nor ignores the previous request. Navigating A to B: if A's response lands after B's, setProfile(A) wins. Separately, profile state is initialised once, so B's page renders A's profile until B arrives (and forever if B fails)."
+
+[[hot_spots]]
+rank = 2
+path = "web/src/hooks/useProfileCache.ts"
+lines = [75, 75]
+symbol = "useProfileCache"
+risk = 4
+fail_mode = "wrong data"
+fail_mode_ok = ["wrong data", "cosmetic"]
+risk_tags = ["error path"]
+certainty = "firm"
+also_at = ["web/src/components/ProfilePage.tsx:17-19"]
+reason = "load error swallowed, spinner forever"
+detail = ".catch(() => {}) drops the error and never clears loading; ProfileCacheState has no error field and ProfilePage removed its error message, so a 404 or 500 shows Loading… indefinitely. Open review thread PRRT_fixture101_catch asks for exactly this fix."
+
+[[hot_spots]]
+rank = 3
+path = "web/src/api/client.ts"
+lines = [66, 72]
+symbol = "getUser"
+risk = 3
+fail_mode = "crash"
+risk_tags = []
+certainty = "firm"
+reason = "breaking getUser signature, callers updated"
+detail = "opts is required. In-repo callers are all updated (api/users.ts:13, UserCard.tsx:17, UserList.tsx:24 via getUsers, useUser.ts:19, client.test.ts:45; checked against the base tree), but the function is exported from api/index.ts, so any other branch or consumer breaks at compile time."
+
+[[hot_spots]]
+rank = 4
+path = "web/src/hooks/useProfileCache.ts"
+lines = [13, 19]
+symbol = "cache / clearProfileCache"
+risk = 3
+fail_mode = "security"
+risk_tags = ["auth", "pii"]
+certainty = "firm"
+reason = "cache survives logout, invalidation missing"
+detail = "The description promises invalidation on logout, but clearProfileCache is only called from tests and the repo has no logout code. Profiles (email, team, avatar) fetched under one session stay in module memory for the next."
+
+[[hot_spots]]
+rank = 5
+path = "server/internal/users/users.go"
+lines = [104, 105]
+symbol = "Routes GET /{id}"
+risk = 2
+fail_mode = "wrong data"
+risk_tags = []
+certainty = "soft"
+also_at = ["web/src/components/ProfileHeader.tsx:20-24", "web/src/hooks/useProfileCache.ts:41-41"]
+reason = "team requested but never returned"
+detail = "loadProfile asks for include=team,avatar; the server only handles avatar and never returns a team object, so ProfileHeader's Team line never renders although the PR summary promises it."
+
+[[hot_spots]]
+rank = 6
+path = "web/src/hooks/useProfileCache.ts"
+lines = [69, 69]
+symbol = "useProfileCache"
+risk = 2
+fail_mode = "slowdown"
+risk_tags = []
+certainty = "soft"
+reason = "fresh flag sticks after refresh"
+detail = "loadProfile(id, nonce > 0): nonce is never reset, so after one refresh every later id change bypasses both the profile cache and HTTP caches."
+
+[[hot_spots]]
+rank = 7
+path = "web/src/api/client.ts"
+lines = [52, 52]
+symbol = "fetchJSON"
+risk = 2
+fail_mode = "security"
+risk_tags = ["auth"]
+certainty = "soft"
+reason = "caller headers override Authorization"
+detail = "...opts.headers is spread after ...authHeader(); harmless for the one current use (Cache-Control) but lets any caller replace the bearer token."
+
+# ---------------------------------------------------------------------------
+# coverage: expected `covered` answers for the risky units.
+# ---------------------------------------------------------------------------
+
+[[coverage]]
+path = "web/src/hooks/useProfileCache.ts"
+lines = [31, 49]
+symbol = "loadProfile"
+covered = true
+by = "web/src/__tests__/useProfileCache.test.ts (cache hit, de-dup, TTL expiry, fresh bypass)"
+
+[[coverage]]
+path = "web/src/hooks/useProfileCache.ts"
+lines = [60, 81]
+symbol = "useProfileCache"
+covered = false
+by = "No test renders the hook; the race, the swallowed error and the stale flag are untested."
+
+[[coverage]]
+path = "web/src/api/client.ts"
+lines = [66, 72]
+symbol = "getUser"
+covered = true
+by = "web/src/__tests__/client.test.ts (escaping with {}, sorted include, fresh header)"
+
+[[coverage]]
+path = "web/src/components/ProfilePage.tsx"
+lines = [12, 29]
+symbol = "ProfilePage"
+covered = false
+by = "No component test."
+
+[[coverage]]
+path = "server/internal/users/users.go"
+lines = [69, 105]
+symbol = "toResponse / Routes"
+covered = false
+by = "users_test.go is unchanged and never sends include=avatar."
+
+# ---------------------------------------------------------------------------
+# fidelity
+# ---------------------------------------------------------------------------
+
+[fidelity]
+applicable = true
+bullets_total = 6
+implemented = 5
+undocumented_firm = 1
+notes = "The summary sentence also promises the user's team on the profile; no bullet covers it and the server never returns a team, so it is not delivered (not counted in bullets_total). The Breaking section is accurate: getUser(id, {}) produces the old request."
+
+[[fidelity.bullets]]
+text = "`getUser` takes a required `GetUserOptions` argument (`include`, `fresh`, `signal`); all callers updated"
+status = "implemented"
+evidence = "web/src/api/client.ts:28-33 and 66-72; every getUser caller in the base tree is updated."
+
+[[fidelity.bullets]]
+text = "Move `ApiError`, auth headers and error parsing into `api/errors.ts` and add `isNotFound`"
+status = "implemented"
+evidence = "web/src/api/errors.ts:3-36; client.ts:5-7 and 58."
+
+[[fidelity.bullets]]
+text = "Add `useProfileCache`: stale-while-revalidate cache with a 5 minute TTL and request de-duplication"
+status = "implemented"
+evidence = "web/src/hooks/useProfileCache.ts:6 (5 * 60 * 1000), 37-47 (in-flight map), 60-81 (hook)."
+
+[[fidelity.bullets]]
+text = "Add `Avatar` and `ProfileHeader` components; `ProfilePage` uses the cache and shows save errors"
+status = "implemented"
+evidence = "Avatar.tsx, ProfileHeader.tsx; ProfilePage.tsx:12, 28-29, 45."
+
+[[fidelity.bullets]]
+text = "Invalidate the profile cache on logout"
+status = "not implemented"
+evidence = "clearProfileCache exists but is only called from useProfileCache.test.ts; there is no logout code anywhere in the repo."
+
+[[fidelity.bullets]]
+text = "server: return `avatarUrl` when `include=avatar` is requested"
+status = "implemented"
+evidence = "server/internal/users/users.go:69, 84-87, 104-105."
+
+[[fidelity.undocumented]]
+path = "web/src/components/ProfilePage.tsx"
+lines = [17, 19]
+symbol = "ProfilePage"
+certainty = "firm"
+what = "Load failures are no longer shown: the base rendered 'Could not load profile: …'; now the page stays on Loading…."
+
+[[fidelity.undocumented]]
+path = "web/src/hooks/useUser.ts"
+lines = [18, 24]
+symbol = "useUser"
+certainty = "soft"
+what = "In-flight requests are now aborted on unmount or id change instead of ignored, and useUser gains an include parameter; after this PR useUser has no callers left."
+
+[[fidelity.undocumented]]
+path = "web/src/components/UserCard.tsx"
+lines = [17, 17]
+symbol = "UserCard"
+certainty = "soft"
+also_at = ["web/src/components/UserCard.tsx:30-30", "web/src/components/UserList.tsx:24-24"]
+what = "User cards and pinned users now request include=avatar and render avatar images instead of initials; the description only talks about profiles."
+
+[[fidelity.undocumented]]
+path = "web/src/components/ProfilePage.tsx"
+lines = [25, 27]
+symbol = "ProfilePage.save"
+certainty = "soft"
+what = "Saving now forces a no-cache refetch of the profile after the PATCH."
+
+# ---------------------------------------------------------------------------
+# review threads from prs.json: expected comment_addressed at head b3ca0eb.
+# ---------------------------------------------------------------------------
+
+[[comments]]
+thread = "PRRT_fixture101_ttl"
+path = "web/src/hooks/useProfileCache.ts"
+line = 6
+addressed = true
+certainty = "firm"
+why = "PROFILE_TTL_MS is 5 * 60 * 1000 at head, as the reviewer asked."
+
+[[comments]]
+thread = "PRRT_fixture101_catch"
+path = "web/src/hooks/useProfileCache.ts"
+line = 75
+addressed = false
+certainty = "firm"
+why = "Still .catch(() => {}); loading is never cleared and ProfileCacheState has no error field."
+
+[[comments]]
+thread = "PRRT_fixture101_token"
+path = "web/src/api/errors.ts"
+line = 15
+addressed = false
+certainty = "soft"
+why = "Resolved as out of scope (#98); authHeader still reads localStorage directly."
+
+# ---------------------------------------------------------------------------
+# files
+# ---------------------------------------------------------------------------
+
+[[files]]
+path = "server/internal/users/users.go"
+kind = "feature"
+also = []
+role = "core"
+
+[[files]]
+path = "web/src/__tests__/client.test.ts"
+kind = "test"
+also = []
+role = "test"
+
+[[files]]
+path = "web/src/__tests__/useProfileCache.test.ts"
+kind = "test"
+also = []
+role = "test"
+
+[[files]]
+path = "web/src/api/client.ts"
+kind = "feature"
+also = ["refactor"]
+role = "core"
+
+[[files]]
+path = "web/src/api/errors.ts"
+kind = "refactor"
+also = ["feature"]
+role = "core"
+
+[[files]]
+path = "web/src/api/index.ts"
+kind = "feature"
+also = ["refactor"]
+role = "glue"
+
+[[files]]
+path = "web/src/api/users.ts"
+kind = "refactor"
+also = ["feature"]
+role = "glue"
+
+[[files]]
+path = "web/src/components/Avatar.tsx"
+kind = "feature"
+also = []
+role = "ui"
+
+[[files]]
+path = "web/src/components/ProfileHeader.tsx"
+kind = "feature"
+also = []
+role = "ui"
+
+[[files]]
+path = "web/src/components/ProfilePage.tsx"
+kind = "feature"
+also = ["refactor"]
+role = "ui"
+
+[[files]]
+path = "web/src/components/UserCard.tsx"
+kind = "feature"
+also = ["refactor"]
+role = "ui"
+
+[[files]]
+path = "web/src/components/UserList.tsx"
+kind = "refactor"
+also = ["feature"]
+role = "ui"
+
+[[files]]
+path = "web/src/hooks/useProfileCache.ts"
+kind = "feature"
+also = []
+role = "core"
+
+[[files]]
+path = "web/src/hooks/useUser.ts"
+kind = "refactor"
+also = ["feature"]
+role = "glue"

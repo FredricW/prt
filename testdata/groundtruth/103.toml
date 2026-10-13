@@ -1,0 +1,119 @@
+# Ground truth for PR #103, written blind to pipeline output (see README.md).
+# Sources: fixtures/prs/03-remove-legacy-billing.patch, fixtures/base/, fixtures/prs.json.
+
+item = "pr:103"
+title = "chore(billing): remove legacy finance export and dead helpers"
+patch = "testdata/fixtures/prs/03-remove-legacy-billing.patch"
+written_blind = true
+
+[summary]
+shape = "single-purpose"
+shape_ok = ["single-purpose"]
+risk_max = 1
+risk_band = "LOW"
+risk_band_ok = ["LOW"]
+breaking = 0
+breaking_ok = [0, 1]
+needs_eyes_max = 1
+one_line = "Deletion of dead legacy billing code; nothing references any removed symbol, the package is internal, and the remaining imports still compile."
+
+[lines_that_matter]
+total_changed = 78
+must_read = 0
+skim = 21
+skip = 57
+tolerance = 1.0
+est_minutes = 2
+note = "Pure deletion. The review is a search, not a read: none of LegacyExport, WriteLegacyCSV, toLegacy, parseLegacyDate, renumberLegacy or legacyTaxCents is referenced in the base tree (Go, TypeScript or Python). fmt stays used by Service.Issue and strings by TaxCents, so the build holds. Skim the invoice.go and tax.go hunks; skip legacy.go."
+
+# ---------------------------------------------------------------------------
+# needs_eyes: nothing is firm. Deleted code has no new side, so the one
+# optional entry uses old-side lines.
+# ---------------------------------------------------------------------------
+
+[[needs_eyes]]
+path = "server/internal/billing/tax.go"
+side = "old"
+lines = [27, 32]
+symbol = "legacyTaxCents"
+depth = "skim"
+certainty = "soft"
+reason = "Money code, so worth a glance to confirm TaxCents itself is untouched; the removed function is unused."
+
+# ---------------------------------------------------------------------------
+# headlines
+# ---------------------------------------------------------------------------
+
+[[headlines]]
+path = "server/internal/billing/legacy.go"
+side = "old"
+lines = [11, 52]
+symbol = "LegacyExport / WriteLegacyCSV"
+contract = "signature"
+breaking = false
+certainty = "soft"
+summary = "Removes the exported LegacyExport type and WriteLegacyCSV func. No callers exist and the package is internal/, so nothing breaks; listing it as a removed export is acceptable, so is 'no contract changes'."
+
+[[not_headlines]]
+path = "server/internal/billing/invoice.go"
+side = "old"
+lines = [106, 118]
+symbol = "renumberLegacy"
+why = "Unexported and unused."
+
+[[not_headlines]]
+path = "server/internal/billing/tax.go"
+side = "old"
+lines = [4, 32]
+symbol = "legacyTaxCents / math import"
+why = "Unexported and unused; TaxCents is unchanged."
+
+# No [[hot_spots]]: a correct pipeline reports nothing with risk >= 3 here.
+
+# ---------------------------------------------------------------------------
+# fidelity
+# ---------------------------------------------------------------------------
+
+[fidelity]
+applicable = true
+bullets_total = 3
+implemented = 3
+undocumented_firm = 0
+notes = "legacy.go also held the unexported toLegacy helper; deleting the file covers it. No undocumented behaviour changes: no route ever served the legacy export."
+
+[[fidelity.bullets]]
+text = "Delete `server/internal/billing/legacy.go` (`LegacyExport`, `WriteLegacyCSV`, `parseLegacyDate`)"
+status = "implemented"
+evidence = "legacy.go deleted (old lines 1-57)."
+
+[[fidelity.bullets]]
+text = "Remove `renumberLegacy` from `invoice.go`"
+status = "implemented"
+evidence = "invoice.go old lines 106-118 removed; fmt still used by Issue."
+
+[[fidelity.bullets]]
+text = "Remove `legacyTaxCents` and the now-unused `math` import from `tax.go`"
+status = "implemented"
+evidence = "tax.go old lines 4 and 26-32 removed; strings still used by TaxCents."
+
+# ---------------------------------------------------------------------------
+# files
+# ---------------------------------------------------------------------------
+
+[[files]]
+path = "server/internal/billing/invoice.go"
+kind = "refactor"
+also = []
+role = "core"
+
+[[files]]
+path = "server/internal/billing/legacy.go"
+kind = "refactor"
+also = []
+role = "core"
+
+[[files]]
+path = "server/internal/billing/tax.go"
+kind = "refactor"
+also = []
+role = "core"

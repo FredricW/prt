@@ -1,0 +1,253 @@
+# Ground truth for PR #102, written blind to pipeline output (see README.md).
+# Sources: fixtures/prs/02-rename-fetchjson.patch, fixtures/base/, fixtures/prs.json.
+
+item = "pr:102"
+title = "refactor(web): rename fetchJSON to requestJSON"
+patch = "testdata/fixtures/prs/02-rename-fetchjson.patch"
+written_blind = true
+
+[summary]
+shape = "sweeping refactor"
+shape_ok = ["sweeping refactor", "single-purpose"]
+risk_max = 2
+risk_band = "LOW"
+risk_band_ok = ["LOW"]
+breaking = 1
+needs_eyes_max = 2
+one_line = "Complete mechanical rename of fetchJSON to requestJSON across 20 files; the only thing to judge is dropping the old export with no alias."
+
+[lines_that_matter]
+total_changed = 112
+must_read = 4
+skim = 10
+skip = 98
+tolerance = 0.5
+est_minutes = 3
+note = "One mechanical group: read the definition and the barrel export once, glance at one call site, skip the other 18 files. Verified against the base tree: every fetchJSON reference in all 20 files is renamed and none remain."
+
+# ---------------------------------------------------------------------------
+# needs_eyes: none is firm. A correct pipeline marks at most these two.
+# ---------------------------------------------------------------------------
+
+[[needs_eyes]]
+path = "web/src/api/index.ts"
+lines = [1, 1]
+symbol = "api barrel exports"
+depth = "skim"
+certainty = "soft"
+reason = "Public export fetchJSON disappears from the barrel with no deprecated alias."
+
+[[needs_eyes]]
+path = "web/src/api/client.ts"
+lines = [39, 39]
+symbol = "requestJSON"
+depth = "skim"
+certainty = "soft"
+reason = "The renamed definition; confirm the body is untouched."
+
+# ---------------------------------------------------------------------------
+# headlines
+# ---------------------------------------------------------------------------
+
+[[headlines]]
+path = "web/src/api/client.ts"
+lines = [39, 39]
+symbol = "requestJSON (was fetchJSON)"
+contract = "signature"
+breaking = true
+certainty = "firm"
+also_at = ["web/src/api/index.ts:1-1"]
+summary = "Exported fetchJSON is renamed to requestJSON in client.ts and the api barrel, with no compatibility alias; any importer outside this diff breaks."
+
+[[not_headlines]]
+path = "web/src/api/client.ts"
+lines = [70, 78]
+symbol = "getUser / getCurrentUser / updateUser"
+why = "Internal call sites of the renamed helper; signatures unchanged."
+
+[[not_headlines]]
+path = "web/src/__tests__/users.test.ts"
+lines = [11, 24]
+symbol = "users api tests"
+why = "The spy target and test name follow the rename; the assertions are unchanged, so the test is not weakened."
+
+[[not_headlines]]
+path = "web/src/hooks/useFetch.ts"
+lines = [3, 24]
+symbol = "useFetch"
+why = "Call-site rename only; the hook's own signature is unchanged."
+
+# ---------------------------------------------------------------------------
+# hot_spots
+# ---------------------------------------------------------------------------
+
+[[hot_spots]]
+rank = 1
+path = "web/src/api/index.ts"
+lines = [1, 1]
+symbol = "api barrel exports"
+risk = 2
+fail_mode = "crash"
+risk_tags = []
+certainty = "firm"
+also_at = ["web/src/api/client.ts:39-39"]
+reason = "old export removed without alias"
+detail = "In-repo callers are all renamed, but code on other branches or outside the repo that imports fetchJSON fails to compile. A one-line deprecated re-export would avoid it."
+
+[[hot_spots]]
+rank = 2
+path = "web/src/api/client.ts"
+lines = [39, 39]
+symbol = "requestJSON"
+risk = 2
+fail_mode = "crash"
+risk_tags = []
+certainty = "soft"
+also_at = ["web/src/api/index.ts:1-1", "web/src/api/users.ts:1-1", "web/src/__tests__/client.test.ts:3-3"]
+reason = "collides with open PR #101"
+detail = "PR #101 edits the same lines in client.ts, users.ts, index.ts and client.test.ts and adds new fetchJSON calls (getUser body, the 'merges extra headers' test). Whichever lands second conflicts or fails to build. Cross-PR knowledge, so soft."
+
+# ---------------------------------------------------------------------------
+# fidelity
+# ---------------------------------------------------------------------------
+
+[fidelity]
+applicable = true
+bullets_total = 2
+implemented = 2
+undocumented_firm = 0
+notes = "'Pure rename, no behaviour change' holds: only identifiers, two comments (client.ts:1, useFetch.ts:11) and two test names change. No undocumented behaviour changes."
+
+[[fidelity.bullets]]
+text = "Rename `fetchJSON` to `requestJSON` in `api/client.ts`"
+status = "implemented"
+evidence = "web/src/api/client.ts:39 (and the header comment on line 1)."
+
+[[fidelity.bullets]]
+text = "Update every import and call site (19 files)"
+status = "implemented"
+evidence = "19 files besides client.ts; per-file reference counts match the base tree and no fetchJSON remains."
+
+# ---------------------------------------------------------------------------
+# files
+# ---------------------------------------------------------------------------
+
+[[files]]
+path = "web/src/__tests__/client.test.ts"
+kind = "test"
+also = ["refactor"]
+role = "test"
+
+[[files]]
+path = "web/src/__tests__/users.test.ts"
+kind = "test"
+also = ["refactor"]
+role = "test"
+
+[[files]]
+path = "web/src/api/billing.ts"
+kind = "refactor"
+also = []
+role = "glue"
+
+[[files]]
+path = "web/src/api/client.ts"
+kind = "refactor"
+also = []
+role = "core"
+
+[[files]]
+path = "web/src/api/health.ts"
+kind = "refactor"
+also = []
+role = "glue"
+
+[[files]]
+path = "web/src/api/index.ts"
+kind = "refactor"
+also = []
+role = "glue"
+
+[[files]]
+path = "web/src/api/notifications.ts"
+kind = "refactor"
+also = []
+role = "glue"
+
+[[files]]
+path = "web/src/api/orgs.ts"
+kind = "refactor"
+also = []
+role = "glue"
+
+[[files]]
+path = "web/src/api/search.ts"
+kind = "refactor"
+also = []
+role = "glue"
+
+[[files]]
+path = "web/src/api/settings.ts"
+kind = "refactor"
+also = []
+role = "glue"
+
+[[files]]
+path = "web/src/api/teams.ts"
+kind = "refactor"
+also = []
+role = "glue"
+
+[[files]]
+path = "web/src/api/users.ts"
+kind = "refactor"
+also = []
+role = "glue"
+
+[[files]]
+path = "web/src/components/AuditLog.tsx"
+kind = "refactor"
+also = []
+role = "ui"
+
+[[files]]
+path = "web/src/components/InvoiceTable.tsx"
+kind = "refactor"
+also = []
+role = "ui"
+
+[[files]]
+path = "web/src/components/NotificationBell.tsx"
+kind = "refactor"
+also = []
+role = "ui"
+
+[[files]]
+path = "web/src/components/SettingsForm.tsx"
+kind = "refactor"
+also = []
+role = "ui"
+
+[[files]]
+path = "web/src/components/StatusFooter.tsx"
+kind = "refactor"
+also = []
+role = "ui"
+
+[[files]]
+path = "web/src/components/TeamPanel.tsx"
+kind = "refactor"
+also = []
+role = "ui"
+
+[[files]]
+path = "web/src/hooks/useFetch.ts"
+kind = "refactor"
+also = []
+role = "glue"
+
+[[files]]
+path = "web/src/hooks/usePolling.ts"
+kind = "refactor"
+also = []
+role = "glue"

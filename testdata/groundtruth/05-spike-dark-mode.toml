@@ -1,0 +1,147 @@
+# Ground truth for branch 05-spike-dark-mode, written blind to pipeline output
+# (see README.md). Sources: fixtures/prs/05-spike-dark-mode.patch (two commits),
+# fixtures/base/. The branch has no PR, so there is no description.
+
+item = "branch:05-spike-dark-mode"
+title = "wip: dark palette / wip: theme toggle in header"
+patch = "testdata/fixtures/prs/05-spike-dark-mode.patch"
+written_blind = true
+
+[summary]
+shape = "WIP"
+shape_ok = ["WIP"]
+risk_max = 2
+risk_band = "LOW"
+risk_band_ok = ["LOW", "MED"]
+breaking = 0
+needs_eyes_max = 2
+one_line = "Spike: a dark palette behind :root[data-theme=dark] and a header toggle persisted in localStorage; contrast unchecked and prefers-color-scheme ignored, by the author's own notes."
+
+[branch]
+state = "spike"
+state_ok = ["spike", "WIP"]
+evidence = "Branch name says spike; both commit subjects start with wip:; the CSS carries a 'WIP: contrast not checked yet' note and the component a TODO."
+suggested_title_like = "feat(web): dark mode with a theme toggle"
+
+[lines_that_matter]
+total_changed = 30
+must_read = 14
+skim = 16
+skip = 0
+tolerance = 0.5
+est_minutes = 9
+note = "Read ThemeToggle (lines 6-19). Skim the palette block (worth a visual check rather than a read) and the two App.tsx lines that mount the toggle."
+
+# ---------------------------------------------------------------------------
+# needs_eyes
+# ---------------------------------------------------------------------------
+
+[[needs_eyes]]
+path = "web/src/components/ThemeToggle.tsx"
+lines = [6, 19]
+symbol = "ThemeToggle"
+depth = "read"
+certainty = "firm"
+reason = "Reads localStorage during render with an unchecked cast to Theme, applies the theme in an effect after first paint, and ignores prefers-color-scheme (TODO)."
+
+[[needs_eyes]]
+path = "web/src/styles/theme.css"
+lines = [11, 18]
+symbol = ':root[data-theme="dark"]'
+depth = "run locally"
+certainty = "soft"
+reason = "Dark palette with contrast explicitly unchecked; needs a visual pass more than a code read."
+
+# ---------------------------------------------------------------------------
+# headlines: none.
+# ---------------------------------------------------------------------------
+
+[[not_headlines]]
+path = "web/src/components/ThemeToggle.tsx"
+lines = [7, 11]
+symbol = "ThemeToggle"
+why = "A UI preference persisted under localStorage portal.theme and a data-theme attribute; not an env var, feature flag or API contract."
+
+[[not_headlines]]
+path = "web/src/App.tsx"
+lines = [9, 28]
+symbol = "App"
+why = "Mounts the toggle in the header; no signature change."
+
+# ---------------------------------------------------------------------------
+# hot_spots
+# ---------------------------------------------------------------------------
+
+[[hot_spots]]
+rank = 1
+path = "web/src/components/ThemeToggle.tsx"
+lines = [7, 7]
+symbol = "ThemeToggle"
+risk = 2
+fail_mode = "crash"
+risk_tags = ["error path"]
+certainty = "firm"
+reason = "unguarded localStorage read in render"
+detail = "localStorage.getItem throws where storage is blocked (some private modes, disabled site data); it runs in the header's render, so the whole App fails to mount. Any stored string is cast to Theme without validation."
+
+[[hot_spots]]
+rank = 2
+path = "web/src/components/ThemeToggle.tsx"
+lines = [9, 12]
+symbol = "ThemeToggle"
+risk = 1
+fail_mode = "cosmetic"
+risk_tags = []
+certainty = "soft"
+also_at = ["web/src/components/ThemeToggle.tsx:5-5"]
+reason = "light flash, OS preference ignored"
+detail = "data-theme is set in useEffect after the first paint, so dark users see a light flash on every load; prefers-color-scheme is not consulted (the TODO on line 5)."
+
+[[hot_spots]]
+rank = 3
+path = "web/src/styles/theme.css"
+lines = [12, 17]
+symbol = ':root[data-theme="dark"]'
+risk = 2
+fail_mode = "cosmetic"
+risk_tags = []
+certainty = "soft"
+reason = "dark palette contrast unchecked"
+detail = "The author flags contrast as unchecked. Text colours pass on --bg, but .avatar keeps color: #fff on the lighter dark --accent #6b9cff, about 2.7:1, below WCAG AA."
+
+[[coverage]]
+path = "web/src/components/ThemeToggle.tsx"
+lines = [6, 19]
+symbol = "ThemeToggle"
+covered = false
+by = "No tests on the branch."
+
+# ---------------------------------------------------------------------------
+# fidelity: no description to compare against.
+# ---------------------------------------------------------------------------
+
+[fidelity]
+applicable = false
+notes = "No PR body. Both commit subjects match their diffs: 'wip: dark palette' is theme.css, 'wip: theme toggle in header' is App.tsx plus ThemeToggle.tsx."
+
+# ---------------------------------------------------------------------------
+# files
+# ---------------------------------------------------------------------------
+
+[[files]]
+path = "web/src/styles/theme.css"
+kind = "feature"
+also = []
+role = "ui"
+
+[[files]]
+path = "web/src/App.tsx"
+kind = "feature"
+also = []
+role = "ui"
+
+[[files]]
+path = "web/src/components/ThemeToggle.tsx"
+kind = "feature"
+also = []
+role = "ui"
