@@ -363,7 +363,8 @@ func (c *InProcess) refreshHead(ctx context.Context, id string) error {
 
 // EditGroups implements Client: validates and stores the edit, then queues
 // the item (not forced: fetch, labels, embeddings and pairs come from the
-// cache; the cluster stage applies the stored edits).
+// cache; the cluster stage applies the stored edits). The job is a rerun so
+// it follows a run already in flight instead of being deduped away.
 func (c *InProcess) EditGroups(ctx context.Context, p proto.GroupEditParams) error {
 	e := p.Edit
 	if e.ItemID == "" {
@@ -381,7 +382,8 @@ func (c *InProcess) EditGroups(ctx context.Context, p proto.GroupEditParams) err
 	default:
 		return fmt.Errorf("daemon: edit groups %s: unknown op %q", p.ItemID, e.Op)
 	}
-	if _, err := c.d.Store.Item(ctx, p.ItemID); err != nil {
+	it, err := c.d.Store.Item(ctx, p.ItemID)
+	if err != nil {
 		return fmt.Errorf("daemon: edit groups %s: %w", p.ItemID, err)
 	}
 	if e.At.IsZero() {
@@ -390,7 +392,10 @@ func (c *InProcess) EditGroups(ctx context.Context, p proto.GroupEditParams) err
 	if err := c.d.Store.AppendGroupEdit(ctx, e); err != nil {
 		return fmt.Errorf("daemon: edit groups %s: %w", p.ItemID, err)
 	}
-	return c.Analyse(ctx, false, p.ItemID)
+	// rerun: a run already in flight may have read the edits before this
+	// one was stored, so another run must follow it.
+	c.q.push(job{itemID: it.ID, urgency: it.Urgency, rerun: true})
+	return nil
 }
 
 // Analyse queues items for background analysis as one batch, so they start

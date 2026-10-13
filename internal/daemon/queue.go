@@ -10,12 +10,17 @@ type job struct {
 	itemID  string
 	urgency float64
 	force   bool
-	seq     int // enqueue order, breaks urgency ties
+	// rerun queues the job even while the item is running (it starts after
+	// that run): used after a group edit, which the running run may have
+	// read too early to apply.
+	rerun bool
+	seq   int // enqueue order, breaks urgency ties
 }
 
 // queue is a priority work queue: at most slots jobs run at once, and the
 // next job started is always the most urgent waiting one. An item is never
-// queued twice; an item already running is queued again only when forced.
+// queued twice; an item already running is queued again only when forced or
+// marked rerun.
 type queue struct {
 	slots int
 	run   func(job) // executes a job; called on its own goroutine
@@ -51,7 +56,7 @@ func (q *queue) push(jobs ...job) {
 			q.waiting[i].urgency = j.urgency
 			continue
 		}
-		if q.inflight[j.itemID] && !j.force {
+		if q.inflight[j.itemID] && !j.force && !j.rerun {
 			continue
 		}
 		q.seq++

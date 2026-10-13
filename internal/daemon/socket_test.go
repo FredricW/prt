@@ -132,6 +132,36 @@ func TestSocketRoundTrip(t *testing.T) {
 	})
 }
 
+// ⇧M / X edits go Socket → Serve → InProcess with their units, item and
+// time intact; a bad edit comes back as a RemoteError.
+func TestSocketEditGroups(t *testing.T) {
+	ctx := context.Background()
+	backing := socketBacking(t)
+	id := model.BranchItemID("feat/x")
+	put(t, backing.d.Store, branchItem("feat/x", 1))
+	s, _, _ := startServer(t, backing)
+
+	at := time.Date(2026, 10, 1, 9, 30, 0, 0, time.UTC)
+	edit := model.GroupEdit{Op: model.EditMerge, Units: []string{"u1", "u2"}, At: at}
+	if err := s.EditGroups(ctx, proto.GroupEditParams{ItemID: id, Edit: edit}); err != nil {
+		t.Fatal(err)
+	}
+	edits, err := backing.d.Store.GroupEdits(ctx, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(edits) != 1 || edits[0].ItemID != id || edits[0].Op != model.EditMerge ||
+		strings.Join(edits[0].Units, ",") != "u1,u2" || !edits[0].At.Equal(at) {
+		t.Fatalf("stored edits = %+v", edits)
+	}
+
+	err = s.EditGroups(ctx, proto.GroupEditParams{ItemID: id, Edit: model.GroupEdit{Op: model.EditMerge}})
+	var re *RemoteError
+	if !errors.As(err, &re) || re.Method != proto.MethodEditGroups {
+		t.Fatalf("bad edit err = %#v", err)
+	}
+}
+
 func TestSocketErrorResponse(t *testing.T) {
 	s, _, _ := startServer(t, socketBacking(t))
 	_, err := s.Detail(context.Background(), "pr:404")
