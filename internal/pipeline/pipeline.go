@@ -32,6 +32,7 @@ import (
 	"github.com/fredricw/prt/internal/gh"
 	"github.com/fredricw/prt/internal/gitx"
 	"github.com/fredricw/prt/internal/jev"
+	"github.com/fredricw/prt/internal/labels"
 	"github.com/fredricw/prt/internal/model"
 	"github.com/fredricw/prt/internal/parse"
 	"github.com/fredricw/prt/internal/questions"
@@ -188,7 +189,7 @@ func (p *Pipeline) parse(ctx context.Context, itemID string, f model.Fetch, file
 // stored Item.
 func (p *Pipeline) aggregate(ctx context.Context, it model.Item, f model.Fetch, in parseOut, jo jevOut, rl *model.RunLog) (model.ItemAgg, error) {
 	cur := p.currentItem(ctx, it)
-	ls, err := p.itemLabels(ctx, it.ID, in.units)
+	ls, err := p.itemLabels(ctx, cur, in.files, in.units)
 	if err != nil {
 		return model.ItemAgg{}, err
 	}
@@ -207,13 +208,16 @@ func (p *Pipeline) aggregate(ctx context.Context, it model.Item, f model.Fetch, 
 }
 
 // itemLabels loads every stored label of the item's units and of the item
-// itself (model.ItemSubject), with the user's overrides applied.
-func (p *Pipeline) itemLabels(ctx context.Context, itemID string, units []model.ChangeUnit) ([]model.Label, error) {
+// itself (model.ItemSubject), with labels asked under other item-level
+// inputs turned unknown (currentLabels) and the user's overrides applied.
+func (p *Pipeline) itemLabels(ctx context.Context, it model.Item, files []model.File, units []model.ChangeUnit) ([]model.Label, error) {
+	itemID := it.ID
 	ids := append(unitIDs(units), model.ItemSubject(itemID))
 	ls, err := p.d.Store.Labels(ctx, ids)
 	if err != nil {
 		return nil, fmt.Errorf("pipeline: load labels: %w", err)
 	}
+	ls = currentLabels(ls, labels.InputHashes(p.catalogue(), p.labelContext(it, files)))
 	ovs, err := p.d.Store.Overrides(ctx, ids)
 	if err != nil {
 		return nil, fmt.Errorf("pipeline: load overrides: %w", err)

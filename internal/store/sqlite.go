@@ -54,6 +54,10 @@ var migrations = []string{
 		body BLOB NOT NULL
 	);
 	CREATE INDEX runlog_item ON runlog(item_id, seq);`,
+	// 2: line labels moved from file line numbers to positions within the
+	// unit, and context-dependent labels gained an input hash; drop the old
+	// label cache so it is re-asked (DECISIONS "M1 review fixes").
+	`DELETE FROM docs WHERE kind = 'label';`,
 }
 
 // Open opens (creating if needed) the store at path.

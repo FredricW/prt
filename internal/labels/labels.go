@@ -71,7 +71,9 @@ type Input struct {
 type Result struct {
 	// Labels for every input unit: unit-scope labels (one per live question,
 	// one per sub-question of N ×k rows) and line-scope labels per added
-	// line. When Jev is unavailable the affected units get LabelUnknown
+	// line (Line = the line's 1-based position among the unit's added
+	// lines, see model.AddedLineNumbers). Labels of questions with
+	// item-level inputs carry Ctx = InputHash. When Jev is unavailable the affected units get LabelUnknown
 	// labels for every live question (confidence 0). Order: units in input
 	// order; within a unit, unit labels by question id, then line labels by
 	// line and question id.
@@ -98,6 +100,10 @@ func Run(ctx context.Context, c jev.Client, in Input) (Result, error) {
 	}
 	outs := execute(ctx, c, p.jobs, in.Concurrency)
 	res := assemble(in.Units, p, outs)
+	hashes := InputHashes(in.Catalogue, in.Ctx)
+	for i := range res.Labels {
+		res.Labels[i].Ctx = hashes[res.Labels[i].Question]
+	}
 	if err := firstError(in.Units, p.jobs, outs); err != nil {
 		return res, err
 	}

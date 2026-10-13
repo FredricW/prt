@@ -16,7 +16,7 @@ func labelsOf(ls ...shortLabel) *unitLabels {
 		}
 		all = append(all, s.label())
 	}
-	return newIndex("pr:1", all).units["u"]
+	return newIndex("pr:1", all, nil).units["u"]
 }
 
 func TestAttention(t *testing.T) {

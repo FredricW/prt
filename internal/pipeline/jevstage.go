@@ -42,7 +42,9 @@ func (p *Pipeline) labelStage(ctx context.Context, it model.Item, files []model.
 	if err != nil {
 		return jevOut{}, fmt.Errorf("pipeline: load labels: %w", err)
 	}
-	need := unitsNeedingLabels(units, stored, cat)
+	lctx := p.labelContext(it, files)
+	hashes := labels.InputHashes(cat, lctx)
+	need := unitsNeedingLabels(units, stored, cat, hashes)
 	rl.In = len(units)
 	rl.Note = fmt.Sprintf("%d of %d cached", len(units)-len(need), len(units))
 	if len(need) == 0 {
@@ -51,10 +53,10 @@ func (p *Pipeline) labelStage(ctx context.Context, it model.Item, files []model.
 	}
 	if p.d.Jev == nil {
 		rl.Note = "Jev unavailable"
-		return jevOut{missing: true}, p.storeLabels(ctx, withUnknowns(nil, stored, need, cat), rl)
+		return jevOut{missing: true}, p.storeLabels(ctx, withUnknowns(nil, stored, need, cat, hashes), rl)
 	}
 	res, runErr := labels.Run(ctx, p.d.Jev, labels.Input{
-		Ctx:         p.labelContext(it, files),
+		Ctx:         lctx,
 		Units:       need,
 		Catalogue:   cat,
 		LineBatch:   p.d.Config.Pipeline.LineBatch,
@@ -63,7 +65,7 @@ func (p *Pipeline) labelStage(ctx context.Context, it model.Item, files []model.
 	rl.Calls, rl.Cost = res.Calls, res.Cost
 	if runErr != nil {
 		// Keep any labels that did arrive; fill the rest with unknowns.
-		ls := withUnknowns(res.Labels, stored, need, cat)
+		ls := withUnknowns(res.Labels, stored, need, cat, hashes)
 		if err := p.storeLabels(ctx, ls, rl); err != nil {
 			p.d.Log.Warn("store labels after failure", "item", it.ID, "err", err)
 		}
@@ -73,20 +75,42 @@ func (p *Pipeline) labelStage(ctx context.Context, it model.Item, files []model.
 	if res.Unavailable {
 		rl.Note = "Jev unavailable"
 	}
-	return out, p.storeLabels(ctx, dropShadowedUnknowns(res.Labels, stored), rl)
+	return out, p.storeLabels(ctx, dropShadowedUnknowns(res.Labels, stored, hashes), rl)
+}
+
+// current reports whether a stored label is a real answer for the current
+// item: known, and asked with the item-level inputs in force now (hashes,
+// from labels.InputHashes; questions without item inputs have Ctx "").
+func current(l model.Label, hashes map[string]string) bool {
+	return !model.IsUnknown(l) && l.Ctx == hashes[l.Question]
+}
+
+// currentLabels returns ls with every label that is stale for the current
+// item (asked with other item-level inputs: another PR body, role, owned
+// globs or test set) replaced by an unknown placeholder, so aggregate never
+// reads another context's answer.
+func currentLabels(ls []model.Label, hashes map[string]string) []model.Label {
+	out := make([]model.Label, 0, len(ls))
+	for _, l := range ls {
+		if !model.IsUnknown(l) && l.Ctx != hashes[l.Question] {
+			l = model.Label{UnitID: l.UnitID, Question: l.Question, Line: l.Line, Value: model.LabelUnknown, Ctx: hashes[l.Question]}
+		}
+		out = append(out, l)
+	}
+	return out
 }
 
 // dropShadowedUnknowns removes unknown labels from ls whose (unit, question,
-// line) already has a known stored label, so an outage never erases an
+// line) already has a current stored label, so an outage never erases an
 // earlier answer.
-func dropShadowedUnknowns(ls, stored []model.Label) []model.Label {
+func dropShadowedUnknowns(ls, stored []model.Label, hashes map[string]string) []model.Label {
 	type key struct {
 		unit, q string
 		line    int
 	}
 	known := map[key]bool{}
 	for _, l := range stored {
-		if !model.IsUnknown(l) {
+		if current(l, hashes) {
 			known[key{l.UnitID, l.Question, l.Line}] = true
 		}
 	}
@@ -181,19 +205,20 @@ func liveLabelIDs(cat questions.Catalogue, s questions.Scope) []string {
 }
 
 // unitsNeedingLabels returns the units whose stored labels are incomplete:
-// a unit is complete when every live unit-scope label id has a known
-// (non-unknown) unit label and, if the unit adds lines, every live
-// line-scope label id has at least one known line label. Unknown line labels
-// on other lines are not inspected (the labeller may legitimately skip lines
-// such as blank ones, so "every added line" cannot be required).
-func unitsNeedingLabels(units []model.ChangeUnit, stored []model.Label, cat questions.Catalogue) []model.ChangeUnit {
+// a unit is complete when every live unit-scope label id has a current unit
+// label (known, and asked with the item-level inputs in hashes) and, if the
+// unit adds lines, every live line-scope label id has at least one current
+// line label. Unknown line labels on other lines are not inspected (the
+// labeller may legitimately skip lines such as blank ones, so "every added
+// line" cannot be required).
+func unitsNeedingLabels(units []model.ChangeUnit, stored []model.Label, cat questions.Catalogue, hashes map[string]string) []model.ChangeUnit {
 	type key struct {
 		unit, q string
 		line    bool
 	}
 	known := map[key]bool{}
 	for _, l := range stored {
-		if !model.IsUnknown(l) {
+		if current(l, hashes) {
 			known[key{l.UnitID, l.Question, l.Line > 0}] = true
 		}
 	}
@@ -218,17 +243,18 @@ func unitsNeedingLabels(units []model.ChangeUnit, stored []model.Label, cat ques
 
 // unknownLabels is what labels.Run produces for units when Jev is
 // unavailable: an unknown label (confidence 0) for every live unit-scope
-// label id, and for every live line-scope label id on every added line.
-func unknownLabels(units []model.ChangeUnit, cat questions.Catalogue) []model.Label {
+// label id, and for every live line-scope label id on every added line
+// (Line = position among the unit's added lines; Ctx from hashes).
+func unknownLabels(units []model.ChangeUnit, cat questions.Catalogue, hashes map[string]string) []model.Label {
 	unitQs, lineQs := liveLabelIDs(cat, questions.ScopeUnit), liveLabelIDs(cat, questions.ScopeLine)
 	var out []model.Label
 	for _, u := range units {
 		for _, q := range unitQs {
-			out = append(out, model.Label{UnitID: u.ID, Question: q, Value: model.LabelUnknown})
+			out = append(out, model.Label{UnitID: u.ID, Question: q, Value: model.LabelUnknown, Ctx: hashes[q]})
 		}
-		for _, ln := range addedLines(u) {
+		for pos := 1; pos <= len(model.AddedLineNumbers(u)); pos++ {
 			for _, q := range lineQs {
-				out = append(out, model.Label{UnitID: u.ID, Question: q, Line: ln, Value: model.LabelUnknown})
+				out = append(out, model.Label{UnitID: u.ID, Question: q, Line: pos, Value: model.LabelUnknown, Ctx: hashes[q]})
 			}
 		}
 	}
@@ -236,9 +262,9 @@ func unknownLabels(units []model.ChangeUnit, cat questions.Catalogue) []model.La
 }
 
 // withUnknowns returns ls plus an unknown label for every (unit, question,
-// line) of units that neither ls nor a known stored label answers, so a
+// line) of units that neither ls nor a current stored label answers, so a
 // failed or skipped run never overwrites an earlier real answer.
-func withUnknowns(ls, stored []model.Label, units []model.ChangeUnit, cat questions.Catalogue) []model.Label {
+func withUnknowns(ls, stored []model.Label, units []model.ChangeUnit, cat questions.Catalogue, hashes map[string]string) []model.Label {
 	type key struct {
 		unit, q string
 		line    int
@@ -248,33 +274,14 @@ func withUnknowns(ls, stored []model.Label, units []model.ChangeUnit, cat questi
 		have[key{l.UnitID, l.Question, l.Line}] = true
 	}
 	for _, l := range stored {
-		if !model.IsUnknown(l) {
+		if current(l, hashes) {
 			have[key{l.UnitID, l.Question, l.Line}] = true
 		}
 	}
 	out := append([]model.Label(nil), ls...)
-	for _, l := range unknownLabels(units, cat) {
+	for _, l := range unknownLabels(units, cat, hashes) {
 		if !have[key{l.UnitID, l.Question, l.Line}] {
 			out = append(out, l)
-		}
-	}
-	return out
-}
-
-// addedLines returns the new-side line numbers of a unit's added lines.
-func addedLines(u model.ChangeUnit) []int {
-	if u.Adds == 0 || u.Diff == "" {
-		return nil
-	}
-	var out []int
-	n := u.Range.New.Start
-	for _, ln := range strings.Split(u.Diff, "\n") {
-		switch {
-		case strings.HasPrefix(ln, "+"):
-			out = append(out, n)
-			n++
-		case strings.HasPrefix(ln, " "):
-			n++
 		}
 	}
 	return out

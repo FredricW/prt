@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strconv"
 	"testing"
 
@@ -81,8 +82,22 @@ func loadFixture(t *testing.T, name string) Input {
 	for i := range in.Units {
 		in.Units[i].ItemID = f.Item.ID
 	}
+	// Fixtures write line labels by new-side line number for readability;
+	// stored labels use the position among the unit's added lines.
+	added := map[string][]int{}
+	for _, u := range in.Units {
+		added[u.ID] = model.AddedLineNumbers(u)
+	}
 	for _, s := range f.Labels {
-		in.Labels = append(in.Labels, s.label())
+		l := s.label()
+		if nums := added[l.UnitID]; l.Line > 0 && len(nums) > 0 {
+			pos := slices.Index(nums, l.Line)
+			if pos < 0 {
+				t.Fatalf("fixture %s: label %+v is not on an added line of %s", name, s, l.UnitID)
+			}
+			l.Line = pos + 1
+		}
+		in.Labels = append(in.Labels, l)
 	}
 	return in
 }
@@ -184,6 +199,37 @@ func TestProfileUnits(t *testing.T) {
 		t.Errorf("u3 = %+v", u3)
 	}
 	assertEqual(t, "unit order", unitIDs(agg.Units), []string{"u1", "u2", "u3", "u4", "u5", "u6"})
+}
+
+// Regression: line labels are cached by unit id, so a unit that keeps its
+// content but moves (rebase, another item) must carry its marks along.
+func TestLineLabelsFollowShiftedUnit(t *testing.T) {
+	in := loadFixture(t, "profile.json")
+	const shift = 25
+	for i := range in.Units {
+		if in.Units[i].ID == "u1" || in.Units[i].ID == "u3" {
+			in.Units[i].Range.New.Start += shift
+		}
+	}
+	agg := Item(in)
+	assertEqual(t, "u1 lines", unitByID(t, agg, "u1").Lines, []model.LineMark{
+		{Line: 10 + shift, Mark: model.MarkSuspicious, Score: 3.8, P: 0.7},
+		{Line: 11 + shift, Mark: model.MarkValue, P: 0.8},
+		{Line: 12 + shift, Mark: model.MarkLeftover, P: 0.7},
+		{Line: 13 + shift, Mark: model.MarkNone, Fmt: true},
+	})
+	found := false
+	for _, h := range agg.Headlines {
+		if h.Kind == "pii or secret" {
+			found = true
+			if h.UnitID != "u3" || h.Line != 43+shift {
+				t.Errorf("pii headline = %+v, want u3 line %d", h, 43+shift)
+			}
+		}
+	}
+	if !found {
+		t.Error("pii headline missing")
+	}
 }
 
 func unitIDs(us []model.UnitAgg) []string {

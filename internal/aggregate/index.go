@@ -25,11 +25,24 @@ type labelIndex struct {
 }
 
 // newIndex indexes labels. Later duplicates of the same subject and question
-// win (overrides are already applied by the caller).
-func newIndex(itemID string, labels []model.Label) labelIndex {
+// win (overrides are already applied by the caller). Line labels are stored
+// by position among the unit's added lines; the index keys them by new-side
+// line number instead (model.AddedLineNumbers), dropping positions past the
+// unit's added lines. A unit without a diff body keeps positions as given.
+func newIndex(itemID string, labels []model.Label, units []model.ChangeUnit) labelIndex {
 	idx := labelIndex{units: map[string]*unitLabels{}, item: map[string]model.Label{}}
 	subject := model.ItemSubject(itemID)
+	added := make(map[string][]int, len(units))
+	for _, u := range units {
+		added[u.ID] = model.AddedLineNumbers(u)
+	}
 	for _, l := range labels {
+		if nums := added[l.UnitID]; l.Line > 0 && len(nums) > 0 {
+			if l.Line > len(nums) {
+				continue
+			}
+			l.Line = nums[l.Line-1]
+		}
 		if !model.IsUnknown(l) {
 			idx.anyKnown = true
 		}

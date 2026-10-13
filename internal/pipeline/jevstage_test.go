@@ -230,6 +230,73 @@ func TestJevLabelsCachedByUnit(t *testing.T) {
 	}
 }
 
+// Regression: answers that depend on item-level inputs (desc_bullet on the
+// PR bullets, covered on the changed tests, relevance on role/owns) were
+// cached by unit id alone. A branch analysed first (no description, so
+// desc_bullet = none) made the PR from that branch reuse "none" forever.
+func TestItemInputsInvalidateCachedLabels(t *testing.T) {
+	e := newLabelEnv(t)
+	fake := &jev.Fake{Answer: func(name string, q jev.Question, st any) jev.Answer {
+		if name == model.QDescBullet {
+			return jev.Answer{Type: jev.Choice, Choice: "b1", Probabilities: map[string]float64{"b1": 0.8, "b2": 0.1, "none": 0.1}}
+		}
+		return jev.DefaultAnswer(name, q, st)
+	}}
+	p := e.pipeline(fake)
+	branch := model.Item{ID: model.BranchItemID("feat/x"), Kind: model.KindBranch, Ref: "feat/x", BaseRef: "main", HeadSHA: "h1"}
+	if err := e.st.UpsertItem(context.Background(), branch); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.Run(context.Background(), branch); err != nil {
+		t.Fatal(err)
+	}
+	before := len(fake.Calls)
+	for _, c := range fake.Calls {
+		if _, ok := c.Questions[model.QDescBullet]; ok {
+			t.Fatal("desc_bullet sent for an item without bullets")
+		}
+	}
+
+	e.run(t, p) // the PR from the same branch, with two bullets
+	asked := 0
+	for _, c := range fake.Calls[before:] {
+		if _, ok := c.Questions[model.QDescBullet]; ok {
+			asked++
+		}
+	}
+	if units := e.units(t); asked != len(units) {
+		t.Fatalf("desc_bullet asked for %d of %d units after the bullets appeared", asked, len(units))
+	}
+	if rl := e.stage(t, model.StageJev); rl.CacheHit {
+		t.Errorf("jev row = %+v, want a miss", rl)
+	}
+	for _, ua := range e.agg(t).Units {
+		if ua.DescBullet != 1 || ua.Undocumented {
+			t.Errorf("unit %s desc bullet %d undocumented %v, want b1", ua.UnitID, ua.DescBullet, ua.Undocumented)
+		}
+	}
+
+	// Same inputs again: a cache hit.
+	n := len(fake.Calls)
+	e.run(t, p)
+	if len(fake.Calls) != n || !e.stage(t, model.StageJev).CacheHit {
+		t.Errorf("unchanged inputs re-asked %d calls", len(fake.Calls)-n)
+	}
+}
+
+func TestCurrentLabels(t *testing.T) {
+	hashes := map[string]string{model.QDescBullet: "h2"}
+	ls := []model.Label{
+		{UnitID: "u", Question: model.QKind, Value: "refactor", Confidence: 0.9},
+		{UnitID: "u", Question: model.QDescBullet, Value: "none", Confidence: 1, Ctx: "h1"},
+		{UnitID: "v", Question: model.QDescBullet, Value: "b2", Confidence: 0.8, Ctx: "h2"},
+	}
+	got := currentLabels(ls, hashes)
+	if got[0].Value != "refactor" || !model.IsUnknown(got[1]) || got[1].Ctx != "h2" || got[2].Value != "b2" {
+		t.Errorf("currentLabels = %+v", got)
+	}
+}
+
 // Needs the real internal/labels.
 func TestJevUnknownsReaskedWhenJevReturns(t *testing.T) {
 	e := newLabelEnv(t)
@@ -405,7 +472,7 @@ func TestUnitsNeedingLabels(t *testing.T) {
 	stored = append(stored, u...)
 	stored = append(stored, full(noLines)...)
 
-	got := unitsNeedingLabels([]model.ChangeUnit{del, add, partial, unknown, noLines}, stored, cat)
+	got := unitsNeedingLabels([]model.ChangeUnit{del, add, partial, unknown, noLines}, stored, cat, nil)
 	var ids []string
 	for _, u := range got {
 		ids = append(ids, u.ID)
@@ -419,10 +486,15 @@ func TestUnknownLabelsShape(t *testing.T) {
 	cat := questions.Default()
 	u := model.ChangeUnit{ID: "u", Adds: 2, Dels: 1, Range: model.Range{New: model.Span{Start: 10, Count: 3}},
 		Diff: " a\n-b\n+c\n+d\n\\ No newline at end of file"}
-	if got := addedLines(u); len(got) != 2 || got[0] != 11 || got[1] != 12 {
-		t.Fatalf("addedLines = %v, want [11 12]", got)
+	if got := model.AddedLineNumbers(u); len(got) != 2 || got[0] != 11 || got[1] != 12 {
+		t.Fatalf("AddedLineNumbers = %v, want [11 12]", got)
 	}
-	ls := unknownLabels([]model.ChangeUnit{u}, cat)
+	ls := unknownLabels([]model.ChangeUnit{u}, cat, nil)
+	for _, l := range ls {
+		if l.Line != 0 && l.Line != 1 && l.Line != 2 {
+			t.Errorf("line label at %d, want position 1 or 2", l.Line)
+		}
+	}
 	nUnit, nLine := len(liveLabelIDs(cat, questions.ScopeUnit)), len(liveLabelIDs(cat, questions.ScopeLine))
 	if len(ls) != nUnit+2*nLine {
 		t.Fatalf("%d labels, want %d", len(ls), nUnit+2*nLine)
@@ -447,7 +519,7 @@ func TestUnknownsKeepKnownAnswers(t *testing.T) {
 		{UnitID: "u", Question: model.QKind, Value: "refactor", Confidence: 0.9},
 		{UnitID: "u", Question: model.QRisk, Value: model.LabelUnknown},
 	}
-	got := withUnknowns(nil, stored, []model.ChangeUnit{u}, cat)
+	got := withUnknowns(nil, stored, []model.ChangeUnit{u}, cat, nil)
 	for _, l := range got {
 		if l.Question == model.QKind {
 			t.Errorf("known kind overwritten: %+v", l)
@@ -461,7 +533,7 @@ func TestUnknownsKeepKnownAnswers(t *testing.T) {
 		{UnitID: "u", Question: model.QRisk, Value: model.LabelUnknown},
 		{UnitID: "u", Question: model.QEffect, Value: "ui", Confidence: 0.8},
 	}
-	kept := dropShadowedUnknowns(ret, stored)
+	kept := dropShadowedUnknowns(ret, stored, nil)
 	if len(kept) != 2 || kept[0].Question != model.QRisk || kept[1].Question != model.QEffect {
 		t.Errorf("kept = %+v", kept)
 	}

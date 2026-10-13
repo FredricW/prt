@@ -63,7 +63,7 @@ func Item(in Input) model.ItemAgg {
 	if unsureBelow <= 0 {
 		unsureBelow = defaultUnsureBelow
 	}
-	idx := newIndex(in.Item.ID, in.Labels)
+	idx := newIndex(in.Item.ID, in.Labels, in.Units)
 	us := units(in, idx, unsureBelow)
 	s := summarise(us, unsureBelow)
 

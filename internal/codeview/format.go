@@ -71,11 +71,20 @@ func AttentionGlyph(a model.Attention, unsure bool) string {
 // The tui overview reuses it.
 func RawLabelsText(u model.ChangeUnit, labels []model.Label, width int) string {
 	var unit, lines []model.Label
+	added := model.AddedLineNumbers(u)
 	for _, l := range labels {
 		if l.UnitID != u.ID {
 			continue
 		}
 		if l.Line > 0 {
+			// Stored line labels hold the position among the unit's added
+			// lines; show the new-side line number.
+			if len(added) > 0 {
+				if l.Line > len(added) {
+					continue
+				}
+				l.Line = added[l.Line-1]
+			}
 			lines = append(lines, l)
 		} else {
 			unit = append(unit, l)

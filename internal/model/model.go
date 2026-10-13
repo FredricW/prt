@@ -222,6 +222,11 @@ type Label struct {
 	// Probs is the full distribution: choice option → p, or 1-based score
 	// rung ("1".."5") → p. Empty for booleans and unknown labels.
 	Probs map[string]float64 `json:"probs,omitempty"`
+	// Ctx is the hash of the item-level inputs the question was asked with
+	// (PR title and bullets, reviewer role and globs, changed tests; see
+	// labels.InputHash), "" when the answer depends on the unit alone. A
+	// stored label whose Ctx differs from the current item's is stale.
+	Ctx string `json:"ctx,omitempty"`
 }
 
 // LabelUnknown is the value used when Jev is unreachable (spec: failure handling).

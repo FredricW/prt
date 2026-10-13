@@ -15,7 +15,9 @@ import (
 type binding struct {
 	name string
 	wq   questions.WireQuestion
-	line int // new-side line number for line questions, 0 for unit questions
+	// line is Label.Line: the 1-based position of the added line among the
+	// unit's added lines for line questions, 0 for unit questions.
+	line int
 }
 
 // job is one Evaluate call.
@@ -109,7 +111,7 @@ func lineRequest(u model.ChangeUnit, c Context, qs []questions.Question, dyn que
 				}
 				wq.Name += questions.WireSep + slot
 				wq.Q.Instructions += fmt.Sprintf(lineNote, slot, al.line)
-				binds = append(binds, binding{name: wq.Name, wq: wq, line: al.line})
+				binds = append(binds, binding{name: wq.Name, wq: wq, line: al.pos})
 			}
 		}
 	}

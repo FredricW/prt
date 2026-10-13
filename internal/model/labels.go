@@ -24,8 +24,11 @@ import (
 //   - Multi-boolean questions (catalogue rows typed "N ×k", e.g. risk_tags)
 //     produce one boolean label per option: Question = "<id>.<sub>" (see
 //     SubQuestion), e.g. "risk_tags.auth".
-//   - Line questions: UnitID is the unit id and Line the new-side line number
-//     of an added line.
+//   - Line questions: UnitID is the unit id and Line the 1-based position of
+//     the added line among the unit's "+" lines (not its file line number),
+//     so labels stay valid when the same unit sits at another offset (a
+//     rebase, or another item). AddedLineNumbers maps positions to new-side
+//     line numbers; aggregate and the TUI only ever show the latter.
 //   - Jev unreachable: Value LabelUnknown, P 0, Confidence 0, Probs nil,
 //     Model "". Unknown labels are never treated as cached answers.
 //   - Model is the Jev model id ("typesafe-ai/jev") for real answers.
@@ -140,6 +143,29 @@ func ScoreLevel(l Label) int {
 		return 0
 	}
 	return n
+}
+
+// AddedLineNumbers returns the new-side line numbers of u's added lines in
+// diff order, numbering from Range.New.Start: "+" lines and context lines
+// advance the new side; "-" lines, hunk headers and "\ No newline" markers
+// do not. Element i is the line of the line label with Line i+1.
+func AddedLineNumbers(u ChangeUnit) []int {
+	if u.Diff == "" {
+		return nil
+	}
+	var out []int
+	n := u.Range.New.Start
+	for _, ln := range strings.Split(strings.TrimSuffix(u.Diff, "\n"), "\n") {
+		switch {
+		case strings.HasPrefix(ln, "@@"), strings.HasPrefix(ln, `\`), strings.HasPrefix(ln, "-"):
+		case strings.HasPrefix(ln, "+"):
+			out = append(out, n)
+			n++
+		default:
+			n++
+		}
+	}
+	return out
 }
 
 // IsUnknown reports whether a label is the "Jev unreachable" placeholder.

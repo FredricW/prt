@@ -46,8 +46,8 @@
     {"unitId": "u1", "question": "behaviour", "value": "yes", "p": 0.91, "confidence": 0.91, "model": "typesafe-ai/jev"},
     {"unitId": "u1", "question": "breaking", "value": "yes", "p": 0.86, "confidence": 0.86, "model": "typesafe-ai/jev"},
     {"unitId": "u1", "question": "risk", "value": "4", "p": 0.55, "confidence": 0.55, "model": "typesafe-ai/jev", "score": 3.8},
-    {"unitId": "u1", "question": "suspicious", "line": 12, "value": "yes", "p": 0.7, "confidence": 0.7, "model": "typesafe-ai/jev"},
-    {"unitId": "u1", "question": "leftover", "line": 13, "value": "yes", "p": 0.8, "confidence": 0.8, "model": "typesafe-ai/jev"},
+    {"unitId": "u1", "question": "suspicious", "line": 2, "value": "yes", "p": 0.7, "confidence": 0.7, "model": "typesafe-ai/jev"},
+    {"unitId": "u1", "question": "leftover", "line": 3, "value": "yes", "p": 0.8, "confidence": 0.8, "model": "typesafe-ai/jev"},
     {"unitId": "u2", "question": "kind", "value": "formatting", "p": 0.97, "confidence": 0.97, "model": "typesafe-ai/jev"}
   ],
   "agg": {

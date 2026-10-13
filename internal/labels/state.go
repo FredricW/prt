@@ -131,12 +131,13 @@ func truncateDiff(lines []string, keep int) string {
 
 // addedLine is one added line of a unit.
 type addedLine struct {
-	line int
+	line int // new-side line number (sent to Jev)
+	pos  int // 1-based position among the unit's added lines (Label.Line)
 	text string
 }
 
 // addedLines returns the unit's added lines with new-side line numbers,
-// counting from Range.New.Start over "+" and " " lines.
+// counting from Range.New.Start over "+" and " " lines, and positions.
 func addedLines(u model.ChangeUnit) []addedLine {
 	if u.Diff == "" {
 		return nil
@@ -146,7 +147,7 @@ func addedLines(u model.ChangeUnit) []addedLine {
 	for _, ln := range strings.Split(u.Diff, "\n") {
 		switch {
 		case strings.HasPrefix(ln, "+"):
-			out = append(out, addedLine{line: n, text: capLine(ln[1:])})
+			out = append(out, addedLine{line: n, pos: len(out) + 1, text: capLine(ln[1:])})
 			n++
 		case strings.HasPrefix(ln, " "):
 			n++

@@ -123,8 +123,9 @@ func TestAnswerMapping(t *testing.T) {
 		{"risk_tags.auth", 0, model.LabelYes, 0.7, 0.7, 0, nil},
 		{"risk_tags.money", 0, model.LabelNo, 0.1, 0.9, 0, nil},
 		{"desc_bullet", 0, "b2", 0.85, 0.85, 0, map[string]float64{"b1": 0.1, "b2": 0.85, "none": 0.05}},
-		{"fmt", 100, model.LabelYes, 0.95, 0.95, 0, nil},
-		{"suspicious", 101, "1", 0.9, 0.9, 1.1, map[string]float64{"1": 0.9, "2": 0.1}},
+		// Line labels are keyed by position among the added lines.
+		{"fmt", 1, model.LabelYes, 0.95, 0.95, 0, nil},
+		{"suspicious", 2, "1", 0.9, 0.9, 1.1, map[string]float64{"1": 0.9, "2": 0.1}},
 	}
 	for _, tt := range tests {
 		l := get(t, res.Labels, "u1", tt.q, tt.line)
@@ -265,8 +266,13 @@ func TestLineBatches(t *testing.T) {
 			got = append(got, l.Line)
 		}
 	}
-	if !slices.Equal(got, want) {
-		t.Errorf("fmt label lines = %v, want %v", got, want)
+	// Labels carry positions (1..45), not the new-side numbers sent to Jev.
+	var wantPos []int
+	for i := range want {
+		wantPos = append(wantPos, i+1)
+	}
+	if !slices.Equal(got, wantPos) {
+		t.Errorf("fmt label lines = %v, want %v", got, wantPos)
 	}
 	// Order: unit labels, then by line then question.
 	for i := 1; i < len(res.Labels); i++ {
@@ -452,6 +458,38 @@ func TestCannotFit(t *testing.T) {
 	}
 }
 
+func TestInputHashes(t *testing.T) {
+	cat := questions.Default()
+	c := baseInput().Ctx
+	h := InputHashes(cat, c)
+	for _, id := range []string{model.QDescBullet, model.QCovered, model.QRelevance} {
+		if h[id] == "" {
+			t.Errorf("%s has no input hash", id)
+		}
+	}
+	for _, id := range []string{model.QKind, model.QFmt, model.SubQuestion(model.QRiskTags, "auth")} {
+		if _, ok := h[id]; ok {
+			t.Errorf("%s depends on the unit only, got hash", id)
+		}
+	}
+	c2 := c
+	c2.Bullets = []string{"add retry to fetch"}
+	c2.TestsTouched = []string{"a_test.go", "z_test.go"} // order does not matter
+	h2 := InputHashes(cat, c2)
+	if h2[model.QDescBullet] == h[model.QDescBullet] || h2[model.QCovered] != h[model.QCovered] || h2[model.QRelevance] != h[model.QRelevance] {
+		t.Errorf("hashes before %v after %v", h, h2)
+	}
+	res, err := Run(context.Background(), &jev.Fake{}, baseInput(mkUnit("u1", "a.go", 1)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, l := range res.Labels {
+		if l.Ctx != h[l.Question] {
+			t.Errorf("label %s ctx %q, want %q", l.Question, l.Ctx, h[l.Question])
+		}
+	}
+}
+
 func TestUnavailable(t *testing.T) {
 	fake := &jev.Fake{Err: fmt.Errorf("%w: HTTP 503", jev.ErrUnavailable)}
 	res, err := Run(context.Background(), fake, baseInput(mkUnit("u1", "a.go", 3), mkUnit("u2", "b.go", 0)))
@@ -474,7 +512,7 @@ func TestUnavailable(t *testing.T) {
 	if unknown != wantN {
 		t.Errorf("unknown labels = %d, want %d", unknown, wantN)
 	}
-	if got := get(t, res.Labels, "u1", "fmt", 102); !model.IsUnknown(got) {
+	if got := get(t, res.Labels, "u1", "fmt", 3); !model.IsUnknown(got) {
 		t.Errorf("line label = %+v", got)
 	}
 }
