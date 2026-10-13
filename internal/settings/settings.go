@@ -107,8 +107,20 @@ func Validate(v proto.SettingsValues) error {
 // rules stay active). Each file is written atomically (temp file in dir,
 // then rename) and only after the edited text decodes (config.Load /
 // config.LoadRouting on dir) to exactly v; otherwise nothing changes and
-// the error says why. Save validates v first (Validate).
+// the error says why. Save validates v first (Validate). Save never seeds
+// prt.toml; the daemon uses SaveSeeded.
 func Save(dir string, v proto.SettingsValues, seedRouting string) error {
+	return SaveSeeded(dir, v, "", seedRouting)
+}
+
+// SaveSeeded is Save that also seeds a missing dir/prt.toml from seedMain
+// (the active prt.toml's path, cfg.Source; "" or "builtin" means none), the
+// same way a missing routing file is seeded. Config lookup takes the first
+// file found with no merge, so a repo prt.toml created with only the page's
+// keys would silently shadow every other key of the active global file
+// ([keys], [github], models.jev_base_url, ...). DECISIONS "M5.1 review
+// fixes: seed prt.toml".
+func SaveSeeded(dir string, v proto.SettingsValues, seedMain, seedRouting string) error {
 	if err := Validate(v); err != nil {
 		return err
 	}
@@ -122,6 +134,11 @@ func Save(dir string, v proto.SettingsValues, seedRouting string) error {
 	mainOld, mainExists, err := readIfExists(mainPath)
 	if err != nil {
 		return err
+	}
+	if !mainExists {
+		if mainOld, err = readSeed(seedMain); err != nil {
+			return err
+		}
 	}
 	mainNew, err := applyEdits(mainOld, mainEdits(v))
 	if err != nil {
