@@ -81,6 +81,9 @@ func (m Model) onWorkspace(msg workspaceMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
+	if n := newWorkspaceNotes(m.ws, msg.info); n != "" {
+		m.note = n
+	}
 	var cmd tea.Cmd
 	if m.applyWorkspace(msg.info) {
 		cmd = m.selectionChanged()
@@ -95,6 +98,35 @@ func (m *Model) applyWorkspace(info proto.WorkspaceInfo) bool {
 	changed := m.picker.setWorkspace(info.Repos)
 	m.cmd.SetRepos(repoNames(info.Repos))
 	return changed
+}
+
+// newWorkspaceNotes is the status note for what a Workspace answer brings
+// that the previous one did not: repos that could not be opened
+// ("<label>: <reason>") and discovery notes, joined by " · " after
+// "workspace: "; "" when nothing is new. Repeated answers (the refresh
+// tick) stay quiet; the repo card keeps showing the notes.
+func newWorkspaceNotes(prev, next proto.WorkspaceInfo) string {
+	var parts []string
+	for _, r := range next.Repos {
+		if r.Status != proto.RepoError {
+			continue
+		}
+		if slices.ContainsFunc(prev.Repos, func(p proto.RepoInfo) bool {
+			return p.Key == r.Key && p.Status == r.Status && p.Note == r.Note
+		}) {
+			continue
+		}
+		parts = append(parts, repoLabel(r)+": "+orDash(r.Note))
+	}
+	for _, n := range next.Notes {
+		if !slices.Contains(prev.Notes, n) {
+			parts = append(parts, n)
+		}
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return "workspace: " + strings.Join(parts, " · ")
 }
 
 // repoNames are the names `:repo` completes: every key and label, in
@@ -451,8 +483,8 @@ func repeatsStatus(r proto.RepoInfo, note string) bool {
 }
 
 // viewRepoCard is the main pane on a repo header (M5.3): the repo's label,
-// root, GitHub status and note, its items per section, its spend and the
-// keys that unfold or filter it.
+// root, GitHub status and note, its items per section, its spend, the keys
+// that unfold or filter it, and the workspace's discovery notes.
 func (m Model) viewRepoCard(key string, w int) string {
 	st := m.st
 	r, ok := m.repoInfo(key)
@@ -494,6 +526,16 @@ func (m Model) viewRepoCard(key string, w int) string {
 		hint = "no items in this repo · " + hint
 	}
 	lines = append(lines, "", st.dim.Render(hint))
+	if len(m.ws.Notes) > 0 {
+		lines = append(lines, "", st.dim.Render("workspace notes"))
+		for _, n := range m.ws.Notes {
+			wrapped := strings.Split(ansi.Wordwrap(n, max(10, w-2), ""), "\n")
+			lines = append(lines, "· "+wrapped[0])
+			for _, l := range wrapped[1:] {
+				lines = append(lines, "  "+l)
+			}
+		}
+	}
 	return strings.Join(lines, "\n")
 }
 

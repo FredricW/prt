@@ -801,6 +801,32 @@ func TestWorkspaceInfo(t *testing.T) {
 	}
 }
 
+// A repo that could not be opened is listed among the repos (in key order,
+// RepoError with its reason) but has no client: routing to it fails.
+func TestWorkspaceListsUnopenedRepos(t *testing.T) {
+	a := newFake(localInfo("a"))
+	c := newFake(localInfo("c"))
+	bad := proto.RepoInfo{Key: "b", Label: "b", Root: "/ws/b", Status: proto.RepoError, Note: "config: prt.toml: bad"}
+	cl := newClientWith(t, ClientOptions{Unopened: []proto.RepoInfo{bad}}, c.member(), a.member())
+	ws, err := cl.Workspace(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var keys []string
+	for _, r := range ws.Repos {
+		keys = append(keys, r.Key)
+	}
+	if !slices.Equal(keys, []string{"a", "b", "c"}) || ws.Repos[1] != bad {
+		t.Errorf("repos = %+v", ws.Repos)
+	}
+	if _, err := cl.Detail(context.Background(), "b::pr:1"); err == nil {
+		t.Error("an unopened repo was routed to")
+	}
+	if keys := memberKeys(cl.Members()); !slices.Equal(keys, []string{"a", "c"}) {
+		t.Errorf("members = %v", keys)
+	}
+}
+
 func TestRunSyncAndAnalysePending(t *testing.T) {
 	a := newFake(localInfo("a"))
 	a.pendingErr = errBoom

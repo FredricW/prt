@@ -39,6 +39,12 @@ type ClientOptions struct {
 	Ledger *daemon.Ledger
 	// Notes are discovery notes reported by Workspace.
 	Notes []string
+	// Unopened are repositories discovery found but that could not be
+	// opened (a malformed prt.toml, a store another prt process analyses):
+	// Status proto.RepoError, Note the reason. Workspace lists them among the
+	// repos, in key order, so the picker shows them; they have no client, so
+	// a call naming one fails as an unknown repo.
+	Unopened []proto.RepoInfo
 	// DiscoverConcurrency caps the members running Discover at once (≤ 0:
 	// 4).
 	DiscoverConcurrency int
@@ -66,14 +72,15 @@ type (
 // package doc for the id mapping). It is safe for concurrent use; the
 // members are fixed by New and kept in key order (the workspace order).
 type Client struct {
-	root    string
-	members []Member
-	byKey   map[string]int
-	pool    *daemon.Pool
-	ledger  *daemon.Ledger
-	notes   []string
-	discN   int
-	log     *log.Logger
+	root     string
+	members  []Member
+	byKey    map[string]int
+	pool     *daemon.Pool
+	ledger   *daemon.Ledger
+	notes    []string
+	unopened []proto.RepoInfo
+	discN    int
+	log      *log.Logger
 
 	// itemErrs holds each repo's last Items failure (guarded by mu).
 	mu       sync.Mutex
@@ -97,7 +104,8 @@ func New(root string, members []Member, o ClientOptions) *Client {
 	c := &Client{
 		root: root, members: ms, byKey: make(map[string]int, len(ms)),
 		pool: o.Pool, ledger: o.Ledger, notes: append([]string(nil), o.Notes...),
-		discN: o.DiscoverConcurrency, log: o.Log, itemErrs: map[string]error{},
+		unopened: append([]proto.RepoInfo(nil), o.Unopened...),
+		discN:    o.DiscoverConcurrency, log: o.Log, itemErrs: map[string]error{},
 		events: make(chan proto.Event, eventBuffer), done: make(chan struct{}),
 	}
 	if c.discN <= 0 {
@@ -180,10 +188,11 @@ func (c *Client) info(m Member) proto.RepoInfo {
 }
 
 // Workspace implements daemon.Client: Multi, the root, every repo in
-// workspace order (a repo whose last Items call failed notes it), the
-// shared pool's size, the ledger's total and the discovery notes.
+// workspace order (a repo whose last Items call failed notes it) with the
+// repos that could not be opened (RepoError) merged in by key, the shared
+// pool's size, the ledger's total and the discovery notes.
 func (c *Client) Workspace(_ context.Context) (proto.WorkspaceInfo, error) {
-	repos := make([]proto.RepoInfo, 0, len(c.members))
+	repos := make([]proto.RepoInfo, 0, len(c.members)+len(c.unopened))
 	c.mu.Lock()
 	errs := make(map[string]error, len(c.itemErrs))
 	for k, v := range c.itemErrs {
@@ -196,6 +205,10 @@ func (c *Client) Workspace(_ context.Context) (proto.WorkspaceInfo, error) {
 			r.Note = "items: " + err.Error()
 		}
 		repos = append(repos, r)
+	}
+	if len(c.unopened) > 0 {
+		repos = append(repos, c.unopened...)
+		sort.SliceStable(repos, func(i, j int) bool { return repos[i].Key < repos[j].Key })
 	}
 	slots := 0
 	if c.pool != nil {

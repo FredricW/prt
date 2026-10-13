@@ -744,6 +744,45 @@ func TestWorkspaceReloads(t *testing.T) {
 	}
 }
 
+// Discovery notes and repos that could not be opened reach the user: the
+// status line names what an answer brings that the last did not (repeats
+// stay quiet), an unopened repo is a header with the error status, and the
+// repo card lists the workspace's notes.
+func TestWorkspaceNotesShown(t *testing.T) {
+	f := wsFake()
+	f.workspace.Notes = []string{"symlink loop at links/loop (back to the root)"}
+	f.workspace.Repos = append(f.workspace.Repos, proto.RepoInfo{Key: "broken", Label: "broken", Root: "/home/u/work/broken",
+		Status: proto.RepoError, Note: "config: prt.toml: toml: line 1: expected ']'"})
+	t.Setenv("HOME", "/home/u")
+	m := newTestModel(t, f, Options{})
+	m = update(t, m, tea.WindowSizeMsg{Width: 140, Height: 40})
+	m, cmd := updateCmd(t, m, run(m.loadWorkspace())[0])
+	want := "workspace: broken: config: prt.toml: toml: line 1: expected ']' · symlink loop at links/loop (back to the root)"
+	if m.note != want {
+		t.Errorf("note %q, want %q", m.note, want)
+	}
+	m = settle(t, m, cmd)
+	m.note = ""
+	m = settle(t, m, m.loadWorkspace())
+	if m.note != "" {
+		t.Errorf("a repeated answer noted again: %q", m.note)
+	}
+	f.workspace.Notes = append(f.workspace.Notes, "bad exclude glob \"[x\" ignored")
+	m = settle(t, m, m.loadWorkspace())
+	if m.note != `workspace: bad exclude glob "[x" ignored` {
+		t.Errorf("new note %q", m.note)
+	}
+	if !strings.Contains(pickerText(m), "broken 0") || !strings.Contains(pickerText(m), "error") {
+		t.Errorf("the unopened repo is not listed:\n%s", pickerText(m))
+	}
+	card := ansi.Strip(m.viewRepoCard("broken", 80))
+	for _, s := range []string{"error — config: prt.toml", "workspace notes", "· symlink loop at links/loop", `· bad exclude glob "[x" ignored`} {
+		if !strings.Contains(card, s) {
+			t.Errorf("repo card lacks %q:\n%s", s, card)
+		}
+	}
+}
+
 // A single-repo daemon (Multi false) changes nothing.
 func TestSingleRepoWorkspaceAnswer(t *testing.T) {
 	f := newFake(threeItems()...)

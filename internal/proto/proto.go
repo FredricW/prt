@@ -137,8 +137,9 @@ const (
 	RepoNotGitHub RepoStatus = "not-github"
 	// RepoNoRemote: the repo has no origin remote. Local branches only.
 	RepoNoRemote RepoStatus = "no-remote"
-	// RepoError: the repo could not be opened (store, config); Note says
-	// why. It has no items.
+	// RepoError: the repo could not be opened (store, config, or another
+	// prt process runs its pipeline); Note says why. It has no items and no
+	// client: calls naming it fail as an unknown repo.
 	RepoError RepoStatus = "error"
 )
 
