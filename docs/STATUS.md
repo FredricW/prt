@@ -107,7 +107,7 @@ Details: `CHANGELOG.md` (per milestone), `docs/DECISIONS.md` (every call made), 
 
 ### M5.2: your requested changes
 - Done:
-  - **Label quality, measured.** `make quality` runs the pipeline offline over the six fixture items and scores it against hand-written, blind ground truth (`testdata/groundtruth/`). Tuning: headlines only at P ≥ 0.60 (118 → 10 headline rows over the five baseline items; precision 0.17 → 0.60), "unsure" over the attention and risk labels only (unsure units 1.00 → 0.78 on the baseline items), attention mapping (eyes recall 5/8 → 7/8), four reworded questions. No item's firm metric is worse than its baseline. Method and boards: `docs/QUALITY.md`.
+  - **Label quality, measured.** `make quality` runs the pipeline offline over the six fixture items and scores it against hand-written, blind ground truth (`testdata/groundtruth/`). Tuning: headlines only at P ≥ 0.60 (118 → 10 headline rows over the five baseline items; precision 0.11 → 0.50, scored by claim as well as location after the review fixes), "unsure" over the attention and risk labels only (unsure units 1.00 → 0.78 on the baseline items), attention mapping (eyes recall 5/8 → 7/8), four reworded questions. No item's firm metric is worse than its baseline. Method and boards: `docs/QUALITY.md`.
   - **Instant open.** The TUI paints a re-opened item from a 16-item cache (about 1.7 ms p50) and never shows "loading…" for it; labels load on demand. One `r` on #101 now makes 3 Detail calls instead of 70. During a re-run the old analysis stays up with `↻ updating review · <stage>`. The daemon serves a lean Detail (#101: 0.97 ms, was 8.8 ms), with an indexed label query, a read pool, label and run-log pruning, and no discovery churn. Numbers: `docs/m52-open-latency.md`.
   - **Tab clicks** hit the tab you click, tested per tab at five widths.
   - **Overview blocks** are capped with "+N more"; `J`/`K` (or `]`/`[`) focus a block and enter opens its full list.
@@ -117,7 +117,7 @@ Details: `CHANGELOG.md` (per milestone), `docs/DECISIONS.md` (every call made), 
   - **Truncated fast review** fixed: higher output caps plus one retry with a doubled cap; all reviews re-recorded; the branch replay test passes.
   - Resume keeps `FromStage`/`Force`.
 - Partial:
-  - Lines to read is above the spec's 1/3 on #101 (0.56), #106 (0.51) and the branch (0.50). Hot spots hit 3 of 13 top-three slots. #101 keeps 3 false headline rows; #106 misses its flag headline.
+  - Lines to read is above the spec's 1/3 on #101 (0.56), #106 (0.51) and the branch (0.50). Hot spots hit 3 of 13 top-three slots. #101 keeps 3 false headline rows; #106 lists its migration and new routes as "breaking" and misses its two env vars and its flag (headline recall 3/7, scored by claim); #103's unused removed export shows as "breaking".
   - The $0.40 cap is unchanged: it does not leave deep groups queued on the fixtures.
 - Spend: Jev $0.0333, Anthropic $0.5731, Ollama $0. No GitHub writes.
 

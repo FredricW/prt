@@ -475,10 +475,10 @@ $3.00, Jev $0.0640 of $1.00). No GitHub writes.
 - **Label tuning** (no item's firm metric worse than its baseline):
   headlines only at P ≥ 0.60 (one row per unit, external contracts merged per
   file; headline rows 118 → 10 over the five baseline items, precision
-  0.17 → 0.60), "unsure" over the attention and risk labels only (unsure
-  units 1.00 → 0.78), attention mapping (eyes recall 5/8 → 7/8; lines to read
-  0.50 → 0.39), and reworded `breaking`, `contract`, `depth` and
-  `pii_or_secret` questions (Jev re-recorded).
+  0.11 → 0.50 with kind-aware matching), "unsure" over the attention and risk
+  labels only (unsure units 1.00 → 0.78), attention mapping (eyes recall
+  5/8 → 7/8; lines to read 0.50 → 0.39), and reworded `breaking`,
+  `contract`, `depth` and `pii_or_secret` questions (Jev re-recorded).
 - **Review output caps** fast 1024 → 4096, deep 2048 → 4096, TL;DR
   1024 → 2048; a review cut off at `max_tokens` is retried once with the cap
   doubled (replayable). All reviews re-recorded.
@@ -504,6 +504,34 @@ $3.00, Jev $0.0640 of $1.00). No GitHub writes.
 - The $0.40 cost cap does not leave deep groups queued: every routed group of
   every fixture item runs under the cap (the old note predated the confirmed
   prices); the default is unchanged.
+
+#### Fixed (M5.2 review; details in DECISIONS)
+
+- The scoreboard matches a headline row by its kind as well as its lines (a
+  migration called "breaking" is a false positive; one row recalls only the
+  entries whose claim it makes), and the unsure-label share divides by the
+  labels its count can include, with the spec's all-labels share beside it.
+  Baseline and after boards re-scored (#106 headline recall 6/7 → 3/7 under
+  the stricter matching; unsure labels 0.09 → 0.08 on the all-labels share,
+  not 0.09 → 0.02).
+- Headline candidates below .60 are stored (one per unit, none for a listed
+  unit) and listed as `?` rows in the Headlines full list; the
+  "+N below .60 (unsure)" line opens it.
+- The urgency "breaking" term counts the breaking headline rows, like the
+  picker's ⚠N, so a test unit's breaking answer no longer ranks an item.
+- In a block's full list, `J`/`K` skip boxes without a list; a Labels answer
+  for an analysis no longer shown is asked again instead of leaving "loading
+  labels…" for good; jumps from the Overview and the Architecture tab fetch
+  the Code page's labels; the git-facts Files list is sorted by importance
+  and opens files in Code.
+- Feature and perf have their own colours on light 16-colour terminals.
+- Change surface: a flask/fastapi decorator inside a docstring is no
+  endpoint; another method with another handler on the same path is a
+  removal plus an addition, not a change; fiber, hono and koa have fixtures.
+- Pipeline-page override rates count only overrides whose label is still
+  stored, so pruning a merged PR's labels does not inflate them.
+- `make demo` pins the clock (`--now`) so the fixture branch's recorded
+  branch-state answer keeps replaying.
 
 #### Known limits
 
