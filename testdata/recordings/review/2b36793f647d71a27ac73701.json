@@ -1,0 +1,49 @@
+{
+  "key": "2b36793f647d71a27ac73701",
+  "model": "anthropic:claude-haiku-5-5",
+  "request": {
+    "task": "review",
+    "tier": "fast",
+    "groupId": "8a3d2a59019800c8c5219eba1db7c34c044a40aa22ef0daadccd474e94e96f72",
+    "system": "You are a senior code reviewer. You review one group of related change units from a pull request and report the problems a careful reviewer would raise: bugs, broken contracts, missing error handling, security holes, data loss, races, and risky code without tests.\n\nRules:\n- Report findings only. Never restate, summarise or praise the diff.\n- Anchor every finding to a file path and a line number printed in the diff: the new-side number, or the old-side number for a deleted line.\n- One finding per problem. \"claim\" is one sentence; \"fix\" is a short suggested change.\n- severity: \"high\" breaks callers, loses data or opens a security hole; \"medium\" is a likely bug or missing handling; \"low\" is a minor risk.\n- Never invent numbers, metrics, line numbers or code that is not shown.\n- The hints are machine labels (probabilities 0-1, risk 1-5). Use them to decide where to look, not as facts.\n- The Context section, when present, is unchanged background (callers, types, tests, config). Report a finding there only when the change breaks it, anchored to the changed line that causes it.\n- verdict: \"approve\" when nothing needs changing, \"comment\" for low findings or questions only, \"request_changes\" when a finding must be fixed before merging.\n- confidence: a number from 0 to 1, how sure you are that the findings and the verdict are right given what you were shown.\n\nAnswer with JSON only, no prose and no code fence, in exactly this shape:\n{\"findings\":[{\"file\":\"path/to/file\",\"line\":12,\"severity\":\"low|medium|high\",\"claim\":\"one sentence\",\"fix\":\"suggested fix\"}],\"verdict\":\"approve|comment|request_changes\",\"confidence\":0.8}\nUse \"findings\": [] when there is nothing to report.\n\nSecurity focus: check authentication and authorisation paths, secrets or personal data reaching logs, responses or storage, injection, unsafe deserialisation, and money handling (rounding, double charges).",
+    "prompt": "# Pull request\nTitle: feat(server): user preferences API and ops health check\nDescription bullets:\n- Migration `20261010_user_preferences.sql`: new `user_preferences` table, `users.avatar_url` column (for #101), drop the unused `users.legacy_theme` column\n- `GET` and `PUT /api/v1/users/{id}/preferences`, enabled with `PORTAL_PREFERENCES_API=on`\n- `users.Routes` takes the preferences store and the switch; `main` and tests updated\n- Health checks move from `GET /api/v1/health` to `GET /healthz` on the ops listener (`PORTAL_OPS_ADDR`, default `:9090`)\n- Settings page: theme picker behind the `user-preferences-v2` flag\n\n# Group\nName: Load injected feature\n\n# Units in review order\nEach diff line starts with its old and new line numbers.\n\n## Unit 1 of 3: web/src/utils/flags.ts (added, new lines 4-8)\nsymbol: loadFlags\nsignature: function loadFlags(): FlagMap\nhints: kind=feature risk=2 tags=pii breaking=0.07 contract=none covered=0.08 untested=no\n```diff\n          4 +function loadFlags(): FlagMap {\n          5 +  const injected = (globalThis as { __PORTAL_FLAGS__?: FlagMap }).__PORTAL_FLAGS__;\n          6 +  return injected ?? {};\n          7 +}\n          8 +\n```\n\n## Unit 2 of 3: web/src/utils/flags.ts (added, new lines 1-3)\nhints: kind=feature risk=1 tags=pii breaking=0.08 contract=env/flag covered=0.11 untested=no\n```diff\n          1 +// Feature flags, injected by the server as window.__PORTAL_FLAGS__.\n          2 +type FlagMap = Record\u003cstring, boolean\u003e;\n          3 +\n```\n\n## Unit 3 of 3: web/src/utils/flags.ts (added, new lines 9-10)\nhints: kind=feature risk=2 tags=pii breaking=0.09 contract=none covered=0.11 untested=no\n```diff\n          9 +const flags = loadFlags();\n         10 +\n```\n\nReview these units and answer with the JSON object only.\n",
+    "maxTokens": 4096
+  },
+  "result": {
+    "text": "{\"findings\":[{\"file\":\"web/src/utils/flags.ts\",\"line\":9,\"severity\":\"medium\",\"claim\":\"`loadFlags()` runs at module evaluation, so if the server injects `__PORTAL_FLAGS__` after this bundle loads, every flag silently reads as off.\",\"fix\":\"Read the flags lazily (for example, inside a getter called at render time) or document and enforce that the injection script runs before this module is imported.\"},{\"file\":\"web/src/utils/flags.ts\",\"line\":5,\"severity\":\"low\",\"claim\":\"The injected value is cast to `FlagMap` without any runtime check, so non-boolean or malformed values from the server pass through unchecked.\",\"fix\":\"Validate that the injected value is a plain object whose entries are booleans, and fall back to `{}` otherwise.\"},{\"file\":\"web/src/utils/flags.ts\",\"line\":6,\"severity\":\"low\",\"claim\":\"The function returns the global object by reference, so any script on the page can mutate the flag map that the settings page relies on.\",\"fix\":\"Return a frozen or shallow copy of the injected map so callers cannot change it through the global.\"}],\"verdict\":\"comment\",\"confidence\":0.6}",
+    "findings": [
+      {
+        "unitId": "50fc810e7f6d2c3ba5f2ffea0fb89962910ff5c61868f6f1f30d991f310485a4",
+        "path": "web/src/utils/flags.ts",
+        "line": 5,
+        "severity": "low",
+        "claim": "The injected value is cast to `FlagMap` without any runtime check, so non-boolean or malformed values from the server pass through unchecked.",
+        "fix": "Validate that the injected value is a plain object whose entries are booleans, and fall back to `{}` otherwise."
+      },
+      {
+        "unitId": "50fc810e7f6d2c3ba5f2ffea0fb89962910ff5c61868f6f1f30d991f310485a4",
+        "path": "web/src/utils/flags.ts",
+        "line": 6,
+        "severity": "low",
+        "claim": "The function returns the global object by reference, so any script on the page can mutate the flag map that the settings page relies on.",
+        "fix": "Return a frozen or shallow copy of the injected map so callers cannot change it through the global."
+      },
+      {
+        "unitId": "b05e5fd8c775c52533bd799926305253f2bd7bac3817cefd26574bd20efcf3d0",
+        "path": "web/src/utils/flags.ts",
+        "line": 9,
+        "severity": "medium",
+        "claim": "`loadFlags()` runs at module evaluation, so if the server injects `__PORTAL_FLAGS__` after this bundle loads, every flag silently reads as off.",
+        "fix": "Read the flags lazily (for example, inside a getter called at render time) or document and enforce that the injection script runs before this module is imported."
+      }
+    ],
+    "verdict": "comment",
+    "confidence": 0.6,
+    "model": "anthropic:claude-haiku-5-5",
+    "inputTokens": 1406,
+    "outputTokens": 771,
+    "cost": 0.0005261,
+    "ms": 4420,
+    "stopReason": "end_turn"
+  }
+}

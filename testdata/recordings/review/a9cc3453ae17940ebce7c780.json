@@ -1,0 +1,23 @@
+{
+  "key": "a9cc3453ae17940ebce7c780",
+  "model": "anthropic:claude-opus-5-5",
+  "request": {
+    "task": "review",
+    "tier": "deep",
+    "groupId": "b8885f3c189fdaf4baa4cb68da6a9d0b22b8f72ef8c30a9a487e7e68cb10cbe4",
+    "system": "You are a senior code reviewer. You review one group of related change units from a pull request and report the problems a careful reviewer would raise: bugs, broken contracts, missing error handling, security holes, data loss, races, and risky code without tests.\n\nRules:\n- Report findings only. Never restate, summarise or praise the diff.\n- Anchor every finding to a file path and a line number printed in the diff: the new-side number, or the old-side number for a deleted line.\n- One finding per problem. \"claim\" is one sentence; \"fix\" is a short suggested change.\n- severity: \"high\" breaks callers, loses data or opens a security hole; \"medium\" is a likely bug or missing handling; \"low\" is a minor risk.\n- Never invent numbers, metrics, line numbers or code that is not shown.\n- The hints are machine labels (probabilities 0-1, risk 1-5). Use them to decide where to look, not as facts.\n- The Context section, when present, is unchanged background (callers, types, tests, config). Report a finding there only when the change breaks it, anchored to the changed line that causes it.\n- verdict: \"approve\" when nothing needs changing, \"comment\" for low findings or questions only, \"request_changes\" when a finding must be fixed before merging.\n- confidence: a number from 0 to 1, how sure you are that the findings and the verdict are right given what you were shown.\n\nAnswer with JSON only, no prose and no code fence, in exactly this shape:\n{\"findings\":[{\"file\":\"path/to/file\",\"line\":12,\"severity\":\"low|medium|high\",\"claim\":\"one sentence\",\"fix\":\"suggested fix\"}],\"verdict\":\"approve|comment|request_changes\",\"confidence\":0.8}\nUse \"findings\": [] when there is nothing to report.\n\nSecurity focus: check authentication and authorisation paths, secrets or personal data reaching logs, responses or storage, injection, unsafe deserialisation, and money handling (rounding, double charges).\n\nPerformance focus: look for I/O or queries inside loops, unbounded work, missing batching or pagination, blocking calls on hot or async paths, and races between concurrent callers.",
+    "prompt": "# Pull request\nTitle: feat(web): cached user profiles with team and avatar\nDescription bullets:\n- `getUser` takes a required `GetUserOptions` argument (`include`, `fresh`, `signal`); all callers updated\n- Move `ApiError`, auth headers and error parsing into `api/errors.ts` and add `isNotFound`\n- Add `useProfileCache`: stale-while-revalidate cache with a 5 minute TTL and request de-duplication\n- Add `Avatar` and `ProfileHeader` components; `ProfilePage` uses the cache and shows save errors\n- Invalidate the profile cache on logout\n- server: return `avatarUrl` when `include=avatar` is requested\n\n# Group\nName: useProfileCache.ts\n\n# Units in review order\nEach diff line starts with its old and new line numbers.\n\n## Unit 1 of 1: web/src/hooks/useProfileCache.ts (added, new lines 51-57)\nhints: kind=feature risk=3 tags=auth,async,error_path,pii breaking=0.10 contract=signature covered=0.89 untested=no\n```diff\n         51 +export interface ProfileCacheState {\n         52 +  profile: User | null;\n         53 +  loading: boolean;\n         54 +  stale: boolean;\n         55 +  refresh: () =\u003e void;\n         56 +}\n         57 +\n```\n\nReview these units and answer with the JSON object only.\n",
+    "maxTokens": 4096
+  },
+  "result": {
+    "text": "{\"findings\":[],\"verdict\":\"approve\",\"confidence\":0.6}",
+    "verdict": "approve",
+    "confidence": 0.6,
+    "model": "anthropic:claude-opus-5-5",
+    "inputTokens": 1168,
+    "outputTokens": 26,
+    "cost": 0.005192,
+    "ms": 2011,
+    "stopReason": "end_turn"
+  }
+}

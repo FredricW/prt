@@ -22,12 +22,18 @@ const MaxTLDR = 160
 
 // Output caps per task. The configured models spend output tokens on
 // reasoning before any text (a 100-token TL;DR cap ended at max_tokens with
-// no text in the first live recording), so the short tasks get headroom;
-// CleanTLDR and CleanTitle still bound what is shown.
+// no text in the first live recording, and four fast reviews of the
+// fixture branch stopped at 1024 before their JSON was complete), so every
+// task gets headroom over the largest recorded output: reviews used at
+// most 1449 tokens (deep; fast 252 once it finished), TL;DRs 616, titles
+// 17. CleanTLDR and CleanTitle still bound what is shown. A response cut
+// off anyway is retried once with the cap doubled (Grow); the plan charges
+// ExpectedOutputTokens, not these caps, so raising them does not change
+// which groups fit the item's cost cap.
 const (
-	ReviewMaxTokensFast = 1024
-	ReviewMaxTokensDeep = 2048
-	TLDRMaxTokens       = 1024
+	ReviewMaxTokensFast = 4096
+	ReviewMaxTokensDeep = 4096
+	TLDRMaxTokens       = 2048
 	TitleMaxTokens      = 256
 )
 

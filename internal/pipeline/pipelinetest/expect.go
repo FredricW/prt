@@ -41,7 +41,11 @@ func Problems(outs map[int]Outcome) []string {
 //     largest composition share;
 //   - #103: every unit is deleted (or moved) and nothing is added;
 //   - #104: dependency is the largest composition share, or every non-noise
-//     unit is labelled dependency.
+//     unit is labelled dependency;
+//   - #106 (M5.2): users.Routes, whose signature changed, is headlined
+//     breaking; the migration's unit carries the schema/migration contract;
+//     main.go (the removed health route, the env switch, the ops listener)
+//     is headlined; and the description has its five bullets.
 func Expectations(outs map[int]Outcome) []string {
 	var out []string
 	for _, n := range PRNumbers {
@@ -50,7 +54,43 @@ func Expectations(outs map[int]Outcome) []string {
 	out = append(out, expect101(outs[101])...)
 	out = append(out, expect102(outs[102])...)
 	out = append(out, expect103(outs[103])...)
-	return append(out, expect104(outs[104])...)
+	out = append(out, expect104(outs[104])...)
+	return append(out, expect106(outs[106])...)
+}
+
+// #106's paths the expectations name.
+const (
+	usersPath     = "server/internal/users/users.go"
+	mainPath      = "server/cmd/api/main.go"
+	migrationPath = "server/migrations/20261010_user_preferences.sql"
+)
+
+func expect106(o Outcome) []string {
+	var out []string
+	units := unitMap(o)
+	breakingRoutes, headlinedMain := false, false
+	for _, h := range o.Agg.Headlines {
+		u := units[h.UnitID]
+		breakingRoutes = breakingRoutes || (h.Kind == "breaking" && u.Path == usersPath && u.Symbol == "Routes")
+		headlinedMain = headlinedMain || u.Path == mainPath
+	}
+	if !breakingRoutes {
+		out = append(out, fmt.Sprintf("#106: no breaking headline on users.Routes (headlines %+v)", o.Agg.Headlines))
+	}
+	if !headlinedMain {
+		out = append(out, "#106: no headline on main.go (removed health route, env switch, ops listener)")
+	}
+	migration := false
+	for _, a := range o.Agg.Units {
+		migration = migration || (units[a.UnitID].Path == migrationPath && a.Contract == "schema/migration")
+	}
+	if !migration {
+		out = append(out, "#106: the migration unit's contract is not schema/migration")
+	}
+	if len(o.Agg.Bullets) != 5 {
+		out = append(out, fmt.Sprintf("#106: %d description bullets, want 5", len(o.Agg.Bullets)))
+	}
+	return out
 }
 
 func everyUnitHasKind(n int, o Outcome) []string {

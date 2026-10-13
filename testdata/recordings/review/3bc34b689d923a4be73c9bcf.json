@@ -1,0 +1,41 @@
+{
+  "key": "3bc34b689d923a4be73c9bcf",
+  "model": "anthropic:claude-haiku-5-5",
+  "request": {
+    "task": "review",
+    "tier": "fast",
+    "groupId": "8ebcd87a192d4ed5711b2c152c9a6fdcaa9f7b8fcc3ced29b6730d7ee702e4cf",
+    "system": "You are a senior code reviewer. You review one group of related change units from a pull request and report the problems a careful reviewer would raise: bugs, broken contracts, missing error handling, security holes, data loss, races, and risky code without tests.\n\nRules:\n- Report findings only. Never restate, summarise or praise the diff.\n- Anchor every finding to a file path and a line number printed in the diff: the new-side number, or the old-side number for a deleted line.\n- One finding per problem. \"claim\" is one sentence; \"fix\" is a short suggested change.\n- severity: \"high\" breaks callers, loses data or opens a security hole; \"medium\" is a likely bug or missing handling; \"low\" is a minor risk.\n- Never invent numbers, metrics, line numbers or code that is not shown.\n- The hints are machine labels (probabilities 0-1, risk 1-5). Use them to decide where to look, not as facts.\n- The Context section, when present, is unchanged background (callers, types, tests, config). Report a finding there only when the change breaks it, anchored to the changed line that causes it.\n- verdict: \"approve\" when nothing needs changing, \"comment\" for low findings or questions only, \"request_changes\" when a finding must be fixed before merging.\n- confidence: a number from 0 to 1, how sure you are that the findings and the verdict are right given what you were shown.\n\nAnswer with JSON only, no prose and no code fence, in exactly this shape:\n{\"findings\":[{\"file\":\"path/to/file\",\"line\":12,\"severity\":\"low|medium|high\",\"claim\":\"one sentence\",\"fix\":\"suggested fix\"}],\"verdict\":\"approve|comment|request_changes\",\"confidence\":0.8}\nUse \"findings\": [] when there is nothing to report.",
+    "prompt": "# Pull request\nTitle: wip: theme toggle in header\nDescription bullets: none\n\n# Group\nName: Add dark theme\n\n# Units in review order\nEach diff line starts with its old and new line numbers.\n\n## Unit 1 of 5: web/src/components/ThemeToggle.tsx (added, new lines 5-19)\nsymbol: ThemeToggle\nsignature: export function ThemeToggle()\nhints: kind=feature risk=2 tags=data_write breaking=0.05 contract=signature covered=0.03 untested=no\n```diff\n          5 +// TODO: respect prefers-color-scheme before anything is stored\n          6 +export function ThemeToggle() {\n          7 +  const [theme, setTheme] = useState\u003cTheme\u003e(() =\u003e (localStorage.getItem(\"portal.theme\") as Theme) ?? \"light\");\n          8 +\n          9 +  useEffect(() =\u003e {\n         10 +    document.documentElement.dataset.theme = theme;\n         11 +    localStorage.setItem(\"portal.theme\", theme);\n         12 +  }, [theme]);\n         13 +\n         14 +  return (\n         15 +    \u003cbutton aria-label=\"Toggle dark mode\" onClick={() =\u003e setTheme(theme === \"dark\" ? \"light\" : \"dark\")}\u003e\n         16 +      {theme === \"dark\" ? \"☀\" : \"☾\"}\n         17 +    \u003c/button\u003e\n         18 +  );\n         19 +}\n```\n\n## Unit 2 of 5: web/src/App.tsx (added, new lines 6-12)\nhints: kind=feature risk=2 tags=none breaking=0.04 contract=none covered=0.03 untested=no\n```diff\n    6     6  import { SearchBox } from \"./components/SearchBox\";\n    7     7  import { SettingsForm } from \"./components/SettingsForm\";\n    8     8  import { StatusFooter } from \"./components/StatusFooter\";\n          9 +import { ThemeToggle } from \"./components/ThemeToggle\";\n    9    10  import { UserList } from \"./components/UserList\";\n   10    11  import \"./styles/theme.css\";\n   11    12  \n```\n\n## Unit 3 of 5: web/src/App.tsx (added, new lines 25-31)\nsymbol: App\nsignature: export function App()\nhints: kind=feature risk=2 tags=none breaking=0.04 contract=none covered=0.04 untested=no\n```diff\n   24    25          \u003c/nav\u003e\n   25    26          \u003cSearchBox onPick={(kind, id) =\u003e kind === \"user\" \u0026\u0026 setRoute({ page: \"profile\", id })} /\u003e\n   26    27          \u003cNotificationBell /\u003e\n         28 +        \u003cThemeToggle /\u003e\n   27    29        \u003c/header\u003e\n   28    30        {route.page === \"users\" \u0026\u0026 \u003cUserList /\u003e}\n   29    31        {route.page === \"profile\" \u0026\u0026 \u003cProfilePage userId={route.id} /\u003e}\n```\n\n## Unit 4 of 5: web/src/components/ThemeToggle.tsx (added, new lines 1-4)\nhints: kind=feature risk=2 tags=none breaking=0.05 contract=none covered=0.04 untested=no\n```diff\n          1 +import { useEffect, useState } from \"react\";\n          2 +\n          3 +type Theme = \"light\" | \"dark\";\n          4 +\n```\n\n## Unit 5 of 5: web/src/styles/theme.css (added, new lines 8-22)\nhints: kind=feature risk=2 tags=none breaking=0.05 contract=none covered=0.03 untested=no\n```diff\n    8     8    font-family: system-ui, sans-serif;\n    9     9  }\n   10    10  \n         11 +/* WIP: dark palette, contrast not checked yet */\n         12 +:root[data-theme=\"dark\"] {\n         13 +  --bg: #11151c;\n         14 +  --fg: #e6e9ef;\n         15 +  --muted: #9aa3b2;\n         16 +  --accent: #6b9cff;\n         17 +  --border: #2a313d;\n         18 +}\n         19 +\n   11    20  body {\n   12    21    background: var(--bg);\n   13    22    color: var(--fg);\n```\n\nReview these units and answer with the JSON object only.\n",
+    "maxTokens": 4096
+  },
+  "result": {
+    "text": "{\"findings\":[{\"file\":\"web/src/components/ThemeToggle.tsx\",\"line\":7,\"severity\":\"medium\",\"claim\":\"localStorage.getItem is called unguarded during the first render, so a browser with storage disabled or blocked will throw and crash the header, which renders on every page.\",\"fix\":\"Wrap the read in try/catch and fall back to \\\"light\\\"; wrap the setItem call in the effect the same way.\"},{\"file\":\"web/src/components/ThemeToggle.tsx\",\"line\":7,\"severity\":\"low\",\"claim\":\"The `as Theme` cast does not validate the stored value, so an unexpected string such as \\\"blue\\\" is written to data-theme and the button icon shows the light state while the page has no matching palette.\",\"fix\":\"Check the stored value against [\\\"light\\\", \\\"dark\\\"] and use \\\"light\\\" when it does not match.\"}],\"verdict\":\"request_changes\",\"confidence\":0.6}",
+    "findings": [
+      {
+        "unitId": "463bba165be9e451434dc373ba31a162163f6715ca570afbe429fd4522c49606",
+        "path": "web/src/components/ThemeToggle.tsx",
+        "line": 7,
+        "severity": "medium",
+        "claim": "localStorage.getItem is called unguarded during the first render, so a browser with storage disabled or blocked will throw and crash the header, which renders on every page.",
+        "fix": "Wrap the read in try/catch and fall back to \"light\"; wrap the setItem call in the effect the same way."
+      },
+      {
+        "unitId": "463bba165be9e451434dc373ba31a162163f6715ca570afbe429fd4522c49606",
+        "path": "web/src/components/ThemeToggle.tsx",
+        "line": 7,
+        "severity": "low",
+        "claim": "The `as Theme` cast does not validate the stored value, so an unexpected string such as \"blue\" is written to data-theme and the button icon shows the light state while the page has no matching palette.",
+        "fix": "Check the stored value against [\"light\", \"dark\"] and use \"light\" when it does not match."
+      }
+    ],
+    "verdict": "request_changes",
+    "confidence": 0.6,
+    "model": "anthropic:claude-haiku-5-5",
+    "inputTokens": 1953,
+    "outputTokens": 868,
+    "cost": 0.0006293,
+    "ms": 4716,
+    "stopReason": "end_turn"
+  }
+}

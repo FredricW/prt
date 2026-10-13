@@ -1,0 +1,21 @@
+{
+  "key": "7a92276d0a367c5a133040a1",
+  "model": "anthropic:claude-haiku-5-5",
+  "request": {
+    "task": "tldr",
+    "tier": "fast",
+    "system": "You write the one-sentence TL;DR shown at the top of a pull request overview, for a reviewer deciding how to spend their time. Use only the facts given; they were computed from machine labels and git. Never invent numbers, names or claims that are not in the facts. At most 160 characters. One plain sentence: no markdown, no quotes, no lead-in such as \"TL;DR\".",
+    "prompt": "Facts about this pull request:\n- size: +56 -56 lines, about 76 lines that matter, about 10 min to review\n- units: 50 total, 3 need careful reading\n- composition: refactor 97%, test 3%\n- highest unit risk: 4 of 5\n- risk tags: auth (1 unit), data_write (8 units), error_path (3 units), io_in_loop (1 unit), money (3 units)\n- test gap: 0 of 23 risky units untested\n- headlines:\n  - breaking at web/src/api/index.ts:1: web/src/api/index.ts (p 0.92)\n  - breaking at web/src/api/client.ts:39: requestJSON (p 0.88)\n  - breaking at web/src/api/client.ts:1: web/src/api/client.ts (p 0.75)\n- check before approving:\n  - web/src/api/billing.ts:17 money, crash\n  - web/src/api/notifications.ts:15 data-write, crash\n  - web/src/components/NotificationBell.tsx:12 data-write, crash\n- description: 2 of 2 bullets implemented (fidelity 1.00)\n  - implemented: Rename `fetchJSON` to `requestJSON` in `api/client.ts`\n  - implemented: Update every import and call site (19 files)\n\nWrite the TL;DR sentence.\n",
+    "maxTokens": 2048
+  },
+  "result": {
+    "text": "Renames fetchJSON to requestJSON across 19 files; flagged as breaking in api/client.ts, so check billing.ts and notifications.ts before approving.",
+    "confidence": 0,
+    "model": "anthropic:claude-haiku-5-5",
+    "inputTokens": 570,
+    "outputTokens": 339,
+    "cost": 0.0002265,
+    "ms": 2103,
+    "stopReason": "end_turn"
+  }
+}

@@ -10,7 +10,7 @@ import (
 )
 
 // ReviewExpectations returns how the review pipeline's outcome over
-// #101–#104 deviates from what the fixture PRs were designed for:
+// the fixture PRs (PRNumbers) deviates from what they were designed for:
 //
 //	(a) every PR: one routing row per group;
 //	(b) #102: every mechanical group routed none;
@@ -23,7 +23,9 @@ import (
 //	(f) urgency: #101 (review requested, breaking, risky) above #104;
 //	(g) when reviewers ran: at least three quarters of #101's routed groups
 //	    are done under the item's cap (the default $0.40 must review the
-//	    flagship 400-line PR, not queue it) and they report a finding.
+//	    flagship 400-line PR, not queue it) and they report a finding;
+//	(h) #106 (M5.2): the group holding putPreferences (the PUT handler with
+//	    no ownership check) is reviewed on the deep tier.
 //
 // Empty when all hold. The review recorder prints them as warnings after a
 // live run.
@@ -43,6 +45,7 @@ func ReviewExpectations(outs map[int]Outcome) []string {
 	out = append(out, mechanicalNone102(outs[102])...)
 	out = append(out, allNone104(outs[104])...)
 	out = append(out, getUserRouted101(outs[101])...)
+	out = append(out, putPreferencesDeep106(outs[106])...)
 	if a, b := outs[101].Item.Urgency, outs[104].Item.Urgency; a <= b {
 		out = append(out, fmt.Sprintf("urgency: #101 (%.2f) not above #104 (%.2f)", a, b))
 	}
@@ -179,6 +182,24 @@ func getUserRouted101(o Outcome) []string {
 		}
 	}
 	return []string{"#101: no group holds the client.ts getUser unit"}
+}
+
+// putPreferencesDeep106 checks (h).
+func putPreferencesDeep106(o Outcome) []string {
+	units := unitMap(o)
+	rows := rowsByGroup(o)
+	for _, g := range o.Groups {
+		for _, id := range g.UnitIDs {
+			if u := units[id]; u.Symbol != "putPreferences" {
+				continue
+			}
+			if r := rows[g.ID]; r.Tier != model.TierDeep {
+				return []string{fmt.Sprintf("#106: putPreferences group %q routed %q (%s), want deep", g.Name, r.Tier, r.RuleWords)}
+			}
+			return nil
+		}
+	}
+	return []string{"#106: no group holds putPreferences"}
 }
 
 func hasString(xs []string, s string) bool {

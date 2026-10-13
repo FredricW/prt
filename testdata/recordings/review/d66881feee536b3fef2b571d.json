@@ -1,0 +1,22 @@
+{
+  "key": "d66881feee536b3fef2b571d",
+  "model": "anthropic:claude-haiku-5-5",
+  "request": {
+    "task": "group-title",
+    "tier": "fast",
+    "groupId": "8a3d2a59019800c8c5219eba1db7c34c044a40aa22ef0daadccd474e94e96f72",
+    "system": "You name a group of related code changes for a reviewer's list. Answer with exactly three words saying what the change does, for example: Validate upload size. No punctuation, no quotes, nothing else.",
+    "prompt": "Changes in this group:\n\n## web/src/utils/flags.ts (loadFlags)\nsignature: function loadFlags(): FlagMap\n```diff\n+function loadFlags(): FlagMap {\n+  const injected = (globalThis as { __PORTAL_FLAGS__?: FlagMap }).__PORTAL_FLAGS__;\n+  return injected ?? {};\n+}\n+\n```\n\n## web/src/utils/flags.ts\n```diff\n+// Feature flags, injected by the server as window.__PORTAL_FLAGS__.\n+type FlagMap = Record\u003cstring, boolean\u003e;\n+\n```\n\n## web/src/utils/flags.ts\n```diff\n+const flags = loadFlags();\n+\n```\n\nAnswer with exactly three words.\n",
+    "maxTokens": 256
+  },
+  "result": {
+    "text": "Load injected feature flags",
+    "confidence": 0,
+    "model": "anthropic:claude-haiku-5-5",
+    "inputTokens": 319,
+    "outputTokens": 10,
+    "cost": 0.0000369,
+    "ms": 1062,
+    "stopReason": "end_turn"
+  }
+}

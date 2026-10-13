@@ -141,14 +141,22 @@ func (ul *unitLabels) linesYes(q string) []model.Label {
 	return out
 }
 
-// unsureCount counts the unit's labels with confidence below threshold.
-func (ul *unitLabels) unsureCount(threshold float64) int {
+// get returns the unit-scope label for q, unknown answers included.
+func (ul *unitLabels) get(q string) (model.Label, bool) {
 	if ul == nil {
-		return 0
+		return model.Label{}, false
 	}
+	l, ok := ul.q[q]
+	return l, ok
+}
+
+// unsureCount counts the unit's unsureQuestions labels whose decision
+// confidence (decisionConfidence) is below threshold (unknown answers
+// included).
+func (ul *unitLabels) unsureCount(threshold float64) int {
 	n := 0
-	for _, l := range ul.all {
-		if l.Confidence < threshold {
+	for _, q := range unsureQuestions {
+		if l, ok := ul.get(q); ok && decisionConfidence(l) < threshold {
 			n++
 		}
 	}

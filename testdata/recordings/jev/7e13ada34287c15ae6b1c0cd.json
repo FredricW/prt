@@ -1,0 +1,78 @@
+{
+  "key": "7e13ada34287c15ae6b1c0cd",
+  "request": {
+    "model": "typesafe-ai/jev",
+    "state": {
+      "file": {
+        "path": "server/migrations/20261010_user_preferences.sql",
+        "units": [
+          {
+            "path": "server/migrations/20261010_user_preferences.sql",
+            "change": "added",
+            "diff": "+-- User preferences (theme, email digest) and the profile avatar URL.\n+-- users.legacy_theme has not been written since the 2025 redesign.\n+\n+CREATE TABLE user_preferences (\n+    user_id      TEXT PRIMARY KEY REFERENCES users (id) ON DELETE CASCADE,\n+    theme        TEXT NOT NULL DEFAULT 'system',\n+    email_digest TEXT NOT NULL DEFAULT 'weekly',\n+    updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()\n+);\n+\n+CREATE INDEX user_preferences_theme_idx ON user_preferences (theme);\n+\n+ALTER TABLE users ADD COLUMN avatar_url TEXT;\n+ALTER TABLE users DROP COLUMN legacy_theme;"
+          }
+        ]
+      },
+      "groups": [
+        {
+          "name": "NewMemoryPreferences (+7)",
+          "files": [
+            "server/cmd/api/main.go",
+            "server/internal/users/preferences.go",
+            "server/internal/users/users.go",
+            "server/internal/users/users_test.go"
+          ],
+          "units": 8
+        },
+        {
+          "name": "`GET` and `PUT /api/v1/users/{id}/preferences`, enabled wit…",
+          "files": [
+            "server/internal/users/preferences.go"
+          ],
+          "units": 2
+        },
+        {
+          "name": "Settings page: theme picker behind the `user-preferences-v2…",
+          "files": [
+            "web/src/api/preferences.ts",
+            "web/src/components/SettingsForm.tsx",
+            "web/src/utils/flags.ts"
+          ],
+          "units": 7
+        },
+        {
+          "name": "loadFlags (+2)",
+          "files": [
+            "web/src/utils/flags.ts"
+          ],
+          "units": 3
+        }
+      ]
+    },
+    "questions": {
+      "separate_pr": {
+        "type": "boolean",
+        "instructions": "Should the changes to this file be split into their own pull request, given the other change groups listed?"
+      }
+    }
+  },
+  "response": {
+    "model": "typesafe-ai/jev",
+    "answers": {
+      "separate_pr": {
+        "type": "boolean",
+        "probability": 0.47
+      }
+    },
+    "usage": {
+      "inputTokens": 719,
+      "outputTokens": 23
+    },
+    "providerMetadata": {
+      "gateway": {
+        "cost": "0.000030198",
+        "generationId": "gen_01M4TQA4ZTV14TWJV5S45J5JEF"
+      }
+    }
+  }
+}

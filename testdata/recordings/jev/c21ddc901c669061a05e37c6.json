@@ -1,0 +1,59 @@
+{
+  "key": "c21ddc901c669061a05e37c6",
+  "request": {
+    "model": "typesafe-ai/jev",
+    "state": {
+      "a": {
+        "path": "web/src/api/preferences.ts",
+        "change": "added",
+        "diff": "+import { fetchJSON } from \"./client\";\n+\n+export interface Preferences {\n+  userId: string;\n+  theme: \"system\" | \"light\" | \"dark\";\n+  emailDigest: \"never\" | \"daily\" | \"weekly\";\n+  updatedAt: string;\n+}\n+"
+      },
+      "b": {
+        "path": "web/src/api/preferences.ts",
+        "symbol": "savePreferences",
+        "signature": "export async function savePreferences(p: Preferences): Promise\u003cPreferences\u003e",
+        "change": "added",
+        "diff": "+export async function savePreferences(p: Preferences): Promise\u003cPreferences\u003e {\n+  return fetchJSON\u003cPreferences\u003e(`/users/${encodeURIComponent(p.userId)}/preferences`, { method: \"PUT\", body: p });\n+}"
+      }
+    },
+    "questions": {
+      "relation": {
+        "type": "choice",
+        "instructions": "How are these two changes related?",
+        "criteria": {
+          "caller update": "one change updates a caller or user of what the other change defines or changes",
+          "same intent": "both changes serve the same purpose or feature",
+          "same pattern": "both apply the same mechanical edit (rename, signature tweak, repeated pattern)",
+          "test for": "one change is a test that exercises the other change",
+          "unrelated": "the changes have nothing to do with each other"
+        }
+      }
+    }
+  },
+  "response": {
+    "model": "typesafe-ai/jev",
+    "answers": {
+      "relation": {
+        "type": "choice",
+        "choice": "same intent",
+        "probabilities": {
+          "caller update": 0.03,
+          "same intent": 0.97,
+          "same pattern": 0,
+          "test for": 0,
+          "unrelated": 0
+        }
+      }
+    },
+    "usage": {
+      "inputTokens": 633,
+      "outputTokens": 59
+    },
+    "providerMetadata": {
+      "gateway": {
+        "cost": "0.000026586",
+        "generationId": "gen_01M4TQ9YFE873GE0HYJ5FFC8CR"
+      }
+    }
+  }
+}

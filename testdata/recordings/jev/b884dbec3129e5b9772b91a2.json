@@ -1,0 +1,57 @@
+{
+  "key": "b884dbec3129e5b9772b91a2",
+  "request": {
+    "model": "typesafe-ai/jev",
+    "state": {
+      "a": {
+        "path": "web/src/api/preferences.ts",
+        "change": "added",
+        "diff": "+import { fetchJSON } from \"./client\";\n+\n+export interface Preferences {\n+  userId: string;\n+  theme: \"system\" | \"light\" | \"dark\";\n+  emailDigest: \"never\" | \"daily\" | \"weekly\";\n+  updatedAt: string;\n+}\n+"
+      },
+      "b": {
+        "path": "server/internal/users/preferences.go",
+        "change": "added",
+        "diff": "+package users\n+\n+import (\n+\t\"encoding/json\"\n+\t\"net/http\"\n+\t\"sync\"\n+\t\"time\"\n+\n+\t\"github.com/go-chi/chi/v5\"\n+)\n+\n+// Preferences are a user's UI settings (table user_preferences).\n+type Preferences struct {\n+\tUserID      string    `json:\"userId\"`\n+\tTheme       string    `json:\"theme\"`\n+\tEmailDigest string    `json:\"emailDigest\"`\n+\tUpdatedAt   time.Time `json:\"updatedAt\"`\n+}\n+\n+// PreferencesStore reads and writes preferences.\n+type PreferencesStore interface {\n+\tGet(userID string) (Preferences, error)\n+\tPut(p Preferences) error\n+}\n+\n+// MemoryPreferences is an in-memory PreferencesStore for development.\n+type MemoryPreferences struct {\n+\tmu    sync.Mutex\n+\tprefs map[string]Preferences\n+}\n+"
+      }
+    },
+    "questions": {
+      "relation": {
+        "type": "choice",
+        "instructions": "How are these two changes related?",
+        "criteria": {
+          "caller update": "one change updates a caller or user of what the other change defines or changes",
+          "same intent": "both changes serve the same purpose or feature",
+          "same pattern": "both apply the same mechanical edit (rename, signature tweak, repeated pattern)",
+          "test for": "one change is a test that exercises the other change",
+          "unrelated": "the changes have nothing to do with each other"
+        }
+      }
+    }
+  },
+  "response": {
+    "model": "typesafe-ai/jev",
+    "answers": {
+      "relation": {
+        "type": "choice",
+        "choice": "same intent",
+        "probabilities": {
+          "caller update": 0,
+          "same intent": 1,
+          "same pattern": 0,
+          "test for": 0,
+          "unrelated": 0
+        }
+      }
+    },
+    "usage": {
+      "inputTokens": 750,
+      "outputTokens": 59
+    },
+    "providerMetadata": {
+      "gateway": {
+        "cost": "0.0000315",
+        "generationId": "gen_01M4TQ9YPT285HSF7ATPN1FC2E"
+      }
+    }
+  }
+}

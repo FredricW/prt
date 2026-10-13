@@ -1,0 +1,61 @@
+{
+  "key": "9b69920bd70713608a9cdbaa",
+  "request": {
+    "model": "typesafe-ai/jev",
+    "state": {
+      "a": {
+        "path": "server/cmd/api/main.go",
+        "symbol": "main",
+        "signature": "func main()",
+        "change": "modified",
+        "diff": " func main() {\n \tlogger := slog.New(slog.NewJSONHandler(os.Stdout, nil))\n \tstore := users.NewMemoryStore()\n+\tprefs := users.NewMemoryPreferences()\n \tinvoices := billing.NewService(billing.NewMemoryLedger())\n \n \tr := chi.NewRouter()\n \tr.Use(auth.Middleware(auth.NewSessionStore(12 * time.Hour)))\n \tr.Route(\"/api/v1\", func(r chi.Router) {\n-\t\tr.Get(\"/health\", func(w http.ResponseWriter, _ *http.Request) {\n-\t\t\tw.Header().Set(\"Content-Type\", \"application/json\")\n-\t\t\t_, _ = w.Write([]byte(`{\"status\":\"ok\",\"version\":\"0.14.2\"}`))\n-\t\t})\n-\t\tr.Mount(\"/users\", users.Routes(store))\n+\t\tr.Mount(\"/users\", users.Routes(store, prefs, os.Getenv(\"PORTAL_PREFERENCES_API\") == \"on\"))\n \t\tr.Mount(\"/billing\", billing.Routes(invoices))\n \t})\n \n+\t// Health checks moved off the public API to the ops listener, which the\n+\t// load balancer probes.\n+\tops := http.NewServeMux()\n+\tops.HandleFunc(\"GET /healthz\", func(w http.ResponseWriter, _ *http.Request) {\n+\t\tw.WriteHeader(http.StatusNoContent)\n+\t})\n+\topsAddr := os.Getenv(\"PORTAL_OPS_ADDR\")\n+\tif opsAddr == \"\" {\n+\t\topsAddr = \":9090\"\n+\t}\n+\tgo func() {\n+\t\tif err := http.ListenAndServe(opsAddr, ops); err != nil {\n+\t\t\tlogger.Error(\"ops listener stopped\", \"err\", err)\n+\t\t}\n+\t}()\n+\n \taddr := os.Getenv(\"PORTAL_ADDR\")\n \tif addr == \"\" {\n \t\taddr = \":8080\""
+      },
+      "b": {
+        "path": "server/internal/users/preferences.go",
+        "symbol": "getPreferences",
+        "signature": "func getPreferences(prefs PreferencesStore) http.HandlerFunc",
+        "change": "added",
+        "diff": "+func getPreferences(prefs PreferencesStore) http.HandlerFunc {\n+\treturn func(w http.ResponseWriter, req *http.Request) {\n+\t\tp, err := prefs.Get(chi.URLParam(req, \"id\"))\n+\t\tif err != nil {\n+\t\t\twriteError(w, http.StatusInternalServerError, \"internal\", err.Error())\n+\t\t\treturn\n+\t\t}\n+\t\twriteJSON(w, http.StatusOK, p)\n+\t}\n+}\n+"
+      }
+    },
+    "questions": {
+      "relation": {
+        "type": "choice",
+        "instructions": "How are these two changes related?",
+        "criteria": {
+          "caller update": "one change updates a caller or user of what the other change defines or changes",
+          "same intent": "both changes serve the same purpose or feature",
+          "same pattern": "both apply the same mechanical edit (rename, signature tweak, repeated pattern)",
+          "test for": "one change is a test that exercises the other change",
+          "unrelated": "the changes have nothing to do with each other"
+        }
+      }
+    }
+  },
+  "response": {
+    "model": "typesafe-ai/jev",
+    "answers": {
+      "relation": {
+        "type": "choice",
+        "choice": "caller update",
+        "probabilities": {
+          "caller update": 0.89,
+          "same intent": 0.11,
+          "same pattern": 0,
+          "test for": 0,
+          "unrelated": 0
+        }
+      }
+    },
+    "usage": {
+      "inputTokens": 1065,
+      "outputTokens": 59
+    },
+    "providerMetadata": {
+      "gateway": {
+        "cost": "0.00004473",
+        "generationId": "gen_01M4TQ9WSZRRGJPSSVP32W42RN"
+      }
+    }
+  }
+}

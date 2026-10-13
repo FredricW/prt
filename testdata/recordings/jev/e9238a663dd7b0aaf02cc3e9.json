@@ -1,0 +1,112 @@
+{
+  "key": "e9238a663dd7b0aaf02cc3e9",
+  "request": {
+    "model": "typesafe-ai/jev",
+    "state": {
+      "pr": {
+        "title": "feat(server): user preferences API and ops health check"
+      },
+      "group": {
+        "units": [
+          {
+            "path": "server/internal/users/preferences.go",
+            "symbol": "NewMemoryPreferences",
+            "signature": "func NewMemoryPreferences() *MemoryPreferences",
+            "change": "added",
+            "diff": "+// NewMemoryPreferences returns an empty MemoryPreferences.\n+func NewMemoryPreferences() *MemoryPreferences {\n+\treturn \u0026MemoryPreferences{prefs: map[string]Preferences{}}\n+}\n+"
+          },
+          {
+            "path": "server/internal/users/preferences.go",
+            "symbol": "MemoryPreferences.Put",
+            "signature": "func (m *MemoryPreferences) Put(p Preferences) error",
+            "change": "added",
+            "diff": "+// Put stores p.\n+func (m *MemoryPreferences) Put(p Preferences) error {\n+\tm.mu.Lock()\n+\tdefer m.mu.Unlock()\n+\tm.prefs[p.UserID] = p\n+\treturn nil\n+}\n+"
+          },
+          {
+            "path": "server/internal/users/preferences.go",
+            "symbol": "putPreferences",
+            "signature": "func putPreferences(prefs PreferencesStore) http.HandlerFunc",
+            "change": "added",
+            "diff": "+func putPreferences(prefs PreferencesStore) http.HandlerFunc {\n+\treturn func(w http.ResponseWriter, req *http.Request) {\n+\t\tvar p Preferences\n+\t\tif err := json.NewDecoder(req.Body).Decode(\u0026p); err != nil {\n+\t\t\twriteError(w, http.StatusBadRequest, \"bad_request\", \"invalid JSON\")\n+\t\t\treturn\n+\t\t}\n+\t\tif !themes[p.Theme] {\n+\t\t\twriteError(w, http.StatusBadRequest, \"bad_request\", \"unknown theme\")\n+\t\t\treturn\n+\t\t}\n+\t\tp.UserID = chi.URLParam(req, \"id\")\n+\t\tp.UpdatedAt = time.Now().UTC()\n+\t\tif err := prefs.Put(p); err != nil {\n+\t\t\twriteError(w, http.StatusInternalServerError, \"internal\", err.Error())\n+\t\t\treturn\n+\t\t}\n+\t\twriteJSON(w, http.StatusOK, p)\n+\t}\n+}"
+          },
+          {
+            "path": "server/internal/users/users.go",
+            "symbol": "Routes",
+            "signature": "func Routes(store Store, prefs PreferencesStore, withPreferences bool) http.Handler",
+            "change": "modified",
+            "diff": " \treturn r\n }\n \n-// Routes mounts the user endpoints.\n-func Routes(store Store) http.Handler {\n+// Routes mounts the user endpoints. withPreferences adds\n+// GET and PUT /{id}/preferences (PORTAL_PREFERENCES_API=on).\n+func Routes(store Store, prefs PreferencesStore, withPreferences bool) http.Handler {\n \tr := chi.NewRouter()\n \tr.Get(\"/{id}\", func(w http.ResponseWriter, req *http.Request) {\n \t\tu, err := store.Get(chi.URLParam(req, \"id\"))"
+          },
+          {
+            "path": "server/internal/users/users.go",
+            "symbol": "Routes",
+            "signature": "func Routes(store Store, prefs PreferencesStore, withPreferences bool) http.Handler",
+            "change": "added",
+            "diff": " \t\t}\n \t\twriteJSON(w, http.StatusOK, toResponse(u))\n \t})\n+\tif withPreferences {\n+\t\tr.Get(\"/{id}/preferences\", getPreferences(prefs))\n+\t\tr.Put(\"/{id}/preferences\", putPreferences(prefs))\n+\t}\n \treturn r\n }\n "
+          },
+          {
+            "path": "server/cmd/api/main.go",
+            "symbol": "main",
+            "signature": "func main()",
+            "change": "modified",
+            "diff": " func main() {\n \tlogger := slog.New(slog.NewJSONHandler(os.Stdout, nil))\n \tstore := users.NewMemoryStore()\n+\tprefs := users.NewMemoryPreferences()\n \tinvoices := billing.NewService(billing.NewMemoryLedger())\n \n \tr := chi.NewRouter()\n \tr.Use(auth.Middleware(auth.NewSessionStore(12 * time.Hour)))\n \tr.Route(\"/api/v1\", func(r chi.Router) {\n-\t\tr.Get(\"/health\", func(w http.ResponseWriter, _ *http.Request) {\n-\t\t\tw.Header().Set(\"Content-Type\", \"application/json\")\n-\t\t\t_, _ = w.Write([]byte(`{\"status\":\"ok\",\"version\":\"0.14.2\"}`))\n-\t\t})\n-\t\tr.Mount(\"/users\", users.Routes(store))\n+\t\tr.Mount(\"/users\", users.Routes(store, prefs, os.Getenv(\"PORTAL_PREFERENCES_API\") == \"on\"))\n \t\tr.Mount(\"/billing\", billing.Routes(invoices))\n \t})\n \n+\t// Health checks moved off the public API to the ops listener, which the\n+\t// load balancer probes.\n+\tops := http.NewServeMux()\n+\tops.HandleFunc(\"GET /healthz\", func(w http.ResponseWriter, _ *http.Request) {\n+\t\tw.WriteHeader(http.StatusNoContent)\n+\t})\n+\topsAddr := os.Getenv(\"PORTAL_OPS_ADDR\")\n+\tif opsAddr == \"\" {\n+\t\topsAddr = \":9090\"\n+\t}\n+\tgo func() {\n+\t\tif err := http.ListenAndServe(opsAddr, ops); err != nil {\n+\t\t\tlogger.Error(\"ops listener stopped\", \"err\", err)\n+\t\t}\n+\t}()\n+\n \taddr := os.Getenv(\"PORTAL_ADDR\")\n \tif addr == \"\" {\n \t\taddr = \":8080\""
+          },
+          {
+            "path": "server/internal/users/users_test.go",
+            "symbol": "TestGetUser",
+            "signature": "func TestGetUser(t *testing.T)",
+            "change": "modified",
+            "diff": " \tstore := NewMemoryStore()\n \tcreated := time.Date(2025, 3, 1, 12, 0, 0, 0, time.UTC)\n \t_ = store.Put(User{ID: \"u1\", Email: \"ada@example.com\", DisplayName: \"Ada\", CreatedAt: created})\n-\tsrv := httptest.NewServer(Routes(store))\n+\tsrv := httptest.NewServer(Routes(store, NewMemoryPreferences(), false))\n \tdefer srv.Close()\n \n \ttests := []struct {"
+          },
+          {
+            "path": "server/internal/users/users_test.go",
+            "symbol": "TestPreferencesDefaults",
+            "signature": "func TestPreferencesDefaults(t *testing.T)",
+            "change": "added",
+            "diff": " \t\t})\n \t}\n }\n+\n+func TestPreferencesDefaults(t *testing.T) {\n+\tsrv := httptest.NewServer(Routes(NewMemoryStore(), NewMemoryPreferences(), true))\n+\tdefer srv.Close()\n+\n+\tres, err := http.Get(srv.URL + \"/u1/preferences\")\n+\tif err != nil {\n+\t\tt.Fatal(err)\n+\t}\n+\tdefer res.Body.Close()\n+\tvar p Preferences\n+\tif err := json.NewDecoder(res.Body).Decode(\u0026p); err != nil {\n+\t\tt.Fatal(err)\n+\t}\n+\tif p.UserID != \"u1\" || p.Theme != \"system\" || p.EmailDigest != \"weekly\" {\n+\t\tt.Fatalf(\"unexpected preferences %+v\", p)\n+\t}\n+}"
+          }
+        ]
+      }
+    },
+    "questions": {
+      "name_bullet": {
+        "type": "choice",
+        "instructions": "Which bullet of the pull request description does this group of changes implement?",
+        "criteria": {
+          "b1": "Migration `20261010_user_preferences.sql`: new `user_preferences` table, `users.avatar_url` column (for #101), drop the unused `users.legacy_theme` column",
+          "b2": "`GET` and `PUT /api/v1/users/{id}/preferences`, enabled with `PORTAL_PREFERENCES_API=on`",
+          "b3": "`users.Routes` takes the preferences store and the switch; `main` and tests updated",
+          "b4": "Health checks move from `GET /api/v1/health` to `GET /healthz` on the ops listener (`PORTAL_OPS_ADDR`, default `:9090`)",
+          "b5": "Settings page: theme picker behind the `user-preferences-v2` flag",
+          "none": "implements none of the listed bullets"
+        }
+      }
+    }
+  },
+  "response": {
+    "model": "typesafe-ai/jev",
+    "answers": {
+      "name_bullet": {
+        "type": "choice",
+        "choice": "b2",
+        "probabilities": {
+          "b1": 0,
+          "b2": 0.48,
+          "b3": 0.34,
+          "b4": 0.15,
+          "b5": 0,
+          "none": 0.03
+        }
+      }
+    },
+    "usage": {
+      "inputTokens": 2300,
+      "outputTokens": 67
+    },
+    "providerMetadata": {
+      "gateway": {
+        "cost": "0.0000966",
+        "generationId": "gen_01M4TQA4BCRKRXRSNVA6S6MVSV"
+      }
+    }
+  }
+}

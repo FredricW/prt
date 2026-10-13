@@ -15,7 +15,8 @@ import (
 
 // BranchRefs are the fixture's local branches without a PR that the
 // recordings cover (M5: branch states), run after the PRs in the same
-// store so branch.state sees #101–#104 as the open PR titles.
+// store so branch.state sees the fixture PRs (PRNumbers) as the open PR
+// titles.
 var BranchRefs = []string{"05-spike-dark-mode"}
 
 // fixtureBase is the fixture repo's default branch.

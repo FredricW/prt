@@ -1,0 +1,87 @@
+{
+  "key": "1697b60f070b46e5c55467ff",
+  "request": {
+    "model": "typesafe-ai/jev",
+    "state": {
+      "file": {
+        "path": "server/internal/users/users.go",
+        "units": [
+          {
+            "path": "server/internal/users/users.go",
+            "symbol": "Routes",
+            "signature": "func Routes(store Store, prefs PreferencesStore, withPreferences bool) http.Handler",
+            "change": "modified",
+            "diff": " \treturn r\n }\n \n-// Routes mounts the user endpoints.\n-func Routes(store Store) http.Handler {\n+// Routes mounts the user endpoints. withPreferences adds\n+// GET and PUT /{id}/preferences (PORTAL_PREFERENCES_API=on).\n+func Routes(store Store, prefs PreferencesStore, withPreferences bool) http.Handler {\n \tr := chi.NewRouter()\n \tr.Get(\"/{id}\", func(w http.ResponseWriter, req *http.Request) {\n \t\tu, err := store.Get(chi.URLParam(req, \"id\"))"
+          },
+          {
+            "path": "server/internal/users/users.go",
+            "symbol": "Routes",
+            "signature": "func Routes(store Store, prefs PreferencesStore, withPreferences bool) http.Handler",
+            "change": "added",
+            "diff": " \t\t}\n \t\twriteJSON(w, http.StatusOK, toResponse(u))\n \t})\n+\tif withPreferences {\n+\t\tr.Get(\"/{id}/preferences\", getPreferences(prefs))\n+\t\tr.Put(\"/{id}/preferences\", putPreferences(prefs))\n+\t}\n \treturn r\n }\n "
+          }
+        ]
+      },
+      "groups": [
+        {
+          "name": "NewMemoryPreferences (+7)",
+          "files": [
+            "server/cmd/api/main.go",
+            "server/internal/users/preferences.go",
+            "server/internal/users/users.go",
+            "server/internal/users/users_test.go"
+          ],
+          "units": 8
+        },
+        {
+          "name": "`GET` and `PUT /api/v1/users/{id}/preferences`, enabled wit…",
+          "files": [
+            "server/internal/users/preferences.go"
+          ],
+          "units": 2
+        },
+        {
+          "name": "Settings page: theme picker behind the `user-preferences-v2…",
+          "files": [
+            "web/src/api/preferences.ts",
+            "web/src/components/SettingsForm.tsx",
+            "web/src/utils/flags.ts"
+          ],
+          "units": 7
+        },
+        {
+          "name": "loadFlags (+2)",
+          "files": [
+            "web/src/utils/flags.ts"
+          ],
+          "units": 3
+        }
+      ]
+    },
+    "questions": {
+      "separate_pr": {
+        "type": "boolean",
+        "instructions": "Should the changes to this file be split into their own pull request, given the other change groups listed?"
+      }
+    }
+  },
+  "response": {
+    "model": "typesafe-ai/jev",
+    "answers": {
+      "separate_pr": {
+        "type": "boolean",
+        "probability": 0.3
+      }
+    },
+    "usage": {
+      "inputTokens": 854,
+      "outputTokens": 23
+    },
+    "providerMetadata": {
+      "gateway": {
+        "cost": "0.000035868",
+        "generationId": "gen_01M4TQA4PWYVPH3WDE0EJ17M2Y"
+      }
+    }
+  }
+}

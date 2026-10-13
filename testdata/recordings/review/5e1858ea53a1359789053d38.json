@@ -1,0 +1,21 @@
+{
+  "key": "5e1858ea53a1359789053d38",
+  "model": "anthropic:claude-haiku-5-5",
+  "request": {
+    "task": "tldr",
+    "tier": "fast",
+    "system": "You write the one-sentence TL;DR shown at the top of a pull request overview, for a reviewer deciding how to spend their time. Use only the facts given; they were computed from machine labels and git. Never invent numbers, names or claims that are not in the facts. At most 160 characters. One plain sentence: no markdown, no quotes, no lead-in such as \"TL;DR\".",
+    "prompt": "Facts about this pull request:\n- size: +202 -10 lines, about 212 lines that matter, about 65 min to review\n- units: 25 total, 10 need careful reading\n- composition: feature 91%, test 9%\n- highest unit risk: 4 of 5\n- risk tags: async (5 units), data_write (14 units), date_tz (3 units), error_path (4 units), pii (24 units)\n- test gap: 6 of 15 risky units untested\n- headlines:\n  - breaking at server/internal/users/users.go:84: Routes (p 0.95)\n  - breaking at server/cmd/api/main.go:20: main (p 0.85)\n  - breaking at server/migrations/20261010_user_preferences.sql:1: server/migrations/20261010_user_preferences.sql (p 0.71)\n  - breaking at server/internal/users/users.go:100: Routes (p 0.62)\n  - api shape at server/internal/users/preferences.go:70: putPreferences (p 0.60)\n- check before approving:\n  - web/src/components/SettingsForm.tsx:8 `getPreferences` has no rejection handler\n  - web/src/components/SettingsForm.tsx:27 If `savePreferences` rejects after settings\n  - web/src/components/SettingsForm.tsx:4 data-write, crash, untested\n- description: 5 of 5 bullets implemented (fidelity 1.00)\n  - implemented: Migration `20261010_user_preferences.sql`: new `user_preferences` table, `users.avatar_url` column (for #101), drop the unused `users.legacy_theme` column\n  - implemented: `GET` and `PUT /api/v1/users/{id}/preferences`, enabled with `PORTAL_PREFERENCES_API=on`\n  - implemented: `users.Routes` takes the preferences store and the switch; `main` and tests updated\n  - implemented: Health checks move from `GET /api/v1/health` to `GET /healthz` on the ops listener (`PORTAL_OPS_ADDR`, default `:9090`)\n  - implemented: Settings page: theme picker behind the `user-preferences-v2` flag\n\nWrite the TL;DR sentence.\n",
+    "maxTokens": 2048
+  },
+  "result": {
+    "text": "Adds a flagged user preferences API and a migration that drops users.legacy_theme, moves health checks to /healthz, and includes breaking route changes.",
+    "confidence": 0,
+    "model": "anthropic:claude-haiku-5-5",
+    "inputTokens": 862,
+    "outputTokens": 384,
+    "cost": 0.0002782,
+    "ms": 2406,
+    "stopReason": "end_turn"
+  }
+}

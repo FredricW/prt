@@ -18,7 +18,11 @@ request bytes match the replay by construction.
   `OLLAMA_HOST`, default `http://127.0.0.1:11434`; free, logged in
   `SPEND.md` as service `ollama` with cost 0).
 - `review/<key>.json` (M3) — LLM review responses for the `fast`/`deep`
-  Reviewer tiers, keyed the same way (format defined in M3).
+  Reviewer tiers, keyed the same way (format defined in M3). Since M5.2 a
+  response cut off at `max_tokens` before it was usable is recorded too,
+  with `"truncated": true`: `review.Replay` answers it with the same
+  `review.ErrTruncated` error, so the pipeline's retry (the same request
+  with `max_tokens` doubled, a key of its own) is reached on replay.
 
 Pair requests depend on the embedding candidates, so the Jev recording run
 and the replay must use the same embedder: `tools/recordjev` defaults to
@@ -43,10 +47,21 @@ go run ./tools/recordjev --live --review --embed replay --branches   # reviews
 ```
 
 Recordings are made against the fixture repo built from `testdata/fixtures`
-(PRs #101–#104 in `testdata/fixtures/prs.json`). Its SHAs are deterministic,
-so request keys stay stable; if a fixture patch, `link.UnitText`, a request
-shape or the question catalogue changes, the affected recordings must be
-re-recorded.
+(PRs #101–#104 and, since M5.2, #106 in `testdata/fixtures/prs.json`). Its
+SHAs are deterministic, so request keys stay stable; if a fixture patch,
+`link.UnitText`, a request shape or the question catalogue changes, the
+affected recordings must be re-recorded.
+
+Recordings no replay reads any more (an old request shape, a reworded
+question, a changed output cap) are listed and deleted with:
+
+```
+go run ./tools/recordjev --unused           # list (offline, strict replay of everything)
+go run ./tools/recordjev --unused --prune   # delete them
+```
+
+The label-quality scoreboard (`go run ./tools/quality`, `docs/QUALITY.md`)
+replays all three kinds offline as well.
 
 Total real-model spend is capped at $5 for the whole project (Jev at $1.00
 cumulative, enforced by `tools/recordjev`); record once per adapter, then rely

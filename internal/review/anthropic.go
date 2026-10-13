@@ -147,7 +147,8 @@ func maxTokens(req Request) int {
 // Review implements Reviewer. For TaskReview it also parses findings,
 // verdict and confidence (anchored to req.Units); an unparseable review
 // returns the Result (tokens and cost kept) and an error wrapping
-// ErrBadResponse.
+// ErrBadResponse. A response cut off at max_tokens before it was usable (a
+// review that does not parse, prose without text) wraps ErrTruncated too.
 func (a *Anthropic) Review(ctx context.Context, req Request) (Result, error) {
 	if err := a.Ready(); err != nil {
 		return Result{}, err
@@ -170,10 +171,16 @@ func (a *Anthropic) Review(ctx context.Context, req Request) (Result, error) {
 		return res, err
 	}
 	if req.Task != TaskReview {
+		if truncatedProse(res) {
+			return res, fmt.Errorf("review: %s (stop_reason %s): %w: no text", a.Model(), res.StopReason, ErrTruncated)
+		}
 		return res, nil
 	}
 	res.Findings, res.Verdict, res.Confidence, err = ParseReview(res.Text, req.Units)
 	if err != nil {
+		if res.StopReason == StopMaxTokens {
+			return res, fmt.Errorf("review: %s (stop_reason %s): %w: %w", a.Model(), res.StopReason, ErrTruncated, err)
+		}
 		return res, fmt.Errorf("review: %s (stop_reason %s): %w", a.Model(), res.StopReason, err)
 	}
 	return res, nil

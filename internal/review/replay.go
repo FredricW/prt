@@ -24,6 +24,12 @@ type Recording struct {
 	Result  Result  `json:"result"`
 	// Synthetic marks a hand-written response (not from the real API).
 	Synthetic bool `json:"synthetic,omitempty"`
+	// Truncated marks a response cut off at max_tokens before it was
+	// usable (IsTruncated). Replay returns it with an error wrapping
+	// ErrTruncated, as the live call did, so the pipeline's retry with a
+	// larger cap (a request of its own, recorded under its own key) is
+	// reached on replay too.
+	Truncated bool `json:"truncated,omitempty"`
 }
 
 // RequestKey is the deterministic recording key of a request sent to a
@@ -100,6 +106,9 @@ func (r *Replay) Review(_ context.Context, req Request) (Result, error) {
 		// the call was recorded (token counts are what was billed).
 		res.Cost = Cost(r.Name, res.InputTokens, res.OutputTokens)
 	}
+	if rec.Truncated {
+		return res, fmt.Errorf("review: %s (stop_reason %s): %w (recorded as %s)", r.Name, res.StopReason, ErrTruncated, rec.Key)
+	}
 	return reanchor(res, req)
 }
 
@@ -119,8 +128,11 @@ func reanchor(res Result, req Request) (Result, error) {
 	return res, nil
 }
 
-// Recorder wraps a live Reviewer and writes every successful call to Dir.
-// Only tools and `//go:build live` tests use it. It never sees keys.
+// Recorder wraps a live Reviewer and writes every successful call to Dir,
+// and every call cut off at max_tokens (IsTruncated) as a Truncated
+// recording that Replay answers with the same error. Other failures are
+// not recorded. Only tools and `//go:build live` tests use it. It never
+// sees keys.
 type Recorder struct {
 	Live      Reviewer
 	Dir       string
@@ -138,23 +150,33 @@ func (r *Recorder) Ready() error { return Ready(r.Live) }
 
 // Review implements Reviewer.
 func (r *Recorder) Review(ctx context.Context, req Request) (Result, error) {
-	res, err := r.Live.Review(ctx, req)
-	if err != nil {
-		return res, err
+	res, callErr := r.Live.Review(ctx, req)
+	truncated := IsTruncated(res, callErr)
+	if callErr != nil && !truncated {
+		return res, callErr
 	}
+	if err := r.write(req, res, truncated); err != nil {
+		return res, errors.Join(callErr, err)
+	}
+	return res, callErr
+}
+
+// write stores one recording under the request's key.
+func (r *Recorder) write(req Request, res Result, truncated bool) error {
 	key, err := RequestKey(r.Live.Model(), req)
 	if err != nil {
-		return res, fmt.Errorf("review: record: %w", err)
+		return fmt.Errorf("review: record: %w", err)
 	}
-	b, err := json.MarshalIndent(Recording{Key: key, Model: r.Live.Model(), Request: req, Result: res, Synthetic: r.Synthetic}, "", "  ")
+	rec := Recording{Key: key, Model: r.Live.Model(), Request: req, Result: res, Synthetic: r.Synthetic, Truncated: truncated}
+	b, err := json.MarshalIndent(rec, "", "  ")
 	if err != nil {
-		return res, fmt.Errorf("review: record %s: %w", key, err)
+		return fmt.Errorf("review: record %s: %w", key, err)
 	}
 	if err := os.MkdirAll(r.Dir, 0o755); err != nil {
-		return res, fmt.Errorf("review: record %s: %w", key, err)
+		return fmt.Errorf("review: record %s: %w", key, err)
 	}
 	if err := os.WriteFile(filepath.Join(r.Dir, key+".json"), append(b, '\n'), 0o600); err != nil {
-		return res, fmt.Errorf("review: record %s: %w", key, err)
+		return fmt.Errorf("review: record %s: %w", key, err)
 	}
-	return res, nil
+	return nil
 }

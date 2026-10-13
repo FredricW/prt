@@ -16,6 +16,19 @@
 // ready for PR (Input.Branch for Item, Prior.Branch for Urgency); Item
 // copies Input.Branch into the record. IdleDays is the shared idle-time
 // helper.
+//
+// M5.2 (measured with internal/quality, docs/QUALITY.md):
+//   - headlines list a claim only when its own question is at least 0.60
+//     likely (candidates down to 0.50 count in HeadlinesUnsure), at most
+//     one breaking-or-contract row per unit, never for tests, noise or
+//     dependency units, no row for a non-breaking signature change, and one
+//     external-contract row per file and kind (unitHeadlines,
+//     mergeContracts);
+//   - Unsure, MinConfidence and the unsure counts read only the attention
+//     and risk labels (unsureQuestions) at their decision confidence;
+//   - attention caps test units at skim, decides an unknown depth by risk
+//     and behaviour, and gives eyes to every unit the Overview headlines as
+//     an interface change (attention, interfaceHeadline).
 package aggregate
 
 import (
@@ -112,7 +125,6 @@ func Item(in Input) model.ItemAgg {
 		TestGap:        s.testGap,
 		RiskyUnits:     s.risky,
 		Unsure:         s.unsure,
-		Headlines:      headlines(us),
 		HotSpots:       hotSpots(us, findingReasons(in.Reviews)),
 		Undocumented:   []string{},
 		Files:          files(in.Files, us),
@@ -122,6 +134,7 @@ func Item(in Input) model.ItemAgg {
 		LabelsMissing:  in.LabelsMissing,
 		Branch:         in.Branch,
 	}
+	agg.Headlines, agg.HeadlinesUnsure = headlines(us)
 	for _, f := range us {
 		countUnit(&agg, f)
 	}

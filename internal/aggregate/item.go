@@ -215,13 +215,27 @@ func headlineRank(kind string) int {
 	return 1
 }
 
+// Headline thresholds (M5.2, the user's headline threshold): a claim is
+// listed when the probability of the headline question itself is at least
+// headlineMinP; a candidate between headlineCandidateP and headlineMinP is
+// left out and counted in ItemAgg.HeadlinesUnsure.
+const (
+	headlineMinP       = 0.60
+	headlineCandidateP = 0.50
+)
+
 // headlines lists breaking units, contract changes, weakened tests and pii
-// lines, sorted by kind, then P descending, then unit order.
-func headlines(us []unitFacts) []model.Headline {
-	out := []model.Headline{}
+// lines whose claim is at least headlineMinP likely, sorted by kind, then P
+// descending, then unit order, and counts the candidates left out below
+// the threshold. External contract rows are one per file and kind
+// (mergeContracts).
+func headlines(us []unitFacts) ([]model.Headline, int) {
+	out, unsure := []model.Headline{}, 0
 	for _, f := range us {
-		out = append(out, unitHeadlines(f)...)
+		rows, n := unitHeadlines(f)
+		out, unsure = append(out, rows...), unsure+n
 	}
+	out = mergeContracts(out)
 	sort.SliceStable(out, func(i, j int) bool {
 		ri, rj := headlineRank(out[i].Kind), headlineRank(out[j].Kind)
 		if ri != rj {
@@ -229,31 +243,132 @@ func headlines(us []unitFacts) []model.Headline {
 		}
 		return out[i].P > out[j].P
 	})
-	return out
+	return out, unsure
 }
 
-func unitHeadlines(f unitFacts) []model.Headline {
+// unitHeadlines returns a unit's headline rows and its candidates below the
+// threshold. Each claim is judged by the probability of its own question:
+// breaking by P(yes), a contract change by P(of that contract value) — a
+// unit is not listed merely because its contract answer is not "none" —
+// test_weakened by P(yes) and a pii-or-secret line by its P(yes).
+//
+// Breaking and contract claims count only for units that can carry a
+// contract (contractUnit), and give at most one row per unit: a breaking
+// row when the unit breaks callers (it subsumes the unit's contract
+// claim), else a row for an external contract change (externalContract).
+// A signature change that breaks nothing is additive — a new export or an
+// optional parameter leaves every caller compiling — so it is no headline
+// and no candidate. Weakened tests and pii lines keep their own rule: any
+// unit, so a test file can weaken a test and test data can leak a secret.
+// A pii line counts only when its unit changes runtime behaviour
+// (behaviour P ≥ 0.5): the line question judges one added line, and a unit
+// that only renames, moves or retypes code sends the same data the same
+// way as before, so nothing is newly exposed.
+func unitHeadlines(f unitFacts) ([]model.Headline, int) {
 	var out []model.Headline
+	unsure := 0
 	h := model.Headline{UnitID: f.agg.UnitID, Path: f.unit.Path, Line: f.line, Text: headlineText(f.unit)}
-	add := func(kind string, l model.Label) {
-		h.Kind, h.P, h.Confidence = kind, l.P, l.Confidence
-		out = append(out, h)
+	add := func(kind string, l model.Label) bool {
+		switch {
+		case l.P >= headlineMinP:
+			h.Kind, h.P, h.Confidence = kind, l.P, l.Confidence
+			out = append(out, h)
+			return true
+		case l.P >= headlineCandidateP:
+			unsure++
+		}
+		return false
 	}
-	if l, ok := f.labels.known(model.QBreaking); ok && l.P >= 0.5 {
-		add(headlineBreaking, l)
+	if contractUnit(f) {
+		listed := false
+		if l, ok := f.labels.known(model.QBreaking); ok {
+			listed = add(headlineBreaking, l)
+		}
+		if l, ok := f.labels.known(model.QContract); ok && !listed && externalContract(l.Value) {
+			add(l.Value, l)
+		}
 	}
-	if l, ok := f.labels.known(model.QContract); ok && l.Value != model.ContractNone {
-		add(l.Value, l)
-	}
-	if l, ok := f.labels.known(model.QTestWeakened); ok && l.P >= 0.5 {
+	if l, ok := f.labels.known(model.QTestWeakened); ok {
 		add(headlineTestWeakened, l)
 	}
-	if l, ok := strongest(f.labels.linesYes(model.QPIIOrSecret)); ok {
+	if l, ok := strongest(f.labels.linesYes(model.QPIIOrSecret)); ok && f.agg.Behaviour {
 		h.Line = l.Line
 		add(headlinePII, l)
 	}
+	return out, unsure
+}
+
+// contractUnit reports whether a unit can break callers or change a
+// contract, and so may headline as breaking or as a contract change. Not:
+//
+//   - noise (verbatim moves, formatting, generated output, fmt-only
+//     lines): a move or a reformat keeps every contract, generated output
+//     follows its source;
+//   - test units: tests have no callers outside the tests themselves;
+//   - dependency units: a version bump is not a contract of this code base
+//     (the ground truth's judgment call, and the built-in routing sends
+//     dependency groups to no review at all).
+func contractUnit(f unitFacts) bool {
+	return canCarryContract(f.unit, f.agg)
+}
+
+// canCarryContract is contractUnit over a unit and its aggregate.
+func canCarryContract(u model.ChangeUnit, a model.UnitAgg) bool {
+	return !a.Noise && !isTestUnit(u, a.Kind) && a.Kind != model.KindDependency
+}
+
+// interfaceHeadline reports whether the Overview lists a unit as breaking
+// or as an external contract change (unitHeadlines): such a unit needs
+// eyes whatever its depth answer, since the reviewer is told it changes an
+// interface others rely on.
+func interfaceHeadline(u model.ChangeUnit, a model.UnitAgg, ul *unitLabels) bool {
+	if !canCarryContract(u, a) {
+		return false
+	}
+	if l, ok := ul.known(model.QBreaking); ok && l.P >= headlineMinP {
+		return true
+	}
+	l, ok := ul.known(model.QContract)
+	return ok && externalContract(l.Value) && l.P >= headlineMinP
+}
+
+// mergeContracts keeps one external contract row per file and kind: the
+// most likely (earliest on ties). An API, schema or config change usually
+// spans several units of one file (a response struct, its handler and the
+// route), and the headline block is the summary of what changed where; the
+// change-surface record (ItemAgg.Surface) lists each endpoint, table and
+// flag. Breaking, weakened-test and pii rows stay one per unit.
+func mergeContracts(rows []model.Headline) []model.Headline {
+	best := map[string]int{} // path + kind → index in out
+	out := make([]model.Headline, 0, len(rows))
+	for _, h := range rows {
+		if !externalContract(h.Kind) {
+			out = append(out, h)
+			continue
+		}
+		key := h.Path + "\x00" + h.Kind
+		i, seen := best[key]
+		switch {
+		case !seen:
+			best[key] = len(out)
+			out = append(out, h)
+		case h.P > out[i].P:
+			out[i] = h
+		}
+	}
 	return out
 }
+
+// externalContracts are the contract values that name an interface outside
+// the code's own call graph — an API shape, a schema or migration, an
+// environment variable or flag, an event format — whose consumers
+// (clients, databases, deployments, subscribers) must know even about
+// additive changes. "none" and "signature" (whose callers compile or
+// break, see unitHeadlines) are not among them.
+var externalContracts = map[string]bool{"api shape": true, "schema/migration": true, "env/flag": true, "event format": true}
+
+// externalContract reports whether v is one of externalContracts.
+func externalContract(v string) bool { return externalContracts[v] }
 
 // strongest returns the label with the highest P (earliest on ties).
 func strongest(ls []model.Label) (model.Label, bool) {

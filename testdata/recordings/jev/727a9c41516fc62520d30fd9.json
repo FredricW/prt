@@ -1,0 +1,57 @@
+{
+  "key": "727a9c41516fc62520d30fd9",
+  "request": {
+    "model": "typesafe-ai/jev",
+    "state": {
+      "a": {
+        "path": "web/src/utils/flags.ts",
+        "change": "added",
+        "diff": "+// Feature flags, injected by the server as window.__PORTAL_FLAGS__.\n+type FlagMap = Record\u003cstring, boolean\u003e;\n+"
+      },
+      "b": {
+        "path": "web/src/utils/flags.ts",
+        "change": "added",
+        "diff": "+const flags = loadFlags();\n+"
+      }
+    },
+    "questions": {
+      "relation": {
+        "type": "choice",
+        "instructions": "How are these two changes related?",
+        "criteria": {
+          "caller update": "one change updates a caller or user of what the other change defines or changes",
+          "same intent": "both changes serve the same purpose or feature",
+          "same pattern": "both apply the same mechanical edit (rename, signature tweak, repeated pattern)",
+          "test for": "one change is a test that exercises the other change",
+          "unrelated": "the changes have nothing to do with each other"
+        }
+      }
+    }
+  },
+  "response": {
+    "model": "typesafe-ai/jev",
+    "answers": {
+      "relation": {
+        "type": "choice",
+        "choice": "same intent",
+        "probabilities": {
+          "caller update": 0.15,
+          "same intent": 0.85,
+          "same pattern": 0,
+          "test for": 0,
+          "unrelated": 0
+        }
+      }
+    },
+    "usage": {
+      "inputTokens": 507,
+      "outputTokens": 59
+    },
+    "providerMetadata": {
+      "gateway": {
+        "cost": "0.000021294",
+        "generationId": "gen_01M4TQ9ZB00WSSRKKV6NB45DVM"
+      }
+    }
+  }
+}

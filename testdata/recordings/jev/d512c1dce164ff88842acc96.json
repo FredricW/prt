@@ -1,0 +1,61 @@
+{
+  "key": "d512c1dce164ff88842acc96",
+  "request": {
+    "model": "typesafe-ai/jev",
+    "state": {
+      "a": {
+        "path": "server/internal/users/users_test.go",
+        "symbol": "TestPreferencesDefaults",
+        "signature": "func TestPreferencesDefaults(t *testing.T)",
+        "change": "added",
+        "diff": " \t\t})\n \t}\n }\n+\n+func TestPreferencesDefaults(t *testing.T) {\n+\tsrv := httptest.NewServer(Routes(NewMemoryStore(), NewMemoryPreferences(), true))\n+\tdefer srv.Close()\n+\n+\tres, err := http.Get(srv.URL + \"/u1/preferences\")\n+\tif err != nil {\n+\t\tt.Fatal(err)\n+\t}\n+\tdefer res.Body.Close()\n+\tvar p Preferences\n+\tif err := json.NewDecoder(res.Body).Decode(\u0026p); err != nil {\n+\t\tt.Fatal(err)\n+\t}\n+\tif p.UserID != \"u1\" || p.Theme != \"system\" || p.EmailDigest != \"weekly\" {\n+\t\tt.Fatalf(\"unexpected preferences %+v\", p)\n+\t}\n+}"
+      },
+      "b": {
+        "path": "server/internal/users/preferences.go",
+        "symbol": "MemoryPreferences.Get",
+        "signature": "func (m *MemoryPreferences) Get(userID string) (Preferences, error)",
+        "change": "added",
+        "diff": "+// Get returns the stored preferences, or the defaults for a user who never\n+// saved any.\n+func (m *MemoryPreferences) Get(userID string) (Preferences, error) {\n+\tm.mu.Lock()\n+\tdefer m.mu.Unlock()\n+\tp, ok := m.prefs[userID]\n+\tif !ok {\n+\t\treturn Preferences{UserID: userID, Theme: \"system\", EmailDigest: \"weekly\"}, nil\n+\t}\n+\treturn p, nil\n+}\n+"
+      }
+    },
+    "questions": {
+      "relation": {
+        "type": "choice",
+        "instructions": "How are these two changes related?",
+        "criteria": {
+          "caller update": "one change updates a caller or user of what the other change defines or changes",
+          "same intent": "both changes serve the same purpose or feature",
+          "same pattern": "both apply the same mechanical edit (rename, signature tweak, repeated pattern)",
+          "test for": "one change is a test that exercises the other change",
+          "unrelated": "the changes have nothing to do with each other"
+        }
+      }
+    }
+  },
+  "response": {
+    "model": "typesafe-ai/jev",
+    "answers": {
+      "relation": {
+        "type": "choice",
+        "choice": "test for",
+        "probabilities": {
+          "caller update": 0,
+          "same intent": 0,
+          "same pattern": 0,
+          "test for": 1,
+          "unrelated": 0
+        }
+      }
+    },
+    "usage": {
+      "inputTokens": 825,
+      "outputTokens": 59
+    },
+    "providerMetadata": {
+      "gateway": {
+        "cost": "0.00003465",
+        "generationId": "gen_01M4TQ9XZFWB1DW74FJHPNH859"
+      }
+    }
+  }
+}

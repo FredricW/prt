@@ -20,24 +20,75 @@ func labelsOf(ls ...shortLabel) *unitLabels {
 }
 
 func TestAttention(t *testing.T) {
+	// unknownAll is a unit whose risk and behaviour are unknown too.
+	unknownAll := model.UnitAgg{BehaviourUnknown: true}
 	tests := []struct {
-		depth         string
-		noise, unsure bool
-		want          model.Attention
+		name  string
+		depth string
+		a     model.UnitAgg
+		test  bool
+		want  model.Attention
 	}{
-		{model.DepthRead, false, false, model.AttnEyes},
-		{model.DepthRun, false, false, model.AttnEyes},
-		{model.DepthSkim, false, false, model.AttnSkim},
-		{model.DepthSkip, false, false, model.AttnSkip},
-		{model.DepthSkip, false, true, model.AttnSkim},
-		{model.LabelUnknown, false, true, model.AttnEyes},
-		{"", false, true, model.AttnEyes},
-		{model.DepthRead, true, false, model.AttnSkip},
-		{model.DepthRead, true, true, model.AttnSkim},
+		{"read", model.DepthRead, model.UnitAgg{}, false, model.AttnEyes},
+		{"run locally", model.DepthRun, model.UnitAgg{}, false, model.AttnEyes},
+		{"skim", model.DepthSkim, model.UnitAgg{}, false, model.AttnSkim},
+		{"skip", model.DepthSkip, model.UnitAgg{}, false, model.AttnSkip},
+		{"unsure skip is skim", model.DepthSkip, model.UnitAgg{Unsure: true}, false, model.AttnSkim},
+		{"noise is skip", model.DepthRead, model.UnitAgg{Noise: true}, false, model.AttnSkip},
+		{"unsure noise is skim", model.DepthRead, model.UnitAgg{Noise: true, Unsure: true}, false, model.AttnSkim},
+		{"unknown depth, nothing known", model.LabelUnknown, unknownAll, false, model.AttnEyes},
+		{"missing depth, nothing known", "", unknownAll, false, model.AttnEyes},
+		{"unknown depth, risky", model.LabelUnknown, model.UnitAgg{RiskLevel: 3}, false, model.AttnEyes},
+		{"unknown depth, behaviour", model.LabelUnknown, model.UnitAgg{RiskLevel: 1, Behaviour: true}, false, model.AttnEyes},
+		{"unknown depth, low risk, no behaviour", model.LabelUnknown, model.UnitAgg{RiskLevel: 2}, false, model.AttnSkim},
+		{"unknown depth, behaviour no, risk unknown", "", model.UnitAgg{}, false, model.AttnSkim},
+		{"test read caps at skim", model.DepthRead, model.UnitAgg{}, true, model.AttnSkim},
+		{"test skip stays skip", model.DepthSkip, model.UnitAgg{}, true, model.AttnSkip},
+		{"test unknown risky caps at skim", model.LabelUnknown, model.UnitAgg{RiskLevel: 4}, true, model.AttnSkim},
 	}
 	for _, tc := range tests {
-		if got := attention(tc.depth, tc.noise, tc.unsure); got != tc.want {
-			t.Errorf("attention(%q, noise=%v, unsure=%v) = %s, want %s", tc.depth, tc.noise, tc.unsure, got, tc.want)
+		if got := attention(tc.depth, tc.a, tc.test); got != tc.want {
+			t.Errorf("%s: attention = %s, want %s", tc.name, got, tc.want)
+		}
+	}
+}
+
+func TestIsTestUnit(t *testing.T) {
+	for _, tc := range []struct {
+		path, kind string
+		want       bool
+	}{
+		{"web/src/__tests__/a.test.ts", "feature", true},
+		{"server/users_test.go", "", true},
+		{"web/src/helpers.ts", "test", true},
+		{"web/src/helpers.ts", "feature", false},
+	} {
+		if got := isTestUnit(model.ChangeUnit{Path: tc.path}, tc.kind); got != tc.want {
+			t.Errorf("isTestUnit(%q, %q) = %v", tc.path, tc.kind, got)
+		}
+	}
+}
+
+func TestDecisionConfidence(t *testing.T) {
+	c := func(f float64) *float64 { return &f }
+	tests := []struct {
+		name string
+		l    shortLabel
+		want float64
+	}{
+		{"boolean keeps confidence", shortLabel{Q: "breaking", P: 0.3}, 0.7},
+		{"kind keeps its P", shortLabel{Q: "kind", V: "feature", P: 0.55, Probs: map[string]float64{"feature": 0.55, "refactor": 0.45}}, 0.55},
+		{"depth read counts run locally", shortLabel{Q: "depth", V: "read", P: 0.49, Probs: map[string]float64{"read": 0.49, "run locally": 0.11, "skim": 0.38, "skip": 0.02}}, 0.60},
+		{"depth skim is its own bucket", shortLabel{Q: "depth", V: "skim", P: 0.41, Probs: map[string]float64{"read": 0.33, "run locally": 0.11, "skim": 0.41, "skip": 0.15}}, 0.41},
+		{"risk 3 sides", shortLabel{Q: "risk", V: "3", P: 0.55, Probs: map[string]float64{"2": 0.36, "3": 0.55, "4": 0.08, "5": 0.01}}, 0.64},
+		{"risk 4 sides", shortLabel{Q: "risk", V: "4", P: 0.53, Probs: map[string]float64{"2": 0.15, "3": 0.30, "4": 0.53, "5": 0.02}}, 0.55},
+		{"risk 1 sides", shortLabel{Q: "risk", V: "1", P: 0.5, Probs: map[string]float64{"1": 0.5, "2": 0.3, "3": 0.2}}, 0.8},
+		{"no probs keeps confidence", shortLabel{Q: "depth", V: "read", P: 0.45, C: c(0.45)}, 0.45},
+		{"unknown is 0", shortLabel{Q: "risk", V: "unknown"}, 0},
+	}
+	for _, tc := range tests {
+		if got := decisionConfidence(tc.l.label()); !near(got, tc.want) {
+			t.Errorf("%s: decisionConfidence = %v, want %v", tc.name, got, tc.want)
 		}
 	}
 }
@@ -224,7 +275,12 @@ func TestConfidenceThreshold(t *testing.T) {
 		{"no labels", nil, 0.6, 0, true},
 		{"at threshold is sure", labelsOf(shortLabel{Q: "kind", V: "feature", P: 0.6}), 0.6, 0.6, false},
 		{"below threshold", labelsOf(shortLabel{Q: "kind", V: "feature", P: 0.59}), 0.6, 0.59, true},
-		{"line label counts", labelsOf(shortLabel{Q: "kind", V: "feature", P: 0.9}, shortLabel{Q: "fmt", L: 2, P: 0.45}), 0.6, 0.55, true},
+		{"line label does not count", labelsOf(shortLabel{Q: "kind", V: "feature", P: 0.9}, shortLabel{Q: "fmt", L: 2, P: 0.45}), 0.6, 0.9, false},
+		{"risk tag does not count", labelsOf(shortLabel{Q: "kind", V: "feature", P: 0.9}, shortLabel{Q: "risk_tags.auth", P: 0.5}), 0.6, 0.9, false},
+		{"relevance does not count", labelsOf(shortLabel{Q: "covered", P: 0.2}, shortLabel{Q: "relevance", V: "3", P: 0.3}), 0.6, 0.8, false},
+		{"only other labels", labelsOf(shortLabel{Q: "relevance", V: "3", P: 0.9}), 0.6, 0, true},
+		{"unknown counts as 0", labelsOf(shortLabel{Q: "kind", V: "feature", P: 0.9}, shortLabel{Q: "depth", V: "unknown"}), 0.6, 0, true},
+		{"breaking near half", labelsOf(shortLabel{Q: "kind", V: "feature", P: 0.9}, shortLabel{Q: "breaking", P: 0.55}), 0.6, 0.55, true},
 		{"custom threshold", labelsOf(shortLabel{Q: "kind", V: "feature", P: 0.7}), 0.8, 0.7, true},
 	}
 	for _, tc := range tests {
@@ -238,11 +294,11 @@ func TestConfidenceThreshold(t *testing.T) {
 func TestUnsureBelowDefault(t *testing.T) {
 	in := loadFixture(t, "profile.json")
 	in.Pipeline.UnsureBelow = 0
-	if got := Item(in); got.Unsure != 2 {
-		t.Errorf("unsure with default threshold = %d, want 2", got.Unsure)
+	if got := Item(in); got.Unsure != 0 || len(got.UnsureUnits) != 1 {
+		t.Errorf("unsure with default threshold = %d units %v, want 0 and [u6]", got.Unsure, got.UnsureUnits)
 	}
 	in.Pipeline.UnsureBelow = 0.95
-	if got := Item(in); got.Unsure <= 2 || len(got.UnsureUnits) != 6 {
+	if got := Item(in); got.Unsure == 0 || len(got.UnsureUnits) != 6 {
 		t.Errorf("unsure with 0.95 = %d units %v", got.Unsure, got.UnsureUnits)
 	}
 }

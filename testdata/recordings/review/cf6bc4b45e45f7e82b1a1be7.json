@@ -1,0 +1,52 @@
+{
+  "key": "cf6bc4b45e45f7e82b1a1be7",
+  "model": "anthropic:claude-opus-5-5",
+  "request": {
+    "task": "review",
+    "tier": "deep",
+    "groupId": "adfe5899a35f90054fc545487669d5dd5fd07bd6648efa42dc7c6373cfdb8951",
+    "system": "You are a senior code reviewer. You review one group of related change units from a pull request and report the problems a careful reviewer would raise: bugs, broken contracts, missing error handling, security holes, data loss, races, and risky code without tests.\n\nRules:\n- Report findings only. Never restate, summarise or praise the diff.\n- Anchor every finding to a file path and a line number printed in the diff: the new-side number, or the old-side number for a deleted line.\n- One finding per problem. \"claim\" is one sentence; \"fix\" is a short suggested change.\n- severity: \"high\" breaks callers, loses data or opens a security hole; \"medium\" is a likely bug or missing handling; \"low\" is a minor risk.\n- Never invent numbers, metrics, line numbers or code that is not shown.\n- The hints are machine labels (probabilities 0-1, risk 1-5). Use them to decide where to look, not as facts.\n- The Context section, when present, is unchanged background (callers, types, tests, config). Report a finding there only when the change breaks it, anchored to the changed line that causes it.\n- verdict: \"approve\" when nothing needs changing, \"comment\" for low findings or questions only, \"request_changes\" when a finding must be fixed before merging.\n- confidence: a number from 0 to 1, how sure you are that the findings and the verdict are right given what you were shown.\n\nAnswer with JSON only, no prose and no code fence, in exactly this shape:\n{\"findings\":[{\"file\":\"path/to/file\",\"line\":12,\"severity\":\"low|medium|high\",\"claim\":\"one sentence\",\"fix\":\"suggested fix\"}],\"verdict\":\"approve|comment|request_changes\",\"confidence\":0.8}\nUse \"findings\": [] when there is nothing to report.\n\nSecurity focus: check authentication and authorisation paths, secrets or personal data reaching logs, responses or storage, injection, unsafe deserialisation, and money handling (rounding, double charges).\n\nPerformance focus: look for I/O or queries inside loops, unbounded work, missing batching or pagination, blocking calls on hot or async paths, and races between concurrent callers.",
+    "prompt": "# Pull request\nTitle: feat(server): user preferences API and ops health check\nDescription bullets:\n- Migration `20261010_user_preferences.sql`: new `user_preferences` table, `users.avatar_url` column (for #101), drop the unused `users.legacy_theme` column\n- `GET` and `PUT /api/v1/users/{id}/preferences`, enabled with `PORTAL_PREFERENCES_API=on`\n- `users.Routes` takes the preferences store and the switch; `main` and tests updated\n- Health checks move from `GET /api/v1/health` to `GET /healthz` on the ops listener (`PORTAL_OPS_ADDR`, default `:9090`)\n- Settings page: theme picker behind the `user-preferences-v2` flag\n\n# Group\nName: `GET` and `PUT /api/v1/users/{id}/preferences`, enabled wit…\nImplements bullet: `GET` and `PUT /api/v1/users/{id}/preferences`, enabled with `PORTAL_PREFERENCES_API=on`\n\n# Units in review order\nEach diff line starts with its old and new line numbers.\n\n## Unit 1 of 2: server/internal/users/preferences.go (added, new lines 37-48)\nsymbol: MemoryPreferences.Get\nsignature: func (m *MemoryPreferences) Get(userID string) (Preferences, error)\nhints: kind=feature risk=3 tags=async,error_path,pii breaking=0.07 contract=signature covered=0.64 untested=no\n```diff\n         37 +// Get returns the stored preferences, or the defaults for a user who never\n         38 +// saved any.\n         39 +func (m *MemoryPreferences) Get(userID string) (Preferences, error) {\n         40 +\tm.mu.Lock()\n         41 +\tdefer m.mu.Unlock()\n         42 +\tp, ok := m.prefs[userID]\n         43 +\tif !ok {\n         44 +\t\treturn Preferences{UserID: userID, Theme: \"system\", EmailDigest: \"weekly\"}, nil\n         45 +\t}\n         46 +\treturn p, nil\n         47 +}\n         48 +\n```\n\n## Unit 2 of 2: server/internal/users/preferences.go (added, new lines 59-69)\nsymbol: getPreferences\nsignature: func getPreferences(prefs PreferencesStore) http.HandlerFunc\nhints: kind=feature risk=4 tags=error_path,pii breaking=0.10 contract=none covered=0.70 untested=no\n```diff\n         59 +func getPreferences(prefs PreferencesStore) http.HandlerFunc {\n         60 +\treturn func(w http.ResponseWriter, req *http.Request) {\n         61 +\t\tp, err := prefs.Get(chi.URLParam(req, \"id\"))\n         62 +\t\tif err != nil {\n         63 +\t\t\twriteError(w, http.StatusInternalServerError, \"internal\", err.Error())\n         64 +\t\t\treturn\n         65 +\t\t}\n         66 +\t\twriteJSON(w, http.StatusOK, p)\n         67 +\t}\n         68 +}\n         69 +\n```\n\nReview these units and answer with the JSON object only.\n",
+    "context": [
+      "### callers: caller server/internal/users/users.go Routes\nserver/internal/users/users.go:97-106\nfunc Routes(store Store, prefs PreferencesStore, withPreferences bool) http.Handler\n \t\t}\n \t\twriteJSON(w, http.StatusOK, toResponse(u))\n \t})\n+\tif withPreferences {\n+\t\tr.Get(\"/{id}/preferences\", getPreferences(prefs))\n+\t\tr.Put(\"/{id}/preferences\", putPreferences(prefs))\n+\t}\n \treturn r\n }\n "
+    ],
+    "maxTokens": 4096
+  },
+  "result": {
+    "text": "{\"findings\":[{\"file\":\"server/internal/users/preferences.go\",\"line\":61,\"severity\":\"high\",\"claim\":\"The handler serves preferences for any `{id}` in the URL without checking that the caller is that user or an admin, so any client can read another user's preferences (IDOR on personal data).\",\"fix\":\"Compare the authenticated principal from the request context with the `id` parameter and return 403 on mismatch, unless the caller has an admin role.\"},{\"file\":\"server/internal/users/preferences.go\",\"line\":63,\"severity\":\"medium\",\"claim\":\"`err.Error()` from the store goes back to the client verbatim, which can leak internal details such as storage or driver messages.\",\"fix\":\"Log the error on the server and return a generic message such as \\\"internal error\\\".\"},{\"file\":\"server/internal/users/preferences.go\",\"line\":44,\"severity\":\"low\",\"claim\":\"`Get` returns default preferences for any ID, including users that do not exist, so the endpoint answers 200 for nonexistent users instead of 404.\",\"fix\":\"Have `getPreferences` check that the user exists via the user Store, or have `Get` signal not-found, and return 404 for unknown IDs.\"}],\"verdict\":\"request_changes\",\"confidence\":0.72}",
+    "findings": [
+      {
+        "unitId": "b42d747e3289be4bd130194f9ae58520fce44f70c286ded100cf1ee07133145a",
+        "path": "server/internal/users/preferences.go",
+        "line": 44,
+        "severity": "low",
+        "claim": "`Get` returns default preferences for any ID, including users that do not exist, so the endpoint answers 200 for nonexistent users instead of 404.",
+        "fix": "Have `getPreferences` check that the user exists via the user Store, or have `Get` signal not-found, and return 404 for unknown IDs."
+      },
+      {
+        "unitId": "6876a0dac8830a7ab496fbb164d578a64102c01c726e811671ba1c8e78db4bac",
+        "path": "server/internal/users/preferences.go",
+        "line": 61,
+        "severity": "high",
+        "claim": "The handler serves preferences for any `{id}` in the URL without checking that the caller is that user or an admin, so any client can read another user's preferences (IDOR on personal data).",
+        "fix": "Compare the authenticated principal from the request context with the `id` parameter and return 403 on mismatch, unless the caller has an admin role."
+      },
+      {
+        "unitId": "6876a0dac8830a7ab496fbb164d578a64102c01c726e811671ba1c8e78db4bac",
+        "path": "server/internal/users/preferences.go",
+        "line": 63,
+        "severity": "medium",
+        "claim": "`err.Error()` from the store goes back to the client verbatim, which can leak internal details such as storage or driver messages.",
+        "fix": "Log the error on the server and return a generic message such as \"internal error\"."
+      }
+    ],
+    "verdict": "request_changes",
+    "confidence": 0.72,
+    "model": "anthropic:claude-opus-5-5",
+    "inputTokens": 1938,
+    "outputTokens": 607,
+    "cost": 0.019892,
+    "ms": 6380,
+    "stopReason": "end_turn"
+  }
+}

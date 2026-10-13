@@ -1,0 +1,61 @@
+{
+  "key": "ead7a408606929787c245f04",
+  "request": {
+    "model": "typesafe-ai/jev",
+    "state": {
+      "a": {
+        "path": "server/internal/users/preferences.go",
+        "symbol": "MemoryPreferences.Put",
+        "signature": "func (m *MemoryPreferences) Put(p Preferences) error",
+        "change": "added",
+        "diff": "+// Put stores p.\n+func (m *MemoryPreferences) Put(p Preferences) error {\n+\tm.mu.Lock()\n+\tdefer m.mu.Unlock()\n+\tm.prefs[p.UserID] = p\n+\treturn nil\n+}\n+"
+      },
+      "b": {
+        "path": "server/internal/users/preferences.go",
+        "symbol": "MemoryPreferences.Get",
+        "signature": "func (m *MemoryPreferences) Get(userID string) (Preferences, error)",
+        "change": "added",
+        "diff": "+// Get returns the stored preferences, or the defaults for a user who never\n+// saved any.\n+func (m *MemoryPreferences) Get(userID string) (Preferences, error) {\n+\tm.mu.Lock()\n+\tdefer m.mu.Unlock()\n+\tp, ok := m.prefs[userID]\n+\tif !ok {\n+\t\treturn Preferences{UserID: userID, Theme: \"system\", EmailDigest: \"weekly\"}, nil\n+\t}\n+\treturn p, nil\n+}\n+"
+      }
+    },
+    "questions": {
+      "relation": {
+        "type": "choice",
+        "instructions": "How are these two changes related?",
+        "criteria": {
+          "caller update": "one change updates a caller or user of what the other change defines or changes",
+          "same intent": "both changes serve the same purpose or feature",
+          "same pattern": "both apply the same mechanical edit (rename, signature tweak, repeated pattern)",
+          "test for": "one change is a test that exercises the other change",
+          "unrelated": "the changes have nothing to do with each other"
+        }
+      }
+    }
+  },
+  "response": {
+    "model": "typesafe-ai/jev",
+    "answers": {
+      "relation": {
+        "type": "choice",
+        "choice": "same intent",
+        "probabilities": {
+          "caller update": 0,
+          "same intent": 0.98,
+          "same pattern": 0.02,
+          "test for": 0,
+          "unrelated": 0
+        }
+      }
+    },
+    "usage": {
+      "inputTokens": 704,
+      "outputTokens": 59
+    },
+    "providerMetadata": {
+      "gateway": {
+        "cost": "0.000029568",
+        "generationId": "gen_01M4TQ9Y9HPRDS8HMHJ2JW5KAE"
+      }
+    }
+  }
+}

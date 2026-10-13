@@ -158,17 +158,47 @@ func (f facts) rename() bool {
 	return strings.Contains(f.text, "fetchjson") && strings.Contains(f.text, "requestjson")
 }
 
-var getUserSig = regexp.MustCompile(`getUser\s*\([^)]*,`)
+// funcDecl matches a Go or JS/TS function declaration and captures its name
+// ("func (r T) Name(", "export async function name(").
+var funcDecl = regexp.MustCompile(`(?:\bfunc\s+(?:\([^)]*\)\s*)?|\bfunction\s+)(\w+)\s*[<(]`)
 
-// signatureChange is true when an added line declares getUser with an extra
-// parameter (the fixture's breaking change in #101).
+// signatureChange is true when a function is declared on both a removed
+// and an added line with different text: its parameters or result changed
+// (#101's getUser, #106's users.Routes).
 func (f facts) signatureChange() bool {
+	removed := map[string]string{}
+	for _, ln := range f.removed {
+		if m := funcDecl.FindStringSubmatch(ln); m != nil {
+			removed[m[1]] = strings.TrimSpace(ln)
+		}
+	}
 	for _, ln := range f.added {
-		if getUserSig.MatchString(ln) && (strings.Contains(ln, "function") || strings.Contains(ln, "export")) {
+		if m := funcDecl.FindStringSubmatch(ln); m != nil {
+			if old, ok := removed[m[1]]; ok && old != strings.TrimSpace(ln) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// routeReg matches an HTTP route registration ("r.Get(\"/x\"", "HandleFunc(").
+var routeReg = regexp.MustCompile(`\.(?:Get|Post|Put|Patch|Delete|HandleFunc|Handle)\(\s*"`)
+
+// removedRoute is true when a removed line registers an HTTP route (#106's
+// GET /api/v1/health): clients of that route break.
+func (f facts) removedRoute() bool {
+	for _, ln := range f.removed {
+		if routeReg.MatchString(ln) {
 			return true
 		}
 	}
 	return false
+}
+
+// schemaChange is true for SQL DDL (#106's migration).
+func (f facts) schemaChange() bool {
+	return strings.Contains(f.text, "create table") || strings.Contains(f.text, "alter table")
 }
 
 func (f facts) kind() string {
@@ -185,7 +215,9 @@ func (f facts) kind() string {
 
 // heuristicAnswer answers plausibly from the request state so synthetic
 // recordings satisfy the replay test's expectations (breaking getUser in
-// #101, refactor in #102 and #103, dependency in #104). Question names are
+// #101, refactor in #102 and #103, dependency in #104; in #106 a breaking
+// users.Routes, the removed health route and the schema migration).
+// Question names are
 // matched by label id ("kind", "risk_tags.auth", ...), ignoring any prefix
 // before a "/" or ":".
 func heuristicAnswer(name string, q jev.Question, state any) jev.Answer {
@@ -212,7 +244,7 @@ func questionID(name string) string {
 func booleanP(id string, f facts) float64 {
 	switch {
 	case id == model.QBreaking:
-		if f.signatureChange() {
+		if f.signatureChange() || f.removedRoute() {
 			return 0.9
 		}
 		return 0.05
@@ -238,7 +270,12 @@ func pickChoice(id string, q jev.Question, f facts) string {
 	case model.QKind:
 		return f.kind()
 	case model.QContract:
-		if f.signatureChange() {
+		switch {
+		case f.schemaChange():
+			return "schema/migration"
+		case f.removedRoute():
+			return "api shape"
+		case f.signatureChange():
 			return "signature"
 		}
 		return model.ContractNone

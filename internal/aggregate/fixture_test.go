@@ -156,15 +156,21 @@ func TestProfileUnits(t *testing.T) {
 		id string
 		w  want
 	}{
-		{"u1", want{kind: "feature", attn: model.AttnEyes, effective: 4, minutes: 2, minConf: 0.6, riskLevel: 4,
+		// minConf is over depth, kind, behaviour, breaking, risk and covered
+		// only, with depth and risk at their decision confidence: u1's risk
+		// {3 .2, 4 .6, 5 .2} is .8 sure it is high; relevance .7, fail mode
+		// and risk tags no longer count.
+		{"u1", want{kind: "feature", attn: model.AttnEyes, effective: 4, minutes: 2, minConf: 0.8, riskLevel: 4,
 			tags: []string{"data_write"}, untested: true, bullet: 1, contract: "none", owned: true}},
 		{"u2", want{kind: "test", attn: model.AttnSkim, effective: 3, minutes: 0.3, minConf: 0.7, riskLevel: 1,
 			contract: "none", owned: true}},
-		{"u3", want{kind: "bugfix", attn: model.AttnEyes, effective: 5, minutes: 2.5, minConf: 0.5, unsure: true, riskLevel: 5,
+		// u3: covered .4 (.6 sure), relevance .6 and fail mode .55 no longer
+		// count, so the unit is not unsure.
+		{"u3", want{kind: "bugfix", attn: model.AttnEyes, effective: 5, minutes: 2.5, minConf: 0.6, riskLevel: 5,
 			tags: []string{"auth", "error_path", "pii"}, untested: true, undoc: true, contract: "signature"}},
 		{"u4", want{kind: "feature", attn: model.AttnEyes, effective: 4, minutes: 2, minConf: 0.6, riskLevel: 3,
 			bullet: 1, contract: "api shape"}},
-		{"u5", want{kind: "docs", attn: model.AttnSkip, effective: 2, minutes: 0, minConf: 0.6, riskLevel: 1, bullet: 3}},
+		{"u5", want{kind: "docs", attn: model.AttnSkip, effective: 2, minutes: 0, minConf: 0.9, riskLevel: 1, bullet: 3}},
 		{"u6", want{kind: "", attn: model.AttnSkim, effective: 0, minutes: 0, minConf: 0, unsure: true,
 			noise: model.NoiseMoved, owned: true}},
 	}
@@ -259,10 +265,10 @@ func TestProfileItem(t *testing.T) {
 	}
 	assertEqual(t, "risk tags", agg.RiskTags, map[string]int{"data_write": 1, "auth": 1, "error_path": 1, "pii": 1})
 	assertEqual(t, "undocumented", agg.Undocumented, []string{"u3"})
-	if agg.Unsure != 2 {
-		t.Errorf("unsure = %d, want 2", agg.Unsure)
+	if agg.Unsure != 0 {
+		t.Errorf("unsure = %d, want 0 (no attention or risk label below .60)", agg.Unsure)
 	}
-	assertEqual(t, "unsure units", agg.UnsureUnits, []string{"u3", "u6"})
+	assertEqual(t, "unsure units", agg.UnsureUnits, []string{"u6"})
 	if agg.Shape != "mixed" || !near(agg.ShapeP, 0.55) {
 		t.Errorf("shape = %q %v", agg.Shape, agg.ShapeP)
 	}
@@ -277,8 +283,8 @@ func TestProfileItem(t *testing.T) {
 func TestProfileHotSpots(t *testing.T) {
 	agg := Item(loadFixture(t, "profile.json"))
 	want := []model.HotSpot{
-		{UnitID: "u1", Path: "web/profile/cache.ts", Line: 10, Score: 4.3 * 4.6 * 0.8 * 0.6, Reason: "data-write, wrong data, untested"},
-		{UnitID: "u3", Path: "server/auth/session.go", Line: 41, Score: 4.8 * 2.0 * 0.6 * 0.5, Reason: "auth, crash, untested"},
+		{UnitID: "u1", Path: "web/profile/cache.ts", Line: 10, Score: 4.3 * 4.6 * 0.8 * 0.8, Reason: "data-write, wrong data, untested"},
+		{UnitID: "u3", Path: "server/auth/session.go", Line: 41, Score: 4.8 * 2.0 * 0.6 * 0.6, Reason: "auth, crash, untested"},
 		{UnitID: "u4", Path: "server/api/user.go", Line: 7, Score: 3.1 * 1.4 * 0.4 * 0.6, Reason: "risk 3 of 5"},
 	}
 	if len(agg.HotSpots) != len(want) {
@@ -294,11 +300,11 @@ func TestProfileHotSpots(t *testing.T) {
 
 func TestProfileHeadlines(t *testing.T) {
 	agg := Item(loadFixture(t, "profile.json"))
+	// One row per unit for breaking and contract claims (M5.2): u3's and
+	// u4's breaking rows subsume their signature and api shape claims.
 	want := []model.Headline{
 		{UnitID: "u4", Path: "server/api/user.go", Line: 7, Kind: "breaking", Text: "func GetUser(id string, opts Opts) (*User, error)", P: 0.9, Confidence: 0.9},
 		{UnitID: "u3", Path: "server/auth/session.go", Line: 41, Kind: "breaking", Text: "Logout", P: 0.7, Confidence: 0.7},
-		{UnitID: "u3", Path: "server/auth/session.go", Line: 41, Kind: "signature", Text: "Logout", P: 0.8, Confidence: 0.8},
-		{UnitID: "u4", Path: "server/api/user.go", Line: 7, Kind: "api shape", Text: "func GetUser(id string, opts Opts) (*User, error)", P: 0.75, Confidence: 0.75},
 		{UnitID: "u2", Path: "web/profile/cache.test.ts", Line: 5, Kind: "test weakened", Text: "web/profile/cache.test.ts", P: 0.8, Confidence: 0.8},
 		{UnitID: "u3", Path: "server/auth/session.go", Line: 43, Kind: "pii or secret", Text: "Logout", P: 0.9, Confidence: 0.9},
 	}
@@ -355,7 +361,7 @@ func TestProfileGroups(t *testing.T) {
 		t.Errorf("group = %+v", g)
 	}
 	// u1 and u4 are both feature; u1 has the larger hot spot; no reviews.
-	if g.Kind != "feature" || !near(g.HotSpot, 4.3*4.6*0.8*0.6) || g.Findings != 0 {
+	if g.Kind != "feature" || !near(g.HotSpot, 4.3*4.6*0.8*0.8) || g.Findings != 0 {
 		t.Errorf("group kind %q hot spot %v findings %d", g.Kind, g.HotSpot, g.Findings)
 	}
 	assertComposition(t, g.Composition, map[string]float64{"feature": 1})
@@ -427,7 +433,8 @@ func TestUnknownAndMissingLabels(t *testing.T) {
 		kind   string
 		unsure int
 	}{
-		{"all unknown", unknown, model.LabelUnknown, 21},
+		// Only the attention and risk labels count (11 of the 21 unknown).
+		{"all unknown", unknown, model.LabelUnknown, 11},
 		{"no labels", none, "", 0},
 	}
 	for _, tc := range tests {

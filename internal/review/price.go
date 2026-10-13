@@ -76,17 +76,23 @@ func EstimateCost(model string, req Request) float64 {
 }
 
 // ExpectedOutputTokens is the output length a planned review is budgeted
-// at: above every recorded review response (at most 315 output tokens on
-// the fixture PRs, reasoning included), well below the review max_tokens
-// (1024 fast, 2048 deep).
+// at, reasoning included. It tracks the typical response, not the longest:
+// the M5.2 recordings of the fixture items use 26–1414 output tokens per
+// deep review (578 on average over #101's fifteen) and 156–868 per fast
+// review, against max_tokens 4096. Together with the conservative input
+// estimate the plan stays above the item's actual spend (#101: $0.356
+// planned, $0.327 spent), while one long response can cost more than its
+// own reservation.
 const ExpectedOutputTokens = 512
 
 // PlanCost is the cost the item's cap is charged for a call before it
 // runs: the conservative input estimate plus ExpectedOutputTokens of output
 // (MaxTokens when lower). Unlike EstimateCost it is not a hard upper bound:
 // a response that runs to max_tokens costs more, so an item can overshoot
-// its cap by that margin. Charging every call its max_tokens let only two
-// of fifteen deep groups of a 400-line PR fit the default $0.40 cap.
+// its cap by that margin (at most (4096 − 512) × $20/MTok ≈ $0.07 per deep
+// call). Charging every call its max_tokens let only two of fifteen deep
+// groups of a 400-line PR fit the default $0.40 cap. A truncation retry
+// reserves the grown request's EstimateCost instead (pipeline).
 func PlanCost(model string, req Request) float64 {
 	return Cost(model, EstimateInputTokens(req), min(maxTokens(req), ExpectedOutputTokens))
 }

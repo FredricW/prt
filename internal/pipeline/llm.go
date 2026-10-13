@@ -81,25 +81,31 @@ func withErr(call model.ReviewCall, err error) model.ReviewCall {
 // callRetry is callOnce with one retry (spec failure handling: "retried
 // once, then left for R"). An error from the call or from check (e.g. an
 // unparseable review) is retried unless ctx is done or the provider key is
-// missing. The retry's call-log purpose is "retry". allowRetry (nil:
-// always) is asked before the retry, e.g. to reserve its cost from the
-// item's budget; false ends with the first error plus errRetryOverCap.
-func (p *Pipeline) callRetry(ctx context.Context, rev review.Reviewer, req review.Request, m callMeta, check func(review.Result) error, allowRetry func() bool) callOutcome {
+// missing. A call cut off at max_tokens before its answer was usable
+// (review.IsTruncated) is retried with its output cap doubled
+// (review.Grow, up to review.MaxTokensCeiling): a new request with its own
+// recording key; any other failure is retried with the same request. The
+// retry's call-log purpose is "retry". allowRetry (nil: always) is asked
+// with the retry's request before it is sent, e.g. to reserve its cost
+// from the item's budget; false ends with the first error plus
+// errRetryOverCap.
+func (p *Pipeline) callRetry(ctx context.Context, rev review.Reviewer, req review.Request, m callMeta, check func(review.Result) error, allowRetry func(review.Request) bool) callOutcome {
 	var out callOutcome
 	if rev == nil {
 		out.err = fmt.Errorf("%w: no %s reviewer configured", review.ErrUnavailable, m.tier)
 		return out
 	}
+	next := req
 	for attempt := 1; attempt <= 2; attempt++ {
 		meta := m
 		if attempt > 1 {
-			if allowRetry != nil && !allowRetry() {
+			if allowRetry != nil && !allowRetry(next) {
 				out.err = fmt.Errorf("%w (%w)", out.err, errRetryOverCap)
 				break
 			}
 			meta.purpose = purposeRetry
 		}
-		res, call, err := p.callOnce(ctx, rev, req, meta)
+		res, call, err := p.callOnce(ctx, rev, next, meta)
 		if err == nil && check != nil {
 			err = check(res)
 			call = withErr(call, err)
@@ -109,8 +115,34 @@ func (p *Pipeline) callRetry(ctx context.Context, rev review.Reviewer, req revie
 		if err == nil || ctx.Err() != nil || errors.Is(err, review.ErrNoKey) {
 			break
 		}
+		next = retryRequest(next, res, err)
 	}
 	return out
+}
+
+// retryRequest is the request a failed call is retried with: req with its
+// output cap doubled when the call was cut off at max_tokens (and the cap
+// can still grow), else req itself.
+func retryRequest(req review.Request, res review.Result, err error) review.Request {
+	if review.IsTruncated(res, err) {
+		if grown, ok := review.Grow(req); ok {
+			return grown
+		}
+	}
+	return req
+}
+
+// retryEstimate is what a retry of job request req reserves from the
+// item's budget: est (the job's plan estimate) for a plain retry of the
+// same request; for a truncation retry (next has a larger output cap) the
+// grown request's upper bound, review.EstimateCost — the first attempt
+// already used its whole cap, so the expected-length plan estimate would
+// under-count it.
+func retryEstimate(modelSpec string, req, next review.Request, est float64) float64 {
+	if next.MaxTokens != req.MaxTokens {
+		return review.EstimateCost(modelSpec, next)
+	}
+	return est
 }
 
 // skipReason is the status note for a reviewer that cannot run

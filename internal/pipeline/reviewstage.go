@@ -60,8 +60,10 @@ type reviewResult struct {
 	cost          float64
 	attempts      int
 	err           error
-	// retryReserved is set when a retry reserved the job's estimate.
+	// retryReserved is set when a retry reserved retryEst from the budget
+	// (the job's estimate, or a truncation retry's larger one).
 	retryReserved bool
+	retryEst      float64
 }
 
 // fromCache turns a cached review into a result.
@@ -391,17 +393,23 @@ func applyResult(row *model.Review, res reviewResult) {
 }
 
 // review calls the tier's reviewer for a job (one retry; an unparseable
-// response counts as an error) and logs the calls. The retry first
-// reserves the job's estimate from the budget; when it does not fit the
-// job fails "retry over cost cap".
+// response counts as an error; a response cut off at max_tokens is
+// retried with a doubled cap) and logs the calls. The retry first reserves
+// its estimate from the budget (retryEstimate: the job's estimate, or the
+// grown request's upper bound after a truncation); when it does not fit
+// the job fails "retry over cost cap".
 func (rr *reviewRun) review(ctx context.Context, j reviewJob) reviewResult {
 	units := rr.ro.inputs[j.groupID].Units
 	var res reviewResult
-	allowRetry := func() bool {
+	allowRetry := func(next review.Request) bool {
 		if rr.budget == nil {
 			return true
 		}
-		res.retryReserved = rr.budget.Reserve(j.est)
+		est := retryEstimate(rr.r.tierModel(j.tier), j.req, next, j.est)
+		res.retryReserved = rr.budget.Reserve(est)
+		if res.retryReserved {
+			res.retryEst = est
+		}
 		return res.retryReserved
 	}
 	out := rr.p.callRetry(ctx, rr.r.m.Reviewers.For(j.tier), j.req,
@@ -667,7 +675,7 @@ func (rr *reviewRun) runFollowUp(ctx context.Context, j reviewJob, b route.Budge
 		res = rr.review(ctx, j)
 		b.Settle(j.est, res.cost)
 		if res.retryReserved {
-			b.Settle(j.est, 0) // res.cost already holds the retry's actual cost
+			b.Settle(res.retryEst, 0) // res.cost already holds the retry's actual cost
 		}
 		if res.err == nil {
 			rr.cache(ctx, j, res)

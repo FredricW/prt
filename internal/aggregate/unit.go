@@ -1,6 +1,7 @@
 package aggregate
 
 import (
+	"strconv"
 	"strings"
 
 	"github.com/fredricw/prt/internal/model"
@@ -41,7 +42,12 @@ func unitAgg(u model.ChangeUnit, ul *unitLabels, owned, counted bool, unsureBelo
 	if !a.Noise && counted {
 		a.EffectiveLines = u.Adds + u.Dels
 	}
-	a.Attention = attention(ul.value(model.QDepth), a.Noise, a.Unsure)
+	a.Attention = attention(ul.value(model.QDepth), a, isTestUnit(u, a.Kind))
+	if a.Attention != model.AttnEyes && interfaceHeadline(u, a, ul) {
+		// The Overview headlines this unit as an interface change, so it
+		// must not be skimmed, whatever its depth answer.
+		a.Attention = model.AttnEyes
+	}
 	a.Minutes = minutes(a.Attention, a.EffectiveLines)
 	a.Untested = a.RiskLevel >= 3 && !a.CoveredUnknown && a.CoveredP < 0.5
 	a.Undocumented = ul.value(model.QDescBullet) == model.BulletNone && a.BehaviourP >= 0.5
@@ -103,17 +109,116 @@ func riskTags(ul *unitLabels) []string {
 	return out
 }
 
-// confidence returns the lowest label confidence of a unit and whether the
-// unit is unsure. A unit without any label is unsure with confidence 0.
+// unsureQuestions are the unit-scope labels that drive a unit's attention
+// and risk: depth (attention, minutes), kind (noise, test units),
+// behaviour and risk (attention when depth is unknown; risk max, test gap,
+// hot spots), breaking (headlines, urgency) and covered (test gap, hot
+// spots). Unsure, MinConfidence and the unsure counts read only these
+// (M5.2, the user's narrower "unsure"): a unit with ~25 labels nearly
+// always has some risk-tag sub-boolean or line label below 0.60, which made
+// every fixture unit unsure and never skip.
+var unsureQuestions = [...]string{model.QDepth, model.QKind, model.QBehaviour, model.QBreaking, model.QRisk, model.QCovered}
+
+// confidence returns the lowest decision confidence (decisionConfidence)
+// over the unit's unsureQuestions labels (an unknown answer counts as 0)
+// and whether the unit is unsure (lowest below unsureBelow). A unit with
+// none of these labels is unsure with confidence 0, like a unit without
+// labels.
 func confidence(ul *unitLabels, unsureBelow float64) (float64, bool) {
-	if ul == nil || len(ul.all) == 0 {
+	lowest, found := 1.0, false
+	for _, q := range unsureQuestions {
+		if l, ok := ul.get(q); ok {
+			lowest, found = min(lowest, decisionConfidence(l)), true
+		}
+	}
+	if !found {
 		return 0, true
 	}
-	lowest := ul.all[0].Confidence
-	for _, l := range ul.all[1:] {
-		lowest = min(lowest, l.Confidence)
-	}
 	return lowest, lowest < unsureBelow
+}
+
+// riskThresholds are the risk rungs aggregate and routing decide on: risky
+// (≥ 3: test gap, risk band MED) and high (≥ 4: risk_any, band HIGH, the
+// built-in deep rule).
+var riskThresholds = [...]int{3, 4}
+
+// decisionConfidence is how sure a label is about the decision prt takes
+// from it, which for a multi-option label is not the top option's
+// probability:
+//
+//   - depth decides attention, so it is the probability mass of the chosen
+//     answer's attention bucket (read + run locally for eyes; skim; skip):
+//     {read .49, run locally .11, skim .38} is .60 sure the unit needs eyes;
+//   - risk decides at rungs 3 and 4, so it is the smaller of the
+//     probabilities that the risk is on the chosen rung's side of each:
+//     {2 .36, 3 .55, 4 .08} is .63 sure it is risky and .92 sure it is not
+//     high;
+//   - every other label (booleans, kind) keeps its Confidence.
+//
+// Labels without Probs (overrides, hand-made labels) keep their Confidence.
+func decisionConfidence(l model.Label) float64 {
+	if model.IsUnknown(l) || len(l.Probs) == 0 {
+		return l.Confidence
+	}
+	switch l.Question {
+	case model.QDepth:
+		return depthBucketMass(l)
+	case model.QRisk:
+		return riskSideConfidence(l)
+	}
+	return l.Confidence
+}
+
+// depthBucketMass is the probability of the attention bucket of the depth
+// answer.
+func depthBucketMass(l model.Label) float64 {
+	bucket := func(v string) model.Attention {
+		switch v {
+		case model.DepthSkim:
+			return model.AttnSkim
+		case model.DepthSkip:
+			return model.AttnSkip
+		}
+		return model.AttnEyes
+	}
+	want := bucket(l.Value)
+	mass := 0.0
+	for v, p := range l.Probs {
+		if bucket(v) == want {
+			mass += p
+		}
+	}
+	return clamp01(mass)
+}
+
+// riskSideConfidence is the smallest, over riskThresholds, probability
+// that the risk is on the same side of the threshold as the chosen rung.
+func riskSideConfidence(l model.Label) float64 {
+	rung := model.ScoreLevel(l)
+	conf := 1.0
+	for _, t := range riskThresholds {
+		above := 0.0
+		for r, p := range l.Probs {
+			if n, err := strconv.Atoi(r); err == nil && n >= t {
+				above += p
+			}
+		}
+		side := above
+		if rung < t {
+			side = 1 - above
+		}
+		conf = min(conf, clamp01(side))
+	}
+	return conf
+}
+
+// kindTest is the kind label value of tests.
+const kindTest = "test"
+
+// isTestUnit reports whether a unit is test code: a test file by path
+// (isTestPath) or a unit Jev labels kind test.
+func isTestUnit(u model.ChangeUnit, kind string) bool {
+	return kind == kindTest || isTestPath(u.Path)
 }
 
 // noiseReason returns why a unit is noise, or "" when it is signal.
@@ -151,24 +256,51 @@ func allAddedFmt(u model.ChangeUnit, ul *unitLabels) bool {
 	return true
 }
 
-// attention maps the depth label to an attention level. Unknown or missing
-// depth needs eyes; noise is skipped; an unsure unit is never skipped.
-func attention(depth string, noise, unsure bool) model.Attention {
+// attention maps the depth label to an attention level (spec: read and
+// run locally are eyes, skim is skim, skip is skip), with these M5.2 rules:
+//
+//   - noise (moved, formatting, generated, fmt-only lines) is skip;
+//   - an unknown or missing depth needs eyes only when the unit is risky
+//     (risk rung ≥ 3) or changes behaviour, else skim; with neither answer
+//     known (Jev unreachable) it needs eyes;
+//   - test units (test files, or kind test) cap at skim: tests are the
+//     evidence for the code they cover, and gaps in them surface as hot
+//     spots and the test gap on that code;
+//   - an unsure unit is never skip (spec).
+func attention(depth string, a model.UnitAgg, test bool) model.Attention {
 	var at model.Attention
 	switch {
-	case noise:
+	case a.Noise:
 		at = model.AttnSkip
 	case depth == model.DepthSkim:
 		at = model.AttnSkim
 	case depth == model.DepthSkip:
 		at = model.AttnSkip
-	default: // read, run locally, unknown, missing
+	case depth == model.DepthRead || depth == model.DepthRun:
 		at = model.AttnEyes
+	default: // unknown or missing
+		at = unknownDepthAttention(a)
 	}
-	if unsure && at == model.AttnSkip {
+	if test && at == model.AttnEyes {
+		at = model.AttnSkim
+	}
+	if a.Unsure && at == model.AttnSkip {
 		at = model.AttnSkim
 	}
 	return at
+}
+
+// unknownDepthAttention is the attention of a unit whose depth is unknown:
+// eyes when it is risky (risk rung ≥ 3) or changes behaviour, eyes when
+// neither is known either, else skim.
+func unknownDepthAttention(a model.UnitAgg) model.Attention {
+	switch {
+	case a.RiskLevel >= 3 || a.Behaviour:
+		return model.AttnEyes
+	case a.RiskLevel == 0 && a.BehaviourUnknown:
+		return model.AttnEyes
+	}
+	return model.AttnSkim
 }
 
 // minutes is the reading time of a unit: eyes 0.5/line with a 1-minute

@@ -1,0 +1,21 @@
+{
+  "key": "98e3759ba378143bed46af85",
+  "model": "anthropic:claude-haiku-5-5",
+  "request": {
+    "task": "tldr",
+    "tier": "fast",
+    "system": "You write the one-sentence TL;DR shown at the top of a pull request overview, for a reviewer deciding how to spend their time. Use only the facts given; they were computed from machine labels and git. Never invent numbers, names or claims that are not in the facts. At most 160 characters. One plain sentence: no markdown, no quotes, no lead-in such as \"TL;DR\".",
+    "prompt": "Facts about this pull request:\n- size: +334 -64 lines, about 382 lines that matter, about 127 min to review\n- noise: 16 changed lines are formatting, generated or moved code\n- units: 48 total, 26 need careful reading\n- composition: feature 71%, test 22%, refactor 7%\n- highest unit risk: 4 of 5\n- risk tags: async (43 units), auth (30 units), data_write (1 unit), date_tz (6 units), error_path (44 units), io_in_loop (1 unit), pii (48 units)\n- test gap: 9 of 41 risky units untested\n- headlines:\n  - breaking at web/src/api/client.ts:66: getUser (p 0.97)\n  - breaking at web/src/api/index.ts:2: web/src/api/index.ts (p 0.90)\n  - breaking at web/src/api/client.ts:32: web/src/api/client.ts (p 0.76)\n  - breaking at web/src/api/client.ts:34: authHeader (p 0.75)\n  - breaking at web/src/api/client.ts:22: web/src/api/client.ts (p 0.66)\n  - api shape at server/internal/users/users.go:104: Routes (p 0.92)\n- check before approving:\n  - web/src/components/UserCard.tsx:30 The new `Avatar` rendering is\n  - web/src/api/errors.ts:14 auth, crash, untested\n  - web/src/components/Avatar.tsx:11 `broken` is never reset when\n- description: 5 of 6 bullets implemented (fidelity 0.83)\n  - implemented: `getUser` takes a required `GetUserOptions` argument (`include`, `fresh`, `signal`); all callers updated\n  - implemented: Move `ApiError`, auth headers and error parsing into `api/errors.ts` and add `isNotFound`\n  - implemented: Add `useProfileCache`: stale-while-revalidate cache with a 5 minute TTL and request de-duplication\n  - implemented: Add `Avatar` and `ProfileHeader` components; `ProfilePage` uses the cache and shows save errors\n  - not found: Invalidate the profile cache on logout\n  - implemented: server: return `avatarUrl` when `include=avatar` is requested\n\nWrite the TL;DR sentence.\n",
+    "maxTokens": 2048
+  },
+  "result": {
+    "text": "Adds a profile cache, Avatar components and a required getUser options argument, but 9 of 41 risky units lack tests and logout cache invalidation is missing.",
+    "confidence": 0,
+    "model": "anthropic:claude-haiku-5-5",
+    "inputTokens": 902,
+    "outputTokens": 766,
+    "cost": 0.0004732,
+    "ms": 3836,
+    "stopReason": "end_turn"
+  }
+}

@@ -14,6 +14,7 @@ import (
 	prtconfig "github.com/fredricw/prt/internal/config"
 	"github.com/fredricw/prt/internal/gitx"
 	"github.com/fredricw/prt/internal/jev"
+	"github.com/fredricw/prt/internal/model"
 	"github.com/fredricw/prt/internal/pipeline/pipelinetest"
 	"github.com/fredricw/prt/internal/review"
 )
@@ -98,8 +99,8 @@ func reviewDryRun(ctx context.Context, cfg config, repo, prs string, jc jev.Clie
 	}
 	fmt.Fprintf(stdout, "review dry run (no LLM calls): %d requests (fast %d, deep %d; %s), ~%d input tokens estimated, upper-bound cost $%.4f\n",
 		sum.requests, counters[0].snapshot().requests, counters[1].snapshot().requests, sum.taskSummary(), sum.tokens, sum.cost)
-	fmt.Fprintf(stdout, "review recordings: %d already recorded in %s, %d to record (upper bound $%.4f); anthropic spent $%.4f of the $%.2f review cap\n",
-		sum.recorded, cfg.reviewOut, sum.requests-sum.recorded, sum.toRecordCost, prior, cfg.reviewCap)
+	fmt.Fprintf(stdout, "review recordings: %d already recorded in %s, %d to record (upper bound $%.4f; at most $%.4f more if every new call were cut off at max_tokens and retried with the cap doubled); anthropic spent $%.4f of the $%.2f review cap\n",
+		sum.recorded, cfg.reviewOut, sum.requests-sum.recorded, sum.toRecordCost, sum.retryCost, prior, cfg.reviewCap)
 	fmt.Fprintf(stdout, "fake reviews answer confidence %.2f, so escalations do not show here; a live run may add deep calls within the cap\n", dryRunConfidence)
 	branchFlag := ""
 	if cfg.branches {
@@ -149,6 +150,9 @@ func reviewLive(ctx context.Context, cfg config, repo, prs string, jc jev.Client
 	for _, w := range st.underEstimates {
 		fmt.Fprintln(stdout, "WARNING: input-token estimate below actual usage:", w)
 	}
+	for _, tr := range st.truncated {
+		fmt.Fprintln(stdout, "TRUNCATED (recorded; the pipeline retries it with the cap doubled):", tr)
+	}
 	for _, f := range st.failures {
 		fmt.Fprintln(stdout, "FAILED:", f)
 	}
@@ -159,11 +163,40 @@ func reviewLive(ctx context.Context, cfg config, repo, prs string, jc jev.Client
 	if refused > 0 {
 		runErr = errors.Join(runErr, fmt.Errorf("%w: %d review requests not sent", ErrReviewBudget, refused))
 	}
+	// A truncated call is not a failure while its retry succeeds; a row
+	// that still failed (both attempts cut off, or a failed retry) is.
+	if rows := failedRows(outs, branches); len(rows) > 0 {
+		runErr = errors.Join(runErr, fmt.Errorf("recordjev: %d review rows failed:\n%s", len(rows), strings.Join(rows, "\n")))
+	}
 	if runErr == nil {
 		warnReviewExpectations(outs, stdout)
 		warnBranchExpectations(branches, stdout)
 	}
 	return runErr
+}
+
+// failedRows lists the routing rows that ended failed, per item, with
+// their error.
+func failedRows(outs map[int]pipelinetest.Outcome, branches map[string]pipelinetest.Outcome) []string {
+	var out []string
+	add := func(id string, o pipelinetest.Outcome) {
+		for _, r := range o.Reviews {
+			if r.Status == model.ReviewFailed {
+				out = append(out, fmt.Sprintf("%s group %q (%s): %s", id, r.GroupName, r.Tier, r.Err))
+			}
+		}
+	}
+	for _, n := range pipelinetest.PRNumbers {
+		if o, ok := outs[n]; ok {
+			add(fmt.Sprintf("#%d", n), o)
+		}
+	}
+	for _, ref := range pipelinetest.BranchRefs {
+		if o, ok := branches[ref]; ok {
+			add(ref, o)
+		}
+	}
+	return out
 }
 
 // liveReviewer builds the live adapter for spec with the key from the
@@ -268,8 +301,11 @@ type reviewGuard struct {
 type guardStats struct {
 	calls          int // calls sent to next that were billed or succeeded
 	reused         int // requests served from recordings
-	written        int // successful calls (the Recorder wrote them)
+	written        int // calls the Recorder wrote (successful or truncated)
 	underEstimates []string
+	// truncated are the calls cut off at max_tokens (recorded as
+	// Truncated; the pipeline retries them with a doubled cap).
+	truncated []string
 	// failures are the first maxFailuresShown failed live calls (the
 	// pipeline marks such rows failed and carries on, so without this a
 	// run where every call is rejected would exit 0); moreFailures counts
@@ -287,6 +323,7 @@ func (s *guardStats) add(o guardStats) {
 	s.reused += o.reused
 	s.written += o.written
 	s.underEstimates = append(s.underEstimates, o.underEstimates...)
+	s.truncated = append(s.truncated, o.truncated...)
 	s.failures = append(s.failures, o.failures...)
 	s.moreFailures += o.moreFailures
 }
@@ -329,14 +366,19 @@ func (g *reviewGuard) Review(ctx context.Context, req review.Request) (review.Re
 func (g *reviewGuard) note(req review.Request, key string, res review.Result, err error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	if err == nil || res.Cost > 0 {
+	truncated := review.IsTruncated(res, err)
+	if err == nil || res.Cost > 0 || truncated { // a cut-off response is billed
 		g.st.calls++
 	}
-	if err == nil {
+	switch {
+	case err == nil:
 		g.st.written++
-	} else if len(g.st.failures) < maxFailuresShown {
+	case truncated:
+		g.st.written++
+		g.st.truncated = append(g.st.truncated, fmt.Sprintf("%s %s (max_tokens %d, %d output tokens)", req.Task, key, req.MaxTokens, res.OutputTokens))
+	case len(g.st.failures) < maxFailuresShown:
 		g.st.failures = append(g.st.failures, fmt.Sprintf("%s %s: %v", req.Task, key, err))
-	} else {
+	default:
 		g.st.moreFailures++
 	}
 	if est := review.EstimateInputTokens(req); res.InputTokens > est {
@@ -350,6 +392,7 @@ func (g *reviewGuard) stats() guardStats {
 	defer g.mu.Unlock()
 	s := g.st
 	s.underEstimates = append([]string(nil), g.st.underEstimates...)
+	s.truncated = append([]string(nil), g.st.truncated...)
 	s.failures = append([]string(nil), g.st.failures...)
 	return s
 }
@@ -358,7 +401,11 @@ func (g *reviewGuard) stats() guardStats {
 type reviewCount struct {
 	requests, recorded, tokens int
 	cost, toRecordCost         float64
-	byTask                     map[review.Task]int
+	// retryCost bounds the truncation retries of the requests to record:
+	// review.EstimateCost of each one grown (review.Grow), as if every new
+	// call were cut off at max_tokens.
+	retryCost float64
+	byTask    map[review.Task]int
 }
 
 // add folds o into c.
@@ -368,6 +415,7 @@ func (c *reviewCount) add(o reviewCount) {
 	c.tokens += o.tokens
 	c.cost += o.cost
 	c.toRecordCost += o.toRecordCost
+	c.retryCost += o.retryCost
 	for t, n := range o.byTask {
 		if c.byTask == nil {
 			c.byTask = map[review.Task]int{}
@@ -428,6 +476,9 @@ func (c *reviewCounter) Review(ctx context.Context, req review.Request) (review.
 		c.c.recorded++
 	} else {
 		c.c.toRecordCost += est
+		if grown, ok := review.Grow(req); ok {
+			c.c.retryCost += review.EstimateCost(c.Model(), grown)
+		}
 	}
 	c.mu.Unlock()
 	return c.next.Review(ctx, req)

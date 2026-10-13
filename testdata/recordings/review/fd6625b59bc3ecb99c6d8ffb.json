@@ -1,0 +1,21 @@
+{
+  "key": "fd6625b59bc3ecb99c6d8ffb",
+  "model": "anthropic:claude-haiku-5-5",
+  "request": {
+    "task": "tldr",
+    "tier": "fast",
+    "system": "You write the one-sentence TL;DR shown at the top of a pull request overview, for a reviewer deciding how to spend their time. Use only the facts given; they were computed from machine labels and git. Never invent numbers, names or claims that are not in the facts. At most 160 characters. One plain sentence: no markdown, no quotes, no lead-in such as \"TL;DR\".",
+    "prompt": "Facts about this pull request:\n- size: +30 -0 lines, about 30 lines that matter, about 9 min to review\n- units: 5 total, 1 need careful reading\n- composition: feature 100%\n- highest unit risk: 2 of 5\n- risk tags: data_write (1 unit)\n- headlines: no contract changes\n- check before approving:\n  - web/src/App.tsx:28 crash\n  - web/src/components/ThemeToggle.tsx:5 localStorage.getItem is called unguarded during\n  - web/src/styles/theme.css:11 cosmetic\n- undocumented changes: 3 units not described\n\nWrite the TL;DR sentence.\n",
+    "maxTokens": 2048
+  },
+  "result": {
+    "text": "Feature PR adding +30 lines across 5 units; check ThemeToggle's unguarded localStorage.getItem and an App.tsx crash risk, as 3 units lack descriptions.",
+    "confidence": 0,
+    "model": "anthropic:claude-haiku-5-5",
+    "inputTokens": 350,
+    "outputTokens": 487,
+    "cost": 0.0002785,
+    "ms": 2629,
+    "stopReason": "end_turn"
+  }
+}

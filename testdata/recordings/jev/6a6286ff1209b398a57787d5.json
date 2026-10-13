@@ -1,0 +1,1312 @@
+{
+  "key": "6a6286ff1209b398a57787d5",
+  "request": {
+    "model": "typesafe-ai/jev",
+    "state": {
+      "unit": {
+        "path": "server/internal/users/users_test.go",
+        "symbol": "TestPreferencesDefaults",
+        "signature": "func TestPreferencesDefaults(t *testing.T)",
+        "change": "added",
+        "diff": " \t\t})\n \t}\n }\n+\n+func TestPreferencesDefaults(t *testing.T) {\n+\tsrv := httptest.NewServer(Routes(NewMemoryStore(), NewMemoryPreferences(), true))\n+\tdefer srv.Close()\n+\n+\tres, err := http.Get(srv.URL + \"/u1/preferences\")\n+\tif err != nil {\n+\t\tt.Fatal(err)\n+\t}\n+\tdefer res.Body.Close()\n+\tvar p Preferences\n+\tif err := json.NewDecoder(res.Body).Decode(\u0026p); err != nil {\n+\t\tt.Fatal(err)\n+\t}\n+\tif p.UserID != \"u1\" || p.Theme != \"system\" || p.EmailDigest != \"weekly\" {\n+\t\tt.Fatalf(\"unexpected preferences %+v\", p)\n+\t}\n+}"
+      },
+      "lines": [
+        {
+          "slot": "l01",
+          "line": 49,
+          "text": ""
+        },
+        {
+          "slot": "l02",
+          "line": 50,
+          "text": "func TestPreferencesDefaults(t *testing.T) {"
+        },
+        {
+          "slot": "l03",
+          "line": 51,
+          "text": "\tsrv := httptest.NewServer(Routes(NewMemoryStore(), NewMemoryPreferences(), true))"
+        },
+        {
+          "slot": "l04",
+          "line": 52,
+          "text": "\tdefer srv.Close()"
+        },
+        {
+          "slot": "l05",
+          "line": 53,
+          "text": ""
+        },
+        {
+          "slot": "l06",
+          "line": 54,
+          "text": "\tres, err := http.Get(srv.URL + \"/u1/preferences\")"
+        },
+        {
+          "slot": "l07",
+          "line": 55,
+          "text": "\tif err != nil {"
+        },
+        {
+          "slot": "l08",
+          "line": 56,
+          "text": "\t\tt.Fatal(err)"
+        },
+        {
+          "slot": "l09",
+          "line": 57,
+          "text": "\t}"
+        },
+        {
+          "slot": "l10",
+          "line": 58,
+          "text": "\tdefer res.Body.Close()"
+        },
+        {
+          "slot": "l11",
+          "line": 59,
+          "text": "\tvar p Preferences"
+        },
+        {
+          "slot": "l12",
+          "line": 60,
+          "text": "\tif err := json.NewDecoder(res.Body).Decode(\u0026p); err != nil {"
+        },
+        {
+          "slot": "l13",
+          "line": 61,
+          "text": "\t\tt.Fatal(err)"
+        },
+        {
+          "slot": "l14",
+          "line": 62,
+          "text": "\t}"
+        },
+        {
+          "slot": "l15",
+          "line": 63,
+          "text": "\tif p.UserID != \"u1\" || p.Theme != \"system\" || p.EmailDigest != \"weekly\" {"
+        },
+        {
+          "slot": "l16",
+          "line": 64,
+          "text": "\t\tt.Fatalf(\"unexpected preferences %+v\", p)"
+        },
+        {
+          "slot": "l17",
+          "line": 65,
+          "text": "\t}"
+        },
+        {
+          "slot": "l18",
+          "line": 66,
+          "text": "}"
+        }
+      ]
+    },
+    "questions": {
+      "fmt__l01": {
+        "type": "boolean",
+        "instructions": "Is this added line a formatting or whitespace-only change (indentation, line wrapping, quotes, trailing commas) with no effect on what the code does?\nAnswer only about the added line in state.lines with slot \"l01\" (new-side line 49)."
+      },
+      "fmt__l02": {
+        "type": "boolean",
+        "instructions": "Is this added line a formatting or whitespace-only change (indentation, line wrapping, quotes, trailing commas) with no effect on what the code does?\nAnswer only about the added line in state.lines with slot \"l02\" (new-side line 50)."
+      },
+      "fmt__l03": {
+        "type": "boolean",
+        "instructions": "Is this added line a formatting or whitespace-only change (indentation, line wrapping, quotes, trailing commas) with no effect on what the code does?\nAnswer only about the added line in state.lines with slot \"l03\" (new-side line 51)."
+      },
+      "fmt__l04": {
+        "type": "boolean",
+        "instructions": "Is this added line a formatting or whitespace-only change (indentation, line wrapping, quotes, trailing commas) with no effect on what the code does?\nAnswer only about the added line in state.lines with slot \"l04\" (new-side line 52)."
+      },
+      "fmt__l05": {
+        "type": "boolean",
+        "instructions": "Is this added line a formatting or whitespace-only change (indentation, line wrapping, quotes, trailing commas) with no effect on what the code does?\nAnswer only about the added line in state.lines with slot \"l05\" (new-side line 53)."
+      },
+      "fmt__l06": {
+        "type": "boolean",
+        "instructions": "Is this added line a formatting or whitespace-only change (indentation, line wrapping, quotes, trailing commas) with no effect on what the code does?\nAnswer only about the added line in state.lines with slot \"l06\" (new-side line 54)."
+      },
+      "fmt__l07": {
+        "type": "boolean",
+        "instructions": "Is this added line a formatting or whitespace-only change (indentation, line wrapping, quotes, trailing commas) with no effect on what the code does?\nAnswer only about the added line in state.lines with slot \"l07\" (new-side line 55)."
+      },
+      "fmt__l08": {
+        "type": "boolean",
+        "instructions": "Is this added line a formatting or whitespace-only change (indentation, line wrapping, quotes, trailing commas) with no effect on what the code does?\nAnswer only about the added line in state.lines with slot \"l08\" (new-side line 56)."
+      },
+      "fmt__l09": {
+        "type": "boolean",
+        "instructions": "Is this added line a formatting or whitespace-only change (indentation, line wrapping, quotes, trailing commas) with no effect on what the code does?\nAnswer only about the added line in state.lines with slot \"l09\" (new-side line 57)."
+      },
+      "fmt__l10": {
+        "type": "boolean",
+        "instructions": "Is this added line a formatting or whitespace-only change (indentation, line wrapping, quotes, trailing commas) with no effect on what the code does?\nAnswer only about the added line in state.lines with slot \"l10\" (new-side line 58)."
+      },
+      "fmt__l11": {
+        "type": "boolean",
+        "instructions": "Is this added line a formatting or whitespace-only change (indentation, line wrapping, quotes, trailing commas) with no effect on what the code does?\nAnswer only about the added line in state.lines with slot \"l11\" (new-side line 59)."
+      },
+      "fmt__l12": {
+        "type": "boolean",
+        "instructions": "Is this added line a formatting or whitespace-only change (indentation, line wrapping, quotes, trailing commas) with no effect on what the code does?\nAnswer only about the added line in state.lines with slot \"l12\" (new-side line 60)."
+      },
+      "fmt__l13": {
+        "type": "boolean",
+        "instructions": "Is this added line a formatting or whitespace-only change (indentation, line wrapping, quotes, trailing commas) with no effect on what the code does?\nAnswer only about the added line in state.lines with slot \"l13\" (new-side line 61)."
+      },
+      "fmt__l14": {
+        "type": "boolean",
+        "instructions": "Is this added line a formatting or whitespace-only change (indentation, line wrapping, quotes, trailing commas) with no effect on what the code does?\nAnswer only about the added line in state.lines with slot \"l14\" (new-side line 62)."
+      },
+      "fmt__l15": {
+        "type": "boolean",
+        "instructions": "Is this added line a formatting or whitespace-only change (indentation, line wrapping, quotes, trailing commas) with no effect on what the code does?\nAnswer only about the added line in state.lines with slot \"l15\" (new-side line 63)."
+      },
+      "fmt__l16": {
+        "type": "boolean",
+        "instructions": "Is this added line a formatting or whitespace-only change (indentation, line wrapping, quotes, trailing commas) with no effect on what the code does?\nAnswer only about the added line in state.lines with slot \"l16\" (new-side line 64)."
+      },
+      "fmt__l17": {
+        "type": "boolean",
+        "instructions": "Is this added line a formatting or whitespace-only change (indentation, line wrapping, quotes, trailing commas) with no effect on what the code does?\nAnswer only about the added line in state.lines with slot \"l17\" (new-side line 65)."
+      },
+      "fmt__l18": {
+        "type": "boolean",
+        "instructions": "Is this added line a formatting or whitespace-only change (indentation, line wrapping, quotes, trailing commas) with no effect on what the code does?\nAnswer only about the added line in state.lines with slot \"l18\" (new-side line 66)."
+      },
+      "leftover__l01": {
+        "type": "boolean",
+        "instructions": "Is this added line a leftover that should not be merged: a debug print or log, commented-out code, or a TODO/FIXME/XXX note?\nAnswer only about the added line in state.lines with slot \"l01\" (new-side line 49)."
+      },
+      "leftover__l02": {
+        "type": "boolean",
+        "instructions": "Is this added line a leftover that should not be merged: a debug print or log, commented-out code, or a TODO/FIXME/XXX note?\nAnswer only about the added line in state.lines with slot \"l02\" (new-side line 50)."
+      },
+      "leftover__l03": {
+        "type": "boolean",
+        "instructions": "Is this added line a leftover that should not be merged: a debug print or log, commented-out code, or a TODO/FIXME/XXX note?\nAnswer only about the added line in state.lines with slot \"l03\" (new-side line 51)."
+      },
+      "leftover__l04": {
+        "type": "boolean",
+        "instructions": "Is this added line a leftover that should not be merged: a debug print or log, commented-out code, or a TODO/FIXME/XXX note?\nAnswer only about the added line in state.lines with slot \"l04\" (new-side line 52)."
+      },
+      "leftover__l05": {
+        "type": "boolean",
+        "instructions": "Is this added line a leftover that should not be merged: a debug print or log, commented-out code, or a TODO/FIXME/XXX note?\nAnswer only about the added line in state.lines with slot \"l05\" (new-side line 53)."
+      },
+      "leftover__l06": {
+        "type": "boolean",
+        "instructions": "Is this added line a leftover that should not be merged: a debug print or log, commented-out code, or a TODO/FIXME/XXX note?\nAnswer only about the added line in state.lines with slot \"l06\" (new-side line 54)."
+      },
+      "leftover__l07": {
+        "type": "boolean",
+        "instructions": "Is this added line a leftover that should not be merged: a debug print or log, commented-out code, or a TODO/FIXME/XXX note?\nAnswer only about the added line in state.lines with slot \"l07\" (new-side line 55)."
+      },
+      "leftover__l08": {
+        "type": "boolean",
+        "instructions": "Is this added line a leftover that should not be merged: a debug print or log, commented-out code, or a TODO/FIXME/XXX note?\nAnswer only about the added line in state.lines with slot \"l08\" (new-side line 56)."
+      },
+      "leftover__l09": {
+        "type": "boolean",
+        "instructions": "Is this added line a leftover that should not be merged: a debug print or log, commented-out code, or a TODO/FIXME/XXX note?\nAnswer only about the added line in state.lines with slot \"l09\" (new-side line 57)."
+      },
+      "leftover__l10": {
+        "type": "boolean",
+        "instructions": "Is this added line a leftover that should not be merged: a debug print or log, commented-out code, or a TODO/FIXME/XXX note?\nAnswer only about the added line in state.lines with slot \"l10\" (new-side line 58)."
+      },
+      "leftover__l11": {
+        "type": "boolean",
+        "instructions": "Is this added line a leftover that should not be merged: a debug print or log, commented-out code, or a TODO/FIXME/XXX note?\nAnswer only about the added line in state.lines with slot \"l11\" (new-side line 59)."
+      },
+      "leftover__l12": {
+        "type": "boolean",
+        "instructions": "Is this added line a leftover that should not be merged: a debug print or log, commented-out code, or a TODO/FIXME/XXX note?\nAnswer only about the added line in state.lines with slot \"l12\" (new-side line 60)."
+      },
+      "leftover__l13": {
+        "type": "boolean",
+        "instructions": "Is this added line a leftover that should not be merged: a debug print or log, commented-out code, or a TODO/FIXME/XXX note?\nAnswer only about the added line in state.lines with slot \"l13\" (new-side line 61)."
+      },
+      "leftover__l14": {
+        "type": "boolean",
+        "instructions": "Is this added line a leftover that should not be merged: a debug print or log, commented-out code, or a TODO/FIXME/XXX note?\nAnswer only about the added line in state.lines with slot \"l14\" (new-side line 62)."
+      },
+      "leftover__l15": {
+        "type": "boolean",
+        "instructions": "Is this added line a leftover that should not be merged: a debug print or log, commented-out code, or a TODO/FIXME/XXX note?\nAnswer only about the added line in state.lines with slot \"l15\" (new-side line 63)."
+      },
+      "leftover__l16": {
+        "type": "boolean",
+        "instructions": "Is this added line a leftover that should not be merged: a debug print or log, commented-out code, or a TODO/FIXME/XXX note?\nAnswer only about the added line in state.lines with slot \"l16\" (new-side line 64)."
+      },
+      "leftover__l17": {
+        "type": "boolean",
+        "instructions": "Is this added line a leftover that should not be merged: a debug print or log, commented-out code, or a TODO/FIXME/XXX note?\nAnswer only about the added line in state.lines with slot \"l17\" (new-side line 65)."
+      },
+      "leftover__l18": {
+        "type": "boolean",
+        "instructions": "Is this added line a leftover that should not be merged: a debug print or log, commented-out code, or a TODO/FIXME/XXX note?\nAnswer only about the added line in state.lines with slot \"l18\" (new-side line 66)."
+      },
+      "pii_or_secret__l01": {
+        "type": "boolean",
+        "instructions": "Does this added line newly log, store, send or expose personal data (emails, names, addresses, phone numbers) or a secret (password, token, API key) somewhere it did not reach before, such as logs, error messages, URLs, caches, third parties or other users?\nAnswer only about the added line in state.lines with slot \"l01\" (new-side line 49).",
+        "criteria": {
+          "false": "the line renames, moves or reformats code that already handled the same data, passes an opaque id, or shows users their own data",
+          "true": "the line itself introduces a new place where personal data or a secret is written, sent, kept or shown to someone it does not belong to"
+        }
+      },
+      "pii_or_secret__l02": {
+        "type": "boolean",
+        "instructions": "Does this added line newly log, store, send or expose personal data (emails, names, addresses, phone numbers) or a secret (password, token, API key) somewhere it did not reach before, such as logs, error messages, URLs, caches, third parties or other users?\nAnswer only about the added line in state.lines with slot \"l02\" (new-side line 50).",
+        "criteria": {
+          "false": "the line renames, moves or reformats code that already handled the same data, passes an opaque id, or shows users their own data",
+          "true": "the line itself introduces a new place where personal data or a secret is written, sent, kept or shown to someone it does not belong to"
+        }
+      },
+      "pii_or_secret__l03": {
+        "type": "boolean",
+        "instructions": "Does this added line newly log, store, send or expose personal data (emails, names, addresses, phone numbers) or a secret (password, token, API key) somewhere it did not reach before, such as logs, error messages, URLs, caches, third parties or other users?\nAnswer only about the added line in state.lines with slot \"l03\" (new-side line 51).",
+        "criteria": {
+          "false": "the line renames, moves or reformats code that already handled the same data, passes an opaque id, or shows users their own data",
+          "true": "the line itself introduces a new place where personal data or a secret is written, sent, kept or shown to someone it does not belong to"
+        }
+      },
+      "pii_or_secret__l04": {
+        "type": "boolean",
+        "instructions": "Does this added line newly log, store, send or expose personal data (emails, names, addresses, phone numbers) or a secret (password, token, API key) somewhere it did not reach before, such as logs, error messages, URLs, caches, third parties or other users?\nAnswer only about the added line in state.lines with slot \"l04\" (new-side line 52).",
+        "criteria": {
+          "false": "the line renames, moves or reformats code that already handled the same data, passes an opaque id, or shows users their own data",
+          "true": "the line itself introduces a new place where personal data or a secret is written, sent, kept or shown to someone it does not belong to"
+        }
+      },
+      "pii_or_secret__l05": {
+        "type": "boolean",
+        "instructions": "Does this added line newly log, store, send or expose personal data (emails, names, addresses, phone numbers) or a secret (password, token, API key) somewhere it did not reach before, such as logs, error messages, URLs, caches, third parties or other users?\nAnswer only about the added line in state.lines with slot \"l05\" (new-side line 53).",
+        "criteria": {
+          "false": "the line renames, moves or reformats code that already handled the same data, passes an opaque id, or shows users their own data",
+          "true": "the line itself introduces a new place where personal data or a secret is written, sent, kept or shown to someone it does not belong to"
+        }
+      },
+      "pii_or_secret__l06": {
+        "type": "boolean",
+        "instructions": "Does this added line newly log, store, send or expose personal data (emails, names, addresses, phone numbers) or a secret (password, token, API key) somewhere it did not reach before, such as logs, error messages, URLs, caches, third parties or other users?\nAnswer only about the added line in state.lines with slot \"l06\" (new-side line 54).",
+        "criteria": {
+          "false": "the line renames, moves or reformats code that already handled the same data, passes an opaque id, or shows users their own data",
+          "true": "the line itself introduces a new place where personal data or a secret is written, sent, kept or shown to someone it does not belong to"
+        }
+      },
+      "pii_or_secret__l07": {
+        "type": "boolean",
+        "instructions": "Does this added line newly log, store, send or expose personal data (emails, names, addresses, phone numbers) or a secret (password, token, API key) somewhere it did not reach before, such as logs, error messages, URLs, caches, third parties or other users?\nAnswer only about the added line in state.lines with slot \"l07\" (new-side line 55).",
+        "criteria": {
+          "false": "the line renames, moves or reformats code that already handled the same data, passes an opaque id, or shows users their own data",
+          "true": "the line itself introduces a new place where personal data or a secret is written, sent, kept or shown to someone it does not belong to"
+        }
+      },
+      "pii_or_secret__l08": {
+        "type": "boolean",
+        "instructions": "Does this added line newly log, store, send or expose personal data (emails, names, addresses, phone numbers) or a secret (password, token, API key) somewhere it did not reach before, such as logs, error messages, URLs, caches, third parties or other users?\nAnswer only about the added line in state.lines with slot \"l08\" (new-side line 56).",
+        "criteria": {
+          "false": "the line renames, moves or reformats code that already handled the same data, passes an opaque id, or shows users their own data",
+          "true": "the line itself introduces a new place where personal data or a secret is written, sent, kept or shown to someone it does not belong to"
+        }
+      },
+      "pii_or_secret__l09": {
+        "type": "boolean",
+        "instructions": "Does this added line newly log, store, send or expose personal data (emails, names, addresses, phone numbers) or a secret (password, token, API key) somewhere it did not reach before, such as logs, error messages, URLs, caches, third parties or other users?\nAnswer only about the added line in state.lines with slot \"l09\" (new-side line 57).",
+        "criteria": {
+          "false": "the line renames, moves or reformats code that already handled the same data, passes an opaque id, or shows users their own data",
+          "true": "the line itself introduces a new place where personal data or a secret is written, sent, kept or shown to someone it does not belong to"
+        }
+      },
+      "pii_or_secret__l10": {
+        "type": "boolean",
+        "instructions": "Does this added line newly log, store, send or expose personal data (emails, names, addresses, phone numbers) or a secret (password, token, API key) somewhere it did not reach before, such as logs, error messages, URLs, caches, third parties or other users?\nAnswer only about the added line in state.lines with slot \"l10\" (new-side line 58).",
+        "criteria": {
+          "false": "the line renames, moves or reformats code that already handled the same data, passes an opaque id, or shows users their own data",
+          "true": "the line itself introduces a new place where personal data or a secret is written, sent, kept or shown to someone it does not belong to"
+        }
+      },
+      "pii_or_secret__l11": {
+        "type": "boolean",
+        "instructions": "Does this added line newly log, store, send or expose personal data (emails, names, addresses, phone numbers) or a secret (password, token, API key) somewhere it did not reach before, such as logs, error messages, URLs, caches, third parties or other users?\nAnswer only about the added line in state.lines with slot \"l11\" (new-side line 59).",
+        "criteria": {
+          "false": "the line renames, moves or reformats code that already handled the same data, passes an opaque id, or shows users their own data",
+          "true": "the line itself introduces a new place where personal data or a secret is written, sent, kept or shown to someone it does not belong to"
+        }
+      },
+      "pii_or_secret__l12": {
+        "type": "boolean",
+        "instructions": "Does this added line newly log, store, send or expose personal data (emails, names, addresses, phone numbers) or a secret (password, token, API key) somewhere it did not reach before, such as logs, error messages, URLs, caches, third parties or other users?\nAnswer only about the added line in state.lines with slot \"l12\" (new-side line 60).",
+        "criteria": {
+          "false": "the line renames, moves or reformats code that already handled the same data, passes an opaque id, or shows users their own data",
+          "true": "the line itself introduces a new place where personal data or a secret is written, sent, kept or shown to someone it does not belong to"
+        }
+      },
+      "pii_or_secret__l13": {
+        "type": "boolean",
+        "instructions": "Does this added line newly log, store, send or expose personal data (emails, names, addresses, phone numbers) or a secret (password, token, API key) somewhere it did not reach before, such as logs, error messages, URLs, caches, third parties or other users?\nAnswer only about the added line in state.lines with slot \"l13\" (new-side line 61).",
+        "criteria": {
+          "false": "the line renames, moves or reformats code that already handled the same data, passes an opaque id, or shows users their own data",
+          "true": "the line itself introduces a new place where personal data or a secret is written, sent, kept or shown to someone it does not belong to"
+        }
+      },
+      "pii_or_secret__l14": {
+        "type": "boolean",
+        "instructions": "Does this added line newly log, store, send or expose personal data (emails, names, addresses, phone numbers) or a secret (password, token, API key) somewhere it did not reach before, such as logs, error messages, URLs, caches, third parties or other users?\nAnswer only about the added line in state.lines with slot \"l14\" (new-side line 62).",
+        "criteria": {
+          "false": "the line renames, moves or reformats code that already handled the same data, passes an opaque id, or shows users their own data",
+          "true": "the line itself introduces a new place where personal data or a secret is written, sent, kept or shown to someone it does not belong to"
+        }
+      },
+      "pii_or_secret__l15": {
+        "type": "boolean",
+        "instructions": "Does this added line newly log, store, send or expose personal data (emails, names, addresses, phone numbers) or a secret (password, token, API key) somewhere it did not reach before, such as logs, error messages, URLs, caches, third parties or other users?\nAnswer only about the added line in state.lines with slot \"l15\" (new-side line 63).",
+        "criteria": {
+          "false": "the line renames, moves or reformats code that already handled the same data, passes an opaque id, or shows users their own data",
+          "true": "the line itself introduces a new place where personal data or a secret is written, sent, kept or shown to someone it does not belong to"
+        }
+      },
+      "pii_or_secret__l16": {
+        "type": "boolean",
+        "instructions": "Does this added line newly log, store, send or expose personal data (emails, names, addresses, phone numbers) or a secret (password, token, API key) somewhere it did not reach before, such as logs, error messages, URLs, caches, third parties or other users?\nAnswer only about the added line in state.lines with slot \"l16\" (new-side line 64).",
+        "criteria": {
+          "false": "the line renames, moves or reformats code that already handled the same data, passes an opaque id, or shows users their own data",
+          "true": "the line itself introduces a new place where personal data or a secret is written, sent, kept or shown to someone it does not belong to"
+        }
+      },
+      "pii_or_secret__l17": {
+        "type": "boolean",
+        "instructions": "Does this added line newly log, store, send or expose personal data (emails, names, addresses, phone numbers) or a secret (password, token, API key) somewhere it did not reach before, such as logs, error messages, URLs, caches, third parties or other users?\nAnswer only about the added line in state.lines with slot \"l17\" (new-side line 65).",
+        "criteria": {
+          "false": "the line renames, moves or reformats code that already handled the same data, passes an opaque id, or shows users their own data",
+          "true": "the line itself introduces a new place where personal data or a secret is written, sent, kept or shown to someone it does not belong to"
+        }
+      },
+      "pii_or_secret__l18": {
+        "type": "boolean",
+        "instructions": "Does this added line newly log, store, send or expose personal data (emails, names, addresses, phone numbers) or a secret (password, token, API key) somewhere it did not reach before, such as logs, error messages, URLs, caches, third parties or other users?\nAnswer only about the added line in state.lines with slot \"l18\" (new-side line 66).",
+        "criteria": {
+          "false": "the line renames, moves or reformats code that already handled the same data, passes an opaque id, or shows users their own data",
+          "true": "the line itself introduces a new place where personal data or a secret is written, sent, kept or shown to someone it does not belong to"
+        }
+      },
+      "suspicious__l01": {
+        "type": "score",
+        "instructions": "How likely is this added line to contain a bug?\nAnswer only about the added line in state.lines with slot \"l01\" (new-side line 49).",
+        "criteria": [
+          "1: almost certainly correct",
+          "2: probably correct",
+          "3: worth a second look",
+          "4: likely a bug",
+          "5: almost certainly a bug"
+        ]
+      },
+      "suspicious__l02": {
+        "type": "score",
+        "instructions": "How likely is this added line to contain a bug?\nAnswer only about the added line in state.lines with slot \"l02\" (new-side line 50).",
+        "criteria": [
+          "1: almost certainly correct",
+          "2: probably correct",
+          "3: worth a second look",
+          "4: likely a bug",
+          "5: almost certainly a bug"
+        ]
+      },
+      "suspicious__l03": {
+        "type": "score",
+        "instructions": "How likely is this added line to contain a bug?\nAnswer only about the added line in state.lines with slot \"l03\" (new-side line 51).",
+        "criteria": [
+          "1: almost certainly correct",
+          "2: probably correct",
+          "3: worth a second look",
+          "4: likely a bug",
+          "5: almost certainly a bug"
+        ]
+      },
+      "suspicious__l04": {
+        "type": "score",
+        "instructions": "How likely is this added line to contain a bug?\nAnswer only about the added line in state.lines with slot \"l04\" (new-side line 52).",
+        "criteria": [
+          "1: almost certainly correct",
+          "2: probably correct",
+          "3: worth a second look",
+          "4: likely a bug",
+          "5: almost certainly a bug"
+        ]
+      },
+      "suspicious__l05": {
+        "type": "score",
+        "instructions": "How likely is this added line to contain a bug?\nAnswer only about the added line in state.lines with slot \"l05\" (new-side line 53).",
+        "criteria": [
+          "1: almost certainly correct",
+          "2: probably correct",
+          "3: worth a second look",
+          "4: likely a bug",
+          "5: almost certainly a bug"
+        ]
+      },
+      "suspicious__l06": {
+        "type": "score",
+        "instructions": "How likely is this added line to contain a bug?\nAnswer only about the added line in state.lines with slot \"l06\" (new-side line 54).",
+        "criteria": [
+          "1: almost certainly correct",
+          "2: probably correct",
+          "3: worth a second look",
+          "4: likely a bug",
+          "5: almost certainly a bug"
+        ]
+      },
+      "suspicious__l07": {
+        "type": "score",
+        "instructions": "How likely is this added line to contain a bug?\nAnswer only about the added line in state.lines with slot \"l07\" (new-side line 55).",
+        "criteria": [
+          "1: almost certainly correct",
+          "2: probably correct",
+          "3: worth a second look",
+          "4: likely a bug",
+          "5: almost certainly a bug"
+        ]
+      },
+      "suspicious__l08": {
+        "type": "score",
+        "instructions": "How likely is this added line to contain a bug?\nAnswer only about the added line in state.lines with slot \"l08\" (new-side line 56).",
+        "criteria": [
+          "1: almost certainly correct",
+          "2: probably correct",
+          "3: worth a second look",
+          "4: likely a bug",
+          "5: almost certainly a bug"
+        ]
+      },
+      "suspicious__l09": {
+        "type": "score",
+        "instructions": "How likely is this added line to contain a bug?\nAnswer only about the added line in state.lines with slot \"l09\" (new-side line 57).",
+        "criteria": [
+          "1: almost certainly correct",
+          "2: probably correct",
+          "3: worth a second look",
+          "4: likely a bug",
+          "5: almost certainly a bug"
+        ]
+      },
+      "suspicious__l10": {
+        "type": "score",
+        "instructions": "How likely is this added line to contain a bug?\nAnswer only about the added line in state.lines with slot \"l10\" (new-side line 58).",
+        "criteria": [
+          "1: almost certainly correct",
+          "2: probably correct",
+          "3: worth a second look",
+          "4: likely a bug",
+          "5: almost certainly a bug"
+        ]
+      },
+      "suspicious__l11": {
+        "type": "score",
+        "instructions": "How likely is this added line to contain a bug?\nAnswer only about the added line in state.lines with slot \"l11\" (new-side line 59).",
+        "criteria": [
+          "1: almost certainly correct",
+          "2: probably correct",
+          "3: worth a second look",
+          "4: likely a bug",
+          "5: almost certainly a bug"
+        ]
+      },
+      "suspicious__l12": {
+        "type": "score",
+        "instructions": "How likely is this added line to contain a bug?\nAnswer only about the added line in state.lines with slot \"l12\" (new-side line 60).",
+        "criteria": [
+          "1: almost certainly correct",
+          "2: probably correct",
+          "3: worth a second look",
+          "4: likely a bug",
+          "5: almost certainly a bug"
+        ]
+      },
+      "suspicious__l13": {
+        "type": "score",
+        "instructions": "How likely is this added line to contain a bug?\nAnswer only about the added line in state.lines with slot \"l13\" (new-side line 61).",
+        "criteria": [
+          "1: almost certainly correct",
+          "2: probably correct",
+          "3: worth a second look",
+          "4: likely a bug",
+          "5: almost certainly a bug"
+        ]
+      },
+      "suspicious__l14": {
+        "type": "score",
+        "instructions": "How likely is this added line to contain a bug?\nAnswer only about the added line in state.lines with slot \"l14\" (new-side line 62).",
+        "criteria": [
+          "1: almost certainly correct",
+          "2: probably correct",
+          "3: worth a second look",
+          "4: likely a bug",
+          "5: almost certainly a bug"
+        ]
+      },
+      "suspicious__l15": {
+        "type": "score",
+        "instructions": "How likely is this added line to contain a bug?\nAnswer only about the added line in state.lines with slot \"l15\" (new-side line 63).",
+        "criteria": [
+          "1: almost certainly correct",
+          "2: probably correct",
+          "3: worth a second look",
+          "4: likely a bug",
+          "5: almost certainly a bug"
+        ]
+      },
+      "suspicious__l16": {
+        "type": "score",
+        "instructions": "How likely is this added line to contain a bug?\nAnswer only about the added line in state.lines with slot \"l16\" (new-side line 64).",
+        "criteria": [
+          "1: almost certainly correct",
+          "2: probably correct",
+          "3: worth a second look",
+          "4: likely a bug",
+          "5: almost certainly a bug"
+        ]
+      },
+      "suspicious__l17": {
+        "type": "score",
+        "instructions": "How likely is this added line to contain a bug?\nAnswer only about the added line in state.lines with slot \"l17\" (new-side line 65).",
+        "criteria": [
+          "1: almost certainly correct",
+          "2: probably correct",
+          "3: worth a second look",
+          "4: likely a bug",
+          "5: almost certainly a bug"
+        ]
+      },
+      "suspicious__l18": {
+        "type": "score",
+        "instructions": "How likely is this added line to contain a bug?\nAnswer only about the added line in state.lines with slot \"l18\" (new-side line 66).",
+        "criteria": [
+          "1: almost certainly correct",
+          "2: probably correct",
+          "3: worth a second look",
+          "4: likely a bug",
+          "5: almost certainly a bug"
+        ]
+      },
+      "swallow__l01": {
+        "type": "boolean",
+        "instructions": "Does this added line ignore, discard or swallow an error or exception (empty catch, ignored return error, blanket except, error replaced by a default value)?\nAnswer only about the added line in state.lines with slot \"l01\" (new-side line 49)."
+      },
+      "swallow__l02": {
+        "type": "boolean",
+        "instructions": "Does this added line ignore, discard or swallow an error or exception (empty catch, ignored return error, blanket except, error replaced by a default value)?\nAnswer only about the added line in state.lines with slot \"l02\" (new-side line 50)."
+      },
+      "swallow__l03": {
+        "type": "boolean",
+        "instructions": "Does this added line ignore, discard or swallow an error or exception (empty catch, ignored return error, blanket except, error replaced by a default value)?\nAnswer only about the added line in state.lines with slot \"l03\" (new-side line 51)."
+      },
+      "swallow__l04": {
+        "type": "boolean",
+        "instructions": "Does this added line ignore, discard or swallow an error or exception (empty catch, ignored return error, blanket except, error replaced by a default value)?\nAnswer only about the added line in state.lines with slot \"l04\" (new-side line 52)."
+      },
+      "swallow__l05": {
+        "type": "boolean",
+        "instructions": "Does this added line ignore, discard or swallow an error or exception (empty catch, ignored return error, blanket except, error replaced by a default value)?\nAnswer only about the added line in state.lines with slot \"l05\" (new-side line 53)."
+      },
+      "swallow__l06": {
+        "type": "boolean",
+        "instructions": "Does this added line ignore, discard or swallow an error or exception (empty catch, ignored return error, blanket except, error replaced by a default value)?\nAnswer only about the added line in state.lines with slot \"l06\" (new-side line 54)."
+      },
+      "swallow__l07": {
+        "type": "boolean",
+        "instructions": "Does this added line ignore, discard or swallow an error or exception (empty catch, ignored return error, blanket except, error replaced by a default value)?\nAnswer only about the added line in state.lines with slot \"l07\" (new-side line 55)."
+      },
+      "swallow__l08": {
+        "type": "boolean",
+        "instructions": "Does this added line ignore, discard or swallow an error or exception (empty catch, ignored return error, blanket except, error replaced by a default value)?\nAnswer only about the added line in state.lines with slot \"l08\" (new-side line 56)."
+      },
+      "swallow__l09": {
+        "type": "boolean",
+        "instructions": "Does this added line ignore, discard or swallow an error or exception (empty catch, ignored return error, blanket except, error replaced by a default value)?\nAnswer only about the added line in state.lines with slot \"l09\" (new-side line 57)."
+      },
+      "swallow__l10": {
+        "type": "boolean",
+        "instructions": "Does this added line ignore, discard or swallow an error or exception (empty catch, ignored return error, blanket except, error replaced by a default value)?\nAnswer only about the added line in state.lines with slot \"l10\" (new-side line 58)."
+      },
+      "swallow__l11": {
+        "type": "boolean",
+        "instructions": "Does this added line ignore, discard or swallow an error or exception (empty catch, ignored return error, blanket except, error replaced by a default value)?\nAnswer only about the added line in state.lines with slot \"l11\" (new-side line 59)."
+      },
+      "swallow__l12": {
+        "type": "boolean",
+        "instructions": "Does this added line ignore, discard or swallow an error or exception (empty catch, ignored return error, blanket except, error replaced by a default value)?\nAnswer only about the added line in state.lines with slot \"l12\" (new-side line 60)."
+      },
+      "swallow__l13": {
+        "type": "boolean",
+        "instructions": "Does this added line ignore, discard or swallow an error or exception (empty catch, ignored return error, blanket except, error replaced by a default value)?\nAnswer only about the added line in state.lines with slot \"l13\" (new-side line 61)."
+      },
+      "swallow__l14": {
+        "type": "boolean",
+        "instructions": "Does this added line ignore, discard or swallow an error or exception (empty catch, ignored return error, blanket except, error replaced by a default value)?\nAnswer only about the added line in state.lines with slot \"l14\" (new-side line 62)."
+      },
+      "swallow__l15": {
+        "type": "boolean",
+        "instructions": "Does this added line ignore, discard or swallow an error or exception (empty catch, ignored return error, blanket except, error replaced by a default value)?\nAnswer only about the added line in state.lines with slot \"l15\" (new-side line 63)."
+      },
+      "swallow__l16": {
+        "type": "boolean",
+        "instructions": "Does this added line ignore, discard or swallow an error or exception (empty catch, ignored return error, blanket except, error replaced by a default value)?\nAnswer only about the added line in state.lines with slot \"l16\" (new-side line 64)."
+      },
+      "swallow__l17": {
+        "type": "boolean",
+        "instructions": "Does this added line ignore, discard or swallow an error or exception (empty catch, ignored return error, blanket except, error replaced by a default value)?\nAnswer only about the added line in state.lines with slot \"l17\" (new-side line 65)."
+      },
+      "swallow__l18": {
+        "type": "boolean",
+        "instructions": "Does this added line ignore, discard or swallow an error or exception (empty catch, ignored return error, blanket except, error replaced by a default value)?\nAnswer only about the added line in state.lines with slot \"l18\" (new-side line 66)."
+      },
+      "value_tweak__l01": {
+        "type": "boolean",
+        "instructions": "Does this added line change the value of a literal such as a timeout, limit, size, URL, threshold or retry count, while leaving the surrounding logic the same?\nAnswer only about the added line in state.lines with slot \"l01\" (new-side line 49)."
+      },
+      "value_tweak__l02": {
+        "type": "boolean",
+        "instructions": "Does this added line change the value of a literal such as a timeout, limit, size, URL, threshold or retry count, while leaving the surrounding logic the same?\nAnswer only about the added line in state.lines with slot \"l02\" (new-side line 50)."
+      },
+      "value_tweak__l03": {
+        "type": "boolean",
+        "instructions": "Does this added line change the value of a literal such as a timeout, limit, size, URL, threshold or retry count, while leaving the surrounding logic the same?\nAnswer only about the added line in state.lines with slot \"l03\" (new-side line 51)."
+      },
+      "value_tweak__l04": {
+        "type": "boolean",
+        "instructions": "Does this added line change the value of a literal such as a timeout, limit, size, URL, threshold or retry count, while leaving the surrounding logic the same?\nAnswer only about the added line in state.lines with slot \"l04\" (new-side line 52)."
+      },
+      "value_tweak__l05": {
+        "type": "boolean",
+        "instructions": "Does this added line change the value of a literal such as a timeout, limit, size, URL, threshold or retry count, while leaving the surrounding logic the same?\nAnswer only about the added line in state.lines with slot \"l05\" (new-side line 53)."
+      },
+      "value_tweak__l06": {
+        "type": "boolean",
+        "instructions": "Does this added line change the value of a literal such as a timeout, limit, size, URL, threshold or retry count, while leaving the surrounding logic the same?\nAnswer only about the added line in state.lines with slot \"l06\" (new-side line 54)."
+      },
+      "value_tweak__l07": {
+        "type": "boolean",
+        "instructions": "Does this added line change the value of a literal such as a timeout, limit, size, URL, threshold or retry count, while leaving the surrounding logic the same?\nAnswer only about the added line in state.lines with slot \"l07\" (new-side line 55)."
+      },
+      "value_tweak__l08": {
+        "type": "boolean",
+        "instructions": "Does this added line change the value of a literal such as a timeout, limit, size, URL, threshold or retry count, while leaving the surrounding logic the same?\nAnswer only about the added line in state.lines with slot \"l08\" (new-side line 56)."
+      },
+      "value_tweak__l09": {
+        "type": "boolean",
+        "instructions": "Does this added line change the value of a literal such as a timeout, limit, size, URL, threshold or retry count, while leaving the surrounding logic the same?\nAnswer only about the added line in state.lines with slot \"l09\" (new-side line 57)."
+      },
+      "value_tweak__l10": {
+        "type": "boolean",
+        "instructions": "Does this added line change the value of a literal such as a timeout, limit, size, URL, threshold or retry count, while leaving the surrounding logic the same?\nAnswer only about the added line in state.lines with slot \"l10\" (new-side line 58)."
+      },
+      "value_tweak__l11": {
+        "type": "boolean",
+        "instructions": "Does this added line change the value of a literal such as a timeout, limit, size, URL, threshold or retry count, while leaving the surrounding logic the same?\nAnswer only about the added line in state.lines with slot \"l11\" (new-side line 59)."
+      },
+      "value_tweak__l12": {
+        "type": "boolean",
+        "instructions": "Does this added line change the value of a literal such as a timeout, limit, size, URL, threshold or retry count, while leaving the surrounding logic the same?\nAnswer only about the added line in state.lines with slot \"l12\" (new-side line 60)."
+      },
+      "value_tweak__l13": {
+        "type": "boolean",
+        "instructions": "Does this added line change the value of a literal such as a timeout, limit, size, URL, threshold or retry count, while leaving the surrounding logic the same?\nAnswer only about the added line in state.lines with slot \"l13\" (new-side line 61)."
+      },
+      "value_tweak__l14": {
+        "type": "boolean",
+        "instructions": "Does this added line change the value of a literal such as a timeout, limit, size, URL, threshold or retry count, while leaving the surrounding logic the same?\nAnswer only about the added line in state.lines with slot \"l14\" (new-side line 62)."
+      },
+      "value_tweak__l15": {
+        "type": "boolean",
+        "instructions": "Does this added line change the value of a literal such as a timeout, limit, size, URL, threshold or retry count, while leaving the surrounding logic the same?\nAnswer only about the added line in state.lines with slot \"l15\" (new-side line 63)."
+      },
+      "value_tweak__l16": {
+        "type": "boolean",
+        "instructions": "Does this added line change the value of a literal such as a timeout, limit, size, URL, threshold or retry count, while leaving the surrounding logic the same?\nAnswer only about the added line in state.lines with slot \"l16\" (new-side line 64)."
+      },
+      "value_tweak__l17": {
+        "type": "boolean",
+        "instructions": "Does this added line change the value of a literal such as a timeout, limit, size, URL, threshold or retry count, while leaving the surrounding logic the same?\nAnswer only about the added line in state.lines with slot \"l17\" (new-side line 65)."
+      },
+      "value_tweak__l18": {
+        "type": "boolean",
+        "instructions": "Does this added line change the value of a literal such as a timeout, limit, size, URL, threshold or retry count, while leaving the surrounding logic the same?\nAnswer only about the added line in state.lines with slot \"l18\" (new-side line 66)."
+      }
+    }
+  },
+  "response": {
+    "model": "typesafe-ai/jev",
+    "answers": {
+      "fmt__l01": {
+        "type": "boolean",
+        "probability": 0.26
+      },
+      "fmt__l02": {
+        "type": "boolean",
+        "probability": 0.03
+      },
+      "fmt__l03": {
+        "type": "boolean",
+        "probability": 0.03
+      },
+      "fmt__l04": {
+        "type": "boolean",
+        "probability": 0.04
+      },
+      "fmt__l05": {
+        "type": "boolean",
+        "probability": 0.13
+      },
+      "fmt__l06": {
+        "type": "boolean",
+        "probability": 0.03
+      },
+      "fmt__l07": {
+        "type": "boolean",
+        "probability": 0.05
+      },
+      "fmt__l08": {
+        "type": "boolean",
+        "probability": 0.04
+      },
+      "fmt__l09": {
+        "type": "boolean",
+        "probability": 0.04
+      },
+      "fmt__l10": {
+        "type": "boolean",
+        "probability": 0.03
+      },
+      "fmt__l11": {
+        "type": "boolean",
+        "probability": 0.04
+      },
+      "fmt__l12": {
+        "type": "boolean",
+        "probability": 0.03
+      },
+      "fmt__l13": {
+        "type": "boolean",
+        "probability": 0.04
+      },
+      "fmt__l14": {
+        "type": "boolean",
+        "probability": 0.04
+      },
+      "fmt__l15": {
+        "type": "boolean",
+        "probability": 0.02
+      },
+      "fmt__l16": {
+        "type": "boolean",
+        "probability": 0.03
+      },
+      "fmt__l17": {
+        "type": "boolean",
+        "probability": 0.05
+      },
+      "fmt__l18": {
+        "type": "boolean",
+        "probability": 0.04
+      },
+      "leftover__l01": {
+        "type": "boolean",
+        "probability": 0.03
+      },
+      "leftover__l02": {
+        "type": "boolean",
+        "probability": 0.02
+      },
+      "leftover__l03": {
+        "type": "boolean",
+        "probability": 0.02
+      },
+      "leftover__l04": {
+        "type": "boolean",
+        "probability": 0.02
+      },
+      "leftover__l05": {
+        "type": "boolean",
+        "probability": 0.02
+      },
+      "leftover__l06": {
+        "type": "boolean",
+        "probability": 0.02
+      },
+      "leftover__l07": {
+        "type": "boolean",
+        "probability": 0.02
+      },
+      "leftover__l08": {
+        "type": "boolean",
+        "probability": 0.02
+      },
+      "leftover__l09": {
+        "type": "boolean",
+        "probability": 0.02
+      },
+      "leftover__l10": {
+        "type": "boolean",
+        "probability": 0.02
+      },
+      "leftover__l11": {
+        "type": "boolean",
+        "probability": 0.02
+      },
+      "leftover__l12": {
+        "type": "boolean",
+        "probability": 0.02
+      },
+      "leftover__l13": {
+        "type": "boolean",
+        "probability": 0.03
+      },
+      "leftover__l14": {
+        "type": "boolean",
+        "probability": 0.02
+      },
+      "leftover__l15": {
+        "type": "boolean",
+        "probability": 0.02
+      },
+      "leftover__l16": {
+        "type": "boolean",
+        "probability": 0.02
+      },
+      "leftover__l17": {
+        "type": "boolean",
+        "probability": 0.02
+      },
+      "leftover__l18": {
+        "type": "boolean",
+        "probability": 0.02
+      },
+      "pii_or_secret__l01": {
+        "type": "boolean",
+        "probability": 0.02
+      },
+      "pii_or_secret__l02": {
+        "type": "boolean",
+        "probability": 0.02
+      },
+      "pii_or_secret__l03": {
+        "type": "boolean",
+        "probability": 0.03
+      },
+      "pii_or_secret__l04": {
+        "type": "boolean",
+        "probability": 0.02
+      },
+      "pii_or_secret__l05": {
+        "type": "boolean",
+        "probability": 0.03
+      },
+      "pii_or_secret__l06": {
+        "type": "boolean",
+        "probability": 0.03
+      },
+      "pii_or_secret__l07": {
+        "type": "boolean",
+        "probability": 0.02
+      },
+      "pii_or_secret__l08": {
+        "type": "boolean",
+        "probability": 0.04
+      },
+      "pii_or_secret__l09": {
+        "type": "boolean",
+        "probability": 0.02
+      },
+      "pii_or_secret__l10": {
+        "type": "boolean",
+        "probability": 0.02
+      },
+      "pii_or_secret__l11": {
+        "type": "boolean",
+        "probability": 0.03
+      },
+      "pii_or_secret__l12": {
+        "type": "boolean",
+        "probability": 0.04
+      },
+      "pii_or_secret__l13": {
+        "type": "boolean",
+        "probability": 0.04
+      },
+      "pii_or_secret__l14": {
+        "type": "boolean",
+        "probability": 0.04
+      },
+      "pii_or_secret__l15": {
+        "type": "boolean",
+        "probability": 0.04
+      },
+      "pii_or_secret__l16": {
+        "type": "boolean",
+        "probability": 0.12
+      },
+      "pii_or_secret__l17": {
+        "type": "boolean",
+        "probability": 0.02
+      },
+      "pii_or_secret__l18": {
+        "type": "boolean",
+        "probability": 0.02
+      },
+      "suspicious__l01": {
+        "type": "score",
+        "score": 0.21,
+        "probabilities": {
+          "0": 0.92,
+          "1": 0.02,
+          "2": 0.02,
+          "3": 0.02,
+          "4": 0.02
+        }
+      },
+      "suspicious__l02": {
+        "type": "score",
+        "score": 0.07,
+        "probabilities": {
+          "0": 0.97,
+          "1": 0.01,
+          "2": 0.01,
+          "3": 0,
+          "4": 0.01
+        }
+      },
+      "suspicious__l03": {
+        "type": "score",
+        "score": 0.89,
+        "probabilities": {
+          "0": 0.45,
+          "1": 0.32,
+          "2": 0.15,
+          "3": 0.06,
+          "4": 0.02
+        }
+      },
+      "suspicious__l04": {
+        "type": "score",
+        "score": 0.09,
+        "probabilities": {
+          "0": 0.94,
+          "1": 0.03,
+          "2": 0.01,
+          "3": 0.01,
+          "4": 0.01
+        }
+      },
+      "suspicious__l05": {
+        "type": "score",
+        "score": 0.34,
+        "probabilities": {
+          "0": 0.84,
+          "1": 0.05,
+          "2": 0.05,
+          "3": 0.03,
+          "4": 0.03
+        }
+      },
+      "suspicious__l06": {
+        "type": "score",
+        "score": 0.98,
+        "probabilities": {
+          "0": 0.44,
+          "1": 0.26,
+          "2": 0.18,
+          "3": 0.09,
+          "4": 0.03
+        }
+      },
+      "suspicious__l07": {
+        "type": "score",
+        "score": 0.07,
+        "probabilities": {
+          "0": 0.96,
+          "1": 0.01,
+          "2": 0.01,
+          "3": 0.01,
+          "4": 0.01
+        }
+      },
+      "suspicious__l08": {
+        "type": "score",
+        "score": 0.53,
+        "probabilities": {
+          "0": 0.75,
+          "1": 0.09,
+          "2": 0.08,
+          "3": 0.04,
+          "4": 0.04
+        }
+      },
+      "suspicious__l09": {
+        "type": "score",
+        "score": 0.08,
+        "probabilities": {
+          "0": 0.95,
+          "1": 0.02,
+          "2": 0.01,
+          "3": 0.01,
+          "4": 0.01
+        }
+      },
+      "suspicious__l10": {
+        "type": "score",
+        "score": 0.16,
+        "probabilities": {
+          "0": 0.93,
+          "1": 0.03,
+          "2": 0.02,
+          "3": 0.01,
+          "4": 0.01
+        }
+      },
+      "suspicious__l11": {
+        "type": "score",
+        "score": 0.15,
+        "probabilities": {
+          "0": 0.92,
+          "1": 0.04,
+          "2": 0.02,
+          "3": 0.01,
+          "4": 0.01
+        }
+      },
+      "suspicious__l12": {
+        "type": "score",
+        "score": 0.35,
+        "probabilities": {
+          "0": 0.8,
+          "1": 0.1,
+          "2": 0.06,
+          "3": 0.03,
+          "4": 0.01
+        }
+      },
+      "suspicious__l13": {
+        "type": "score",
+        "score": 0.56,
+        "probabilities": {
+          "0": 0.72,
+          "1": 0.11,
+          "2": 0.11,
+          "3": 0.04,
+          "4": 0.02
+        }
+      },
+      "suspicious__l14": {
+        "type": "score",
+        "score": 0.28,
+        "probabilities": {
+          "0": 0.84,
+          "1": 0.08,
+          "2": 0.05,
+          "3": 0.02,
+          "4": 0.01
+        }
+      },
+      "suspicious__l15": {
+        "type": "score",
+        "score": 0.77,
+        "probabilities": {
+          "0": 0.52,
+          "1": 0.25,
+          "2": 0.16,
+          "3": 0.05,
+          "4": 0.02
+        }
+      },
+      "suspicious__l16": {
+        "type": "score",
+        "score": 0.19,
+        "probabilities": {
+          "0": 0.89,
+          "1": 0.06,
+          "2": 0.03,
+          "3": 0.01,
+          "4": 0.01
+        }
+      },
+      "suspicious__l17": {
+        "type": "score",
+        "score": 0.05,
+        "probabilities": {
+          "0": 0.99,
+          "1": 0.01,
+          "2": 0,
+          "3": 0,
+          "4": 0
+        }
+      },
+      "suspicious__l18": {
+        "type": "score",
+        "score": 0.04,
+        "probabilities": {
+          "0": 0.99,
+          "1": 0.01,
+          "2": 0,
+          "3": 0,
+          "4": 0
+        }
+      },
+      "swallow__l01": {
+        "type": "boolean",
+        "probability": 0.03
+      },
+      "swallow__l02": {
+        "type": "boolean",
+        "probability": 0.02
+      },
+      "swallow__l03": {
+        "type": "boolean",
+        "probability": 0.04
+      },
+      "swallow__l04": {
+        "type": "boolean",
+        "probability": 0.04
+      },
+      "swallow__l05": {
+        "type": "boolean",
+        "probability": 0.03
+      },
+      "swallow__l06": {
+        "type": "boolean",
+        "probability": 0.05
+      },
+      "swallow__l07": {
+        "type": "boolean",
+        "probability": 0.04
+      },
+      "swallow__l08": {
+        "type": "boolean",
+        "probability": 0.05
+      },
+      "swallow__l09": {
+        "type": "boolean",
+        "probability": 0.04
+      },
+      "swallow__l10": {
+        "type": "boolean",
+        "probability": 0.05
+      },
+      "swallow__l11": {
+        "type": "boolean",
+        "probability": 0.03
+      },
+      "swallow__l12": {
+        "type": "boolean",
+        "probability": 0.06
+      },
+      "swallow__l13": {
+        "type": "boolean",
+        "probability": 0.05
+      },
+      "swallow__l14": {
+        "type": "boolean",
+        "probability": 0.05
+      },
+      "swallow__l15": {
+        "type": "boolean",
+        "probability": 0.04
+      },
+      "swallow__l16": {
+        "type": "boolean",
+        "probability": 0.04
+      },
+      "swallow__l17": {
+        "type": "boolean",
+        "probability": 0.03
+      },
+      "swallow__l18": {
+        "type": "boolean",
+        "probability": 0.02
+      },
+      "value_tweak__l01": {
+        "type": "boolean",
+        "probability": 0.03
+      },
+      "value_tweak__l02": {
+        "type": "boolean",
+        "probability": 0.03
+      },
+      "value_tweak__l03": {
+        "type": "boolean",
+        "probability": 0.07
+      },
+      "value_tweak__l04": {
+        "type": "boolean",
+        "probability": 0.03
+      },
+      "value_tweak__l05": {
+        "type": "boolean",
+        "probability": 0.04
+      },
+      "value_tweak__l06": {
+        "type": "boolean",
+        "probability": 0.1
+      },
+      "value_tweak__l07": {
+        "type": "boolean",
+        "probability": 0.03
+      },
+      "value_tweak__l08": {
+        "type": "boolean",
+        "probability": 0.06
+      },
+      "value_tweak__l09": {
+        "type": "boolean",
+        "probability": 0.03
+      },
+      "value_tweak__l10": {
+        "type": "boolean",
+        "probability": 0.03
+      },
+      "value_tweak__l11": {
+        "type": "boolean",
+        "probability": 0.03
+      },
+      "value_tweak__l12": {
+        "type": "boolean",
+        "probability": 0.04
+      },
+      "value_tweak__l13": {
+        "type": "boolean",
+        "probability": 0.07
+      },
+      "value_tweak__l14": {
+        "type": "boolean",
+        "probability": 0.03
+      },
+      "value_tweak__l15": {
+        "type": "boolean",
+        "probability": 0.08
+      },
+      "value_tweak__l16": {
+        "type": "boolean",
+        "probability": 0.04
+      },
+      "value_tweak__l17": {
+        "type": "boolean",
+        "probability": 0.03
+      },
+      "value_tweak__l18": {
+        "type": "boolean",
+        "probability": 0.03
+      }
+    },
+    "usage": {
+      "inputTokens": 10374,
+      "outputTokens": 2308
+    },
+    "providerMetadata": {
+      "gateway": {
+        "cost": "0.000435708",
+        "generationId": "gen_01M4TQ9YX82B1AWE6P055J6DE2"
+      }
+    }
+  }
+}

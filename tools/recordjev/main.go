@@ -1,5 +1,6 @@
-// Command recordjev records real Jev responses for the fixture PRs #101–#104
-// by running the real pipeline over a freshly generated fixture repo (see
+// Command recordjev records real Jev responses for the fixture PRs
+// (pipelinetest.PRNumbers: #101–#104 and, since M5.2, #106) by running the
+// real pipeline over a freshly generated fixture repo (see
 // internal/pipeline/pipelinetest and DECISIONS "M1 Jev recordings flow").
 //
 // Modes:
@@ -62,6 +63,19 @@
 // (review mode) are counted or recorded too. The dry run then prints an
 // "M5 requests" line.
 //
+// Unused recordings (--unused, M5.2): replays the PRs and branches with
+// Jev, embeddings and reviews all read strictly from their directories and
+// lists every recording file no request of that run reads; --prune deletes
+// them. No network, no spend.
+//
+//	recordjev --unused           list
+//	recordjev --unused --prune   delete
+//
+// A review cut off at max_tokens is recorded too (review.Recording
+// Truncated) and is not counted as a failed call: the pipeline retries it
+// with the cap doubled, a request of its own. The run fails when a routing
+// row still ends failed.
+//
 // The Makefile targets are:
 //
 //	make record-review      go run ./tools/recordjev --live --review --embed replay
@@ -112,6 +126,10 @@ type config struct {
 	// branches also runs the fixture's local branches without a PR
 	// (pipelinetest.BranchRefs, M5) after the PRs, in every mode.
 	branches bool
+
+	// unused lists the recordings no replay reads (unusedRun); prune
+	// deletes them.
+	unused, prune bool
 }
 
 // env looks up an environment variable ("" when unset); injected for tests.
@@ -157,10 +175,20 @@ func parseFlags(args []string, stderr io.Writer) (config, error) {
 	fs.StringVar(&c.reviewOut, "review-out", filepath.Join(root, "testdata", "recordings", "review"), "review recordings directory")
 	fs.Float64Var(&c.reviewCap, "review-cap", 3.00, "cap on cumulative Anthropic spend in USD (ledger + this run)")
 	fs.BoolVar(&c.branches, "branches", false, "also run the fixture's local branches without a PR (05-spike-dark-mode) after the PRs")
+	fs.BoolVar(&c.unused, "unused", false, "list the recordings (jev, embed, review) that no replay of the fixture PRs and branches reads; no network")
+	fs.BoolVar(&c.prune, "prune", false, "with --unused: delete the unused recordings")
 	if err := fs.Parse(args); err != nil {
 		return c, err
 	}
 	c.args = args
+	if c.prune && !c.unused {
+		fmt.Fprintln(stderr, "recordjev: --prune needs --unused")
+		return c, errors.New("prune without unused")
+	}
+	if c.unused && (c.live || c.synthetic || c.review) {
+		fmt.Fprintln(stderr, "recordjev: --unused runs alone (no --live, --synthetic or --review)")
+		return c, errors.New("exclusive flags")
+	}
 	if c.live && c.synthetic {
 		fmt.Fprintln(stderr, "recordjev: --live and --synthetic are exclusive")
 		return c, errors.New("exclusive flags")
@@ -210,6 +238,10 @@ func execute(ctx context.Context, cfg config, getenv env, stdout io.Writer) erro
 		return fmt.Errorf("generate fixture repo: %w", err)
 	}
 	prs := filepath.Join(cfg.src, "prs.json")
+	if cfg.unused {
+		// Reads every kind of recording itself; no embed run to report.
+		return unusedRun(ctx, cfg, repo, prs, stdout)
+	}
 	emb, err := newEmbedRun(ctx, cfg, getenv)
 	if err != nil {
 		return err

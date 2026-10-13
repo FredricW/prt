@@ -1,0 +1,49 @@
+{
+  "key": "71a86b8d79bada82f092d1ad",
+  "model": "anthropic:claude-opus-5-5",
+  "request": {
+    "task": "review",
+    "tier": "deep",
+    "groupId": "fbe2852713e75ff83888edee00cae98e68dd63a11a5ac0915e57b7e0687c22e8",
+    "system": "You are a senior code reviewer. You review one group of related change units from a pull request and report the problems a careful reviewer would raise: bugs, broken contracts, missing error handling, security holes, data loss, races, and risky code without tests.\n\nRules:\n- Report findings only. Never restate, summarise or praise the diff.\n- Anchor every finding to a file path and a line number printed in the diff: the new-side number, or the old-side number for a deleted line.\n- One finding per problem. \"claim\" is one sentence; \"fix\" is a short suggested change.\n- severity: \"high\" breaks callers, loses data or opens a security hole; \"medium\" is a likely bug or missing handling; \"low\" is a minor risk.\n- Never invent numbers, metrics, line numbers or code that is not shown.\n- The hints are machine labels (probabilities 0-1, risk 1-5). Use them to decide where to look, not as facts.\n- The Context section, when present, is unchanged background (callers, types, tests, config). Report a finding there only when the change breaks it, anchored to the changed line that causes it.\n- verdict: \"approve\" when nothing needs changing, \"comment\" for low findings or questions only, \"request_changes\" when a finding must be fixed before merging.\n- confidence: a number from 0 to 1, how sure you are that the findings and the verdict are right given what you were shown.\n\nAnswer with JSON only, no prose and no code fence, in exactly this shape:\n{\"findings\":[{\"file\":\"path/to/file\",\"line\":12,\"severity\":\"low|medium|high\",\"claim\":\"one sentence\",\"fix\":\"suggested fix\"}],\"verdict\":\"approve|comment|request_changes\",\"confidence\":0.8}\nUse \"findings\": [] when there is nothing to report.\n\nSecurity focus: check authentication and authorisation paths, secrets or personal data reaching logs, responses or storage, injection, unsafe deserialisation, and money handling (rounding, double charges).\n\nPerformance focus: look for I/O or queries inside loops, unbounded work, missing batching or pagination, blocking calls on hot or async paths, and races between concurrent callers.",
+    "prompt": "# Pull request\nTitle: feat(server): user preferences API and ops health check\nDescription bullets:\n- Migration `20261010_user_preferences.sql`: new `user_preferences` table, `users.avatar_url` column (for #101), drop the unused `users.legacy_theme` column\n- `GET` and `PUT /api/v1/users/{id}/preferences`, enabled with `PORTAL_PREFERENCES_API=on`\n- `users.Routes` takes the preferences store and the switch; `main` and tests updated\n- Health checks move from `GET /api/v1/health` to `GET /healthz` on the ops listener (`PORTAL_OPS_ADDR`, default `:9090`)\n- Settings page: theme picker behind the `user-preferences-v2` flag\n\n# Group\nName: preferences.go\n\n# Units in review order\nEach diff line starts with its old and new line numbers.\n\n## Unit 1 of 1: server/internal/users/preferences.go (added, new lines 1-31)\nhints: kind=feature risk=3 tags=async,data_write,pii,date_tz breaking=0.11 contract=signature covered=0.65 untested=no\n```diff\n          1 +package users\n          2 +\n          3 +import (\n          4 +\t\"encoding/json\"\n          5 +\t\"net/http\"\n          6 +\t\"sync\"\n          7 +\t\"time\"\n          8 +\n          9 +\t\"github.com/go-chi/chi/v5\"\n         10 +)\n         11 +\n         12 +// Preferences are a user's UI settings (table user_preferences).\n         13 +type Preferences struct {\n         14 +\tUserID      string    `json:\"userId\"`\n         15 +\tTheme       string    `json:\"theme\"`\n         16 +\tEmailDigest string    `json:\"emailDigest\"`\n         17 +\tUpdatedAt   time.Time `json:\"updatedAt\"`\n         18 +}\n         19 +\n         20 +// PreferencesStore reads and writes preferences.\n         21 +type PreferencesStore interface {\n         22 +\tGet(userID string) (Preferences, error)\n         23 +\tPut(p Preferences) error\n         24 +}\n         25 +\n         26 +// MemoryPreferences is an in-memory PreferencesStore for development.\n         27 +type MemoryPreferences struct {\n         28 +\tmu    sync.Mutex\n         29 +\tprefs map[string]Preferences\n         30 +}\n         31 +\n```\n\nReview these units and answer with the JSON object only.\n",
+    "maxTokens": 4096
+  },
+  "result": {
+    "text": "{\"findings\":[{\"file\":\"server/internal/users/preferences.go\",\"line\":4,\"severity\":\"high\",\"claim\":\"`encoding/json`, `net/http` and `github.com/go-chi/chi/v5` are imported but never used in this 31-line file, so the package will not compile.\",\"fix\":\"Add the GET/PUT preference handlers that use these imports in this file, or remove the unused imports.\"},{\"file\":\"server/internal/users/preferences.go\",\"line\":27,\"severity\":\"medium\",\"claim\":\"`MemoryPreferences` has no `Get`/`Put` methods, so it does not satisfy `PreferencesStore`; its `prefs` map has no constructor, so the zero value would panic on its first write.\",\"fix\":\"Add a `NewMemoryPreferences` constructor that initialises the map, implement `Get`/`Put` guarded by `mu`, and add `var _ PreferencesStore = (*MemoryPreferences)(nil)`.\"},{\"file\":\"server/internal/users/preferences.go\",\"line\":22,\"severity\":\"low\",\"claim\":\"`PreferencesStore` methods take no `context.Context`, so a database-backed implementation cannot honour request cancellation or deadlines.\",\"fix\":\"Add `ctx context.Context` as the first parameter of `Get` and `Put`.\"}],\"verdict\":\"request_changes\",\"confidence\":0.6}",
+    "findings": [
+      {
+        "unitId": "dc5c50f0d9efe0a2d437f79ec0fe751fc055adae275bba4b36f5afdcbc30f70d",
+        "path": "server/internal/users/preferences.go",
+        "line": 4,
+        "severity": "high",
+        "claim": "`encoding/json`, `net/http` and `github.com/go-chi/chi/v5` are imported but never used in this 31-line file, so the package will not compile.",
+        "fix": "Add the GET/PUT preference handlers that use these imports in this file, or remove the unused imports."
+      },
+      {
+        "unitId": "dc5c50f0d9efe0a2d437f79ec0fe751fc055adae275bba4b36f5afdcbc30f70d",
+        "path": "server/internal/users/preferences.go",
+        "line": 22,
+        "severity": "low",
+        "claim": "`PreferencesStore` methods take no `context.Context`, so a database-backed implementation cannot honour request cancellation or deadlines.",
+        "fix": "Add `ctx context.Context` as the first parameter of `Get` and `Put`."
+      },
+      {
+        "unitId": "dc5c50f0d9efe0a2d437f79ec0fe751fc055adae275bba4b36f5afdcbc30f70d",
+        "path": "server/internal/users/preferences.go",
+        "line": 27,
+        "severity": "medium",
+        "claim": "`MemoryPreferences` has no `Get`/`Put` methods, so it does not satisfy `PreferencesStore`; its `prefs` map has no constructor, so the zero value would panic on its first write.",
+        "fix": "Add a `NewMemoryPreferences` constructor that initialises the map, implement `Get`/`Put` guarded by `mu`, and add `var _ PreferencesStore = (*MemoryPreferences)(nil)`."
+      }
+    ],
+    "verdict": "request_changes",
+    "confidence": 0.6,
+    "model": "anthropic:claude-opus-5-5",
+    "inputTokens": 1522,
+    "outputTokens": 705,
+    "cost": 0.020188,
+    "ms": 10688,
+    "stopReason": "end_turn"
+  }
+}

@@ -56,8 +56,16 @@ feeds = ["risk"]
 scope = "line"
 id = "pii_or_secret"
 type = "N"
-prompt = "Could this added line log, store, send or expose personal data (emails, names, addresses, ids) or a secret (password, token, API key)?"
+# M5.2: was "Could this added line log, store, send or expose personal data
+# (emails, names, addresses, ids) or a secret (password, token, API key)?";
+# Jev answered yes on lines that only renamed a call (#102, P .51-.70) and on
+# UI lines showing users their own profile (#101).
+prompt = "Does this added line newly log, store, send or expose personal data (emails, names, addresses, phone numbers) or a secret (password, token, API key) somewhere it did not reach before, such as logs, error messages, URLs, caches, third parties or other users?"
 feeds = ["risk", "headline"]
+
+[question.criteria]
+true = "the line itself introduces a new place where personal data or a secret is written, sent, kept or shown to someone it does not belong to"
+false = "the line renames, moves or reformats code that already handled the same data, passes an opaque id, or shows users their own data"
 
 [[question]]
 scope = "line"
@@ -133,25 +141,36 @@ none = "implements none of the listed bullets"
 scope = "unit"
 id = "breaking"
 type = "N"
-prompt = "Does this change break existing callers or consumers (removed or renamed export, changed parameters, changed return shape, stricter validation)?"
+# M5.2: was "Does this change break existing callers or consumers (removed or
+# renamed export, changed parameters, changed return shape, stricter
+# validation)?"; Jev answered yes on tests, import lines, call sites updated
+# to a new API and additive exports (#101, #102).
+prompt = "Would existing code or clients that use what this unit itself defines stop compiling or behave wrongly if they were not updated (an export removed or renamed, a parameter added without a default, a return type or response field changed or removed, stricter validation)?"
 inputs = ["callers"]
 feeds = ["headlines", "context"]
+
+[question.criteria]
+true = "this unit changes an exported function, type, endpoint, schema or setting in a way its existing users must adapt to"
+false = "additions only (a new export, a new optional parameter or field), internal code, a call site or import updated to follow a change made elsewhere, a test, or code moved without changing its interface"
 
 [[question]]
 scope = "unit"
 id = "contract"
 type = "C"
-prompt = "Which external contract, if any, does this change modify?"
+# M5.2: was "Which external contract, if any, does this change modify?" with
+# none = "no contract changes"; on #101 Jev gave "none" P .01-.05 for every
+# unit, tests, moved code and React components included.
+prompt = "Which interface that other code or clients rely on does this unit itself define or change? Most units change none: implementation inside a function, call sites and imports that follow a change made elsewhere, UI rendering, tests and moved code are none."
 options = ["none", "signature", "api shape", "schema/migration", "env/flag", "event format"]
 feeds = ["headlines"]
 
 [question.criteria]
-none = "no contract changes"
-signature = "the signature of an exported function, method or type"
-"api shape" = "an HTTP/RPC request or response shape"
-"schema/migration" = "a database schema or a data migration"
-"env/flag" = "an environment variable, config key or feature flag"
-"event format" = "the format of an emitted event, message or log consumed elsewhere"
+none = "no interface change: internal logic, call sites or imports updated to follow another change, UI markup, tests, comments, or code moved without changing its interface"
+signature = "the name, parameters or return type of an exported function, method, type or component that other modules import"
+"api shape" = "the route, method, request or response fields of an HTTP or RPC endpoint served or called over the network"
+"schema/migration" = "a database table, column or index, or a data migration"
+"env/flag" = "an environment variable, config key or feature flag that is read or introduced"
+"event format" = "the shape of an emitted event, message or log line consumed elsewhere"
 
 [[question]]
 scope = "unit"
@@ -275,11 +294,14 @@ prompt = "How closely does a reviewer need to look at this change?"
 options = ["skip", "skim", "read", "run locally"]
 feeds = ["attention", "minutes"]
 
+# M5.2: skim and read were "a glance is enough" / "needs a careful
+# line-by-line read"; Jev answered read for import blocks and module
+# preambles (#101: .52-.70).
 [question.criteria]
-skip = "nothing to review (generated, formatting, trivial)"
-skim = "a glance is enough"
-read = "needs a careful line-by-line read"
-"run locally" = "needs to be run or tested by hand to be sure"
+skip = "nothing to review: generated output, formatting, comments, or code moved unchanged"
+skim = "a glance is enough: imports, exports, type declarations, wiring, renames, call sites updated to follow another change, simple markup, tests"
+read = "needs a careful line-by-line read: new or changed logic, state, error handling, concurrency, security or data handling"
+"run locally" = "needs to be run or tested by hand to be sure: behaviour, timing or environment effects that reading alone cannot settle"
 
 [[question]]
 scope = "unit"

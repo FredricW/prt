@@ -61,11 +61,13 @@ func TestRecordedBranchReplay(t *testing.T) {
 	}
 }
 
-// TestRecordedBranchReviewReplay adds the recorded reviews: the branch's
-// suggested PR title is a non-empty line of at most 72 characters. While
-// the branch's review calls are not recorded (the review recorder was
-// blocked) the test is skipped with that reason; the PRs' reviews must
-// still replay without a miss.
+// TestRecordedBranchReviewReplay adds the recorded reviews (PRs first, then
+// the branch), strictly: every review request of the PRs and of the branch
+// — its group title, fast review, TL;DR and suggested PR title, recorded
+// in M5.2 once the fast review's output cap was raised (it used to stop at
+// max_tokens before its JSON) — has a recording, and the branch block
+// holds (BranchExpectations: a known state, a suggested PR title of at
+// most 72 characters).
 func TestRecordedBranchReviewReplay(t *testing.T) {
 	dir := testutil.RecordingsDir(t, "review")
 	cfg := config.Defaults()
@@ -84,8 +86,7 @@ func TestRecordedBranchReviewReplay(t *testing.T) {
 		t.Fatal(err)
 	}
 	if misses := append(fast.list(), deep.list()...); len(misses) > 0 {
-		t.Skipf("BRANCH REVIEW CALLS NOT RECORDED (%d misses; the live review recorder was blocked): "+
-			"run `go run ./tools/recordjev --live --review --embed replay --branches` to record them. First miss: %s",
+		t.Fatalf("%d branch review requests have no recording (re-record with `make record-review`); first miss: %s",
 			len(misses), strings.SplitN(misses[0], "\n", 2)[0])
 	}
 	reportAll(t, pipelinetest.BranchExpectations(outs))

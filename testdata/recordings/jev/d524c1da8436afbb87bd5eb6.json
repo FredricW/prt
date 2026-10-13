@@ -1,0 +1,103 @@
+{
+  "key": "d524c1da8436afbb87bd5eb6",
+  "request": {
+    "model": "typesafe-ai/jev",
+    "state": {
+      "pr": {
+        "title": "feat(server): user preferences API and ops health check"
+      },
+      "group": {
+        "units": [
+          {
+            "path": "web/src/api/preferences.ts",
+            "symbol": "getPreferences",
+            "signature": "export async function getPreferences(userId: string): Promise\u003cPreferences\u003e",
+            "change": "added",
+            "diff": "+export async function getPreferences(userId: string): Promise\u003cPreferences\u003e {\n+  return fetchJSON\u003cPreferences\u003e(`/users/${encodeURIComponent(userId)}/preferences`);\n+}\n+"
+          },
+          {
+            "path": "web/src/api/preferences.ts",
+            "symbol": "savePreferences",
+            "signature": "export async function savePreferences(p: Preferences): Promise\u003cPreferences\u003e",
+            "change": "added",
+            "diff": "+export async function savePreferences(p: Preferences): Promise\u003cPreferences\u003e {\n+  return fetchJSON\u003cPreferences\u003e(`/users/${encodeURIComponent(p.userId)}/preferences`, { method: \"PUT\", body: p });\n+}"
+          },
+          {
+            "path": "web/src/utils/flags.ts",
+            "symbol": "isEnabled",
+            "signature": "export function isEnabled(name: string): boolean",
+            "change": "added",
+            "diff": "+export function isEnabled(name: string): boolean {\n+  return flags[name] === true;\n+}"
+          },
+          {
+            "path": "web/src/components/SettingsForm.tsx",
+            "change": "added",
+            "diff": " import { useEffect, useState } from \"react\";\n \n import { fetchJSON } from \"../api/client\";\n+import { getPreferences, savePreferences, type Preferences } from \"../api/preferences\";\n import { type Settings } from \"../api/settings\";\n+import { isEnabled } from \"../utils/flags\";\n "
+          },
+          {
+            "path": "web/src/components/SettingsForm.tsx",
+            "symbol": "SettingsForm",
+            "signature": "export function SettingsForm({ userId = \"me\" }: { userId?: string })",
+            "change": "modified",
+            "diff": "-export function SettingsForm() {\n+export function SettingsForm({ userId = \"me\" }: { userId?: string }) {\n   const [settings, setSettings] = useState\u003cSettings | null\u003e(null);\n+  const [prefs, setPrefs] = useState\u003cPreferences | null\u003e(null);\n   const [saved, setSaved] = useState(false);\n+  const showTheme = isEnabled(\"user-preferences-v2\");\n \n   useEffect(() =\u003e {\n     fetchJSON\u003cSettings\u003e(\"/settings\").then(setSettings);\n-  }, []);\n+    if (showTheme) {\n+      getPreferences(userId).then(setPrefs);\n+    }\n+  }, [userId, showTheme]);\n \n   if (!settings) return null;\n "
+          },
+          {
+            "path": "web/src/components/SettingsForm.tsx",
+            "symbol": "SettingsForm",
+            "signature": "export function SettingsForm({ userId = \"me\" }: { userId?: string })",
+            "change": "added",
+            "diff": "     e.preventDefault();\n     const next = await fetchJSON\u003cSettings\u003e(\"/settings\", { method: \"PUT\", body: settings });\n     setSettings(next);\n+    if (prefs) {\n+      setPrefs(await savePreferences(prefs));\n+    }\n     setSaved(true);\n   };\n "
+          },
+          {
+            "path": "web/src/components/SettingsForm.tsx",
+            "symbol": "SettingsForm",
+            "signature": "export function SettingsForm({ userId = \"me\" }: { userId?: string })",
+            "change": "added",
+            "diff": "           \u003coption value=\"weekly\"\u003eWeekly\u003c/option\u003e\n         \u003c/select\u003e\n       \u003c/label\u003e\n+      {showTheme \u0026\u0026 prefs \u0026\u0026 (\n+        \u003clabel\u003e\n+          Theme\n+          \u003cselect\n+            value={prefs.theme}\n+            onChange={(e) =\u003e setPrefs({ ...prefs, theme: e.target.value as Preferences[\"theme\"] })}\n+          \u003e\n+            \u003coption value=\"system\"\u003eSystem\u003c/option\u003e\n+            \u003coption value=\"light\"\u003eLight\u003c/option\u003e\n+            \u003coption value=\"dark\"\u003eDark\u003c/option\u003e\n+          \u003c/select\u003e\n+        \u003c/label\u003e\n+      )}\n       \u003cbutton type=\"submit\"\u003eSave\u003c/button\u003e\n       {saved \u0026\u0026 \u003cspan role=\"status\"\u003eSaved\u003c/span\u003e}\n     \u003c/form\u003e"
+          }
+        ]
+      }
+    },
+    "questions": {
+      "name_bullet": {
+        "type": "choice",
+        "instructions": "Which bullet of the pull request description does this group of changes implement?",
+        "criteria": {
+          "b1": "Migration `20261010_user_preferences.sql`: new `user_preferences` table, `users.avatar_url` column (for #101), drop the unused `users.legacy_theme` column",
+          "b2": "`GET` and `PUT /api/v1/users/{id}/preferences`, enabled with `PORTAL_PREFERENCES_API=on`",
+          "b3": "`users.Routes` takes the preferences store and the switch; `main` and tests updated",
+          "b4": "Health checks move from `GET /api/v1/health` to `GET /healthz` on the ops listener (`PORTAL_OPS_ADDR`, default `:9090`)",
+          "b5": "Settings page: theme picker behind the `user-preferences-v2` flag",
+          "none": "implements none of the listed bullets"
+        }
+      }
+    }
+  },
+  "response": {
+    "model": "typesafe-ai/jev",
+    "answers": {
+      "name_bullet": {
+        "type": "choice",
+        "choice": "b5",
+        "probabilities": {
+          "b1": 0,
+          "b2": 0.06,
+          "b3": 0,
+          "b4": 0,
+          "b5": 0.93,
+          "none": 0.01
+        }
+      }
+    },
+    "usage": {
+      "inputTokens": 1594,
+      "outputTokens": 67
+    },
+    "providerMetadata": {
+      "gateway": {
+        "cost": "0.000066948",
+        "generationId": "gen_01M4TQA4B3DBXW47A9S0N77F3H"
+      }
+    }
+  }
+}

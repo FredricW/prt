@@ -184,7 +184,7 @@ func fastRows(rows []model.Review) []model.Review {
 	return out
 }
 
-// TestFixtureReviewRouting runs the four fixture PRs with fake reviewers
+// TestFixtureReviewRouting runs the fixture PRs with fake reviewers
 // and checks the routing and review outcomes (ReviewExpectations).
 func TestFixtureReviewRouting(t *testing.T) {
 	s := newScripted(reviewAnswer(0.9, 0.9))
@@ -213,8 +213,8 @@ func TestFixtureReviewRouting(t *testing.T) {
 	}
 }
 
-// TestFixtureUrgencyOrder pins the urgency order of the four fixture PRs
-// after a full analysis (DECISIONS "Fixture urgency order (M3)").
+// TestFixtureUrgencyOrder pins the urgency order of the fixture PRs after a
+// full analysis (DECISIONS "Fixture urgency order (M3)"; #106 since M5.2).
 func TestFixtureUrgencyOrder(t *testing.T) {
 	f := openFixture(t, review.Tiers{}, routing(nil))
 	outs, err := f.RunAll(context.Background(), pipeline.RunOptions{})
@@ -231,11 +231,13 @@ func TestFixtureUrgencyOrder(t *testing.T) {
 	if outs[101].Item.Urgency <= outs[104].Item.Urgency {
 		t.Errorf("#101 must rank above #104: %s", strings.Join(got, " > "))
 	}
-	// #101: asked you + breaking getUser + risk 5 + untested units; #102:
-	// authored, breaking rename across callers; #104: CI red after your
-	// approval but a low-risk dependency bump; #103: asked you, but dead
-	// code removal (low risk, nothing breaking).
-	if want := []int{101, 102, 104, 103}; fmt.Sprint(order) != fmt.Sprint(want) {
+	// #101: asked you + breaking getUser + risk 5 + untested units; #106
+	// (M5.2): three breaking units (users.Routes, main's removed health
+	// route, the one-way migration), risk 4 and untested risky units, but
+	// nothing asked of you; #102: authored, breaking rename across callers;
+	// #104: CI red after your approval but a low-risk dependency bump;
+	// #103: asked you, but dead code removal (low risk).
+	if want := []int{101, 106, 102, 104, 103}; fmt.Sprint(order) != fmt.Sprint(want) {
 		t.Errorf("urgency order = %v, want %v: %s", order, want, strings.Join(got, " > "))
 	}
 }

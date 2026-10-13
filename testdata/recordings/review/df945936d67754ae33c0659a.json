@@ -1,0 +1,57 @@
+{
+  "key": "df945936d67754ae33c0659a",
+  "model": "anthropic:claude-opus-5-5",
+  "request": {
+    "task": "review",
+    "tier": "deep",
+    "groupId": "27930b34b8b9069edd67ed3e1a18d34f5e3ea18d2cba52eded1c8d3a3d2e7d93",
+    "system": "You are a senior code reviewer. You review one group of related change units from a pull request and report the problems a careful reviewer would raise: bugs, broken contracts, missing error handling, security holes, data loss, races, and risky code without tests.\n\nRules:\n- Report findings only. Never restate, summarise or praise the diff.\n- Anchor every finding to a file path and a line number printed in the diff: the new-side number, or the old-side number for a deleted line.\n- One finding per problem. \"claim\" is one sentence; \"fix\" is a short suggested change.\n- severity: \"high\" breaks callers, loses data or opens a security hole; \"medium\" is a likely bug or missing handling; \"low\" is a minor risk.\n- Never invent numbers, metrics, line numbers or code that is not shown.\n- The hints are machine labels (probabilities 0-1, risk 1-5). Use them to decide where to look, not as facts.\n- The Context section, when present, is unchanged background (callers, types, tests, config). Report a finding there only when the change breaks it, anchored to the changed line that causes it.\n- verdict: \"approve\" when nothing needs changing, \"comment\" for low findings or questions only, \"request_changes\" when a finding must be fixed before merging.\n- confidence: a number from 0 to 1, how sure you are that the findings and the verdict are right given what you were shown.\n\nAnswer with JSON only, no prose and no code fence, in exactly this shape:\n{\"findings\":[{\"file\":\"path/to/file\",\"line\":12,\"severity\":\"low|medium|high\",\"claim\":\"one sentence\",\"fix\":\"suggested fix\"}],\"verdict\":\"approve|comment|request_changes\",\"confidence\":0.8}\nUse \"findings\": [] when there is nothing to report.\n\nSecurity focus: check authentication and authorisation paths, secrets or personal data reaching logs, responses or storage, injection, unsafe deserialisation, and money handling (rounding, double charges).\n\nPerformance focus: look for I/O or queries inside loops, unbounded work, missing batching or pagination, blocking calls on hot or async paths, and races between concurrent callers.",
+    "prompt": "# Pull request\nTitle: feat(web): cached user profiles with team and avatar\nDescription bullets:\n- `getUser` takes a required `GetUserOptions` argument (`include`, `fresh`, `signal`); all callers updated\n- Move `ApiError`, auth headers and error parsing into `api/errors.ts` and add `isNotFound`\n- Add `useProfileCache`: stale-while-revalidate cache with a 5 minute TTL and request de-duplication\n- Add `Avatar` and `ProfileHeader` components; `ProfilePage` uses the cache and shows save errors\n- Invalidate the profile cache on logout\n- server: return `avatarUrl` when `include=avatar` is requested\n\n# Group\nName: Show user avatars\n\n# Units in review order\nEach diff line starts with its old and new line numbers.\n\n## Unit 1 of 2: web/src/components/UserCard.tsx (modified, new lines 14-20)\nsymbol: UserCard\nsignature: export function UserCard({ userId, compact = false }: Props)\nhints: kind=feature risk=3 tags=async,error_path,pii breaking=0.21 contract=none covered=0.57 untested=no\n```diff\n   13    14  \n   14    15    useEffect(() =\u003e {\n   15    16      let live = true;\n   16       -    getUser(userId).then((u) =\u003e {\n         17 +    getUser(userId, { include: [\"avatar\"] }).then((u) =\u003e {\n   17    18        if (live) setUser(u);\n   18    19      });\n   19    20      return () =\u003e {\n```\n\n## Unit 2 of 2: web/src/components/UserCard.tsx (modified, new lines 27-33)\nsymbol: UserCard\nsignature: export function UserCard({ userId, compact = false }: Props)\nhints: kind=feature risk=3 tags=pii breaking=0.13 contract=none covered=0.30 untested=yes\n```diff\n   26    27    }\n   27    28    return (\n   28    29      \u003cdiv className={compact ? \"user-card user-card--compact\" : \"user-card\"}\u003e\n   29       -      \u003cspan className=\"avatar\"\u003e{initials(user.displayName)}\u003c/span\u003e\n         30 +      \u003cAvatar name={user.displayName} url={user.avatarUrl} size={compact ? 24 : 32} /\u003e\n   30    31        \u003cdiv\u003e\n   31    32          \u003cstrong\u003e{user.displayName}\u003c/strong\u003e\n   32    33          {!compact \u0026\u0026 \u003cdiv className=\"muted\"\u003e{user.email}\u003c/div\u003e}\n```\n\nReview these units and answer with the JSON object only.\n",
+    "maxTokens": 4096
+  },
+  "result": {
+    "text": "{\"findings\":[{\"file\":\"web/src/components/UserCard.tsx\",\"line\":17,\"severity\":\"medium\",\"claim\":\"The `getUser` promise has no rejection handler, so an `ApiError` (for example not found, or an unsupported `include`) becomes an unhandled rejection and the card stays in its loading state forever.\",\"fix\":\"Add a `.catch` that sets an error or fallback state, using `isNotFound` to tell a missing user apart from other failures, and still respect the `live` flag.\"},{\"file\":\"web/src/components/UserCard.tsx\",\"line\":17,\"severity\":\"low\",\"claim\":\"UserCard calls `getUser` directly instead of going through the new `useProfileCache`, so a list of cards sends one uncached, non-deduplicated request per card.\",\"fix\":\"Fetch through `useProfileCache` so cards share cached and in-flight requests.\"},{\"file\":\"web/src/components/UserCard.tsx\",\"line\":17,\"severity\":\"low\",\"claim\":\"The request is never aborted on unmount even though `getUser` now accepts a `signal`; the `live` flag only ignores the response after it arrives.\",\"fix\":\"Create an `AbortController` in the effect, pass `signal: controller.signal`, and abort it in the cleanup.\"},{\"file\":\"web/src/components/UserCard.tsx\",\"line\":30,\"severity\":\"low\",\"claim\":\"The new `Avatar` rendering is marked untested, including the case where `avatarUrl` is missing or fails to load.\",\"fix\":\"Add tests for compact and full sizes, a missing `avatarUrl`, and a broken image URL that should fall back to initials.\"}],\"verdict\":\"comment\",\"confidence\":0.6}",
+    "findings": [
+      {
+        "unitId": "0279c3b1d6b47f09c812b51c9fe772671065ccf0d958a6889005e6c3b8bd5a50",
+        "path": "web/src/components/UserCard.tsx",
+        "line": 17,
+        "severity": "medium",
+        "claim": "The `getUser` promise has no rejection handler, so an `ApiError` (for example not found, or an unsupported `include`) becomes an unhandled rejection and the card stays in its loading state forever.",
+        "fix": "Add a `.catch` that sets an error or fallback state, using `isNotFound` to tell a missing user apart from other failures, and still respect the `live` flag."
+      },
+      {
+        "unitId": "0279c3b1d6b47f09c812b51c9fe772671065ccf0d958a6889005e6c3b8bd5a50",
+        "path": "web/src/components/UserCard.tsx",
+        "line": 17,
+        "severity": "low",
+        "claim": "The request is never aborted on unmount even though `getUser` now accepts a `signal`; the `live` flag only ignores the response after it arrives.",
+        "fix": "Create an `AbortController` in the effect, pass `signal: controller.signal`, and abort it in the cleanup."
+      },
+      {
+        "unitId": "0279c3b1d6b47f09c812b51c9fe772671065ccf0d958a6889005e6c3b8bd5a50",
+        "path": "web/src/components/UserCard.tsx",
+        "line": 17,
+        "severity": "low",
+        "claim": "UserCard calls `getUser` directly instead of going through the new `useProfileCache`, so a list of cards sends one uncached, non-deduplicated request per card.",
+        "fix": "Fetch through `useProfileCache` so cards share cached and in-flight requests."
+      },
+      {
+        "unitId": "8185bc8f054cceaf1064d5e0de57427fc4d91786c47a2966c1566b02d363a608",
+        "path": "web/src/components/UserCard.tsx",
+        "line": 30,
+        "severity": "low",
+        "claim": "The new `Avatar` rendering is marked untested, including the case where `avatarUrl` is missing or fails to load.",
+        "fix": "Add tests for compact and full sizes, a missing `avatarUrl`, and a broken image URL that should fall back to initials."
+      }
+    ],
+    "verdict": "comment",
+    "confidence": 0.6,
+    "model": "anthropic:claude-opus-5-5",
+    "inputTokens": 1522,
+    "outputTokens": 856,
+    "cost": 0.023208,
+    "ms": 9282,
+    "stopReason": "end_turn"
+  }
+}
