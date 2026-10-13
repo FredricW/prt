@@ -105,12 +105,30 @@ TUI offline against `testdata/fixture-repo` with `testdata/fixtures/prs.json`.
   go.mod).
 - Jev/LLM recordings are scheduled for the start of M1 (see DECISIONS.md).
 
-### M1 — units and labels
+### M1 — units and labels (released 2026-10-13)
 
-`make check` and `make snapshot` are green. The Jev recordings were made
+Release gate: `go build ./...`, `go vet ./...` (also `-tags live`),
+`make lint` (0 issues), `make test` and `make snapshot` all green on
+`72b2d60`; `make demo` runs the TUI offline against `testdata/fixture-repo`
+with `testdata/fixtures/prs.json`. The Jev recordings were made
 once against the real endpoint (218 calls, $0.0197, see
 `testdata/recordings/SPEND.md`), and `TestRecordedReplay` replays them
 offline over fixture PRs #101–#104.
+
+- **Shipped:** tree-sitter change units, the full question catalogue,
+  stage-4 Jev labels with a SQLite label cache, aggregate arithmetic, the
+  Overview page and Code page mode A, the Jev recorder; review fixes (see
+  DECISIONS "M1 review fixes" 1 and 2): formatting runs, unique duplicate
+  unit ids, position-keyed line labels, input-hashed cached answers,
+  unknown-aware chips and filters, a Jev circuit breaker and per-unit partial
+  failures, user questions merged over the built-ins, clickable minimap cells.
+- **Deferred:** catalogue rows without an M1 consumer (marked `deferred`,
+  never sent) wait for M2–M5; the logout-bullet check needs caller links
+  (M2); `effect`/`reversible` are asked but first consumed in M3; "has
+  comments", "has findings" and "changed since last look" filters are
+  placeholders until M3/M4; `make demo`/`make snapshot` stay offline and show
+  the labels-unavailable mode; the ONNX embedder is still a stub.
+- **Blocked:** nothing.
 
 #### Added
 
