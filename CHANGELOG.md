@@ -463,10 +463,48 @@ override the spec's "analysis runs in urgency order" (see DECISIONS).
   overlay lists every command.
 - Pipeline page and picker show `■ stopped` stages and reviews.
 
+Final gate: `go build ./...`, `go vet ./...` (also `-tags live`),
+`make lint` (0 issues), `make test` and `make snapshot` all green on
+`fd59a1a`; `make demo` runs the TUI offline (`--no-daemon --offline`, replay
+flags) against `testdata/fixture-repo` with `testdata/fixtures/prs.json` and
+`testdata/fixtures/drafts.json`, now under the default `needs-you` strategy.
+
+- **Shipped:** auto-review strategy gate, stop/resume, settings page and the
+  M5.1 command line (below), plus two rounds of review fixes.
+- **Deferred:** `Resume` after a stopped Pipeline-page `r` on a stage (or a
+  forced `r`) does not keep its `FromStage`/`Force`; it continues from the
+  caches (press `r` on the stage again). The ONNX embedder is still a stub.
+- **Blocked:** nothing new (the M5 Anthropic recording blocker in
+  `docs/BLOCKED.md` still stands).
+- **Tag note:** the `m5.1` tag was created (and pushed) at `56357ac`, before
+  the review fixes below. It was not moved; `main` at the "docs: changelog
+  for M5.1" commit is the complete M5.1.
+
+#### Fixed (M5.1 review, rounds 1 and 2; details in DECISIONS)
+
+- An explicit request (Add, `:resume`, `r`) is never swallowed by an
+  automatic run that may be gated to free stages only.
+- A gated run never replaces a stored analysis: Stale items outside the
+  strategy are only re-aggregated, and `AnalysedSHA` never moves.
+- A repo `prt.toml` save seeds from the active config, so global `[keys]`,
+  `[github]` and other knobs are not dropped; replay mode refuses global
+  saves; saves validate only the keys they change, so `:auto manual` no
+  longer fails on an unrelated value.
+- A stop that arrives after a run completed keeps the analysis; stopping
+  queued or aggregate-only work leaves an analysed item Ready/Stale instead
+  of `stopped`; "stopped at" names the stage the run log marked.
+- `s` (skip) on a Stale item is automatic, not a request to analyse the new
+  head.
+- Discovery queues newly covered not-analysed items (also in
+  `--no-daemon`); a push on a not-analysed item re-runs its free stages.
+- Settings page: model-factory notes (a disabled tier) show as warnings; the
+  GitHub line names the fixture file with `--fixtures`.
+
 #### Known limits
 
 - In the 36-column picker, `stopped at <stage> · r to resume` is cut short.
 - Changes to `prt.questions.toml` apply at the next daemon start.
+- Resume drops a stopped run's `FromStage`/`Force` (see Deferred).
 
 ### M5 — polish (released 2026-10-13)
 
