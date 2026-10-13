@@ -10,6 +10,10 @@ import (
 	"github.com/fredricw/prt/internal/review"
 )
 
+// errRetryOverCap marks a failed call whose retry did not fit the item's
+// cost cap.
+var errRetryOverCap = errors.New("retry over cost cap")
+
 // callMeta is the call-log metadata of one LLM call.
 type callMeta struct {
 	itemID, groupID string
@@ -77,8 +81,10 @@ func withErr(call model.ReviewCall, err error) model.ReviewCall {
 // callRetry is callOnce with one retry (spec failure handling: "retried
 // once, then left for R"). An error from the call or from check (e.g. an
 // unparseable review) is retried unless ctx is done or the provider key is
-// missing. The retry's call-log purpose is "retry".
-func (p *Pipeline) callRetry(ctx context.Context, rev review.Reviewer, req review.Request, m callMeta, check func(review.Result) error) callOutcome {
+// missing. The retry's call-log purpose is "retry". allowRetry (nil:
+// always) is asked before the retry, e.g. to reserve its cost from the
+// item's budget; false ends with the first error plus errRetryOverCap.
+func (p *Pipeline) callRetry(ctx context.Context, rev review.Reviewer, req review.Request, m callMeta, check func(review.Result) error, allowRetry func() bool) callOutcome {
 	var out callOutcome
 	if rev == nil {
 		out.err = fmt.Errorf("%w: no %s reviewer configured", review.ErrUnavailable, m.tier)
@@ -87,6 +93,10 @@ func (p *Pipeline) callRetry(ctx context.Context, rev review.Reviewer, req revie
 	for attempt := 1; attempt <= 2; attempt++ {
 		meta := m
 		if attempt > 1 {
+			if allowRetry != nil && !allowRetry() {
+				out.err = fmt.Errorf("%w (%w)", out.err, errRetryOverCap)
+				break
+			}
 			meta.purpose = purposeRetry
 		}
 		res, call, err := p.callOnce(ctx, rev, req, meta)

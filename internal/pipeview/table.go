@@ -179,7 +179,7 @@ func (m *Model) addRow(b *docBuilder, c cols, i int, rw row) {
 	}
 	parts := []string{mark + name, padRight(tierText(r), c.tier)}
 	if c.wide {
-		parts = append(parts, m.st.dim.Render(padRight(ruleText(r), c.rule)), padRight(ctxList(r.Context), c.ctx))
+		parts = append(parts, m.st.dim.Render(padRight(ruleText(r), c.rule)), padRight(ctxCell(r), c.ctx))
 	}
 	status := padRight(m.statusText(r), c.status)
 	if r.Status == model.ReviewFailed {
@@ -195,8 +195,8 @@ func (m *Model) addRow(b *docBuilder, c cols, i int, rw row) {
 		if rt := ruleText(r); rt != "" {
 			sub = append(sub, rt)
 		}
-		if len(r.Context) > 0 {
-			sub = append(sub, "ctx "+ctxList(r.Context))
+		if len(r.Context)+len(r.ContextNone) > 0 {
+			sub = append(sub, "ctx "+ctxCell(r))
 		}
 		line := m.st.dim.Render("    " + strings.Join(sub, " · "))
 		if ct := calibText(r); ct != "" {

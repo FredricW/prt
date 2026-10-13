@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -59,6 +60,8 @@ type reviewResult struct {
 	cost          float64
 	attempts      int
 	err           error
+	// retryReserved is set when a retry reserved the job's estimate.
+	retryReserved bool
 }
 
 // fromCache turns a cached review into a result.
@@ -76,6 +79,8 @@ type reviewRun struct {
 	ro          *routeOut
 	ignoreCache bool
 	start       time.Time
+	// budget is the item's cost budget for this run (nil: unlimited).
+	budget route.Budget
 
 	mu        sync.Mutex
 	rows      []model.Review
@@ -112,8 +117,12 @@ func (p *Pipeline) reviewStage(ctx context.Context, r *run, ro *routeOut, rl *mo
 		rr.phase2(ctx)
 	}
 	out := reviewOut{elapsedMs: p.d.Now().Sub(rr.start).Milliseconds()}
-	if fastErr != nil {
+	switch {
+	case fastErr != nil:
 		out.note = skipReason(fastErr)
+	case deepErr != nil:
+		// Fast reviews ran; deep rows were skipped and phase 2 never ran.
+		out.note = "deep " + skipReason(deepErr) + "; escalation and calibration off"
 	}
 	rr.finalise()
 	out.rows = rr.snapshot()
@@ -128,16 +137,24 @@ func (p *Pipeline) reviewStage(ctx context.Context, r *run, ro *routeOut, rl *mo
 		p.d.Log.Warn("store call log failed", "item", r.it.ID, "err", err)
 	}
 	rr.fillRunLog(rl, out)
-	if fastErr != nil {
+	switch {
+	case fastErr != nil:
 		skipStage(rl, joinNotes(out.note, rl.Note))
+	case deepErr != nil:
+		rl.Note = joinNotes(rl.Note, out.note)
 	}
 	return out, nil
 }
 
+// newReviewRun starts a stage-7 run. Its budget starts where the plan
+// stopped (titles plus the estimates of every planned call); retries and
+// phase-2 calls reserve from it, so every call that can spend has an
+// upper-bound estimate counted against the cap.
 func (p *Pipeline) newReviewRun(r *run, ro *routeOut) *reviewRun {
 	rr := &reviewRun{
 		p: p, r: r, ro: ro, ignoreCache: r.opt.ignoresCache(model.StageReview), start: p.d.Now(),
 		rows: append([]model.Review(nil), ro.rows...), idx: map[string]int{}, prev: map[string][]model.ReviewCall{},
+		budget: p.fn.newBudget(ro.capUSD, ro.reserved),
 	}
 	for i, row := range rr.rows {
 		rr.idx[row.GroupID] = i
@@ -324,17 +341,26 @@ func applyResult(row *model.Review, res reviewResult) {
 }
 
 // review calls the tier's reviewer for a job (one retry; an unparseable
-// response counts as an error) and logs the calls.
+// response counts as an error) and logs the calls. The retry first
+// reserves the job's estimate from the budget; when it does not fit the
+// job fails "retry over cost cap".
 func (rr *reviewRun) review(ctx context.Context, j reviewJob) reviewResult {
 	units := rr.ro.inputs[j.groupID].Units
 	var res reviewResult
+	allowRetry := func() bool {
+		if rr.budget == nil {
+			return true
+		}
+		res.retryReserved = rr.budget.Reserve(j.est)
+		return res.retryReserved
+	}
 	out := rr.p.callRetry(ctx, rr.p.d.Reviewers.For(j.tier), j.req,
 		callMeta{itemID: rr.r.it.ID, groupID: j.groupID, tier: j.tier, purpose: j.purpose},
 		func(r review.Result) error {
 			f, v, c, err := rr.p.parseResult(r, units)
 			res.findings, res.verdict, res.conf = f, v, c
 			return err
-		})
+		}, allowRetry)
 	rr.r.calls.add(j.groupID, out.calls...)
 	rr.count(out.calls)
 	res.model, res.inTok, res.outTok, res.ms = out.res.Model, out.res.InputTokens, out.res.OutputTokens, out.res.Ms
@@ -366,6 +392,7 @@ func (rr *reviewRun) cache(ctx context.Context, j reviewJob, res reviewResult) {
 		Prompt: review.PromptReviewV1, Prompts: in.Prompts, Findings: res.findings, Verdict: res.verdict,
 		Confidence: res.conf, Model: res.model, Status: model.ReviewDone,
 		InputTokens: res.inTok, OutputTokens: res.outTok, Ms: res.ms, Cost: res.cost, Attempts: res.attempts,
+		UnitStarts: unitStarts(in.Units),
 	}
 	if err := rr.p.d.Store.PutReview(ctx, c); err != nil {
 		rr.p.d.Log.Warn("store review cache failed", "group", j.groupID, "tier", j.tier, "err", err)
@@ -386,7 +413,48 @@ func (rr *reviewRun) serveCached(ctx context.Context, groupID string, tier model
 	rr.mu.Lock()
 	rr.cacheHits++
 	rr.mu.Unlock()
+	c.Findings = rebaseFindings(c.Findings, c.UnitStarts, rr.ro.inputs[groupID].Units)
+	if c.Calibration != nil {
+		cal := *c.Calibration
+		cal.Findings = rebaseFindings(cal.Findings, c.UnitStarts, rr.ro.inputs[groupID].Units)
+		c.Calibration = &cal
+	}
 	return c, true
+}
+
+// unitStarts maps each unit id to the first line of its anchor span.
+func unitStarts(units []model.ChangeUnit) map[string]int {
+	if len(units) == 0 {
+		return nil
+	}
+	out := make(map[string]int, len(units))
+	for _, u := range units {
+		out[u.ID] = review.AnchorStart(u)
+	}
+	return out
+}
+
+// rebaseFindings moves a cached review's findings to where their units
+// are now: the group id (the cache key) hashes unit content without line
+// numbers, so after a push or rebase moves a unit the cached lines are
+// stale. Each finding anchored to a unit shifts by (current start − start
+// when reviewed); then findings are re-anchored to the current units.
+// Reviews cached without UnitStarts (before this was recorded) are served
+// unchanged. The input slice is not modified.
+func rebaseFindings(fs []model.Finding, starts map[string]int, units []model.ChangeUnit) []model.Finding {
+	if len(fs) == 0 || len(starts) == 0 || len(units) == 0 {
+		return fs
+	}
+	now := unitStarts(units)
+	out := slices.Clone(fs)
+	for i, f := range out {
+		was, ok1 := starts[f.UnitID]
+		cur, ok2 := now[f.UnitID]
+		if f.UnitID != "" && ok1 && ok2 {
+			out[i].Line += cur - was
+		}
+	}
+	return review.AnchorFindings(out, units)
 }
 
 // cachedCall is the call-log entry of a cache hit: the last successful
@@ -425,11 +493,11 @@ func (rr *reviewRun) previous(ctx context.Context, groupID string) []model.Revie
 }
 
 // phase2 decides escalations and calibration samples sequentially in plan
-// order, reserving their estimates from a route.Budget that starts where
-// the plan stopped (deterministic: estimates only), then runs them with
-// deep_slots concurrency.
+// order, reserving their estimates from the run's budget (where the plan
+// stopped, plus any phase-1 retries), then runs them with deep_slots
+// concurrency.
 func (rr *reviewRun) phase2(ctx context.Context) {
-	budget := rr.p.fn.newBudget(rr.ro.capUSD, rr.ro.reserved)
+	budget := rr.budget
 	if budget == nil {
 		rr.p.d.Log.Debug("no review budget; escalation and calibration skipped", "item", rr.r.it.ID)
 		return
@@ -512,6 +580,9 @@ func (rr *reviewRun) runFollowUp(ctx context.Context, j reviewJob, b route.Budge
 		}
 		res = rr.review(ctx, j)
 		b.Settle(j.est, res.cost)
+		if res.retryReserved {
+			b.Settle(j.est, 0) // res.cost already holds the retry's actual cost
+		}
 		if res.err == nil {
 			rr.cache(ctx, j, res)
 		}
@@ -640,7 +711,7 @@ func (rr *reviewRun) finalise() {
 func (rr *reviewRun) fillRunLog(rl *model.RunLog, out reviewOut) {
 	rr.mu.Lock()
 	defer rr.mu.Unlock()
-	done, failed, queued, escalated, calibrated := 0, 0, 0, 0, 0
+	done, failed, queued, skipped, escalated, calibrated := 0, 0, 0, 0, 0, 0
 	for _, row := range out.rows {
 		if row.Tier == model.TierNone {
 			continue
@@ -652,6 +723,8 @@ func (rr *reviewRun) fillRunLog(rl *model.RunLog, out reviewOut) {
 			failed++
 		case model.ReviewQueued:
 			queued++
+		case model.ReviewSkipped:
+			skipped++
 		}
 		if row.EscalatedOf != nil {
 			escalated++
@@ -666,7 +739,7 @@ func (rr *reviewRun) fillRunLog(rl *model.RunLog, out reviewOut) {
 	for _, c := range []struct {
 		n    int
 		what string
-	}{{rr.cacheHits, "cached"}, {failed, "failed"}, {queued, "queued over cap"}, {escalated, "escalated"}, {calibrated, "calibrated"}} {
+	}{{rr.cacheHits, "cached"}, {failed, "failed"}, {queued, "queued over cap"}, {skipped, "skipped"}, {escalated, "escalated"}, {calibrated, "calibrated"}} {
 		if c.n > 0 {
 			parts = append(parts, fmt.Sprintf("%d %s", c.n, c.what))
 		}

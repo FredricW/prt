@@ -100,6 +100,13 @@ type RunOptions struct {
 	// labels, pairs, names and split answers are content-keyed and kept
 	// (DECISIONS "Pipeline stages 6–8 (M3)").
 	FromStage model.Stage
+	// KeepReviewed is set by a routing-rules reload (spec: "saving re-routes
+	// unreviewed groups"): a group whose stored routing row is done keeps
+	// that row's decision (tier, rule, prompts, context) instead of being
+	// routed by the new rules, unless the user overrode it (D/s) or the run
+	// ignores the review cache. Queued, failed and skipped rows are routed
+	// again.
+	KeepReviewed bool
 }
 
 // ignoresCache reports whether stage s must not use its cache in this run.
@@ -380,6 +387,9 @@ func (p *Pipeline) aggregate(ctx context.Context, r *run, a analysis, ro *routeO
 	agg.Grouping, agg.Split = a.gro.stats, a.gro.split
 	rl.Note = p.tldr(ctx, r, &agg, rl)
 	agg.Review = p.reviewStats(r, a.gro.groups, rows, ro, rv)
+	if r.jevCalls == 0 && !a.jo.missing {
+		p.carryJevStats(ctx, r.it.ID, agg.Review)
+	}
 	agg.Calibration = p.calibrationStats(ctx)
 	rl.In, rl.Out = len(a.parsed.units), len(in.Labels)
 	if err := r.calls.flush(ctx, p.d.Store, r.it.ID, groupIDs(a.gro.groups, "")); err != nil {
@@ -389,6 +399,17 @@ func (p *Pipeline) aggregate(ctx context.Context, r *run, a analysis, ro *routeO
 		return agg, fmt.Errorf("pipeline: store agg: %w", err)
 	}
 	return agg, p.applyAgg(ctx, r.it, r.f, agg)
+}
+
+// carryJevStats fills s's Jev totals from the item's stored aggregate when
+// this run's Jev stage made no call (every label cached): the page then
+// shows what the labels in use cost when they were asked, marked cached.
+func (p *Pipeline) carryJevStats(ctx context.Context, itemID string, s *model.ReviewStats) {
+	prev, ok, err := p.d.Store.Agg(ctx, itemID)
+	if err != nil || !ok || prev.Review == nil || (prev.Review.JevCalls == 0 && !prev.Review.JevCached) {
+		return
+	}
+	s.JevCalls, s.JevCost, s.JevCached = prev.Review.JevCalls, prev.Review.JevCost, true
 }
 
 // groupIDs returns the ids of groups followed by extra.

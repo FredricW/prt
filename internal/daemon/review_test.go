@@ -259,6 +259,57 @@ func TestRoutingReload(t *testing.T) {
 	}
 }
 
+// A reload whose items are all reviewed re-routes nothing: done groups keep
+// their tier and no review is asked again.
+func TestRoutingReloadKeepsReviewed(t *testing.T) {
+	ctx := context.Background()
+	e := newReviewEnv(t, true)
+	before := e.rows(t)[0]
+	if before.Status != model.ReviewDone || before.Tier != model.TierDeep {
+		t.Fatalf("first run row = %+v", before)
+	}
+	path := filepath.Join(e.dirs[0], config.RoutingFile)
+	if err := os.MkdirAll(e.dirs[0], 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("[[rule]]\nwhen = \"true\"\ntier = \"fast\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	info, err := e.c.Routing(ctx, proto.RoutingParams{Reload: true})
+	if err != nil || info.Err != "" || info.Rerouted != 0 {
+		t.Fatalf("reload = %+v, %v; want nothing re-routed", info, err)
+	}
+	// Run the item as a reload would and check the done row is kept.
+	if _, err := e.c.p.RunHead(ctx, mustItem(t, e), pipeline.RunOptions{KeepReviewed: true}); err != nil {
+		t.Fatal(err)
+	}
+	if got := e.rows(t)[0]; got.Tier != model.TierDeep || got.Status != model.ReviewDone || reviewCalls(e.fast) != 0 {
+		t.Errorf("row after reload run = %+v (fast review calls %d)", got, reviewCalls(e.fast))
+	}
+	if n := e.deepReviews.Load(); n != 1 {
+		t.Errorf("deep review calls = %d, want 1 (cached)", n)
+	}
+}
+
+func mustItem(t *testing.T, e *reviewEnv) model.Item {
+	t.Helper()
+	it, err := e.st.Item(context.Background(), e.id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return it
+}
+
+func reviewCalls(f *review.Fake) int {
+	n := 0
+	for _, req := range f.Calls {
+		if req.Task == review.TaskReview {
+			n++
+		}
+	}
+	return n
+}
+
 func TestCallLog(t *testing.T) {
 	ctx := context.Background()
 	e := newReviewEnv(t, true)

@@ -184,9 +184,13 @@ type ReviewStats struct {
 	Cost    float64 `json:"cost"`
 	CapUSD  float64 `json:"capUsd"`
 	OverCap int     `json:"overCap"` // rows queued over the cap
-	// JevCalls and JevCost sum the item's Jev stage rows.
-	JevCalls int     `json:"jevCalls"`
-	JevCost  float64 `json:"jevCost"`
+	// JevCalls and JevCost are the Jev calls behind the item's current
+	// labels: this run's stage-4 totals, or, when this run's labels all came
+	// from the cache, the totals of the run that asked them (JevCached),
+	// the way cached review costs count what they cost when they ran.
+	JevCalls  int     `json:"jevCalls"`
+	JevCost   float64 `json:"jevCost"`
+	JevCached bool    `json:"jevCached,omitempty"`
 	// Note explains a degraded review stage ("reviews skipped:
 	// PRT_ANTHROPIC_API_KEY not set").
 	Note string `json:"note,omitempty"`

@@ -156,6 +156,9 @@ func routingChips(r *model.Review) []chip {
 	if len(r.Context) > 0 {
 		cs = append(cs, chip{text: "context: " + strings.Join(r.Context, ", ")})
 	}
+	if len(r.ContextNone) > 0 {
+		cs = append(cs, chip{text: "no context found: " + strings.Join(r.ContextNone, ", ")})
+	}
 	return cs
 }
 

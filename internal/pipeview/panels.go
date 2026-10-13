@@ -69,7 +69,11 @@ func (m *Model) buildTotals(b *docBuilder) {
 		cost += m.st.warn.Render(fmt.Sprintf(" · %d queued over cap", rs.OverCap)) + m.st.dim.Render(" ($ raises it)")
 	}
 	m.addPara(b, cost)
-	m.addPara(b, fmt.Sprintf("  jev %s · %s", plural(rs.JevCalls, "call", "calls"), money(rs.JevCost)))
+	jevLine := fmt.Sprintf("  jev %s · %s", plural(rs.JevCalls, "call", "calls"), money(rs.JevCost))
+	if rs.JevCached {
+		jevLine += m.st.dim.Render(" (cached)")
+	}
+	m.addPara(b, jevLine)
 	m.addPara(b, m.st.dim.Render(fmt.Sprintf("  escalations %d · calibration samples %d · findings %d", rs.Escalations, rs.Calibrations, rs.Findings)))
 	if rs.Note != "" {
 		m.addPara(b, m.st.note.Render("  note: "+rs.Note))

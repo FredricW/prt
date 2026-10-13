@@ -207,6 +207,9 @@ func AnchorFindings(fs []model.Finding, units []model.ChangeUnit) []model.Findin
 	return fs
 }
 
+// AnchorStart is the first line of the span findings anchor to in u.
+func AnchorStart(u model.ChangeUnit) int { return anchorSpan(u).Start }
+
 // anchorSpan is the span findings anchor to: the new side, or the old side
 // for a pure deletion.
 func anchorSpan(u model.ChangeUnit) model.Span {

@@ -135,6 +135,23 @@ func ctxList(ctx []string) string {
 	return strings.Join(out, ",")
 }
 
+// ctxCell renders a routing row's context: the attached kinds, then the
+// kinds routing decided on that found nothing as "<kind>:none"
+// ("tests,callers:none"); "—" when there is neither.
+func ctxCell(r model.Review) string {
+	if len(r.ContextNone) == 0 {
+		return ctxList(r.Context)
+	}
+	parts := make([]string, 0, 2)
+	if len(r.Context) > 0 {
+		parts = append(parts, ctxList(r.Context))
+	}
+	for _, c := range r.ContextNone {
+		parts = append(parts, ctxList([]string{c})+":none")
+	}
+	return strings.Join(parts, ",")
+}
+
 // countPair is a name and a count for "name N" lists.
 type countPair struct {
 	name string

@@ -60,7 +60,7 @@ func (p *Pipeline) prose(ctx context.Context, ns string, req review.Request, m c
 			return proseOut{text: pc.Text, key: key, calls: []model.ReviewCall{c}, cached: true}
 		}
 	}
-	out := p.callRetry(ctx, rev, req, m, nil)
+	out := p.callRetry(ctx, rev, req, m, nil, nil)
 	po := proseOut{key: key, calls: out.calls, err: out.err}
 	if out.err != nil {
 		return po

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -115,15 +116,19 @@ func (p *Pipeline) groupOverrides(ctx context.Context, itemID string, groups []m
 type userFlags struct{ forced, skipped bool }
 
 // applyUserTiers applies the overrides to the decisions: deep → tier deep
-// (the rule's prompts and context kept), "forced deep (D)"; none → tier
-// none without prompts or context, "skipped by user (s)". Either way no
-// rule decided (RuleIndex 0).
-func applyUserTiers(decs []route.Decision, ovs map[string]model.Tier) ([]route.Decision, map[string]userFlags) {
+// (the rule's prompts and context kept; a group the rules sent to none,
+// which carries no context, gets autoCtx's stage-6 context), "forced deep
+// (D)"; none → tier none without prompts or context, "skipped by user
+// (s)". Either way no rule decided (RuleIndex 0).
+func applyUserTiers(decs []route.Decision, ovs map[string]model.Tier, autoCtx func(groupID string) []string) ([]route.Decision, map[string]userFlags) {
 	flags := map[string]userFlags{}
 	out := make([]route.Decision, len(decs))
 	for i, d := range decs {
 		switch ovs[d.GroupID] {
 		case model.TierDeep:
+			if d.Tier == model.TierNone && d.Context == nil && autoCtx != nil {
+				d.Context = autoCtx(d.GroupID)
+			}
 			d.Tier, d.RuleIndex, d.Rule, d.Words, d.Unknown = model.TierDeep, 0, "", wordsForcedDeep, false
 			flags[d.GroupID] = userFlags{forced: true}
 		case model.TierNone:
@@ -183,14 +188,18 @@ func (p *Pipeline) routeStage(ctx context.Context, r *run, a analysis, rl *model
 		return nil, err
 	}
 	rules := p.Routing()
-	decs, flags := applyUserTiers(p.fn.route(rules, facts), ovs)
-	ro := &routeOut{
-		rules: rules, capUSD: capFor(in.Item, rules.Config),
-		inputs: map[string]review.GroupInput{}, reqs: map[string]review.Request{},
-	}
 	byGroup := make(map[string]route.GroupFacts, len(facts))
 	for _, f := range facts {
 		byGroup[f.Group.ID] = f
+	}
+	decs := p.fn.route(rules, facts)
+	if r.opt.KeepReviewed && !r.opt.ignoresCache(model.StageReview) {
+		decs = p.keepReviewed(ctx, r.it.ID, decs, ovs)
+	}
+	decs, flags := applyUserTiers(decs, ovs, func(id string) []string { return route.AutoContext(byGroup[id]) })
+	ro := &routeOut{
+		rules: rules, capUSD: capFor(in.Item, rules.Config),
+		inputs: map[string]review.GroupInput{}, reqs: map[string]review.Request{},
 	}
 	for _, d := range decs {
 		f, ok := byGroup[d.GroupID]
@@ -215,13 +224,57 @@ func (p *Pipeline) routeStage(ctx context.Context, r *run, a analysis, rl *model
 			ro.reserved += pl.EstCost
 		}
 	}
-	ro.rows = routingRows(r.it.ID, groups, ro.plan, flags)
+	ro.rows = routingRows(r.it.ID, groups, ro.plan, flags, ro.inputs)
 	if err := p.d.Store.PutItemReviews(ctx, r.it.ID, ro.rows); err != nil {
 		return nil, fmt.Errorf("pipeline: store routing rows: %w", err)
 	}
 	rl.In, rl.Out = len(groups), len(ro.inputs)
 	rl.Note = routeNote(ro.plan, flags)
 	return ro, nil
+}
+
+// keptWords marks a routing row whose decision a rules reload kept.
+const keptWords = " (kept: reviewed before the rules changed)"
+
+// keepReviewed replaces the decision of every group whose stored routing
+// row is done (and that the user did not override) with that row's
+// decision: its routed tier (fast for an escalated row, so the escalation
+// replays from the cache), rule, words, prompts and context. Other groups
+// keep the new rules' decision. A store error keeps every new decision.
+func (p *Pipeline) keepReviewed(ctx context.Context, itemID string, decs []route.Decision, ovs map[string]model.Tier) []route.Decision {
+	prev, err := p.d.Store.ItemReviews(ctx, itemID)
+	if err != nil {
+		p.d.Log.Warn("load routing rows failed; re-routing every group", "item", itemID, "err", err)
+		return decs
+	}
+	done := make(map[string]model.Review, len(prev))
+	for _, row := range prev {
+		if row.Status == model.ReviewDone && row.Tier != model.TierNone {
+			done[row.GroupID] = row
+		}
+	}
+	out := make([]route.Decision, len(decs))
+	for i, d := range decs {
+		row, ok := done[d.GroupID]
+		if ok && ovs[d.GroupID] == "" {
+			tier := row.Tier
+			if row.EscalatedOf != nil {
+				tier = *row.EscalatedOf
+			}
+			words := row.RuleWords
+			if !strings.HasSuffix(words, keptWords) {
+				words += keptWords
+			}
+			ctxKinds := append(slices.Clone(row.Context), row.ContextNone...)
+			d = route.Decision{
+				// RuleIndex 0: the index named a rule of the old file.
+				GroupID: d.GroupID, Tier: tier, Rule: row.Rule, Words: words,
+				Prompts: slices.Clone(row.Prompts), Context: ctxKinds, HotSpot: d.HotSpot,
+			}
+		}
+		out[i] = d
+	}
+	return out
 }
 
 // estimate is the pre-call cost bound of a group's routed review: 0 for
@@ -288,10 +341,28 @@ func groupFacts(groups []model.Group, units []model.ChangeUnit, pre model.ItemAg
 	return out
 }
 
+// attachedContext splits the decided context kinds into those whose
+// blocks the request carries and those that found nothing to attach.
+func attachedContext(decided []string, blocks []model.ContextBlock) (attached, none []string) {
+	has := map[string]bool{}
+	for _, b := range blocks {
+		has[b.Kind] = true
+	}
+	for _, k := range decided {
+		if has[k] {
+			attached = append(attached, k)
+		} else {
+			none = append(none, k)
+		}
+	}
+	return attached, none
+}
+
 // routingRows builds the routing table in group order from the plan: tier
 // none rows are skipped (never run), the others queued, over-cap ones with
-// their queue note.
-func routingRows(itemID string, groups []model.Group, plan []route.Planned, flags map[string]userFlags) []model.Review {
+// their queue note. Context lists the kinds whose blocks inputs' request
+// carries, ContextNone the decided kinds that found nothing.
+func routingRows(itemID string, groups []model.Group, plan []route.Planned, flags map[string]userFlags, inputs map[string]review.GroupInput) []model.Review {
 	byGroup := make(map[string]route.Planned, len(plan))
 	for _, pl := range plan {
 		byGroup[pl.GroupID] = pl
@@ -308,6 +379,9 @@ func routingRows(itemID string, groups []model.Group, plan []route.Planned, flag
 			Rule: pl.Rule, RuleIndex: pl.RuleIndex, RuleWords: pl.Words,
 			Context: pl.Context, Prompts: pl.Prompts, HotSpot: pl.HotSpot, EstCost: pl.EstCost,
 			Forced: f.forced, UserSkipped: f.skipped, Status: model.ReviewQueued,
+		}
+		if gi, ok := inputs[g.ID]; ok {
+			row.Context, row.ContextNone = attachedContext(pl.Context, gi.Context)
 		}
 		switch {
 		case pl.Tier == model.TierNone:

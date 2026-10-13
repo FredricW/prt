@@ -468,16 +468,26 @@ type Review struct {
 	RuleWords string `json:"ruleWords,omitempty"`
 	// Prompt names the base prompt template ("review/v1"); the full prompt
 	// text lives in the call log (ReviewCall), not here.
-	Prompt      string       `json:"prompt,omitempty"`
-	Context     []string     `json:"context,omitempty"` // callers, types, tests, config, code_under_test
-	Prompts     []string     `json:"prompts,omitempty"` // specialist prompts appended
-	Findings    []Finding    `json:"findings,omitempty"`
-	Verdict     string       `json:"verdict,omitempty"`
-	Confidence  float64      `json:"confidence"`
-	Model       string       `json:"model,omitempty"` // "provider:model" that answered
-	Status      ReviewStatus `json:"status"`
-	EscalatedOf *Tier        `json:"escalatedOf,omitempty"` // set when fast → deep
-	FastConf    float64      `json:"fastConf,omitempty"`
+	Prompt string `json:"prompt,omitempty"`
+	// Context lists the context kinds (callers, types, tests, config,
+	// code_under_test) whose blocks were attached to the review request;
+	// ContextNone the kinds routing decided on that found nothing to attach
+	// (e.g. callers of a breaking unit when no caller changed in this PR).
+	Context     []string  `json:"context,omitempty"`
+	ContextNone []string  `json:"contextNone,omitempty"`
+	Prompts     []string  `json:"prompts,omitempty"` // specialist prompts appended
+	Findings    []Finding `json:"findings,omitempty"`
+	// UnitStarts maps each unit id of the group to the first line of its
+	// anchor span (new side; old side for a pure deletion) when this review
+	// ran. A cached review served after the unit moved (push, rebase,
+	// stacked PRs) shifts its findings' lines by the difference.
+	UnitStarts  map[string]int `json:"unitStarts,omitempty"`
+	Verdict     string         `json:"verdict,omitempty"`
+	Confidence  float64        `json:"confidence"`
+	Model       string         `json:"model,omitempty"` // "provider:model" that answered
+	Status      ReviewStatus   `json:"status"`
+	EscalatedOf *Tier          `json:"escalatedOf,omitempty"` // set when fast → deep
+	FastConf    float64        `json:"fastConf,omitempty"`
 	// Calibration is set when this fast-routed group was sampled for a
 	// double review (calibration_sample) and the deep run finished.
 	Calibration *Calibration `json:"calibration,omitempty"`

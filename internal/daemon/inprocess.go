@@ -443,7 +443,7 @@ func (c *InProcess) analyse(j job) {
 		return
 	}
 	c.setState(it.ID, model.StateFetching, "")
-	head, err := c.p.RunHead(c.ctx, it, pipeline.RunOptions{Force: j.force, FromStage: j.fromStage})
+	head, err := c.p.RunHead(c.ctx, it, pipeline.RunOptions{Force: j.force, FromStage: j.fromStage, KeepReviewed: j.keepReviewed})
 	c.finish(c.ctx, it.ID, head, err)
 }
 

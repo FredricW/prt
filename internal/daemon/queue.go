@@ -19,7 +19,11 @@ type job struct {
 	// that run): used after a group edit, a review action, a cap change or
 	// a routing reload, which the running run may have read too early.
 	rerun bool
-	seq   int // enqueue order, breaks urgency ties
+	// keepReviewed is set by a routing reload
+	// (pipeline.RunOptions.KeepReviewed). A merged job keeps it only when
+	// both jobs had it: any other job routes every group by the rules.
+	keepReviewed bool
+	seq          int // enqueue order, breaks urgency ties
 }
 
 // earlierStage returns the earlier of two FromStage values ("" means
@@ -77,6 +81,7 @@ func (q *queue) push(jobs ...job) {
 			q.waiting[i].force = q.waiting[i].force || j.force
 			q.waiting[i].fromStage = earlierStage(q.waiting[i].fromStage, j.fromStage)
 			q.waiting[i].urgency = j.urgency
+			q.waiting[i].keepReviewed = q.waiting[i].keepReviewed && j.keepReviewed
 			continue
 		}
 		if q.inflight[j.itemID] && !j.force && !j.rerun {

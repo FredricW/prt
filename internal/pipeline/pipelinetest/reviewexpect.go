@@ -142,10 +142,11 @@ func getUserRouted101(o Outcome) []string {
 				return []string{"#101: the getUser group has no routing row"}
 			case r.Tier == model.TierDeep:
 				return nil
-			case r.Tier == model.TierFast && hasString(r.Context, model.CtxCallers):
+			// Routing decided callers (attached, or none changed in the PR).
+			case r.Tier == model.TierFast && (hasString(r.Context, model.CtxCallers) || hasString(r.ContextNone, model.CtxCallers)):
 				return nil
 			}
-			return []string{fmt.Sprintf("#101: getUser group %q routed %s with context %v (%s), want deep or fast with callers", g.Name, r.Tier, r.Context, r.RuleWords)}
+			return []string{fmt.Sprintf("#101: getUser group %q routed %s with context %v, none found %v (%s), want deep or fast with callers", g.Name, r.Tier, r.Context, r.ContextNone, r.RuleWords)}
 		}
 	}
 	return []string{"#101: no group holds the client.ts getUser unit"}

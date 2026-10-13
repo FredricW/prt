@@ -177,9 +177,12 @@ func (c *InProcess) routingInfo() proto.RoutingInfo {
 	return info
 }
 
-// reroute queues every analysed item whose routing rows are not all done
-// (queued over the cap, failed, skipped, or routed none) for a re-run, and
-// returns how many such rows there were.
+// reroute queues every analysed item with an unreviewed routing row
+// (queued over the cap, failed, skipped, or routed none by a rule) for a
+// re-run that keeps the decisions of its done rows (RunOptions
+// KeepReviewed: "saving re-routes unreviewed groups"), and returns how many
+// such rows there were. Rows the user decided (D, s) are not counted: an
+// override outranks the rules.
 func (c *InProcess) reroute(ctx context.Context) (int, error) {
 	items, err := c.d.Store.Items(ctx)
 	if err != nil {
@@ -197,13 +200,13 @@ func (c *InProcess) reroute(ctx context.Context) (int, error) {
 		}
 		n := 0
 		for _, r := range rows {
-			if r.Status != model.ReviewDone {
+			if r.Status != model.ReviewDone && !r.Forced && !r.UserSkipped {
 				n++
 			}
 		}
 		if n > 0 {
 			total += n
-			jobs = append(jobs, job{itemID: it.ID, urgency: it.Urgency, rerun: true})
+			jobs = append(jobs, job{itemID: it.ID, urgency: it.Urgency, rerun: true, keepReviewed: true})
 		}
 	}
 	c.q.push(jobs...)

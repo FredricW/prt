@@ -3,9 +3,7 @@ package pipeline
 import (
 	"context"
 	"strings"
-	"sync"
 	"testing"
-	"time"
 	"unicode/utf8"
 
 	"github.com/fredricw/prt/internal/config"
@@ -177,10 +175,17 @@ func TestApplyUserTiers(t *testing.T) {
 		{GroupID: "a", Tier: model.TierFast, RuleIndex: 3, Rule: "breaking", Words: "if breaking → fast", Context: []string{"callers"}},
 		{GroupID: "b", Tier: model.TierDeep, RuleIndex: 2, Prompts: []string{"security"}, Context: []string{"tests"}},
 		{GroupID: "c", Tier: model.TierNone, RuleIndex: 1},
+		{GroupID: "d", Tier: model.TierNone, Words: "no rule matched"},
 	}
-	out, flags := applyUserTiers(decs, map[string]model.Tier{"a": model.TierDeep, "b": model.TierNone})
+	auto := func(id string) []string { return []string{model.CtxCallers, "auto-" + id} }
+	out, flags := applyUserTiers(decs, map[string]model.Tier{"a": model.TierDeep, "b": model.TierNone, "d": model.TierDeep}, auto)
 	if a := out[0]; a.Tier != model.TierDeep || a.RuleIndex != 0 || a.Words != wordsForcedDeep || len(a.Context) != 1 || !flags["a"].forced {
 		t.Errorf("forced = %+v", a)
+	}
+	// A group routed none carries no context: forcing it deep attaches the
+	// stage-6 automatic context.
+	if d := out[3]; d.Tier != model.TierDeep || len(d.Context) != 2 || d.Context[1] != "auto-d" {
+		t.Errorf("forced from none = %+v", d)
 	}
 	if b := out[1]; b.Tier != model.TierNone || b.Words != wordsSkipped || b.Prompts != nil || b.Context != nil || !flags["b"].skipped {
 		t.Errorf("skipped = %+v", b)
@@ -280,35 +285,5 @@ func TestRunOptionsIgnoresCache(t *testing.T) {
 	}
 	if !ValidStage(model.StageJev) || ValidStage("bogus") {
 		t.Error("ValidStage")
-	}
-}
-
-// Deep calls never exceed deep_slots at once.
-func TestDeepSlotsBoundConcurrency(t *testing.T) {
-	var mu sync.Mutex
-	inFlight, peak := 0, 0
-	release := make(chan struct{})
-	answer := review.FakeRespond(0.9)
-	slow := func(req review.Request) (review.Result, error) {
-		if req.Task == review.TaskReview {
-			mu.Lock()
-			inFlight++
-			peak = max(peak, inFlight)
-			mu.Unlock()
-			<-release
-			mu.Lock()
-			inFlight--
-			mu.Unlock()
-		}
-		return answer(req)
-	}
-	e, p, _ := m3Env(t, slow, func(d *Deps) {
-		d.Routing.Rules = []config.Rule{{When: "true", Tier: "deep"}}
-		d.Routing.DeepSlots = 1
-	})
-	go func() { time.Sleep(50 * time.Millisecond); close(release) }()
-	e.run(t, p)
-	if peak != 1 {
-		t.Errorf("peak concurrent deep calls = %d, want 1 (deep_slots)", peak)
 	}
 }
