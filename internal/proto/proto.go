@@ -11,6 +11,7 @@ package proto
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"io"
 	"sync"
@@ -137,33 +138,31 @@ func (e *Encoder) Encode(m Message) error {
 	return err
 }
 
-// Decoder reads messages, one per line.
+// Decoder reads messages, one per line. Lines have no size cap: a large
+// Detail (diff, files and units) must not tear down the connection.
 type Decoder struct {
-	sc *bufio.Scanner
+	r *bufio.Reader
 }
 
-// NewDecoder returns a Decoder reading from r (lines up to 64 MiB).
+// NewDecoder returns a Decoder reading from r.
 func NewDecoder(r io.Reader) *Decoder {
-	sc := bufio.NewScanner(r)
-	sc.Buffer(make([]byte, 64*1024), 64<<20)
-	return &Decoder{sc: sc}
+	return &Decoder{r: bufio.NewReaderSize(r, 64*1024)}
 }
 
-// Decode reads the next message; io.EOF at end of stream.
+// Decode reads the next message; io.EOF at end of stream. A final line
+// without a trailing newline is still decoded.
 func (d *Decoder) Decode() (Message, error) {
-	for d.sc.Scan() {
-		line := d.sc.Bytes()
-		if len(line) == 0 {
-			continue
+	for {
+		line, err := d.r.ReadBytes('\n')
+		if len(bytes.TrimSpace(line)) > 0 {
+			var m Message
+			if uerr := json.Unmarshal(line, &m); uerr != nil {
+				return Message{}, uerr
+			}
+			return m, nil
 		}
-		var m Message
-		if err := json.Unmarshal(line, &m); err != nil {
+		if err != nil {
 			return Message{}, err
 		}
-		return m, nil
 	}
-	if err := d.sc.Err(); err != nil {
-		return Message{}, err
-	}
-	return Message{}, io.EOF
 }

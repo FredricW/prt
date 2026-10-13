@@ -24,6 +24,10 @@ type Fake struct {
 	Files      map[string]map[string][]byte // rev -> path -> content
 	Dirty      bool
 	CheckedOut []string
+	// DefaultErr, when set, is returned by DefaultBranch.
+	DefaultErr error
+	// AheadErrs makes CountAhead fail for "base..head" keys.
+	AheadErrs map[string]error
 }
 
 var _ Git = (*Fake)(nil)
@@ -38,6 +42,9 @@ func (f *Fake) GitDir(context.Context) (string, error) { return f.Dir, nil }
 
 // DefaultBranch implements Git.
 func (f *Fake) DefaultBranch(context.Context) (string, error) {
+	if f.DefaultErr != nil {
+		return "", f.DefaultErr
+	}
 	if f.Default == "" {
 		return "main", nil
 	}
@@ -95,6 +102,9 @@ func (f *Fake) Diff(_ context.Context, base, head string) (string, error) {
 
 // CountAhead implements Git.
 func (f *Fake) CountAhead(_ context.Context, base, head string) (int, error) {
+	if err := f.AheadErrs[key(base, head)]; err != nil {
+		return 0, err
+	}
 	return f.Ahead[key(base, head)], nil
 }
 

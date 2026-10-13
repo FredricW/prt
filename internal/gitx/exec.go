@@ -209,8 +209,12 @@ func (g *Exec) IsDirty(ctx context.Context) (bool, error) {
 	return strings.TrimSpace(out) != "", nil
 }
 
-// Checkout implements Git.
+// Checkout implements Git. The trailing "--" makes git read ref as a
+// revision only, never as a pathspec that would overwrite work-tree files.
 func (g *Exec) Checkout(ctx context.Context, ref string) error {
-	_, err := g.run(ctx, "checkout", ref)
+	if strings.HasPrefix(ref, "-") {
+		return fmt.Errorf("gitx: refusing to check out %q", ref)
+	}
+	_, err := g.run(ctx, "checkout", ref, "--")
 	return err
 }

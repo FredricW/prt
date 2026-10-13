@@ -9,6 +9,7 @@ package gitx
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 )
 
@@ -33,6 +34,20 @@ type Commit struct {
 	Subject string    `json:"subject"`
 	Author  string    `json:"author"`
 	Date    time.Time `json:"date"`
+}
+
+// CompareRef returns the ref to measure branches against for a base branch
+// name: the remote-tracking "origin/<branch>" when it exists (a stale local
+// copy would count upstream commits as "ahead" and put them in the diff),
+// else branch itself.
+func CompareRef(ctx context.Context, g Git, branch string) string {
+	if branch == "" || strings.HasPrefix(branch, "origin/") {
+		return branch
+	}
+	if _, err := g.ResolveRef(ctx, "refs/remotes/origin/"+branch); err == nil {
+		return "origin/" + branch
+	}
+	return branch
 }
 
 // Git is the set of local git operations prt needs. Implementations must be

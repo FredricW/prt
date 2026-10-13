@@ -79,4 +79,37 @@ func TestExecBasics(t *testing.T) {
 	if err != nil || dirty {
 		t.Fatalf("dirty = %v, %v", dirty, err)
 	}
+	if got := CompareRef(ctx, g, "main"); got != "main" {
+		t.Errorf("CompareRef without origin = %q", got)
+	}
+}
+
+// A ref that names a tracked file must never be read as a pathspec, which
+// would discard the user's unstaged edits to that file.
+func TestExecCheckoutNeverPathspec(t *testing.T) {
+	dir := gitInit(t)
+	ctx := context.Background()
+	g, err := Open(ctx, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	edited := []byte("one\ntwo\nlocal edit\n")
+	if err := os.WriteFile(filepath.Join(dir, "a.txt"), edited, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := g.Checkout(ctx, "a.txt"); err == nil {
+		t.Fatal("checkout of a path-named non-ref must fail")
+	}
+	if b, _ := os.ReadFile(filepath.Join(dir, "a.txt")); string(b) != string(edited) {
+		t.Fatalf("unstaged edit lost: %q", b)
+	}
+	if err := g.Checkout(ctx, "--orphan"); err == nil {
+		t.Fatal("option-like ref must be refused")
+	}
+	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("one\ntwo\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := g.Checkout(ctx, "main"); err != nil {
+		t.Fatalf("checkout main: %v", err)
+	}
 }
