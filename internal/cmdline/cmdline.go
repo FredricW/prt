@@ -1,10 +1,12 @@
 // Package cmdline is the `:` command line (spec Keybindings: `:add #482`,
 // `:add feat/x`, `:tier deep`, `:cap 1.00`, `:q`; M5.1 adds `:auto
-// <strategy>`, `:stop [all]`, `:resume [all]` and `:settings`): a parser,
-// tab completion of command names and arguments (Complete), the command
-// list for the `?` overlay (Help) and a one-line input component the root
-// model shows in the status bar. The root executes the parsed Command
-// through daemon.Client.
+// <strategy>`, `:stop [all]`, `:resume [all]` and `:settings`; M5.3 adds
+// `:repo <name>|all` and repo-qualified `:add acme/api#12`, `:add
+// api:feat/x`): a parser, tab completion of command names and arguments
+// (Complete; the Model also completes the workspace's repo names), the
+// command list for the `?` overlay (Help) and a one-line input component
+// the root model shows in the status bar. The root executes the parsed
+// Command through daemon.Client.
 //
 // Every command is described once, in the table behind commands(): Parse,
 // Complete, Help and the "unknown command" hint all read it, so the lists
@@ -22,6 +24,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/textinput"
@@ -39,7 +42,9 @@ type Kind int
 // Commands.
 const (
 	// Add adds a PR ("#482", "482") or a ref ("feat/x") like enter on a
-	// search result: Arg is the query.
+	// search result: Arg is the query as typed. In a workspace it may be
+	// repo-qualified ("acme/api#12", "api:feat/x"); the root and the
+	// workspace client resolve the repo (M5.3).
 	Add Kind = iota + 1
 	// Tier sets the review tier of the focused group (Code page by change,
 	// Pipeline page row) or, with no group focused, of every routed group
@@ -63,12 +68,18 @@ const (
 	Resume
 	// Settings opens the settings page (M5.1, `:settings`).
 	Settings
+	// Repo filters a workspace picker to one repo (M5.3, `:repo
+	// billing-svc`, `:repo acme/billing-svc`); Arg is the repo as typed, or
+	// "" for `:repo all` / `:repo` (show every repo; "all" in any case). The
+	// root resolves Arg against the workspace's repo keys and labels;
+	// outside a workspace the root says "not a workspace".
+	Repo
 )
 
 // Command is one parsed command line.
 type Command struct {
 	Kind     Kind
-	Arg      string           // Add: the query
+	Arg      string           // Add: the query; Repo: the repo ("" all); Cap: "default"
 	Tier     string           // Tier: deep | none | rules
 	CapUSD   float64          // Cap
 	Strategy model.AutoReview // Auto (M5.1)
@@ -79,6 +90,10 @@ type Command struct {
 type HelpEntry struct {
 	Usage string // ":stop [all]"
 	Desc  string // "stop the selected item's analysis (all: every item)"
+	// Workspace marks a form that only applies in a multi-repo workspace
+	// (M5.3: `:repo`, repo-qualified `:add`); a single repo's `?` overlay
+	// leaves it out.
+	Workspace bool
 }
 
 // cmdSpec describes one command: its name and aliases, the arguments tab
@@ -90,6 +105,11 @@ type cmdSpec struct {
 	args    []string // completion candidates for the argument, in order
 	usage   string
 	desc    string
+	// wsOnly: the command only applies in a workspace (HelpEntry.Workspace).
+	wsOnly bool
+	// wsUsage / wsDesc: an extra workspace-only help entry for the
+	// command's repo-qualified forms, listed right after it.
+	wsUsage, wsDesc string
 }
 
 // commands is the command table in display order (Help, completion of an
@@ -102,7 +122,8 @@ func commands() []cmdSpec {
 	}
 	return []cmdSpec{
 		{kind: Add, name: "add", usage: ":add #482 | :add feat/x",
-			desc: "add a PR or branch and analyse it now"},
+			desc:    "add a PR or branch and analyse it now",
+			wsUsage: ":add acme/api#12 | :add api:feat/x", wsDesc: "add from one repo of the workspace (owner/name#N, repo#N, repo:branch)"},
 		{kind: Auto, name: "auto", args: auto, usage: ":auto " + strings.Join(auto, "|"),
 			desc: "set the auto-review strategy (saved to .git/prt/prt.toml)"},
 		{kind: Tier, name: "tier", args: []string{"deep", "none", "rules"}, usage: ":tier deep|none|rules",
@@ -113,6 +134,9 @@ func commands() []cmdSpec {
 			desc: "stop the selected item's analysis (all: every item)"},
 		{kind: Resume, name: "resume", args: []string{"all"}, usage: ":resume [all]",
 			desc: "resume the selected item from its last finished stage (all: every stopped item)"},
+		// :repo also completes the workspace's repo names (Model.SetRepos).
+		{kind: Repo, name: "repo", args: []string{"all"}, usage: ":repo <name>|all",
+			desc: "show one repo of the workspace (all: every repo)", wsOnly: true},
 		{kind: Settings, name: "settings", usage: ":settings",
 			desc: "open the settings page (also ,)"},
 		{kind: Quit, name: "q", aliases: []string{"quit", "q!"}, usage: ":q",
@@ -131,7 +155,8 @@ func lookup(name string) (cmdSpec, bool) {
 }
 
 // tryList is the hint after a bad command: every name, alphabetical, with
-// :q last (":add, :auto, :cap, :resume, :settings, :stop, :tier, :q").
+// :q last (":add, :auto, :cap, :repo, :resume, :settings, :stop, :tier,
+// :q").
 func tryList() string {
 	var names []string
 	for _, c := range commands() {
@@ -144,12 +169,15 @@ func tryList() string {
 }
 
 // Help lists every command in display order (M5.1) for the `?` overlay
-// and the README.
+// and the README; the workspace-only forms (M5.3) are marked Workspace.
 func Help() []HelpEntry {
 	cs := commands()
-	out := make([]HelpEntry, 0, len(cs))
+	out := make([]HelpEntry, 0, len(cs)+1)
 	for _, c := range cs {
-		out = append(out, HelpEntry{Usage: c.usage, Desc: c.desc})
+		out = append(out, HelpEntry{Usage: c.usage, Desc: c.desc, Workspace: c.wsOnly})
+		if c.wsUsage != "" {
+			out = append(out, HelpEntry{Usage: c.wsUsage, Desc: c.wsDesc, Workspace: true})
+		}
 	}
 	return out
 }
@@ -160,7 +188,8 @@ var ErrNotImplemented = errors.New("cmdline: not implemented yet (M5)")
 
 // Parse errors whose text the status bar shows.
 var (
-	errAddUsage    = errors.New(":add needs a PR or ref, e.g. :add #482 or :add feat/x")
+	errAddUsage = errors.New(":add needs a PR or ref, e.g. :add #482 or :add feat/x " +
+		"(in a workspace, qualified by repo: :add acme/api#12 or :add api:feat/x)")
 	errTierUsage   = errors.New(":tier takes deep, none or rules")
 	errTierFast    = errors.New("fast is chosen by the rules; use :tier rules")
 	errCapUsage    = errors.New(":cap takes an amount in dollars > 0 (e.g. :cap 1.00) or default")
@@ -173,7 +202,7 @@ var (
 // Parse parses one line without its leading ':' (a leading ':' is
 // tolerated). Unknown commands and bad arguments return a one-line error
 // whose text is shown in the status bar ("unknown command :foo — try :add,
-// :auto, :cap, :resume, :settings, :stop, :tier, :q").
+// :auto, :cap, :repo, :resume, :settings, :stop, :tier, :q").
 func Parse(line string) (Command, error) {
 	s := strings.TrimSpace(line)
 	s = strings.TrimSpace(strings.TrimPrefix(s, ":"))
@@ -202,6 +231,8 @@ func Parse(line string) (Command, error) {
 		return parseAll(Stop, rest, errStopUsage)
 	case Resume:
 		return parseAll(Resume, rest, errResumeUsage)
+	case Repo:
+		return parseRepo(rest), nil
 	}
 	// Settings and Quit take no argument.
 	if rest != "" {
@@ -223,6 +254,15 @@ func parseAuto(arg string) (Command, error) {
 	return Command{Kind: Auto, Strategy: a}, nil
 }
 
+// parseRepo reads ":repo <name>" (Arg is the name as typed) and ":repo
+// all" / ":repo" (Arg ""; "all" in any case). The root resolves the name.
+func parseRepo(arg string) Command {
+	if strings.EqualFold(arg, "all") {
+		arg = ""
+	}
+	return Command{Kind: Repo, Arg: arg}
+}
+
 // parseAll reads ":stop" / ":stop all" (and resume): no argument or "all".
 func parseAll(k Kind, arg string, usage error) (Command, error) {
 	switch strings.ToLower(arg) {
@@ -239,11 +279,16 @@ func parseAll(k Kind, arg string, usage error) (Command, error) {
 // the first word it completes command names: a unique match gives the name
 // and a trailing space, several give their longest common prefix. After a
 // command it completes that command's argument (:auto strategies, :tier
-// deep|none|rules, :stop and :resume all, :cap default). No match returns
-// line unchanged and no candidates; a single candidate is returned too, so
-// callers can tell "done" from "nothing".
-func Complete(line string) (string, []string) {
-	base, cands := completion(line)
+// deep|none|rules, :stop, :resume and :repo all, :cap default). No match
+// returns line unchanged and no candidates; a single candidate is returned
+// too, so callers can tell "done" from "nothing". The Model's tab key also
+// completes `:repo` with the workspace's repo names (SetRepos).
+func Complete(line string) (string, []string) { return complete(line, nil) }
+
+// complete is Complete with the workspace's repo names as extra `:repo`
+// candidates (nil outside a workspace).
+func complete(line string, repos []string) (string, []string) {
+	base, cands := completion(line, repos)
 	switch len(cands) {
 	case 0:
 		return line, nil
@@ -258,8 +303,8 @@ func Complete(line string) (string, []string) {
 
 // completion returns the fixed part of line before the word being
 // completed (with any ':' kept and spacing normalised) and the candidates
-// for that word.
-func completion(line string) (string, []string) {
+// for that word; repos are `:repo`'s extra candidates.
+func completion(line string, repos []string) (string, []string) {
 	lead := ""
 	s := strings.TrimLeft(line, " ")
 	if strings.HasPrefix(s, ":") {
@@ -279,35 +324,53 @@ func completion(line string) (string, []string) {
 	if !ok {
 		return lead, nil
 	}
+	args := c.args
+	if c.kind == Repo {
+		args = repoArgs(repos, c.args)
+	}
 	arg = strings.ToLower(strings.TrimSpace(arg))
 	var out []string
-	for _, a := range c.args {
-		if strings.HasPrefix(a, arg) {
+	for _, a := range args {
+		if strings.HasPrefix(strings.ToLower(a), arg) {
 			out = append(out, a)
 		}
 	}
 	return lead + name + " ", out
 }
 
+// repoArgs is `:repo`'s candidates: the repo names in the order given
+// (blank and repeated names dropped; a key and a label are often the same
+// text), then the fixed arguments ("all").
+func repoArgs(repos, fixed []string) []string {
+	out := make([]string, 0, len(repos)+len(fixed))
+	for _, r := range append(slices.Clone(repos), fixed...) {
+		if r = strings.TrimSpace(r); r != "" && !slices.Contains(out, r) {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
 // isArgBase reports whether base (from completion) ends before an argument
 // rather than before the command name.
 func isArgBase(base string) bool { return strings.HasSuffix(base, " ") }
 
-// commonPrefix is the longest common prefix of ss (byte-wise; the
-// candidates are ASCII).
+// commonPrefix is the longest common prefix of ss, compared without case
+// (repo names may differ in case) and spelled as in the first candidate.
 func commonPrefix(ss []string) string {
 	if len(ss) == 0 {
 		return ""
 	}
-	p := ss[0]
+	p := []rune(ss[0])
 	for _, s := range ss[1:] {
+		r := []rune(s)
 		n := 0
-		for n < len(p) && n < len(s) && p[n] == s[n] {
+		for n < len(p) && n < len(r) && unicode.ToLower(p[n]) == unicode.ToLower(r[n]) {
 			n++
 		}
 		p = p[:n]
 	}
-	return p
+	return string(p)
 }
 
 // parseTier reads ":tier deep|none|rules" (fast is refused: the rules
@@ -353,7 +416,16 @@ type Model struct {
 	draft   string
 	pending *Submitted
 	comp    cycle
+	// repos are the workspace repo names `:repo` completes (M5.3,
+	// SetRepos); nil outside a workspace.
+	repos []string
 }
+
+// SetRepos sets the repo names (keys and labels) `:repo` completes in a
+// workspace (M5.3); nil outside one. The root calls it when the workspace
+// is known. Tab after ":repo " offers them in the given order, then "all"
+// (case-insensitive prefix; repeated names once).
+func (m *Model) SetRepos(names []string) { m.repos = append([]string(nil), names...) }
 
 // cycle is the tab-completion state while several candidates match: the
 // fixed part of the line, the candidates, the one shown (-1: only the
@@ -474,11 +546,11 @@ func (m *Model) tab(d int) {
 	if d < 0 {
 		return // shift+tab only walks an open cycle
 	}
-	done, cands := Complete(line)
+	done, cands := complete(line, m.repos)
 	m.setLine(done)
 	m.comp = cycle{}
 	if len(cands) > 1 {
-		base, _ := completion(line)
+		base, _ := completion(line, m.repos)
 		m.comp = cycle{base: base, cands: cands, idx: -1, line: m.in.Value()}
 	}
 }

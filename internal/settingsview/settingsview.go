@@ -1,12 +1,14 @@
 // Package settingsview is the settings page component (M5.1): a Huh form
 // over proto.SettingsValues (auto-review strategy, role and owned globs,
 // cost cap and deep slots, fast/deep models, embedder, urgency weights,
-// thresholds), a save-scope choice (repo, the default, or global), the
+// thresholds), a save-scope choice (repo, the default, or global) with a
+// "saves to" line naming the files the selected scope writes, the
 // environment presence lines (JEV_API_KEY, PRT_ANTHROPIC_API_KEY, Ollama,
 // GitHub: never values) and actions to open prt.routing.toml and
-// prt.questions.toml in $EDITOR. The root model (internal/tui) hosts it,
-// feeds it SettingsInfo and executes its PendingAction through
-// daemon.Client.
+// prt.questions.toml in $EDITOR. In a workspace (M5.3) the page names the
+// repo it edits and which repos each scope reaches. The root model
+// (internal/tui) hosts it, feeds it SettingsInfo and executes its
+// PendingAction through daemon.Client.
 //
 // The form has one section per page (Analysis, You, Cost, Models, Urgency
 // weights, Thresholds, Environment); tab/enter move field by field,
@@ -28,6 +30,7 @@ import (
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/fredricw/prt/internal/config"
 	"github.com/fredricw/prt/internal/proto"
 	"github.com/fredricw/prt/internal/theme"
 )
@@ -333,12 +336,18 @@ func (m Model) HelpBindings() [][]key.Binding {
 	return rows
 }
 
-// statusLines are the lines above the form: the error (red), a field's
-// validation error, the discard prompt, the waiting or note line, config
-// warnings and where the values came from (dim).
+// statusLines are the lines above the form: in a workspace the repo being
+// edited (M5.3), the error (red), a field's validation error, the discard
+// prompt, the waiting or note line, config warnings, where the values came
+// from and which files the selected scope saves to (dim); in a workspace,
+// on the urgency weights section with the repo scope, a note that the
+// weights change that repo's scale only.
 func (m Model) statusLines() []string {
 	var out []string
 	oneLine := func(s string) string { return strings.Join(strings.Fields(s), " ") }
+	if m.info.Workspace != "" {
+		out = append(out, m.th.Text.Render(oneLine("workspace: "+m.info.Workspace+" · repo: "+repoName(m.info))))
+	}
 	if m.err != nil {
 		out = append(out, m.th.Del.Render("✗ "+oneLine(m.err.Error())))
 	}
@@ -365,7 +374,36 @@ func (m Model) statusLines() []string {
 		}
 		out = append(out, m.th.Dim.Render(src))
 	}
+	if m.fv != nil {
+		out = append(out, m.th.Dim.Render(savesTo(m.saveDir())))
+	}
+	if m.weightsNote() {
+		out = append(out, m.th.Dim.Render("weights here change this repo's urgency scale only"))
+	}
 	return out
+}
+
+// saveDir is the directory the selected scope writes: GlobalDir for the
+// global scope, else the repo's RepoDir.
+func (m Model) saveDir() string {
+	if m.fv != nil && m.fv.Scope == proto.ScopeGlobal && m.info.GlobalDir != "" {
+		return m.info.GlobalDir
+	}
+	return m.info.RepoDir
+}
+
+// savesTo is the status line naming the files a save writes: "saves to:
+// <dir>/prt.toml · cost cap, deep slots: <dir>/prt.routing.toml".
+func savesTo(dir string) string {
+	return "saves to: " + join(dir, config.MainFile) + " · cost cap, deep slots: " + join(dir, config.RoutingFile)
+}
+
+// weightsNote reports whether the urgency weights section is shown in a
+// workspace with the repo scope selected: raw urgency scores of repos with
+// different weights are not normalised (DECISIONS "M5.3 lead calls").
+func (m Model) weightsNote() bool {
+	return m.info.Workspace != "" && m.fv != nil && m.fv.Scope != proto.ScopeGlobal &&
+		m.bf.form != nil && sectionNames()[m.section()] == sectionUrgency
 }
 
 // View renders the page at its size.

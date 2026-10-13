@@ -91,7 +91,7 @@ func (m Model) View() string {
 	lay := m.layout()
 	out := make([]string, 0, m.h)
 	if lay.top == 1 {
-		out = append(out, m.topLine())
+		out = append(out, m.topLine(lay))
 	}
 	body := m.bodyLines(lay)
 	if m.panel != nil {
@@ -122,9 +122,10 @@ func (m Model) bodyLines(lay layout) []string {
 	title, right, pane := m.paneView(lay)
 	if !lay.boxed {
 		pane = append([]string{m.st.title.Render(pad(fit(" "+title, lay.paneW), lay.paneW))}, pane...)
+		sep := m.separator()
 		for i := range body {
 			if lay.listW > 0 {
-				body[i] = list[i] + " " + pane[i]
+				body[i] = list[i] + sep + pane[i]
 			} else {
 				body[i] = pane[i]
 			}
@@ -136,6 +137,7 @@ func (m Model) bodyLines(lay layout) []string {
 		listTitle = "Change groups · review order"
 	}
 	lb := strings.Split(m.th.Box(listTitle, strings.Join(list, "\n"), lay.listW, theme.BoxOpt{Height: lay.bodyH, NoPad: true}), "\n")
+	lb = m.heavyBorder(lb, lay.listW)
 	pb := strings.Split(m.th.Box(title, strings.Join(pane, "\n"), m.w-lay.listW-1,
 		theme.BoxOpt{Height: lay.bodyH, NoPad: true, Right: right}), "\n")
 	for i := range body {
@@ -144,11 +146,13 @@ func (m Model) bodyLines(lay layout) []string {
 	return body
 }
 
-// topLine is the bar line: a one-shot note, the filters bar, or the
-// standing notes (side-by-side degraded, labels unavailable, embeddings
-// skipped).
-func (m Model) topLine() string {
+// topLine is the bar line: the list resize note during a drag, a one-shot
+// note, the filters bar, or the standing notes (side-by-side degraded,
+// labels unavailable, embeddings skipped).
+func (m Model) topLine(lay layout) string {
 	switch {
+	case m.dragShown():
+		return m.st.note.Render(fit(dragNote(lay.listW), m.w))
 	case m.note != "":
 		return m.st.note.Render(fit(m.note, m.w))
 	case m.barOpen:

@@ -14,7 +14,8 @@ const (
 	// minBoxH is the least body height drawn in titled boxes (top and
 	// bottom borders plus one row).
 	minBoxH = 3
-	// listMax and listMin bound the file list width.
+	// listMax and listMin bound the automatic file list width; listMin is
+	// also the least width the user can drag the list to (m53_api.go).
 	listMax, listMin = 40, 16
 	// wheelStep is how many pane rows one mouse wheel notch scrolls.
 	wheelStep = 3
@@ -54,7 +55,7 @@ func (m *Model) layout() layout {
 		l.paneW, l.viewH = m.w, max(0, l.bodyH-1)
 		return l
 	}
-	l.listW = max(listMin, min(listMax, m.w/3))
+	l.listW = listWidthFor(m.w, m.listResize.user)
 	if l.bodyH >= minBoxH {
 		l.boxed = true
 		l.listIn, l.listY, l.listH = l.listW-2, 1, l.bodyH-2
@@ -68,7 +69,7 @@ func (m *Model) layout() layout {
 
 // barVisible reports whether the top line is drawn.
 func (m *Model) barVisible() bool {
-	return !m.c.plain() && (m.barOpen || m.note != "" || m.standingNote() != "")
+	return !m.c.plain() && (m.barOpen || m.note != "" || m.dragShown() || m.standingNote() != "")
 }
 
 // standingNote is the bar line when no one-shot note or filters bar shows:
@@ -465,9 +466,17 @@ func (m *Model) focusRow(fi int, id string) {
 
 // Update handles non-key messages: the mouse wheel scrolls the pane (or
 // moves the selection over the list) and a left click selects a list row.
+// A left press on the list's right border (or the gap after it) starts a
+// drag that resizes the list (M5.3, m53_api.go): motion with the button
+// held moves the border, the release ends the drag (PendingListWidth).
+// While a drag is in progress every mouse message belongs to it.
 func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	mm, ok := msg.(tea.MouseMsg)
 	if !ok {
+		return m, nil
+	}
+	x, y := mm.X-m.ox, mm.Y-m.oy
+	if m.listResize.dragging && m.dragMouse(mm, x) {
 		return m, nil
 	}
 	if m.c.plain() {
@@ -479,7 +488,10 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		return m, nil // the composer, panel and picker take the keyboard only
 	}
 	lay := m.layout()
-	x, y := mm.X-m.ox, mm.Y-m.oy
+	if mm.Button == tea.MouseButtonLeft && mm.Action == tea.MouseActionPress && m.dragAllowed(lay) && onListBorder(lay, x, y) {
+		m.startDrag(lay, x)
+		return m, nil
+	}
 	inList := lay.listW > 0 && x >= 0 && x < lay.listW && y >= lay.top && y < lay.top+lay.bodyH
 	switch mm.Button {
 	case tea.MouseButtonWheelUp:

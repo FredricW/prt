@@ -2,8 +2,10 @@
 // "Search and add (/)"): a text input at the bottom of the sidebar whose
 // results stream in from three sources in parallel (local refs, open PRs,
 // closed and merged PRs) and merge into one list. Each result shows kind,
-// number or ref, title, author and age; enter adds it, tab previews its
-// overview without adding, esc closes.
+// number or ref, title, author and age (in a workspace, M5.3, also its
+// repo key); enter adds it, tab previews its overview without adding, esc
+// closes. Results are deduplicated by ItemID, which a workspace prefixes
+// with the repo key, so two repos' #12 stay two results.
 //
 // The component never talks to the daemon itself: the root sets a Searcher
 // (daemon.Client.Search) and reads the user's choice with PendingChoice.
@@ -531,13 +533,15 @@ func (m Model) promptLine() string {
 }
 
 // row formats one result: marker, kind, number or ref, title, then the
-// dim "· author · state · age · listed" tail. The title is cut first so
-// the tail stays visible; when fewer than minTitle cells would be left for
-// it, the author is dropped from the tail; a line still too wide is cut at
+// dim "· repo · author · state · age · listed" tail (the repo key only in
+// a workspace, M5.3). The title is cut first so the tail stays visible;
+// when fewer than minTitle cells would be left for it, the author is
+// dropped from the tail, then the repo; a line still too wide is cut at
 // the end.
 //
 //	▸ pr  #482 Migrate session to JWT · ingrid · 2d
 //	  br  feat/x  Add login form · 5h
+//	  pr  #12 Retry webhooks · billing-svc · alice · 2d
 func (m Model) row(h proto.SearchHit, selected bool, now time.Time) string {
 	marker := "  "
 	if selected {
@@ -548,12 +552,7 @@ func (m Model) row(h proto.SearchHit, selected bool, now time.Time) string {
 		kind, ident = "pr", fmt.Sprintf("#%d ", h.Number)
 	}
 	head := marker + m.th.Dim.Render(kind) + "  " + m.th.Blue.Render(ident)
-	tail := meta(h, now, true)
-	room := m.w - ansi.StringWidth(head) - ansi.StringWidth(tail)
-	if room < minTitle && h.Author != "" {
-		tail = meta(h, now, false) // the author goes first when space is short
-		room = m.w - ansi.StringWidth(head) - ansi.StringWidth(tail)
-	}
+	tail, room := m.fitTail(h, now, ansi.StringWidth(head))
 	title := h.Title
 	if room >= minTitle {
 		title = theme.Truncate(title, room)
@@ -566,13 +565,32 @@ func (m Model) row(h proto.SearchHit, selected bool, now time.Time) string {
 }
 
 // minTitle is the fewest title cells a row keeps before it drops the
-// author from its tail.
+// author (then the repo) from its tail.
 const minTitle = 5
 
-// meta is the row tail: author (when withAuthor), the state of a closed or
-// merged PR, age and the listed mark, each after " · ".
-func meta(h proto.SearchHit, now time.Time, withAuthor bool) string {
+// fitTail returns the row tail that leaves the title at least minTitle
+// cells after a head headW cells wide, and the room left for the title:
+// the full tail, else without the author, else without the repo too (the
+// shortest tail even when it still does not fit).
+func (m Model) fitTail(h proto.SearchHit, now time.Time, headW int) (string, int) {
+	tail := ""
+	for _, t := range []struct{ repo, author bool }{{true, true}, {true, false}, {false, false}} {
+		tail = meta(h, now, t.repo, t.author)
+		if room := m.w - headW - ansi.StringWidth(tail); room >= minTitle {
+			return tail, room
+		}
+	}
+	return tail, m.w - headW - ansi.StringWidth(tail)
+}
+
+// meta is the row tail: the workspace repo key (when withRepo), author
+// (when withAuthor), the state of a closed or merged PR, age and the listed
+// mark, each after " · ".
+func meta(h proto.SearchHit, now time.Time, withRepo, withAuthor bool) string {
 	var parts []string
+	if withRepo && h.Repo != "" {
+		parts = append(parts, h.Repo)
+	}
 	if withAuthor && h.Author != "" {
 		parts = append(parts, h.Author)
 	}

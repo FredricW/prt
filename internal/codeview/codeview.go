@@ -58,6 +58,11 @@
 // "i/n"). Rendering is lazy: the selected file's rows are indexed once and
 // only visible rows are styled.
 //
+// Resizing (M5.3; m53_api.go): the list's width can be set (SetListWidth,
+// the root's `<` / `>`) or dragged by its right border with the mouse; a
+// user width is clamped to 16 … page width − 40 columns, and 0 is the
+// automatic width above.
+//
 // Diff rendering (M5; m5_api.go, split.go): `u` toggles unified and
 // side-by-side (old | new columns aligned by hunk, long lines wrapped,
 // gutter marks on the new side); below SplitMinWidth columns side-by-side
@@ -275,6 +280,10 @@ type Model struct {
 	// failed (with the error text).
 	labelReq, labelWait map[string]bool
 	labelErr            map[string]string
+
+	// M5.3 (m53_api.go): the user's file/group list width and the drag of
+	// the list's right border.
+	listResize listResize
 }
 
 // New builds an empty component. r may be nil (lipgloss's default
@@ -296,24 +305,13 @@ func New(r *lipgloss.Renderer) Model {
 // SetKeys replaces the bindings.
 func (m *Model) SetKeys(k Keys) { m.keys = k }
 
-// SetSize sets the component's width and height in cells.
+// SetSize sets the component's width and height in cells. A list width set
+// with SetListWidth is kept and clamped to the new width.
 func (m *Model) SetSize(w, h int) {
 	old := m.layout()
 	m.w, m.h = max(1, w), max(1, h)
 	m.dv.SetSize(m.w, m.h)
-	if now := m.layout(); now.paneW != old.paneW || now.split != old.split {
-		m.rebuildKeep() // header chips, comment bodies and split columns follow the pane width
-	} else {
-		m.clamp()
-	}
-	if m.comp != nil {
-		m.comp.ta.SetWidth(max(4, m.layout().paneW-blockIndent))
-	}
-	if m.panel != nil {
-		_, cw := m.panelGeom()
-		m.panel.ta.SetWidth(max(4, cw))
-	}
-	m.keepCursorVisible()
+	m.relayout(old)
 }
 
 // SetOrigin tells the component where its top-left cell is on screen, so

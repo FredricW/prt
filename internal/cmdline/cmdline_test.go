@@ -41,8 +41,8 @@ func TestParse(t *testing.T) {
 		{line: ":quit", want: Command{Kind: Quit}},
 		{line: "q!", want: Command{Kind: Quit}},
 		{line: "q now", wantErr: ":q takes no argument"},
-		{line: "foo", wantErr: "unknown command :foo — try :add, :auto, :cap, :resume, :settings, :stop, :tier, :q"},
-		{line: ":", wantErr: "empty command — try :add, :auto, :cap, :resume, :settings, :stop, :tier, :q"},
+		{line: "foo", wantErr: "unknown command :foo — try :add, :auto, :cap, :repo, :resume, :settings, :stop, :tier, :q"},
+		{line: ":", wantErr: "empty command — try :add, :auto, :cap, :repo, :resume, :settings, :stop, :tier, :q"},
 		{line: "", wantErr: "empty command"},
 		// M5.1
 		{line: "auto manual", want: Command{Kind: Auto, Strategy: model.AutoManual}},
@@ -60,6 +60,20 @@ func TestParse(t *testing.T) {
 		{line: "resume #4", wantErr: ":resume takes no argument or all"},
 		{line: "settings", want: Command{Kind: Settings}},
 		{line: "settings repo", wantErr: ":settings takes no argument"},
+		// M5.3
+		{line: "repo billing-svc", want: Command{Kind: Repo, Arg: "billing-svc"}},
+		{line: ":repo acme/billing-svc", want: Command{Kind: Repo, Arg: "acme/billing-svc"}},
+		{line: "  :repo   services/api  ", want: Command{Kind: Repo, Arg: "services/api"}},
+		{line: "repo Billing-Svc", want: Command{Kind: Repo, Arg: "Billing-Svc"}}, // as typed; the root resolves it
+		{line: "repo all", want: Command{Kind: Repo}},
+		{line: "repo ALL", want: Command{Kind: Repo}},
+		{line: ":repo All", want: Command{Kind: Repo}},
+		{line: "repo", want: Command{Kind: Repo}},
+		{line: "repo allx", want: Command{Kind: Repo, Arg: "allx"}},
+		{line: "add acme/billing-svc#12", want: Command{Kind: Add, Arg: "acme/billing-svc#12"}},
+		{line: ":add api:feat/x", want: Command{Kind: Add, Arg: "api:feat/x"}},
+		{line: "add billing-svc#12", want: Command{Kind: Add, Arg: "billing-svc#12"}},
+		{line: "add", wantErr: "qualified by repo: :add acme/api#12 or :add api:feat/x"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.line, func(t *testing.T) {
@@ -195,7 +209,7 @@ func TestHistoryCap(t *testing.T) {
 }
 
 func TestComplete(t *testing.T) {
-	all := []string{"add", "auto", "tier", "cap", "stop", "resume", "settings", "q"}
+	all := []string{"add", "auto", "tier", "cap", "stop", "resume", "repo", "settings", "q"}
 	cases := []struct {
 		line, want string
 		cands      []string
@@ -220,6 +234,11 @@ func TestComplete(t *testing.T) {
 		{"settings x", "settings x", nil},
 		{"zz", "zz", nil},
 		{"zz a", "zz a", nil},
+		// M5.3: without repos :repo completes "all" only.
+		{"re", "re", []string{"resume", "repo"}},
+		{"rep", "repo ", []string{"repo"}},
+		{"repo ", "repo all", []string{"all"}},
+		{"repo b", "repo b", nil},
 	}
 	for _, tc := range cases {
 		t.Run(tc.line, func(t *testing.T) {
@@ -228,6 +247,97 @@ func TestComplete(t *testing.T) {
 				t.Errorf("Complete(%q) = %q, %v; want %q, %v", tc.line, got, cands, tc.want, tc.cands)
 			}
 		})
+	}
+}
+
+func TestCompleteRepos(t *testing.T) {
+	// Keys and labels as the root passes them: a non-GitHub repo's label is
+	// its key, so names repeat.
+	repos := []string{"billing-svc", "acme/billing-svc", "portal", "acme/portal", "tools", "tools", " "}
+	cases := []struct {
+		line, want string
+		cands      []string
+	}{
+		{"repo ", "repo ", []string{"billing-svc", "acme/billing-svc", "portal", "acme/portal", "tools", "all"}},
+		{"repo b", "repo billing-svc", []string{"billing-svc"}},
+		{":repo B", ":repo billing-svc", []string{"billing-svc"}},
+		{"repo acme/", "repo acme/", []string{"acme/billing-svc", "acme/portal"}},
+		{"repo ACME/P", "repo acme/portal", []string{"acme/portal"}},
+		{"repo a", "repo a", []string{"acme/billing-svc", "acme/portal", "all"}},
+		{"repo al", "repo all", []string{"all"}},
+		{"repo t", "repo tools", []string{"tools"}},
+		{"repo x", "repo x", nil},
+		{"stop ", "stop all", []string{"all"}}, // other commands ignore the repos
+	}
+	for _, tc := range cases {
+		t.Run(tc.line, func(t *testing.T) {
+			got, cands := complete(tc.line, repos)
+			if got != tc.want || strings.Join(cands, ",") != strings.Join(tc.cands, ",") {
+				t.Errorf("complete(%q) = %q, %v; want %q, %v", tc.line, got, cands, tc.want, tc.cands)
+			}
+		})
+	}
+	// Candidates that differ in case keep the typed prefix.
+	if got, _ := complete("repo a", []string{"Alpha", "api"}); got != "repo A" {
+		t.Errorf("mixed-case prefix = %q, want %q", got, "repo A")
+	}
+}
+
+func TestModelTabCompletesRepos(t *testing.T) {
+	m := New(plain())
+	m.SetWidth(80)
+	m.Open()
+	typeLine(&m, "repo b")
+	m.Update(press(tea.KeyTab))
+	if got := m.View(); got != ":repo b█" {
+		t.Fatalf("without repos :repo b<tab> view = %q", got)
+	}
+
+	m.SetRepos([]string{"billing-svc", "acme/billing-svc", "acme/portal"})
+	m.Open()
+	typeLine(&m, "repo b")
+	m.Update(press(tea.KeyTab))
+	if got := m.View(); got != ":repo billing-svc█" {
+		t.Fatalf(":repo b<tab> view = %q", got)
+	}
+	m.Update(press(tea.KeyEnter))
+	if s, ok := m.PendingCommand(); !ok || s.Cmd != (Command{Kind: Repo, Arg: "billing-svc"}) {
+		t.Errorf("submitted %+v", s)
+	}
+
+	m.Open()
+	typeLine(&m, "repo acme")
+	m.Update(press(tea.KeyTab))
+	if got := m.View(); !strings.HasPrefix(got, ":repo acme/█") || !strings.Contains(got, "acme/billing-svc · acme/portal") {
+		t.Fatalf(":repo acme<tab> view = %q", got)
+	}
+	m.Update(press(tea.KeyTab))
+	m.Update(press(tea.KeyTab))
+	if got := m.View(); !strings.HasPrefix(got, ":repo acme/portal█") {
+		t.Errorf("cycled view = %q", got)
+	}
+
+	// The repos are per model: another model and the static Complete do
+	// not see them.
+	if _, cands := Complete("repo b"); cands != nil {
+		t.Errorf("Complete saw repos: %v", cands)
+	}
+	m.SetRepos(nil)
+	m.Open()
+	typeLine(&m, "repo ")
+	m.Update(press(tea.KeyTab))
+	if got := m.View(); got != ":repo all█" {
+		t.Errorf("after SetRepos(nil) view = %q", got)
+	}
+}
+
+func TestSetReposCopies(t *testing.T) {
+	names := []string{"api", "web"}
+	m := New(plain())
+	m.SetRepos(names)
+	names[0] = "changed"
+	if _, cands := complete("repo a", m.repos); strings.Join(cands, ",") != "api,all" {
+		t.Errorf("candidates %v: SetRepos kept the caller's slice", cands)
 	}
 }
 
@@ -250,10 +360,27 @@ func TestHelpCoversEveryCommand(t *testing.T) {
 		}
 	}
 	want := []HelpEntry{
-		{":auto manual|needs-you|needs-you+yours|all", "set the auto-review strategy (saved to .git/prt/prt.toml)"},
-		{":stop [all]", "stop the selected item's analysis (all: every item)"},
-		{":resume [all]", "resume the selected item from its last finished stage (all: every stopped item)"},
-		{":settings", "open the settings page (also ,)"},
+		{":auto manual|needs-you|needs-you+yours|all", "set the auto-review strategy (saved to .git/prt/prt.toml)", false},
+		{":stop [all]", "stop the selected item's analysis (all: every item)", false},
+		{":resume [all]", "resume the selected item from its last finished stage (all: every stopped item)", false},
+		{":settings", "open the settings page (also ,)", false},
+		{":repo <name>|all", "show one repo of the workspace (all: every repo)", true},
+		{":add #482 | :add feat/x", "add a PR or branch and analyse it now", false},
+		{":add acme/api#12 | :add api:feat/x", "add from one repo of the workspace (owner/name#N, repo#N, repo:branch)", true},
+	}
+	var order, wsOnly []string
+	for _, e := range h {
+		order = append(order, strings.Fields(e.Usage)[0])
+		if e.Workspace {
+			wsOnly = append(wsOnly, e.Usage)
+		}
+	}
+	if got := strings.Join(order, " "); got != ":add :add :auto :tier :cap :stop :resume :repo :settings :q" {
+		t.Errorf("Help order = %s", got)
+	}
+	// A single repo's overlay leaves out exactly the workspace forms (M5.3).
+	if got := strings.Join(wsOnly, " ; "); got != ":add acme/api#12 | :add api:feat/x ; :repo <name>|all" {
+		t.Errorf("workspace-only entries = %s", got)
 	}
 	for _, w := range want {
 		found := false

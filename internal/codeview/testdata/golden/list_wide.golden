@@ -1,0 +1,30 @@
+┌─ Files · by attention ───────────────────────┐ ┌─ web/src/api/client.ts  +8 −3 ──────────────────────────────────────────── file 1 of 3 ─┐
+│▸ web/src/api/client.ts                    █·□│ │@@ 10  modified · feature · behaviour ✓ .91 · ⚠ breaking .86 · b2 · tests ✗ · auth       │
+│  web/src/api/session.ts                    ·█│ │       error_path · risk 4 · eyes                                                        │
+│── not yours ─────────────────────────────────│ │  L10–15 · +3 −1 · export async function fetchJSON(url: string, opts?: RequestInit)      │
+│  web/legacy/util.ts                        ▒█│ │  10 10   export async function fetchJSON(url: string, opts?: RequestInit) {             │
+│                                              │ │ ▸11    -   const res = await fetch(url);                                                │
+│                                              │ │~    11 +   const res = await fetch(url, { ...opts, credentials: "include" });           │
+│                                              │ │◆    12 +   if (!res.ok) throw new Error(`HTTP ${res.status}`);                          │
+│                                              │ │⋯    13 +   console.log("debug", res);                                                   │
+│                                              │ │  12 14     return res.json();                                                           │
+│                                              │ │  13 15   }                                                                              │
+│                                              │ │                                                                                         │
+│                                              │ │2 units hidden by filters (f)                                                            │
+│                                              │ │                                                                                         │
+│                                              │ │                                                                                         │
+│                                              │ │                                                                                         │
+│                                              │ │                                                                                         │
+│                                              │ │                                                                                         │
+│                                              │ │                                                                                         │
+│                                              │ │                                                                                         │
+│                                              │ │                                                                                         │
+│                                              │ │                                                                                         │
+│                                              │ │                                                                                         │
+│                                              │ │                                                                                         │
+│                                              │ │                                                                                         │
+│                                              │ │                                                                                         │
+│                                              │ │                                                                                         │
+│                                              │ │                                                                                         │
+│                                              │ │                                                                                         │
+└──────────────────────────────────────────────┘ └─────────────────────────────────────────────────────────────────────────────────────────┘

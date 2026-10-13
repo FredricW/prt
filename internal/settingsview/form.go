@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/fredricw/prt/internal/config"
 	"github.com/fredricw/prt/internal/model"
 	"github.com/fredricw/prt/internal/proto"
 	"github.com/fredricw/prt/internal/theme"
@@ -32,9 +33,13 @@ const (
 	keyAction     = "action"
 )
 
+// sectionUrgency names the section of the urgency weights (the workspace
+// note about their scale is shown there).
+const sectionUrgency = "Urgency weights"
+
 // sectionNames are the form's groups in order (one page each).
 func sectionNames() []string {
-	return []string{"Analysis", "You", "Cost", "Models", "Urgency weights", "Thresholds", "Environment"}
+	return []string{"Analysis", "You", "Cost", "Models", sectionUrgency, "Thresholds", "Environment"}
 }
 
 // labelWidth pads inline input titles so the values line up.
@@ -102,11 +107,34 @@ func analysisFields(info proto.SettingsInfo, fv *formValues) []huh.Field {
 		fv.Scope = proto.ScopeRepo
 		return fs
 	}
+	repo, global := scopeLabels(info)
 	return append(fs, huh.NewSelect[proto.SettingsScope]().Key(keyScope).Title("save to").
 		Options(
-			huh.NewOption("repo    "+join(info.RepoDir, "prt.toml"), proto.ScopeRepo),
-			huh.NewOption("global  "+join(info.GlobalDir, "prt.toml"), proto.ScopeGlobal),
+			huh.NewOption(repo, proto.ScopeRepo),
+			huh.NewOption(global, proto.ScopeGlobal),
 		).Value(&fv.Scope))
+}
+
+// scopeLabels are the save-scope options: "repo    <dir>/prt.toml" and
+// "global  <dir>/prt.toml"; in a workspace (M5.3) they say which repos a
+// save reaches: "(acme/billing-svc only)" and "(every repo)".
+func scopeLabels(info proto.SettingsInfo) (repo, global string) {
+	repo = "repo    " + join(info.RepoDir, config.MainFile)
+	global = "global  " + join(info.GlobalDir, config.MainFile)
+	if info.Workspace != "" {
+		repo += " (" + repoName(info) + " only)"
+		global += " (every repo)"
+	}
+	return repo, global
+}
+
+// repoName is how the page names the workspace repo it edits: the label
+// (owner/name on GitHub), else the key.
+func repoName(info proto.SettingsInfo) string {
+	if info.RepoLabel != "" {
+		return info.RepoLabel
+	}
+	return info.Repo
 }
 
 func youFields(fv *formValues) []huh.Field {

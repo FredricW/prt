@@ -160,7 +160,8 @@ func TestSetInfoShowsValues(t *testing.T) {
 	want := map[int][]string{
 		0: {"Settings", "Analysis · 1/7", "auto_review", "needs-you", "PRs that need you", "repo    .git/prt/prt.toml",
 			"global  /home/u/.config/prt/prt.toml", "values from .git/prt/prt.toml · routing from builtin",
-			"! global prt.toml is shadowed", "esc cancel"},
+			"! global prt.toml is shadowed", "esc cancel",
+			"saves to: .git/prt/prt.toml · cost cap, deep slots: .git/prt/prt.routing.toml"}, // M5.3
 		1: {"role", "backend", "owns", "internal/**", "cmd/*"},
 		2: {"cost cap ($)", "0.75", "deep_slots", "2"},
 		3: {"anthropic:claude-haiku", "anthropic:claude-opus", "ollama:embeddinggemma-2"},
