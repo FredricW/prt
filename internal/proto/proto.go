@@ -1,5 +1,7 @@
 // Package proto is the daemon ↔ TUI wire protocol: newline-delimited JSON
-// over a Unix socket (.git/prt/prtd.sock). Every line is one Message.
+// over a Unix socket (.git/prt/prtd.sock for one repo; for a workspace,
+// M5.3, $XDG_STATE_HOME/prt/ws-<hash>/prtd.sock, see
+// daemon.WorkspaceSocketPath). Every line is one Message.
 //
 // Client → daemon: Kind "req" with ID, Method and Params.
 // Daemon → client: Kind "resp" with the same ID and Result or Error, and

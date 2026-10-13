@@ -15,7 +15,8 @@ every number on screen traces back to a label, a rule or a git fact.
 > colour, the design canvas look) and M5.1 (auto-review strategy, stop and
 > resume, settings page, command-line completion) and M5.2 (measured label
 > quality, instant open, capped Overview blocks, API / Database / Flags change
-> blocks) are done; M6 (overlap view) is not started. See
+> blocks) and M5.3 (multi-repo workspaces, resizable sidebars) are done; M6
+> (overlap view) is not started. See
 > [`docs/spec.md`](docs/spec.md) for the design and
 > [`CHANGELOG.md`](CHANGELOG.md) for what works today.
 
@@ -53,7 +54,25 @@ Secrets are only read from the environment and `gh`, never from config files.
 ```sh
 cd your-repo
 prt                 # picker on the left, the selected PR/branch on the right
+
+prt --root ~/code   # every git repository under ~/code in one picker
 ```
+
+- **Several repos at once.** `prt --root DIR`, or `prt` started in a
+  directory that is not inside a git repository, finds every repository
+  under it (two levels deep; `--depth N`, or `[workspace] depth` and
+  `exclude = ["archive/**"]` in the global `$XDG_CONFIG_HOME/prt/prt.toml`;
+  `node_modules`, `vendor` and dot directories are skipped) and shows them
+  in one picker, grouped by repo: each header shows the repo, its item count
+  and whether it is on GitHub. `z` folds a repo, `Z` folds all, `F` (or
+  `:repo <name>`, `:repo all`) shows one repo. Urgency bars are on one scale
+  across repos. Each repo keeps its own `.git/prt` store, log and config, so
+  its own prt.toml (role, owned paths) applies to it; the header shows what
+  the session has spent across repos. `/` and `:add` take repo-qualified
+  refs: `acme/billing-svc#7`, `billing-svc#7`, `billing-svc:feat/x`.
+- **Resize the sidebars.** Drag the picker's right border (or the Code
+  page list's) with the mouse, or press `<` / `>` to move the focused pane's
+  border. Widths are remembered in `$XDG_STATE_HOME/prt/ui.json`.
 
 - `j`/`k` move through the picker, `enter` focuses the diff, `esc` goes back.
 - `1` overview, `2` code; `]`/`[` jump between files in the diff.
@@ -116,6 +135,8 @@ prt                 # picker on the left, the selected PR/branch on the right
   | Command | Does |
   | --- | --- |
   | `:add #482` / `:add feat/x` | add a PR or branch and analyse it now |
+  | `:add acme/api#12` / `:add api:feat/x` | in a workspace: add from one repo |
+  | `:repo <name>` / `:repo all` | in a workspace: show one repo / every repo |
   | `:auto manual\|needs-you\|needs-you+yours\|all` | set the auto-review strategy (saved to `.git/prt/prt.toml`) |
   | `:tier deep\|none\|rules` | set the review tier of the focused group (or every group) |
   | `:cap 1.00` / `:cap default` | set the selected item's review cost cap |
@@ -169,8 +190,10 @@ prt                 # picker on the left, the selected PR/branch on the right
   `prt.questions.toml` in `$EDITOR` (question changes apply at the next
   daemon start). `tab`/`enter` move between fields, `pgdown`/`pgup` between
   sections, `esc` cancels.
-- `prt daemon` keeps analysis warm in the background (one per repo); `prt`
-  connects to it automatically, or runs everything in-process with `--no-daemon`.
+- `prt daemon` keeps analysis warm in the background (one per repo, or
+  `prt daemon --root DIR` for a workspace: one daemon, one worker pool and
+  one cost ledger for every repo under DIR); `prt` connects to it
+  automatically, or runs everything in-process with `--no-daemon`.
 - `prt --offline` never touches the network; `prt --snapshot` prints a few
   screens to stdout without a terminal.
 
@@ -179,6 +202,9 @@ Try it on the bundled fixtures, fully offline:
 ```sh
 make demo       # interactive
 make snapshot   # non-interactive
+
+make demo-workspace       # two repos (portal and billing-svc) in one picker
+make snapshot-workspace
 ```
 
 Both run with `--offline` and replay the answers recorded in
@@ -197,11 +223,16 @@ show `not analysed` until you press `r`.
 `make snapshot` renders through a synchronous run that ignores the strategy,
 so it analyses every item. In this replay mode only `.git/prt/` is read, so
 the settings page saves to the repo scope only, and its GitHub line says the
-client is the fixture (gh auth is not checked).
+client is the fixture (gh auth is not checked). The workspace targets use
+`testdata/fixture-workspace` (built by `make fixtures`) with
+`--fixtures testdata/fixtures-workspace/manifest.json`, which gives each
+repo its own GitHub fixture; billing-svc has no recordings, so its items show
+`labels unavailable`.
 
 Configuration is optional: `prt.toml`, `prt.routing.toml` and
 `prt.questions.toml` are looked up in `.git/prt/`, then `$XDG_CONFIG_HOME/prt/`.
-See the spec's Configuration section for every key.
+See the spec's Configuration section for every key. `[workspace]` (`depth`,
+`exclude`) is read from the global file only.
 
 ## Development
 
@@ -210,7 +241,7 @@ make build      # bin/prt
 make test       # go test ./...
 make lint       # golangci-lint v2
 make check      # vet + test + lint; must pass before every commit
-make fixtures   # regenerate testdata/fixture-repo
+make fixtures   # regenerate testdata/fixture-repo and testdata/fixture-workspace
 make quality    # label-quality scoreboard against testdata/groundtruth (docs/QUALITY.md)
 make record-jev-dry  # count the Jev requests a recording would send (free)
 make record-jev      # record Jev answers for the fixtures (JEV_API_KEY, $1 cap)

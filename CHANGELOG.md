@@ -429,6 +429,69 @@ exercised against `gh.Fake`.
   demo/snapshot shows it as "labels unavailable" (replay miss degrades, by
   design).
 
+### M5.3 — multi-repo workspaces and resizable sidebars (2026-10-13)
+
+User-requested changes beyond the spec (recorded in DECISIONS as user
+decisions; the multi-repo view overrides the spec's non-goal "one repo per
+process"). Gate: `make check` (vet, also `-tags live`; all tests; lint
+0 issues) green on every commit, each checked out in a scratch worktree
+right after it was made (the leaf `uistate` commit with vet, its own tests
+and lint); `make snapshot` and `make snapshot-workspace` render. Inside a single repo prt behaves as before: the single-repo snapshot
+is pinned by a golden test and differs from M5.2 only in the help overlay's
+new resize lines. No model spend; no GitHub writes.
+
+#### Added
+
+- **Workspaces.** `prt --root DIR` (or prt started in a directory that is not
+  inside a git repository) discovers every repository under DIR (`--depth`,
+  default 2; `[workspace] depth` and `exclude` globs in the global prt.toml;
+  node_modules, vendor, dot directories, nested repos and submodules skipped;
+  linked worktrees deduplicated; symlink loops safe) and shows all their PRs
+  and branches in one picker. Each repo keeps its own store, log and config
+  under its own `.git/prt`; a repo's prt.toml overrides the global one for
+  that repo.
+- **Repo-grouped picker:** a collapsible header per repo with its item count
+  and GitHub status (`gh ✓`, `gh off`, `not on GitHub`, `no remote`), the
+  usual sections inside, urgency bars on one scale across repos, `z` folds a
+  repo, `Z` all, `F` / `:repo <name>|all` filters to one repo; a repo card in
+  the main pane on a header; the header shows the workspace root, repo and
+  item counts and the session spend.
+- **One daemon per workspace:** `prt daemon --root DIR` on
+  `$XDG_STATE_HOME/prt/ws-<hash>/prtd.sock` with the workspace log beside it;
+  every repo's pipeline runs on one shared worker pool (most urgent job of
+  any repo first, global `[pipeline] concurrency`) and one cost ledger;
+  `--no-daemon` works too. `gh auth token` is read once.
+- **Item ids are unique across repos** (`<repoKey>::<id>`) without migrating
+  any store: only the workspace client adds and strips the prefix.
+- **Repo-qualified refs:** `/` and `:add` accept `acme/billing-svc#7`,
+  `billing-svc#7` and `billing-svc:feat/x` and search every repo; `:stop all`
+  and `:resume all` cover every repo; `:auto` and the settings page save to
+  the active repo (or the global file, then reloaded in every repo), and the
+  settings page shows the workspace and which file a setting saves to.
+- **Resizable sidebars:** drag the picker's right border, or the Code page
+  list's, with the mouse (heavy accent border and a "resize … release to
+  keep" line during the drag), or press `<` / `>` (rebindable `narrower` /
+  `wider`) to move the focused pane's border. Clamped (picker 20 to
+  min(80, width − 42); Code list 16 to page width − 40), persisted per user
+  in `$XDG_STATE_HOME/prt/ui.json`; side-by-side still needs a 102-column
+  main pane.
+- **Fixture workspace** `testdata/fixture-workspace` (`make fixtures`): the
+  portal repo, a second repo `acme/billing-svc` (PRs #7 and #8 and a local
+  branch, with its own GitHub fixture), a plain directory, decoy repos under
+  node_modules, vendor and at depth 3, and a symlink loop.
+  `make demo-workspace` and `make snapshot-workspace`; billing-svc has no
+  recordings, so it shows "labels unavailable".
+- `cmd/prt/testdata/snapshot_single.golden` pins the single-repo snapshot.
+
+#### Known limits
+
+- A repo daemon and a workspace daemon on the same repo at once is
+  unsupported (two writers on one store).
+- A long workspace root (such as a temp dir) cuts the counts off the header
+  line.
+- Snapshots on the generated fixtures show stages as run on the first run
+  after `make fixtures` and as cached afterwards (true of M5.2 as well).
+
 ### M5.2 — label quality, instant open and overview blocks (2026-10-13)
 
 User-requested changes beyond the spec (recorded in DECISIONS as user

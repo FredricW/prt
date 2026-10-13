@@ -2,11 +2,12 @@
 
 ## Summary
 
-M0–M5 are built per `docs/spec.md`. On top of that is the M5.1 and M5.2 you asked for:
+M0–M5 are built per `docs/spec.md`. On top of that is the M5.1, M5.2 and M5.3 you asked for:
 - M5.1: an auto-review strategy, default `needs-you` (branches are never auto-reviewed unless the strategy is `all`); stop/resume; a settings page; command-line completion.
 - M5.2: measured and tuned label quality (`make quality`), instant open of analysed items with stale-while-revalidate, the tab-click fix, capped Overview blocks with a full-list overlay, a coloured composition bar, API / Database / Flags change blocks, a sixth fixture PR, and the truncated fast review fixed and re-recorded.
+- M5.3: multi-repo workspaces (`prt --root DIR`, one picker grouped by repo, one daemon, worker pool and cost ledger per workspace, repo-qualified search and `:add`) and resizable sidebars (mouse drag or `<`/`>`, widths remembered).
 
-M6 (overlap) is deliberately deferred because the spec marks it "later". The repo is `github.com/fredricw/prt` (`main`, pushed). `make check` (vet, also `-tags live`; tests; golangci-lint v2) is green at HEAD. Real model spend so far is **$1.4941 of the $5.00 cap**. Nothing is blocked.
+M6 (overlap) is deliberately deferred because the spec marks it "later". The repo is `github.com/fredricw/prt`; M5.2 and earlier are pushed, and **the M5.3 commits are on local `main` and not pushed** (this run was started with the request "Status", which did not ask for a push). `make check` (vet, also `-tags live`; tests; golangci-lint v2) is green at HEAD. Real model spend so far is **$1.4941 of the $5.00 cap** (M5.3 made no model calls). Nothing is blocked.
 
 Details: `CHANGELOG.md` (per milestone), `docs/DECISIONS.md` (every call made), `docs/ARCHITECTURE.md` (packages).
 
@@ -121,6 +122,20 @@ Details: `CHANGELOG.md` (per milestone), `docs/DECISIONS.md` (every call made), 
   - The $0.40 cap is unchanged: it does not leave deep groups queued on the fixtures.
 - Spend: Jev $0.0333, Anthropic $0.5731, Ollama $0. No GitHub writes.
 
+### M5.3: your requested changes
+- Done:
+  - **Workspaces.** `prt --root DIR`, or `prt` in a directory outside any repo, finds every repository under it (default depth 2, `--depth`, `[workspace] depth`/`exclude` in the global prt.toml; skips node_modules, vendor, dot dirs, nested repos and submodules; dedupes worktrees; survives symlink loops). Each repo keeps its own `.git/prt` store, log and config. Item ids become `<repo>::<id>` only in the workspace client, so no store is migrated.
+  - **Picker grouped by repo** (chosen over a global ranked list with a repo column, which would cut every title in the 36-column sidebar): collapsible headers with counts and GitHub status, the usual sections inside, urgency bars on one scale, `z`/`Z` fold, `F` and `:repo` filter, a repo card on a header, session spend in the header.
+  - **One daemon per workspace** (`prt daemon --root DIR`, socket under `$XDG_STATE_HOME/prt/ws-<hash>/`), one worker pool (most urgent job of any repo first), one cost ledger, `gh auth token` read once, `:stop all`/`:resume all` across repos, settings saved per repo or globally (then reloaded in every repo), the settings page showing the workspace and the file a setting saves to.
+  - **Resizable sidebars:** drag the picker's or the Code list's right border, or `<`/`>`; clamped, persisted in `$XDG_STATE_HOME/prt/ui.json`; side-by-side still keyed to the main pane's width.
+  - **Fixture workspace** with a second repo (`acme/billing-svc`, PRs #7, #8 and a branch), decoys and a symlink loop; `make demo-workspace`, `make snapshot-workspace`.
+  - A single repo behaves as before: the single-repo snapshot is pinned by a golden test and differs from M5.2 only in the help overlay's resize lines.
+- Partial:
+  - billing-svc has no recordings: its items show "labels unavailable" in the demo (no spend this milestone).
+  - A repo daemon and a workspace daemon on the same repo at once is unsupported.
+  - A long workspace root cuts the counts off the header line.
+- No model spend, no GitHub writes. Not pushed.
+
 ### Not done
 - **M6: overlap.** Deferred per the spec. The data model leaves room for it: content-based unit ids, and `semantic_conflict` is reserved. A design exists in `docs/design/Overlap.dc.html` and `docs/design/v2/Overlap.dc.html`.
 - **ONNX embedder.** Still a stub that returns `ErrUnavailable`. `onnx:` specs fall back to Ollama.
@@ -160,11 +175,12 @@ The early Anthropic rows were priced at assumed rates and over-count somewhat (C
 - `make check`: vet, tests and lint; must pass before every commit.
 - `make demo`: interactive, offline, replays the recordings.
 - `make snapshot`: prints screens to stdout (six items).
+- `make demo-workspace` / `make snapshot-workspace`: the same over the two-repo fixture workspace.
 - `make quality`: prints the label-quality scoreboard.
-- `make fixtures`.
+- `make fixtures`: regenerates the fixture repo and the fixture workspace.
 - `make record-{jev,review,embed}[-dry]`.
 
-**Against a real repo:** `cd your-repo; prt`. Environment variables (each is optional; prt degrades without it):
+**Against a real repo:** `cd your-repo; prt`. **Against several:** `prt --root ~/code` (or `prt` in a directory outside any repo). Environment variables (each is optional; prt degrades without it):
 - `JEV_API_KEY`: an AI Gateway key for Jev labels. `JEV_BASE_URL` overrides the default `https://ai-gateway.vercel.sh`.
 - `PRT_ANTHROPIC_API_KEY`: the fast/deep reviews. It is deliberately **not** `ANTHROPIC_API_KEY`, because that name would switch Claude Code itself to API billing on this machine.
 - `OLLAMA_HOST`: the embedding server, default `http://127.0.0.1:11434`.
@@ -172,13 +188,15 @@ The early Anthropic rows were priced at assumed rates and over-count somewhat (C
 - Secrets are read only from the environment and `gh`, never from config.
 
 **Daemon vs in-process:**
-- `prt daemon` keeps analysis warm, one per repo, on `.git/prt/prtd.sock`. `prt` connects to it automatically.
+- `prt daemon` keeps analysis warm, one per repo, on `.git/prt/prtd.sock`. `prt daemon --root DIR` serves a whole workspace on `$XDG_STATE_HOME/prt/ws-<hash>/prtd.sock`. `prt` connects to the matching one automatically.
 - `prt --no-daemon` runs everything in-process.
 - `--offline` never touches the network.
 - Store, log and config live under `.git/prt/`.
 
 **Key commands** (from README and the keymap; `?` lists them all):
 - Navigation: `j`/`k` move the picker, `enter`/`esc`, `1`/`2`/`3` switch Overview/Code/Architecture, `P` opens the Pipeline page, `r` re-runs or resumes, `q` quits.
+- Workspace: `z` folds a repo, `Z` folds all, `F` cycles the repo filter (or `:repo <name>|all`).
+- Resizing: drag the picker's or the Code list's right border; `<`/`>` narrow or widen the focused pane.
 - Overview: `J`/`K` (or `]`/`[`) focus a block, `enter`/`space` open its full list, `esc` closes; `L` shows raw labels.
 - Code page: `g` switches by file / by change, `n`/`p` and `J`/`K` move, `f` filters, `z` expands noise, `L` shows labels, `u` toggles side-by-side, `C` comments, `S` submits.
 - Stop/resume:
@@ -187,7 +205,8 @@ The early Anthropic rows were priced at assumed rates and over-count somewhat (C
   - `ctrl+o` (or `r`) resumes.
 - Settings page: `,` or `:settings`. `tab`/`enter` move between fields, `pgdown`/`pgup` between sections, `esc` cancels.
 - `:` commands (`tab` completes):
-  - `:add #N|branch`
+  - `:add #N|branch` (in a workspace also `:add owner/name#N`, `:add repo:branch`)
+  - `:repo <name>|all` (workspace only)
   - `:auto manual|needs-you|needs-you+yours|all` (saved to `.git/prt/prt.toml`)
   - `:tier deep|none|rules`
   - `:cap 1.00|default`
@@ -207,6 +226,9 @@ The early Anthropic rows were priced at assumed rates and over-count somewhat (C
 7. **Label tuning narrows the spec (your M5.2 request).** Headlines need P ≥ 0.60 and give one row per unit; "unsure" reads only the attention and risk labels. The ground truth was written blind before tuning, but it covers six fixture items only, so the tuning may still fit them too closely.
 8. **Per-item cost cap stays at $0.40 and is charged at expected output length.** Every routed group runs on the fixtures; a single deep call can cost more than its reservation.
 9. **Change blocks merge code detection with Jev.** A Jev-only entry needs P ≥ 0.60; test files never count; client calls (`fetch`, axios) are not endpoints.
+10. **Workspace picker groups by repo** rather than one global ranked list with a repo column; urgency bars use one scale and repos are ordered by their most urgent item, so the most urgent work is still on top. Raw scores of repos with different `[rank]` weights are not normalised.
+11. **Workspace item ids are mapped, not migrated** (`<repo>::<id>` only in the workspace client), and **one daemon per workspace** lives in `$XDG_STATE_HOME/prt`, not in any repo. Running a repo daemon and a workspace daemon over the same repo at once is unsupported.
+12. **Resize keys are `<`/`>`** (ctrl+left/right were rejected: terminals and tmux bind them), and the mouse mode stays cell motion, so there is no hover highlight, only the drag affordance.
 
 ## Three things I would do next
 
