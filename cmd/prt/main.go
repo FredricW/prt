@@ -88,7 +88,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	fs.IntVar(&o.height, "height", 30, "snapshot height")
 	fs.IntVar(&o.maxItems, "max-items", 4, "snapshot: number of items to render")
 	fs.StringVar(&o.fixtures, "fixtures", "", "use a fake GitHub client loaded from this JSON fixture (works with --offline)")
-	fs.StringVar(&o.now, "now", "", "snapshot: fixed current time (RFC 3339) so ages are stable")
+	fs.StringVar(&o.now, "now", "", "fixed current time (RFC 3339) so ages and replayed requests are stable (snapshot, demo)")
 	fs.StringVar(&o.jevReplay, "jev-replay", "", "answer Jev from recordings in this directory (works with --offline; a miss means labels unavailable)")
 	fs.StringVar(&o.embedReplay, "embed-replay", "", "embed from recordings in this directory (works with --offline; a miss skips embeddings)")
 	fs.StringVar(&o.reviewReplay, "review-replay", "", "answer the fast/deep reviewers from recordings in this directory (works with --offline; a miss leaves the group unreviewed)")

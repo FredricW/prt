@@ -60,7 +60,8 @@ prt                 # picker on the left, the selected PR/branch on the right
 - The Overview is a summary: every block shows a few rows and "+N more".
   `J`/`K` (or `]`/`[`) focus a block, `enter`/`space` (or a click on
   "+N more") open its full list, `enter` there jumps to the unit and `esc`
-  closes. Headlines list only claims with P ≥ .60 ("+N below .60 (unsure)").
+  closes. Headlines list only claims with P ≥ .60; "+N below .60 (unsure)"
+  opens the full list, where the weaker claims show as `?` rows.
   The API endpoints, Database and Feature flags & config blocks list routes,
   schema changes, flags, env vars and config keys added, changed or removed.
   An item you opened before shows at once; while it is re-analysed the old
@@ -186,7 +187,10 @@ so no model is called but the fixture PRs show real labels, groups, reviews
 and TL;DRs. They also pass `--drafts testdata/fixtures/drafts.json`, which
 seeds a few local draft comments (drafts you already have are kept). Every
 fixture item, the local branch included, has recorded answers, and every
-routed group fits the default $0.40 per-item cost cap. `make demo` runs under
+routed group fits the default $0.40 per-item cost cap. Both pin the clock to
+the recording time (`--now 2026-10-13T12:00:00Z`), because the branch-state
+question's recorded request includes the branch's idle days; ages on screen
+are counted from that time. `make demo` runs under
 the default `needs-you` strategy: PRs in Needs you are analysed
 automatically, while #102 (Yours), #106 (Involved) and the fixture branch
 show `not analysed` until you press `r`.

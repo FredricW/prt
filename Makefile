@@ -45,9 +45,11 @@ RECORDINGS := testdata/recordings
 # an unreviewed group.
 REPLAY := --jev-replay $(RECORDINGS)/jev --embed-replay $(RECORDINGS)/embed --review-replay $(RECORDINGS)/review
 
-# Interactive TUI against the fixture repo, fully offline.
+# Interactive TUI against the fixture repo, fully offline. The clock is
+# pinned like the snapshot's: the fixture branch's recorded branch-state
+# request carries its idle days, which the wall clock would move.
 demo: build $(FIXTURE_REPO)/.git
-	./bin/prt --no-daemon --offline $(REPLAY) --repo $(FIXTURE_REPO) --fixtures $(FIXTURE_PRS) --drafts $(FIXTURE_DRAFTS)
+	./bin/prt --no-daemon --offline $(REPLAY) --now $(SNAPSHOT_NOW) --repo $(FIXTURE_REPO) --fixtures $(FIXTURE_PRS) --drafts $(FIXTURE_DRAFTS)
 
 # Record real Jev answers for the fixture PRs into testdata/recordings/jev
 # (needs JEV_API_KEY; spend capped at $1.00, ledger in testdata/recordings/SPEND.md).
