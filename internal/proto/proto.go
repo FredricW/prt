@@ -41,7 +41,18 @@ const (
 	MethodSubscribe = "subscribe" // {} → {}; then events
 	MethodOverride  = "override"  // model.Override → {}
 	MethodComment   = "comment"   // model.Comment → model.Comment (draft upsert)
+	// MethodEditGroups persists a user merge/split/reset of an item's
+	// groups and re-runs the item (cached stages are skipped, so only
+	// clustering re-runs): GroupEditParams → {}.
+	MethodEditGroups = "edit_groups"
 )
+
+// GroupEditParams is the params of MethodEditGroups. Edit.ItemID must equal
+// ItemID; the daemon fills Edit.At when zero.
+type GroupEditParams struct {
+	ItemID string          `json:"itemId"`
+	Edit   model.GroupEdit `json:"edit"`
+}
 
 // EventType says what changed.
 type EventType string

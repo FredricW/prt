@@ -43,6 +43,10 @@ type Store interface {
 	Links(ctx context.Context, itemID string) ([]model.Link, error)
 	PutGroups(ctx context.Context, itemID string, groups []model.Group) error
 	Groups(ctx context.Context, itemID string) ([]model.Group, error)
+	// User merge/split edits of an item's groups, in append order (an
+	// EditReset edit clears them). Removed with the item.
+	AppendGroupEdit(ctx context.Context, e model.GroupEdit) error
+	GroupEdits(ctx context.Context, itemID string) ([]model.GroupEdit, error)
 	PutAgg(ctx context.Context, agg model.ItemAgg) error
 	Agg(ctx context.Context, itemID string) (model.ItemAgg, bool, error)
 

@@ -177,6 +177,21 @@ func ItemSubject(itemID string) string { return "item:" + itemID }
 // FileSubject is the Label.UnitID used for file-scope questions.
 func FileSubject(itemID, path string) string { return "file:" + itemID + ":" + path }
 
+// GroupSubject is the Label.UnitID used for group-scope questions
+// (name_bullet). Group ids are content-based (GroupID), so a group with the
+// same units keeps its name across runs and items; the label's Ctx carries
+// the hash of the PR title and bullets it was asked with.
+func GroupSubject(groupID string) string { return "group:" + groupID }
+
+// PairSubject is the Label.UnitID used for pair-scope questions (relation).
+// The two unit ids are sorted, so (a, b) and (b, a) share one cached answer.
+func PairSubject(a, b string) string {
+	if b < a {
+		a, b = b, a
+	}
+	return "pair:" + a + ":" + b
+}
+
 var bulletRe = regexp.MustCompile(`^\s{0,3}(?:[-*+]|\d+[.)])\s+(.*\S)\s*$`)
 
 // DescBullets returns the list items of a PR description in order (lines

@@ -1,0 +1,32 @@
+{
+  "model": "typesafe-ai/jev",
+  "state": {
+    "a": {
+      "path": "fetch/client.go",
+      "symbol": "Fetch",
+      "signature": "func Fetch()",
+      "change": "modified",
+      "diff": "@@ -10,3 +10,4 @@\n func Fetch() {\n-\treturn get()\n+\treturn retry(get, 3)\n }"
+    },
+    "b": {
+      "path": "fetch/client_test.go",
+      "symbol": "TestFetch",
+      "signature": "func TestFetch()",
+      "change": "modified",
+      "diff": "@@ -5,2 +5,3 @@\n func TestFetch(t *testing.T) {\n+\tassertRetries(t, 3)\n }"
+    }
+  },
+  "questions": {
+    "relation": {
+      "type": "choice",
+      "instructions": "How are these two changes related?",
+      "criteria": {
+        "caller update": "one change updates a caller or user of what the other change defines or changes",
+        "same intent": "both changes serve the same purpose or feature",
+        "same pattern": "both apply the same mechanical edit (rename, signature tweak, repeated pattern)",
+        "test for": "one change is a test that exercises the other change",
+        "unrelated": "the changes have nothing to do with each other"
+      }
+    }
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "model": "typesafe-ai/jev",
+  "state": {
+    "pr": {
+      "title": "Retry fetches"
+    },
+    "group": {
+      "units": [
+        {
+          "path": "fetch/client.go",
+          "symbol": "Fetch",
+          "signature": "func Fetch()",
+          "change": "modified",
+          "diff": "@@ -10,3 +10,4 @@\n func Fetch() {\n-\treturn get()\n+\treturn retry(get, 3)\n }"
+        },
+        {
+          "path": "fetch/client_test.go",
+          "symbol": "TestFetch",
+          "signature": "func TestFetch()",
+          "change": "modified",
+          "diff": "@@ -5,2 +5,3 @@\n func TestFetch(t *testing.T) {\n+\tassertRetries(t, 3)\n }"
+        }
+      ]
+    }
+  },
+  "questions": {
+    "name_bullet": {
+      "type": "choice",
+      "instructions": "Which bullet of the pull request description does this group of changes implement?",
+      "criteria": {
+        "b1": "Retry failed fetches three times",
+        "b2": "Document the retry",
+        "none": "implements none of the listed bullets"
+      }
+    }
+  }
+}

@@ -30,11 +30,14 @@ const StandInMinutesPerLine = 0.1
 
 // Input is everything aggregate reads.
 type Input struct {
-	Item               model.Item
-	Files              []model.File
-	Units              []model.ChangeUnit
-	Labels             []model.Label // with overrides already applied
-	Groups             []model.Group
+	Item   model.Item
+	Files  []model.File
+	Units  []model.ChangeUnit
+	Labels []model.Label // with overrides already applied
+	Groups []model.Group
+	// Links are the item's stored links (structural and Jev-confirmed);
+	// M2 fidelity uses incoming calls links (see the M2 fidelity rule).
+	Links              []model.Link
 	Reviews            []model.Review
 	Weights            config.Rank
 	Pipeline           config.Pipeline
@@ -90,7 +93,7 @@ func Item(in Input) model.ItemAgg {
 	for _, f := range us {
 		countUnit(&agg, f)
 	}
-	agg.Bullets, agg.Fidelity = bullets(in.Item.Body, us)
+	agg.Bullets, agg.Fidelity = bullets(in.Item.Body, us, unwiredUnits(in.Units, in.Links))
 	if l, ok := idx.item[model.QShape]; ok && !model.IsUnknown(l) {
 		agg.Shape, agg.ShapeP = l.Value, l.P
 	}

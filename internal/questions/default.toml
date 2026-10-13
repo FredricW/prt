@@ -228,7 +228,9 @@ type = "N"
 prompt = "Does this change follow the pattern used by the neighbouring functions in the same module?"
 inputs = ["neighbours"]
 feeds = ["quality"]
-deferred = "M2"
+# Moved from M2: making a unit question live changes every recorded unit
+# request (DECISIONS "M2 shared contracts").
+deferred = "M5"
 
 [[question]]
 scope = "unit"
@@ -237,7 +239,7 @@ type = "N"
 prompt = "Does this change re-implement logic that one of the candidate helpers in the state already provides?"
 inputs = ["helpers"]
 feeds = ["quality"]
-deferred = "M2"
+deferred = "M5"
 
 [[question]]
 scope = "unit"
@@ -246,7 +248,9 @@ type = "N"
 prompt = "Does this change define something (function, type, constant, endpoint) that other changes in this pull request use?"
 inputs = ["links"]
 feeds = ["group_order"]
-deferred = "M2"
+# M2 orders groups by structural facts (callees of calls/imports links);
+# cluster reads this label when present (DECISIONS "M2 shared contracts").
+deferred = "M3"
 
 [[question]]
 scope = "unit"
@@ -315,7 +319,7 @@ type = "C"
 prompt = "What role does this file play in the codebase?"
 options = ["core", "glue", "ui", "test", "config", "generated"]
 feeds = ["file_list"]
-deferred = "M2"
+deferred = "M5"
 
 [[question]]
 scope = "file"
@@ -324,7 +328,6 @@ type = "N"
 prompt = "Should the changes to this file be split into their own pull request, given the other change groups listed?"
 inputs = ["group_list"]
 feeds = ["split_suggestion"]
-deferred = "M2"
 
 # --------------------------------------------------------------- group scope
 
@@ -336,7 +339,6 @@ prompt = "Which bullet of the pull request description does this group of change
 dynamic = "pr_bullets"
 inputs = ["pr_body"]
 feeds = ["group_name"]
-deferred = "M2"
 
 [question.criteria]
 none = "implements none of the listed bullets"
@@ -351,7 +353,13 @@ prompt = "How are these two changes related?"
 options = ["same intent", "caller update", "test for", "same pattern", "unrelated"]
 inputs = ["both_units"]
 feeds = ["links"]
-deferred = "M2"
+
+[question.criteria]
+"same intent" = "both changes serve the same purpose or feature"
+"caller update" = "one change updates a caller or user of what the other change defines or changes"
+"test for" = "one change is a test that exercises the other change"
+"same pattern" = "both apply the same mechanical edit (rename, signature tweak, repeated pattern)"
+unrelated = "the changes have nothing to do with each other"
 
 [[question]]
 scope = "pair"

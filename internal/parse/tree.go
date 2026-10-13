@@ -28,6 +28,11 @@ var (
 	errNoGrammar = errors.New("parse: no grammar for language")
 )
 
+// Grammar returns the tree-sitter language for a Lang name ("go", "ts",
+// "tsx", "js", "python"), or nil. Exported for stage 2 (internal/link),
+// which runs its own queries (calls, imports, declarations) over file sides.
+func Grammar(lang string) *sitter.Language { return grammar(lang) }
+
 // grammar returns the tree-sitter language for a Lang name, or nil.
 func grammar(lang string) *sitter.Language {
 	switch lang {

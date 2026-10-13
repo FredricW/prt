@@ -1,0 +1,38 @@
+{
+  "model": "typesafe-ai/jev",
+  "state": {
+    "file": {
+      "path": "README.md",
+      "units": [
+        {
+          "path": "README.md",
+          "change": "modified",
+          "diff": "@@ -1,1 +1,2 @@\n # fetch\n+Retries three times."
+        }
+      ]
+    },
+    "groups": [
+      {
+        "name": "Retry failed fetches three times",
+        "files": [
+          "fetch/client.go",
+          "fetch/client_test.go"
+        ],
+        "units": 2
+      },
+      {
+        "name": "README",
+        "files": [
+          "README.md"
+        ],
+        "units": 1
+      }
+    ]
+  },
+  "questions": {
+    "separate_pr": {
+      "type": "boolean",
+      "instructions": "Should the changes to this file be split into their own pull request, given the other change groups listed?"
+    }
+  }
+}

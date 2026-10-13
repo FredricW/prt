@@ -122,6 +122,12 @@ func RequestKey(req Request) (string, error) {
 // Replay serves recorded responses from Dir (one <key>.json per request).
 type Replay struct {
 	Dir string
+	// MissUnavailable makes a request with no recording fail with an error
+	// wrapping both ErrNoRecording and ErrUnavailable, so the pipeline
+	// degrades ("labels unavailable", unknown labels) instead of failing
+	// the stage. Used by the offline demo/snapshot; tests leave it false so
+	// a missing recording is loud.
+	MissUnavailable bool
 }
 
 var _ Client = (*Replay)(nil)
@@ -135,6 +141,9 @@ func (r *Replay) Evaluate(_ context.Context, req Request) (Response, error) {
 	path := filepath.Join(r.Dir, key+".json")
 	b, err := os.ReadFile(path)
 	if errors.Is(err, fs.ErrNotExist) {
+		if r.MissUnavailable {
+			return Response{}, fmt.Errorf("%w: %w %s in %s", ErrUnavailable, ErrNoRecording, key, r.Dir)
+		}
 		return Response{}, fmt.Errorf("%w %s in %s (run make record-jev)", ErrNoRecording, key, r.Dir)
 	}
 	if err != nil {

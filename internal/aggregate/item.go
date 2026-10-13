@@ -279,9 +279,11 @@ func headlineText(u model.ChangeUnit) string {
 	return string(r)
 }
 
-// bullets matches description bullets to the units that implement them and
-// returns them with the fidelity ratio (0 without bullets).
-func bullets(body string, us []unitFacts) ([]model.BulletAgg, float64) {
+// bullets matches description bullets to the units that claim them and
+// returns them with the fidelity ratio (0 without bullets). A bullet is
+// implemented when at least one claiming unit is not in unwired (nil: M1,
+// every claiming unit counts); UnitIDs still lists every claiming unit.
+func bullets(body string, us []unitFacts, unwired map[string]bool) ([]model.BulletAgg, float64) {
 	texts := model.DescBullets(body)
 	if len(texts) == 0 {
 		return nil, 0
@@ -298,8 +300,10 @@ func bullets(body string, us []unitFacts) ([]model.BulletAgg, float64) {
 			if l, ok := f.labels.known(model.QDescBullet); ok {
 				b.P = max(b.P, l.P)
 			}
+			if !unwired[f.agg.UnitID] {
+				b.Implemented = true
+			}
 		}
-		b.Implemented = len(b.UnitIDs) > 0
 		if b.Implemented {
 			implemented++
 		}

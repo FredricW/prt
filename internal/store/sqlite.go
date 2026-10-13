@@ -128,6 +128,9 @@ const (
 	kReview   = "review"
 	kComment  = "comment"
 	kOverride = "override"
+	// kGroupEdit holds user merge/split edits, parent = item id, id =
+	// itemID/<8-digit sequence> so listDocs returns them in append order.
+	kGroupEdit = "groupedit"
 )
 
 type execer interface {
@@ -248,8 +251,8 @@ func (s *SQLite) RemoveItem(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM docs WHERE (kind=? AND id=?) OR (kind IN (?,?,?,?,?,?) AND parent=?)`,
-		kItem, id, kFetch, kFile, kUnit, kLink, kGroup, kAgg, id); err != nil {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM docs WHERE (kind=? AND id=?) OR (kind IN (?,?,?,?,?,?,?) AND parent=?)`,
+		kItem, id, kFetch, kFile, kUnit, kLink, kGroup, kAgg, kGroupEdit, id); err != nil {
 		_ = tx.Rollback()
 		return err
 	}
@@ -314,6 +317,37 @@ func (s *SQLite) Groups(ctx context.Context, itemID string) ([]model.Group, erro
 	}
 	sortBy(gs, func(g model.Group) int { return g.Order })
 	return gs, nil
+}
+
+// AppendGroupEdit implements Store. An EditReset edit deletes the item's
+// edits and is not stored itself.
+func (s *SQLite) AppendGroupEdit(ctx context.Context, e model.GroupEdit) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	if e.Op == model.EditReset {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM docs WHERE kind=? AND parent=?`, kGroupEdit, e.ItemID); err != nil {
+			_ = tx.Rollback()
+			return err
+		}
+		return tx.Commit()
+	}
+	var n int
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM docs WHERE kind=? AND parent=?`, kGroupEdit, e.ItemID).Scan(&n); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	if err := putDoc(ctx, tx, kGroupEdit, e.ItemID+"/"+pad(n), e.ItemID, e); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	return tx.Commit()
+}
+
+// GroupEdits implements Store; returned in append order.
+func (s *SQLite) GroupEdits(ctx context.Context, itemID string) ([]model.GroupEdit, error) {
+	return listDocs[model.GroupEdit](ctx, s, kGroupEdit, []string{itemID})
 }
 
 // PutAgg implements Store.

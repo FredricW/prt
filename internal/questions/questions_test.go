@@ -157,6 +157,12 @@ func TestLiveSetMatchesDecisions(t *testing.T) {
 		ScopeLine: {"fmt", "value_tweak", "leftover", "swallow", "pii_or_secret", "suspicious"},
 		ScopeUnit: {"kind", "behaviour", "effect", "desc_bullet", "breaking", "contract", "reversible",
 			"risk_tags", "fail_mode", "risk", "covered", "test_weakened", "relevance", "depth"},
+		// M2: pair relation, group name and the split suggestion. Unit
+		// "interface" and file "role" stay deferred (DECISIONS "M2 shared
+		// contracts").
+		ScopeFile:  {"separate_pr"},
+		ScopeGroup: {"name_bullet"},
+		ScopePair:  {"relation"},
 	}
 	for _, s := range Scopes {
 		var got []string

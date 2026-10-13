@@ -256,7 +256,20 @@ const (
 	LinkJev        LinkSource = "jev"
 )
 
-// Link connects two units.
+// Link connects two units. Direction conventions (M2, see DECISIONS "M2
+// shared contracts"):
+//   - calls: From = the calling unit, To = the unit that defines/changes
+//     the called symbol;
+//   - tests: From = the test unit, To = the code-under-test unit;
+//   - imports: From = the importing unit, To = the unit defining the
+//     imported symbol;
+//   - moved: From = the origin (deleted) unit, To = the destination unit;
+//   - same-symbol, embed-neighbour: From = the unit with the lower Order;
+//   - mechanical: From = the example unit (lowest Order of its shape class).
+//
+// Weight is 1 for structural links and the cosine similarity for embed
+// candidates; a Jev-confirmed link keeps the candidate's Kind and Weight and
+// adds Source jev, Relation and P.
 type Link struct {
 	From     string     `json:"from"`
 	To       string     `json:"to"`
@@ -264,20 +277,118 @@ type Link struct {
 	Weight   float64    `json:"weight"`
 	Source   LinkSource `json:"source"`
 	Relation string     `json:"relation,omitempty"` // Jev pair relation, when Source == jev
+	P        float64    `json:"p,omitempty"`        // Jev probability of Relation, when Source == jev
 }
+
+// Jev pair relations (catalogue question "relation"; the spec's stage-4
+// wording "same mechanical pattern" is the catalogue's "same pattern").
+const (
+	RelSameIntent   = "same intent"
+	RelCallerUpdate = "caller update"
+	RelTestFor      = "test for"
+	RelSamePattern  = "same pattern"
+	RelUnrelated    = "unrelated"
+)
+
+// Group name sources (Group.NameSource).
+const (
+	// NameBullet: Jev name_bullet chose a description bullet; Name and
+	// DescBullet hold the bullet text.
+	NameBullet = "bullet"
+	// NamePlaceholder: no bullet (Jev chose none, Jev unavailable, the PR
+	// has no bullets, or an ungrouped unit); Name is a code-derived
+	// placeholder until the fast-LLM title lands (M3).
+	NamePlaceholder = "placeholder"
+)
 
 // Group is a set of related units reviewed together.
 type Group struct {
-	ID          string   `json:"id"` // hash of sorted unit ids, see GroupID
-	ItemID      string   `json:"itemId"`
-	UnitIDs     []string `json:"unitIds"`
-	Name        string   `json:"name"`
-	DescBullet  string   `json:"descBullet,omitempty"`
-	Mechanical  bool     `json:"mechanical,omitempty"`
-	ExampleUnit string   `json:"exampleUnit,omitempty"`
-	Count       int      `json:"count,omitempty"`
-	Order       int      `json:"order"`
-	Ungrouped   bool     `json:"ungrouped,omitempty"`
+	ID      string   `json:"id"` // hash of sorted unit ids, see GroupID
+	ItemID  string   `json:"itemId"`
+	UnitIDs []string `json:"unitIds"` // in review order (interface, callers, tests)
+	Name    string   `json:"name"`
+	// NameSource is NameBullet or NamePlaceholder; NameP is the Jev
+	// probability of the chosen bullet (0 for placeholders).
+	NameSource  string  `json:"nameSource,omitempty"`
+	NameP       float64 `json:"nameP,omitempty"`
+	DescBullet  string  `json:"descBullet,omitempty"` // bullet text when NameSource == NameBullet
+	Mechanical  bool    `json:"mechanical,omitempty"`
+	ExampleUnit string  `json:"exampleUnit,omitempty"`
+	Count       int     `json:"count,omitempty"` // mechanical: verified members incl. the example
+	Order       int     `json:"order"`
+	// Ungrouped marks a single unit that no kept link binds to anything;
+	// such groups are listed last, under "ungrouped".
+	Ungrouped bool `json:"ungrouped,omitempty"`
+	// Links are the links that bind the group ("why these belong
+	// together"): structural, Jev-confirmed and, for mechanical groups,
+	// the verified mechanical links. Cut and rejected links are not listed.
+	Links []Link `json:"links,omitempty"`
+	// Ejected lists units whose shape hash did not match the mechanical
+	// example; they were promoted out of this group.
+	Ejected []string `json:"ejected,omitempty"`
+	// UserEdited is set when a user merge or split (GroupEdit) shaped it.
+	UserEdited bool `json:"userEdited,omitempty"`
+}
+
+// GroupEditOp is a user edit of the grouping (Code page by change).
+type GroupEditOp string
+
+// Group edit operations.
+const (
+	// EditMerge puts Units (the union of the merged groups' units) into one
+	// group, taking them out of whatever groups they were in.
+	EditMerge GroupEditOp = "merge"
+	// EditSplit takes Units out of their group into a new group of their own.
+	EditSplit GroupEditOp = "split"
+	// EditReset drops every earlier edit of the item.
+	EditReset GroupEditOp = "reset"
+)
+
+// GroupEdit is one persisted user edit. Edits are keyed by unit ids, not
+// group ids, so they survive re-clustering; cluster applies them in order
+// after computing groups, ignoring unit ids no longer in the item.
+type GroupEdit struct {
+	ItemID string      `json:"itemId"`
+	Op     GroupEditOp `json:"op"`
+	Units  []string    `json:"units,omitempty"`
+	At     time.Time   `json:"at"`
+}
+
+// GroupingStats is the Pipeline page's grouping panel: units → links
+// (structural by kind, embed candidates, Jev kept by relation) → groups, and
+// the mechanical collapse count. Filled by the pipeline's cluster stage.
+type GroupingStats struct {
+	Units                int              `json:"units"`
+	Structural           map[LinkKind]int `json:"structural"` // structural links by kind
+	EmbedCandidates      int              `json:"embedCandidates"`
+	MechanicalCandidates int              `json:"mechanicalCandidates"`
+	PairsAsked           int              `json:"pairsAsked"` // candidates judged by Jev (cached or not)
+	JevKept              map[string]int   `json:"jevKept"`    // relation → confirmed links
+	JevRejected          int              `json:"jevRejected"`
+	CutLinks             int              `json:"cutLinks"` // embed links cut to respect max_group_units
+	Groups               int              `json:"groups"`   // excluding ungrouped singletons
+	Mechanical           int              `json:"mechanical"`
+	// MechanicalCollapsed counts units hidden behind "×N verified
+	// identical" (sum of Count−1 over mechanical groups).
+	MechanicalCollapsed int `json:"mechanicalCollapsed"`
+	Ejected             int `json:"ejected"`
+	Ungrouped           int `json:"ungrouped"`
+	UserEdits           int `json:"userEdits"`
+	// EmbedNote says why stage 3 was skipped ("" when it ran).
+	EmbedNote string `json:"embedNote,omitempty"`
+}
+
+// SplitFile is one file the separate_pr question says should be its own PR.
+type SplitFile struct {
+	Path     string   `json:"path"`
+	P        float64  `json:"p"`        // P(yes) of separate_pr
+	GroupIDs []string `json:"groupIds"` // groups with units in this file
+}
+
+// SplitSuggestion is the Code page's split suggestion (by change mode):
+// files with separate_pr P >= 0.5, highest P first. Nil when none.
+type SplitSuggestion struct {
+	Files []SplitFile `json:"files"`
 }
 
 // Tier is a review tier.

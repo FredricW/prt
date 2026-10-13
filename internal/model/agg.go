@@ -192,4 +192,9 @@ type ItemAgg struct {
 	Units          []UnitAgg          `json:"units"`
 	Groups         []GroupAgg         `json:"groups"`
 	LabelsMissing  bool               `json:"labelsMissing,omitempty"` // Jev unavailable
+	// Grouping is the grouping panel record and Split the split suggestion;
+	// both are set by the pipeline from the cluster stage (not by
+	// aggregate.Item). Nil before M2 analysis.
+	Grouping *GroupingStats   `json:"grouping,omitempty"`
+	Split    *SplitSuggestion `json:"split,omitempty"`
 }
