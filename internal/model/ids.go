@@ -14,6 +14,44 @@ func PRItemID(number int) string { return "pr:" + strconv.Itoa(number) }
 // BranchItemID returns the item id of a local branch.
 func BranchItemID(ref string) string { return "branch:" + ref }
 
+// RepoIDSep joins a workspace repo key and a repo-local item id (M5.3,
+// multi-repo). Git ref names cannot contain ':' and repo keys never do
+// (CleanRepoKey), so the first "::" of an id is always this separator.
+const RepoIDSep = "::"
+
+// CleanRepoKey makes s usable as a workspace repo key: slash-separated,
+// no leading "./" or trailing "/", and ':' (which would clash with
+// RepoIDSep and the "repo:branch" qualifier) replaced by '_'. "" stays "".
+func CleanRepoKey(s string) string {
+	s = strings.ReplaceAll(s, "\\", "/")
+	s = strings.ReplaceAll(s, ":", "_")
+	for strings.HasPrefix(s, "./") {
+		s = s[2:]
+	}
+	return strings.Trim(s, "/")
+}
+
+// RepoItemID returns the workspace-wide id of a repo-local item id (M5.3):
+// "<repo>::<id>". Per-repo stores keep the local id; only the workspace
+// client (internal/workspace) adds and strips the prefix, so stores written
+// before M5.3 need no migration. An empty repo returns id unchanged (the
+// single-repo case).
+func RepoItemID(repo, id string) string {
+	if repo == "" {
+		return id
+	}
+	return repo + RepoIDSep + id
+}
+
+// SplitRepoItemID is the inverse of RepoItemID: the repo key and the
+// repo-local id. An id without a repo prefix returns ("", id).
+func SplitRepoItemID(id string) (repo, local string) {
+	if r, l, ok := strings.Cut(id, RepoIDSep); ok && r != "" {
+		return r, l
+	}
+	return "", id
+}
+
 // NormaliseHunk trims trailing whitespace from each line and drops blank lines
 // at either end, so unit ids survive whitespace-only noise around a hunk. It
 // keeps the +/-/space prefixes, so the same text added and removed differ.

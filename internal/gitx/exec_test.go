@@ -2,6 +2,7 @@ package gitx
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -39,6 +40,18 @@ func gitInit(t *testing.T) string {
 	}
 	run("commit", "-q", "-am", "add two")
 	return dir
+}
+
+func TestOpenOutsideWorkTree(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	dir := t.TempDir()
+	// Stop git's upward search at the temp dir, in case it sits in a repo.
+	t.Setenv("GIT_CEILING_DIRECTORIES", filepath.Dir(dir))
+	if _, err := Open(context.Background(), dir); !errors.Is(err, ErrNotWorkTree) {
+		t.Fatalf("Open(non-repo) = %v, want ErrNotWorkTree", err)
+	}
 }
 
 func TestExecBasics(t *testing.T) {

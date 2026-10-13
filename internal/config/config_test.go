@@ -82,6 +82,36 @@ func TestDirsHelpers(t *testing.T) {
 	}
 }
 
+func TestWorkspaceTable(t *testing.T) {
+	xdg := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", xdg)
+	if d := Defaults().Workspace; d.Depth != DefaultWorkspaceDepth || len(d.Exclude) != 0 {
+		t.Fatalf("default workspace %+v", d)
+	}
+	write(t, filepath.Join(xdg, "prt"), MainFile, "[workspace]\ndepth = 3\nexclude = [\"archive/**\"]\n")
+	c, err := Load([]string{GlobalDir()})
+	if err != nil || len(c.Warnings) != 0 {
+		t.Fatalf("%v warnings %q", err, c.Warnings)
+	}
+	if c.Workspace.Depth != 3 || len(c.Workspace.Exclude) != 1 || c.Workspace.Exclude[0] != "archive/**" {
+		t.Fatalf("workspace %+v", c.Workspace)
+	}
+}
+
+func TestStateDir(t *testing.T) {
+	st := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", st)
+	if got := StateDir(); got != filepath.Join(st, "prt") {
+		t.Errorf("StateDir = %q", got)
+	}
+	home := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", "")
+	t.Setenv("HOME", home)
+	if got := StateDir(); got != filepath.Join(home, ".local", "state", "prt") {
+		t.Errorf("StateDir without XDG_STATE_HOME = %q", got)
+	}
+}
+
 func TestUnknownKeyWarns(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	gitDir := t.TempDir()

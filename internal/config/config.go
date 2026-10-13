@@ -111,6 +111,23 @@ type Models struct {
 	JevEndpoint string `toml:"jev_endpoint"`
 }
 
+// Workspace is the multi-repo discovery of `prt --root DIR` (or prt started
+// outside a git repo; M5.3). It is read from the global prt.toml only
+// ($XDG_CONFIG_HOME/prt): a repo's own prt.toml cannot change how the
+// workspace around it is discovered.
+type Workspace struct {
+	// Depth is how many directory levels below the root are searched for
+	// repositories (≤ 0: DefaultWorkspaceDepth). The --depth flag wins.
+	Depth int `toml:"depth"`
+	// Exclude are doublestar globs, relative to the workspace root and
+	// slash-separated, of directories never searched ("archive/**",
+	// "**/tmp"). node_modules, vendor and .git internals are always skipped.
+	Exclude []string `toml:"exclude"`
+}
+
+// DefaultWorkspaceDepth is the default workspace.depth.
+const DefaultWorkspaceDepth = 2
+
 // Config is prt.toml.
 type Config struct {
 	User     User              `toml:"user"`
@@ -119,6 +136,9 @@ type Config struct {
 	Pipeline Pipeline          `toml:"pipeline"`
 	Models   Models            `toml:"models"`
 	Keys     map[string]string `toml:"keys"` // rebinding: action -> key
+	// Workspace configures multi-repo discovery (M5.3); only the global
+	// prt.toml's table is used.
+	Workspace Workspace `toml:"workspace"`
 
 	// Source is the path the config was read from, or "builtin".
 	Source string `toml:"-"`
@@ -146,7 +166,8 @@ func Defaults() Config {
 			Fast:  "anthropic:claude-haiku-5-5",
 			Deep:  "anthropic:claude-opus-5-5",
 		},
-		Source: "builtin",
+		Workspace: Workspace{Depth: DefaultWorkspaceDepth},
+		Source:    "builtin",
 	}
 }
 
@@ -218,6 +239,21 @@ func GlobalDir() string {
 // RepoDir returns <gitDir>/prt, the per-repo config directory (the settings
 // page's default "repo" scope).
 func RepoDir(gitDir string) string { return filepath.Join(gitDir, "prt") }
+
+// StateDir returns $XDG_STATE_HOME/prt (default ~/.local/state/prt), the
+// per-user directory for state that is neither config nor per-repo (M5.3):
+// the workspace daemon's socket and log, and the TUI's pane widths. "" when
+// neither XDG_STATE_HOME nor the home directory is known. It is not created
+// here.
+func StateDir() string {
+	if x := os.Getenv("XDG_STATE_HOME"); x != "" {
+		return filepath.Join(x, "prt")
+	}
+	if home, err := os.UserHomeDir(); err == nil {
+		return filepath.Join(home, ".local", "state", "prt")
+	}
+	return ""
+}
 
 // Find returns the first existing path of name in dirs, or "".
 func Find(dirs []string, name string) string {

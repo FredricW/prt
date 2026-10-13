@@ -196,6 +196,12 @@ type Item struct {
 	// restart resumes. A new push makes it stale again: the next run of the
 	// new head needs a new request (or strategy coverage). Set by the daemon.
 	RequestedSHA string `json:"requestedSha,omitempty"`
+
+	// Repo is the workspace repo key of the item (M5.3, multi-repo; the
+	// prefix of its ID, see RepoItemID). Only the workspace client sets it,
+	// on the way out: per-repo stores never hold it, and it is "" in
+	// single-repo mode.
+	Repo string `json:"repo,omitempty"`
 }
 
 // Branch states: the options of the catalogue's branch-scope question

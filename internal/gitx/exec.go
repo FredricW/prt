@@ -25,7 +25,7 @@ func Open(ctx context.Context, dir string) (*Exec, error) {
 	g := &Exec{root: dir}
 	out, err := g.run(ctx, "rev-parse", "--show-toplevel")
 	if err != nil {
-		return nil, fmt.Errorf("gitx: %s is not a git work tree: %w", dir, err)
+		return nil, fmt.Errorf("gitx: %s: %w: %w", dir, ErrNotWorkTree, err)
 	}
 	g.root = strings.TrimSpace(out)
 	return g, nil

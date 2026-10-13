@@ -111,7 +111,84 @@ const (
 	// configuration in the daemon and applies it live (M5.1):
 	// SaveSettingsParams → SettingsInfo (after the reload).
 	MethodSaveSettings = "save_settings"
+	// MethodWorkspace describes what the daemon serves (M5.3): {} →
+	// WorkspaceInfo. A single-repo daemon answers with one repo and Multi
+	// false; a workspace daemon (`prt daemon --root DIR`) with every repo
+	// it discovered under DIR.
+	MethodWorkspace = "workspace"
 )
+
+// RepoStatus is a workspace repo's GitHub status (the picker's repo header,
+// M5.3).
+type RepoStatus string
+
+// Repo statuses.
+const (
+	// RepoGitHub: the GitHub repo is known (RepoInfo.GHRepo, from
+	// [github] repo or the origin remote) and a client is wired.
+	RepoGitHub RepoStatus = "github"
+	// RepoGitHubDisabled: the repo is on GitHub but no client is wired (no
+	// token from `gh auth token`, --offline); RepoInfo.Note says why. Local
+	// branches only.
+	RepoGitHubDisabled RepoStatus = "github-disabled"
+	// RepoNotGitHub: origin is not a GitHub remote. Local branches only.
+	RepoNotGitHub RepoStatus = "not-github"
+	// RepoNoRemote: the repo has no origin remote. Local branches only.
+	RepoNoRemote RepoStatus = "no-remote"
+	// RepoError: the repo could not be opened (store, config); Note says
+	// why. It has no items.
+	RepoError RepoStatus = "error"
+)
+
+// RepoInfo is one repository of a workspace (M5.3).
+type RepoInfo struct {
+	// Key is the repo's workspace key: its path relative to the workspace
+	// root (model.CleanRepoKey), the prefix of its items' ids
+	// (model.RepoItemID) and the "repo" of Item.Repo, SearchParams.Repo and
+	// SettingsParams.Repo. "" in single-repo mode.
+	Key string `json:"key"`
+	// Label is what the UI shows: GHRepo when known, else Key (else the
+	// work tree's directory name).
+	Label string `json:"label"`
+	// Root is the work tree; GitDir its git dir (store, log and repo config
+	// live under GitDir/prt).
+	Root   string `json:"root"`
+	GitDir string `json:"gitDir,omitempty"`
+	// GHRepo is "owner/name" when the repo is on GitHub.
+	GHRepo string     `json:"ghRepo,omitempty"`
+	Status RepoStatus `json:"status"`
+	// Note explains a status that is not RepoGitHub ("no token from `gh
+	// auth token`", an open error); "" otherwise.
+	Note string `json:"note,omitempty"`
+	// Role is the repo's [user] role (its own prt.toml, else the global
+	// one), for the header while one of its items is selected.
+	Role string `json:"role,omitempty"`
+	// SpentUSD is the model spend of this repo's runs since the daemon
+	// started (the shared ledger's per-repo total).
+	SpentUSD float64 `json:"spentUsd,omitempty"`
+}
+
+// WorkspaceInfo is the result of MethodWorkspace (M5.3).
+type WorkspaceInfo struct {
+	// Multi is set for a workspace (`prt --root DIR`, or prt started
+	// outside a git repo), even one with a single repo; the TUI then groups
+	// the picker by repo. False in single-repo mode, where the TUI behaves
+	// exactly as before M5.3.
+	Multi bool `json:"multi,omitempty"`
+	// Root is the workspace root (Multi) or the repo's work tree.
+	Root string `json:"root"`
+	// Repos are the repos in workspace order (Key order); one in
+	// single-repo mode.
+	Repos []RepoInfo `json:"repos"`
+	// Concurrency is the shared worker pool's size (slots for analyses of
+	// every repo together).
+	Concurrency int `json:"concurrency,omitempty"`
+	// SpentUSD is the model spend of every repo's runs since the daemon
+	// started.
+	SpentUSD float64 `json:"spentUsd,omitempty"`
+	// Notes are discovery notes ("skipped 2 nested worktrees", "depth 2").
+	Notes []string `json:"notes,omitempty"`
+}
 
 // StopParams is the params of MethodStop: ItemID's analysis, or with All
 // every running and queued analysis (ItemID ignored).
@@ -191,6 +268,10 @@ type EnvStatus struct {
 // (prt.questions.toml, a commented starter); "" for none.
 type SettingsParams struct {
 	Ensure string `json:"ensure,omitempty"`
+	// Repo is the workspace repo key whose settings to read (M5.3; the
+	// selected item's repo). "" in single-repo mode; in a workspace "" means
+	// the first repo.
+	Repo string `json:"repo,omitempty"`
 }
 
 // SettingsInfo is the result of MethodSettings and MethodSaveSettings.
@@ -215,6 +296,13 @@ type SettingsInfo struct {
 	// Applied says what a save changed live ("re-aggregated 4 items,
 	// re-routed 2"); "" for MethodSettings.
 	Applied string `json:"applied,omitempty"`
+	// Repo and RepoLabel name the workspace repo these settings belong to
+	// (M5.3; RepoInfo.Key and Label); Workspace is the workspace root. All
+	// three are "" in single-repo mode. A repo-scope save writes that repo's
+	// RepoDir; a global save writes GlobalDir and applies to every repo.
+	Repo      string `json:"repo,omitempty"`
+	RepoLabel string `json:"repoLabel,omitempty"`
+	Workspace string `json:"workspace,omitempty"`
 }
 
 // SaveSettingsParams is the params of MethodSaveSettings ("" Scope means
@@ -222,6 +310,9 @@ type SettingsInfo struct {
 type SaveSettingsParams struct {
 	Scope  SettingsScope  `json:"scope,omitempty"`
 	Values SettingsValues `json:"values"`
+	// Repo is the workspace repo key a repo-scope save writes to (M5.3; ""
+	// in single-repo mode, the first repo in a workspace).
+	Repo string `json:"repo,omitempty"`
 }
 
 // SearchSource is one of the search-and-add sources (spec Picker "Search
@@ -249,6 +340,11 @@ type SearchParams struct {
 	Query  string       `json:"query"`
 	Source SearchSource `json:"source"`
 	Limit  int          `json:"limit,omitempty"`
+	// Repo limits a workspace search to one repo key (M5.3: the picker's
+	// repo filter). "" searches every repo (and a repo-qualified Query,
+	// "acme/billing-svc#12" or "billing-svc:feat/x", only its repo). Ignored
+	// in single-repo mode.
+	Repo string `json:"repo,omitempty"`
 }
 
 // SearchHit is one search result: kind, number or ref, title, author and
@@ -268,6 +364,10 @@ type SearchHit struct {
 	Query     string         `json:"query"`
 	ItemID    string         `json:"itemId"`
 	Listed    bool           `json:"listed,omitempty"`
+	// Repo is the hit's workspace repo key (M5.3; "" in single-repo mode).
+	// In a workspace, Query is repo-qualified and ItemID carries the repo
+	// prefix, so MethodAdd/MethodPreview are never ambiguous.
+	Repo string `json:"repo,omitempty"`
 }
 
 // SearchResult is the result of MethodSearch. Note explains a source that
@@ -308,6 +408,10 @@ type RoutingParams struct {
 	// Reload re-reads the routing file and re-routes every analysed item's
 	// groups that have no finished review.
 	Reload bool `json:"reload,omitempty"`
+	// Repo is the workspace repo key whose routing file this is (M5.3; the
+	// shown item's repo). "" in single-repo mode; in a workspace "" means
+	// the first repo.
+	Repo string `json:"repo,omitempty"`
 }
 
 // RoutingRule is one rule of the active routing file, for the rules panel.
@@ -489,6 +593,10 @@ type Event struct {
 	Item   *model.Item   `json:"item,omitempty"`
 	RunLog *model.RunLog `json:"runLog,omitempty"`
 	Note   string        `json:"note,omitempty"`
+	// Repo is the workspace repo key the event came from (M5.3; "" in
+	// single-repo mode). ItemID, Item.ID and RunLog.ItemID then carry the
+	// repo prefix; an EventLog note or EventSettings is about that repo.
+	Repo string `json:"repo,omitempty"`
 }
 
 // Message is one NDJSON line.

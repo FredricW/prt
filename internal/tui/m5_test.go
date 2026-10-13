@@ -424,7 +424,8 @@ func TestSearchOpenTypeAndAdd(t *testing.T) {
 		t.Errorf("prompt size %v", got)
 	}
 	m = typeKeys(m, "9q") // q types, it does not quit
-	if fmt.Sprint(f.searches) != "[{9 local 0} {9q local 0}]" || len(s.hits) != 2 {
+	// The trailing blank is SearchParams.Repo (M5.3), empty outside a workspace.
+	if fmt.Sprint(f.searches) != "[{9 local 0 } {9q local 0 }]" || len(s.hits) != 2 {
 		t.Fatalf("searches %v hits %v", f.searches, s.hits)
 	}
 	v := m.View()
