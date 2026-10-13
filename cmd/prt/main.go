@@ -38,6 +38,9 @@ import (
 
 var version = "dev"
 
+// ghToken returns the GitHub token (`gh auth token`); tests replace it.
+var ghToken = gh.TokenFromGH
+
 func main() { os.Exit(run(os.Args[1:], os.Stdout, os.Stderr)) }
 
 type options struct {
@@ -214,6 +217,9 @@ func setup(ctx context.Context, o options) (*environment, error) {
 		env.close()
 		return nil, err
 	}
+	for _, w := range append(append([]string(nil), cfg.Warnings...), routing.Warnings...) {
+		logger.Warn("config", "warning", w)
+	}
 
 	d := pipeline.Deps{Git: g, Store: st, Config: cfg, Routing: routing, Questions: cat, Log: logger}
 	if o.fixtures != "" {
@@ -246,9 +252,13 @@ func setup(ctx context.Context, o options) (*environment, error) {
 		key := review.AnthropicKeyFromEnv()
 		if fast, err := review.FromSpec(cfg.Models.Fast, key); err == nil {
 			d.Reviewers.Fast = fast
+		} else {
+			logger.Warn("fast review tier disabled", "spec", cfg.Models.Fast, "err", err)
 		}
 		if deep, err := review.FromSpec(cfg.Models.Deep, key); err == nil {
 			d.Reviewers.Deep = deep
+		} else {
+			logger.Warn("deep review tier disabled", "spec", cfg.Models.Deep, "err", err)
 		}
 	}
 	env.deps = d
@@ -320,7 +330,7 @@ func githubClient(ctx context.Context, g gitx.Git, cfg config.Config, logger *lo
 		}
 		repo = r
 	}
-	tok, err := gh.TokenFromGH(ctx)
+	tok, err := ghToken(ctx)
 	if err != nil {
 		logger.Warn("GitHub disabled", "err", err)
 		return nil

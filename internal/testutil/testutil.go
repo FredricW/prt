@@ -3,9 +3,13 @@
 package testutil
 
 import (
+	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
+
+	"github.com/fredricw/prt/internal/fixturegen"
 )
 
 // RepoRoot returns the module root (the directory holding go.mod).
@@ -43,24 +47,29 @@ func ReadTestdata(t testing.TB, elem ...string) []byte {
 	return b
 }
 
-// FixtureRepo returns testdata/fixture-repo, skipping the test if it has not
-// been generated (`make fixtures`).
+// FixtureRepo generates a fresh fixture repo from the committed sources in
+// testdata/fixtures into a temp dir and returns its path, so tests never
+// depend on (or skip because of) a stale or missing testdata/fixture-repo.
+// It needs the git binary and fails the test if generation fails.
 func FixtureRepo(t testing.TB) string {
 	t.Helper()
-	p := Testdata(t, "fixture-repo")
-	if _, err := os.Stat(filepath.Join(p, ".git")); err != nil {
-		t.Skip("fixture repo not generated; run `make fixtures`")
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
 	}
-	return p
+	out := filepath.Join(t.TempDir(), "testdata", "fixture-repo")
+	if err := fixturegen.Generate(context.Background(), Testdata(t, "fixtures"), out); err != nil {
+		t.Fatalf("generate fixture repo: %v", err)
+	}
+	return out
 }
 
 // FixturePRs returns testdata/fixtures/prs.json (the offline GitHub fixture
-// read by gh.LoadFixture), skipping the test if it does not exist yet.
+// read by gh.LoadFixture); it fails the test if the file is missing.
 func FixturePRs(t testing.TB) string {
 	t.Helper()
 	p := Testdata(t, "fixtures", "prs.json")
 	if _, err := os.Stat(p); err != nil {
-		t.Skip("testdata/fixtures/prs.json not present")
+		t.Fatalf("testdata/fixtures/prs.json: %v", err)
 	}
 	return p
 }
