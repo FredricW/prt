@@ -1,0 +1,38 @@
+{
+  "v": 3,
+  "attachments": {},
+  "boards": {
+    "Architecture.dc.html": {"h": 800, "title": "v1 · Architecture tab", "w": 1280, "x": 0, "y": 920},
+    "Code.dc.html": {"h": 800, "title": "v1 · Code tab", "w": 1280, "x": 1360, "y": 0},
+    "Main.dc.html": {"h": 800, "title": "v1 · Overview tab", "w": 1280, "x": 0, "y": 0},
+    "Overlap.dc.html": {"h": 800, "title": "v1 · Multi-select overlap", "w": 1280, "x": 1360, "y": 920},
+    "v2/Architecture.dc.html": {"h": 860, "title": "v2 · Architecture — module risk", "w": 1280, "x": 0, "y": 3100},
+    "v2/Code.dc.html": {"h": 860, "title": "v2 · Code — chunk labels & filters", "w": 1280, "x": 1360, "y": 2120},
+    "v2/Overlap.dc.html": {"h": 860, "title": "v2 · Overlap — semantic conflicts", "w": 1280, "x": 1360, "y": 3100},
+    "v2/Overview.dc.html": {"h": 860, "title": "v2 · Overview — aggregated labels", "w": 1280, "x": 0, "y": 2120},
+    "v3/Groups.dc.html": {"h": 860, "title": "v3 · Code — grouped by change", "w": 1280, "x": 0, "y": 4380},
+    "v3/Pipeline.dc.html": {"h": 860, "title": "v3 · Review pipeline & routing", "w": 1280, "x": 1360, "y": 4380}
+  },
+  "createdOnFiles": {"at": "2026-10-12T18:05:00Z", "v": 1},
+  "designSystems": [],
+  "launch": {"view": "canvas"},
+  "notes": {
+    "t1": {"kind": "title1", "maxW": 2640, "text": "prt — PR & branch triage in the terminal", "w": 240, "x": 0, "y": -280},
+    "t2": {"kind": "title1", "maxW": 2640, "text": "v2 — overview built from per-chunk labels", "w": 240, "x": 0, "y": 1840},
+    "t3": {"kind": "title1", "maxW": 2640, "text": "v3 — semantic groups & routed review", "x": 0, "y": 4100}
+  },
+  "order": [
+    "Main.dc.html",
+    "Code.dc.html",
+    "Architecture.dc.html",
+    "Overlap.dc.html",
+    "v2/Overview.dc.html",
+    "v2/Code.dc.html",
+    "v2/Architecture.dc.html",
+    "v2/Overlap.dc.html",
+    "v3/Groups.dc.html",
+    "v3/Pipeline.dc.html"
+  ],
+  "pages": [],
+  "title": "PR Triage TUI"
+}

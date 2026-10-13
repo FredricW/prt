@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>prt v2 — Overlap</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&amp;display=swap">
+<style>
+body{margin:0}
+.t{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:13px;line-height:20px;color:#d4d4cf;background:#0e1014}
+.dim{color:#8b929c}.acc{color:#f0a63a}.blu{color:#79b8ff}.add{color:#7ee2a8}.del{color:#ff9b9b}.b{font-weight:700;color:#f2f2ec}
+.box{border:1px solid #2b313c;position:relative}
+.lbl{position:absolute;top:-11px;left:10px;background:#0e1014;padding:0 6px;color:#8b929c}
+.key{background:#2b313c;color:#e6e6e0;padding:0 5px}
+.it{padding:5px 10px;border-left:2px solid transparent}
+.chk{background:#16202e;border-left:2px solid #79b8ff}
+.c{padding:6px 8px;border-bottom:1px solid #20252e}
+.h3{background:#5a3a10;color:#ffd28f}.h2{background:#3a2a14;color:#f0c27a}.h1{background:#1a1f28;color:#b4b8bf}.h0{color:#3e4550}
+.bar{display:inline-block;height:12px}
+.pb{display:inline-block;height:10px;background:#79b8ff}
+a{color:#79b8ff}a:hover{color:#a8d1ff}
+</style>
+</helmet>
+<div class="t" style="width:1280px;height:860px;box-sizing:border-box;padding:14px;display:flex;flex-direction:column;gap:14px">
+  <div style="display:flex;justify-content:space-between">
+    <div><span class="acc b">prt</span> <span class="dim">·</span> acme/portal <span class="dim">· 6 PRs · 2 branches · role:</span> frontend <span class="dim">(owns web/*)</span></div>
+    <div class="dim">pair questions 27 · 0.6s · synced 1m ago</div>
+  </div>
+  <div style="display:flex;gap:14px;flex:1;min-height:0">
+    <div class="box" style="width:330px;padding-top:12px;display:flex;flex-direction:column">
+      <span class="lbl">Queue · 3 selected</span>
+      <div class="dim" style="padding:2px 10px">── NEEDS YOU ───────────────</div>
+      <div class="it chk"><span class="blu">[x]</span> <span class="b">#482</span> Migrate session to JWT<div>     <span class="acc">⚠1</span> · 4 eyes · ~12m</div></div>
+      <div class="it"><span class="dim">[ ]</span> <span class="b">#479</span> Fix race in invoice sync<div class="dim">     CI red · ~4m</div></div>
+      <div class="it chk"><span class="blu">[x]</span> <span class="b">#486</span> Refactor meter API client<div>     2 eyes · ~6m</div></div>
+      <div class="dim" style="padding:2px 10px">── YOURS ───────────────────</div>
+      <div class="it"><span class="dim">[ ]</span> <span class="b">#471</span> Chart tooltips<div class="dim">     1 comment open</div></div>
+      <div class="it"><span class="dim">[ ]</span> <span class="b">#488</span> Bump Next.js 15.4<div class="dim">     skip</div></div>
+      <div class="dim" style="padding:2px 10px">── BRANCHES ────────────────</div>
+      <div class="it chk"><span class="blu">[x]</span> <span class="blu">feat/billing-export</span><div>     ready for PR .81 · ~4m</div></div>
+      <div class="it"><span class="dim">[ ]</span> <span class="blu">spike/fastapi-ws</span><div class="dim">     spike</div></div>
+      <div style="flex:1"></div>
+      <div class="dim" style="padding:6px 10px;border-top:1px solid #2b313c">space toggle · esc clear</div>
+    </div>
+    <div class="box" style="flex:1;padding:14px 16px;display:flex;flex-direction:column;gap:18px;min-width:0">
+      <div style="display:flex;justify-content:space-between">
+        <div><span class="b" style="font-size:15px">Overlap</span> <span class="dim">· #482 · #486 · feat/billing-export</span></div>
+        <div class="dim">review separately ~22m · together <span class="add">~15m</span></div>
+      </div>
+      <div style="display:flex;gap:16px">
+        <div class="box" style="padding:16px 12px 8px;width:470px">
+          <span class="lbl">Pairwise · textual / semantic</span>
+          <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr))">
+            <div class="c"></div><div class="c dim">#482</div><div class="c dim">#486</div><div class="c dim">billing</div>
+            <div class="c dim">#482</div><div class="c h0">—</div><div class="c h3"><span class="b">✕2</span> contra</div><div class="c h1">1 · none</div>
+            <div class="c dim">#486</div><div class="c h3"><span class="b">✕2</span> contra</div><div class="c h0">—</div><div class="c h2">3 · order</div>
+            <div class="c dim">billing</div><div class="c h1">1 · none</div><div class="c h2">3 · order</div><div class="c h0">—</div>
+          </div>
+          <div class="dim" style="margin-top:6px">✕ textual conflict · semantic: none / same / order / contra</div>
+        </div>
+        <div style="flex:1;display:flex;flex-direction:column;gap:18px">
+          <div class="box" style="padding:16px 12px 8px">
+            <span class="lbl">Merge first</span>
+            <div><span class="b" style="display:inline-block;width:80px">#486</span><span class="pb" style="width:116px"></span> <span class="dim">.58</span></div>
+            <div><span style="display:inline-block;width:80px">#482</span><span class="pb" style="width:62px;background:#4a6f99"></span> <span class="dim">.31</span></div>
+            <div><span style="display:inline-block;width:80px">billing</span><span class="pb" style="width:22px;background:#4a6f99"></span> <span class="dim">.11</span></div>
+          </div>
+          <div class="box" style="padding:16px 12px 8px">
+            <span class="lbl">Combine?</span>
+            <div><span class="acc">#482 + #486</span> into one PR <span class="dim">.74</span></div>
+            <div class="dim">billing: no open PR covers it .92</div>
+          </div>
+        </div>
+      </div>
+      <div class="box" style="padding:16px 12px 8px">
+        <span class="lbl">Chunk pairs · what the labels found</span>
+        <div><span class="del">contra</span> <span class="b">client.ts@18</span> <span class="dim">#482</span> × <span class="b">client.ts@22</span> <span class="dim">#486</span> — same problem, solved differently <span class="dim">.91</span></div>
+        <div class="dim" style="padding-left:62px">refresh-on-401 vs retry-with-backoff around the same fetch wrapper</div>
+        <div><span class="del">contra</span> <span class="b">useSession@14</span> <span class="dim">#482</span> × <span class="b">meter.ts@40</span> <span class="dim">#486</span> — A breaks B's assumption <span class="dim">.78</span></div>
+        <div class="dim" style="padding-left:62px">#486 still parses expiresAt as an ISO string</div>
+        <div><span class="acc">order&nbsp;</span> <span class="b">types.ts@5</span> <span class="dim">#486</span> × <span class="b">Export.tsx@31</span> <span class="dim">billing</span> — B needs A's type <span class="dim">.66</span></div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px">
+        <div class="box" style="padding:14px 12px 8px">
+          <span class="lbl">#482</span>
+          <div><span class="bar" style="width:110px;background:#79b8ff"></span><span class="bar" style="width:36px;background:#f0a63a"></span><span class="bar" style="width:22px;background:#7ee2a8"></span></div>
+          <div class="dim">HIGH · 4 eyes · 2 untested</div>
+        </div>
+        <div class="box" style="padding:14px 12px 8px">
+          <span class="lbl">#486</span>
+          <div><span class="bar" style="width:140px;background:#79b8ff"></span><span class="bar" style="width:28px;background:#7ee2a8"></span></div>
+          <div class="dim">MED · 2 eyes · tested</div>
+        </div>
+        <div class="box" style="padding:14px 12px 8px">
+          <span class="lbl">billing-export</span>
+          <div><span class="bar" style="width:20px;background:#79b8ff"></span><span class="bar" style="width:148px;background:#f0a63a"></span></div>
+          <div class="dim">LOW · 1 eyes · no tests yet</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="dim" style="display:flex;gap:18px;flex-wrap:wrap">
+    <span><span class="key">enter</span> open pair side-by-side</span><span><span class="key">m</span> post merge order to PRs</span><span><span class="key">tab</span> textual/semantic</span><span><span class="key">esc</span> back</span><span><span class="key">?</span> help</span>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":860}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

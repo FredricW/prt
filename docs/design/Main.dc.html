@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>prt — Overview</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&amp;display=swap">
+<style>
+body{margin:0}
+.t{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:13px;line-height:20px;color:#d4d4cf;background:#0e1014}
+.dim{color:#8b929c}.acc{color:#f0a63a}.blu{color:#79b8ff}.add{color:#7ee2a8}.del{color:#ff9b9b}.b{font-weight:700;color:#f2f2ec}
+.box{border:1px solid #2b313c;position:relative}
+.lbl{position:absolute;top:-11px;left:10px;background:#0e1014;padding:0 6px;color:#8b929c}
+.key{background:#2b313c;color:#e6e6e0;padding:0 5px}
+.it{padding:6px 10px;border-left:2px solid transparent}
+.sel{background:#1b2130;border-left:2px solid #f0a63a}
+.tab{padding:0 10px}.tabon{background:#f0a63a;color:#0e1014;font-weight:700;padding:0 10px}
+a{color:#79b8ff}a:hover{color:#a8d1ff}
+</style>
+</helmet>
+<div class="t" style="width:1280px;height:800px;box-sizing:border-box;padding:14px;display:flex;flex-direction:column;gap:14px">
+  <div style="display:flex;justify-content:space-between">
+    <div><span class="acc b">prt</span> <span class="dim">·</span> acme/portal <span class="dim">· 6 PRs · 2 branches · role:</span> frontend <span class="dim">(owns web/*)</span></div>
+    <div class="dim">synced 1m ago · gh ✓ · model ✓</div>
+  </div>
+  <div style="display:flex;gap:14px;flex:1;min-height:0">
+    <div class="box" style="width:350px;padding-top:12px;display:flex;flex-direction:column">
+      <span class="lbl">Queue · ranked</span>
+      <div class="dim" style="padding:4px 10px">── NEEDS YOU ─────────────────</div>
+      <div class="it sel"><span class="acc">▮▮▮▮</span> <span class="b">#482</span> Migrate session to JWT<div class="dim">  review requested · blocks v2.3 · 2d</div></div>
+      <div class="it"><span class="acc">▮▮▮</span><span class="dim">▯</span> <span class="b">#479</span> Fix race in invoice sync<div class="dim">  CI red after your approval · 5h</div></div>
+      <div class="it"><span class="acc">▮▮</span><span class="dim">▯▯</span> <span class="b">#486</span> Refactor meter API client<div class="dim">  touches web/auth · 1d</div></div>
+      <div class="dim" style="padding:4px 10px">── YOURS ─────────────────────</div>
+      <div class="it"><span class="acc">▮▮▮</span><span class="dim">▯</span> <span class="b">#471</span> Chart tooltips<div class="dim">  changes requested by @olav · 3d</div></div>
+      <div class="it"><span class="dim">▮▯▯▯</span> <span class="b">#488</span> Bump Next.js 15.4<div class="dim">  bot · green · no conflicts</div></div>
+      <div class="dim" style="padding:4px 10px">── BRANCHES ──────────────────</div>
+      <div class="it"><span class="acc">▮▮</span><span class="dim">▯▯</span> <span class="blu">feat/billing-export</span><div class="dim">  3 unpushed · 6d stale · no PR</div></div>
+      <div class="it"><span class="dim">▮▯▯▯</span> <span class="blu">spike/fastapi-ws</span><div class="dim">  local only · 12d</div></div>
+      <div style="flex:1"></div>
+      <div class="dim" style="padding:6px 10px;border-top:1px solid #2b313c">/ filter   s sort: urgency ▾</div>
+    </div>
+    <div class="box" style="flex:1;padding:14px 18px;display:flex;flex-direction:column;gap:14px">
+      <div style="display:flex;gap:4px"><span class="tabon">1 Overview</span><span class="tab dim">2 Code</span><span class="tab dim">3 Architecture</span></div>
+      <div>
+        <div class="b" style="font-size:15px">#482  Migrate auth session to JWT</div>
+        <div class="dim">@ingrid · opened 2d ago · <span class="add">+412</span> <span class="del">−188</span> · 14 files · main ← feat/jwt-session</div>
+      </div>
+      <div style="display:flex;gap:24px">
+        <span><span class="add">✓</span> CI passing</span><span><span class="acc">●</span> 1/2 approvals — <span class="acc">yours pending</span></span><span><span class="acc">⚑</span> on release path v2.3</span>
+      </div>
+      <div class="box" style="padding:14px 14px 10px">
+        <span class="lbl">TL;DR — for you</span>
+        <div>• Cookie session store → signed JWT in httpOnly cookie, verified in new middleware.</div>
+        <div>• <span class="b">useSession()</span> keeps its signature, but <span class="b">expiresAt</span> is now ms (was ISO string).</div>
+        <div>• Logout moves to <span class="b">/api/auth/revoke</span>; old <span class="b">/logout</span> is deleted.</div>
+      </div>
+      <div class="box" style="padding:14px 14px 10px">
+        <span class="lbl">Check before approving</span>
+        <div><span class="acc">→</span> web/components/Header.tsx:41 still calls <span class="b">/logout</span> <span class="dim">— will 404</span></div>
+        <div><span class="acc">→</span> refresh has no retry when parallel requests hit 401</div>
+        <div><span class="acc">→</span> no e2e test covers token expiry</div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px">
+        <div class="box" style="padding:14px 14px 10px">
+          <span class="lbl">Risk</span>
+          <div><span class="acc b">MEDIUM</span> <span class="dim">— every authed route; reversible via flag</span></div>
+        </div>
+        <div class="box" style="padding:14px 14px 10px">
+          <span class="lbl">Overlaps</span>
+          <div><span class="b">#486</span> <span class="dim">2 files</span> · <span class="blu">feat/billing-export</span> <span class="dim">1 file</span></div>
+        </div>
+      </div>
+      <div class="dim">why #1: review requested from you · blocks release · waiting 2d</div>
+    </div>
+  </div>
+  <div class="dim" style="display:flex;gap:18px;flex-wrap:wrap">
+    <span><span class="key">j/k</span> move</span><span><span class="key">space</span> select</span><span><span class="key">1 2 3</span> tabs</span><span><span class="key">o</span> overlap</span><span><span class="key">a</span> approve</span><span><span class="key">c</span> checkout</span><span><span class="key">r</span> regenerate</span><span><span class="key">?</span> help</span>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":800}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

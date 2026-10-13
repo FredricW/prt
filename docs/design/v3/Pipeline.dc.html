@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>prt v3 — Review pipeline</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&amp;display=swap">
+<style>
+body{margin:0}
+.t{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:13px;line-height:20px;color:#d4d4cf;background:#0e1014}
+.dim{color:#8b929c}.acc{color:#f0a63a}.blu{color:#79b8ff}.add{color:#7ee2a8}.del{color:#ff9b9b}.b{font-weight:700;color:#f2f2ec}
+.box{border:1px solid #2b313c;position:relative}
+.lbl{position:absolute;top:-11px;left:10px;background:#0e1014;padding:0 6px;color:#8b929c}
+.key{background:#2b313c;color:#e6e6e0;padding:0 5px}
+.st{border:1px solid #2b313c;padding:6px 8px;min-width:0;flex:1}
+.sd{border-color:#2f5a42}.sr{border:1px solid #79b8ff;background:#131a26}.sq{border-style:dashed}
+.arr{color:#5b6371;align-self:center}
+.tr{display:grid;grid-template-columns:28px 190px 120px minmax(0,1fr) 140px 150px;gap:0 10px;padding:4px 0;border-bottom:1px solid #1d222b}
+.tN{color:#8b929c}.tF{color:#7ee2a8}.tD{color:#f0a63a}.tE{color:#ffd28f}
+.pb{display:inline-block;height:10px}
+a{color:#79b8ff}a:hover{color:#a8d1ff}
+</style>
+</helmet>
+<div class="t" style="width:1280px;height:860px;box-sizing:border-box;padding:14px;display:flex;flex-direction:column;gap:16px">
+  <div style="display:flex;justify-content:space-between">
+    <div><span class="acc b">prt</span> <span class="dim">·</span> acme/portal <span class="dim">· #482 Migrate auth session to JWT ·</span> <span class="b">pipeline</span></div>
+    <div><span class="blu">▶ reviewing</span> <span class="dim">· 9.8s elapsed</span></div>
+  </div>
+  <div style="display:flex;gap:6px">
+    <div class="st sd"><div class="add">✓ parse</div><div class="dim">41 units · 0.1s</div></div><span class="arr">→</span>
+    <div class="st sd"><div class="add">✓ links</div><div class="dim">19 edges · 0.05s</div></div><span class="arr">→</span>
+    <div class="st sd"><div class="add">✓ embed</div><div class="dim">local · 0.3s</div></div><span class="arr">→</span>
+    <div class="st sd"><div class="add">✓ jev pairs</div><div class="dim">82 → 31 · 0.4s</div></div><span class="arr">→</span>
+    <div class="st sd"><div class="add">✓ cluster</div><div class="dim">7 groups</div></div><span class="arr">→</span>
+    <div class="st sd"><div class="add">✓ jev labels</div><div class="dim">41 · 0.4s</div></div><span class="arr">→</span>
+    <div class="st sd"><div class="add">✓ route</div><div class="dim">rules v4</div></div><span class="arr">→</span>
+    <div class="st sr"><div class="blu">▶ review</div><div class="dim">6 of 8</div></div><span class="arr">→</span>
+    <div class="st sq"><div class="dim">◌ aggregate</div><div class="dim">waiting</div></div>
+  </div>
+  <div style="display:flex;gap:16px;flex:1;min-height:0">
+    <div class="box" style="flex:1;padding:16px 14px 8px;min-width:0">
+      <span class="lbl">Routing · one call per group</span>
+      <div class="tr dim"><span>#</span><span>group</span><span>tier</span><span>why (from labels)</span><span>context</span><span>status</span></div>
+      <div class="tr"><span class="dim">1</span><span>Middleware verify</span><span class="tF">fast</span><span class="dim">risk 3 · server · not yours</span><span>types</span><span class="add">✓ 1.1s</span></div>
+      <div class="tr"><span class="dim">2</span><span>Session shape</span><span class="tF">fast</span><span class="dim">breaking → needs callers</span><span>6 callers</span><span class="add">✓ 1.4s</span></div>
+      <div class="tr"><span class="acc">3</span><span class="b">Token refresh</span><span class="tD">deep · security</span><span class="dim">auth · async · risk 5</span><span>callers, tests</span><span class="del">✓ 7.2s · 1 issue</span></div>
+      <div class="tr"><span class="dim">4</span><span>Logout → revoke</span><span class="tE">fast → deep</span><span class="dim">fast unsure .48, escalated</span><span>callers</span><span class="del">✓ 5.9s · 1 issue</span></div>
+      <div class="tr"><span class="dim">5</span><span>⟳ rename ×23</span><span class="tN">none</span><span class="dim">mechanical · checked in code</span><span>—</span><span class="add">✓ 0s</span></div>
+      <div class="tr"><span class="dim">6</span><span>Remove store</span><span class="tN">none</span><span class="dim">deletions · no callers left</span><span>—</span><span class="add">✓ 0s</span></div>
+      <div class="tr"><span class="dim">7</span><span>Tests</span><span class="tF">fast · tests</span><span class="dim">test units</span><span>code under test</span><span class="blu">▶ 2.3s…</span></div>
+      <div class="tr"><span class="acc">!</span><span>tokens.py leeway</span><span class="tD">deep</span><span class="dim">undocumented tweak · auth</span><span>config</span><span class="dim">◌ queued (slot)</span></div>
+      <div style="display:flex;gap:28px;margin-top:14px">
+        <div><div class="dim">tier mix</div><div><span class="pb" style="width:60px;background:#3a414d"></span><span class="pb" style="width:90px;background:#7ee2a8"></span><span class="pb" style="width:60px;background:#f0a63a"></span></div><div class="dim">none 2 · fast 3 · deep 3</div></div>
+        <div><div class="dim">time</div><div class="b">9.8s <span class="dim" style="font-weight:400">parallel</span></div><div class="dim">vs ~41s all-deep sequential</div></div>
+        <div><div class="dim">cost</div><div class="b">$0.11 <span class="dim" style="font-weight:400">of $0.40 cap</span></div><div class="dim">jev 123 calls · $0.002</div></div>
+      </div>
+    </div>
+    <div style="width:360px;display:flex;flex-direction:column;gap:18px">
+      <div class="box" style="padding:16px 12px 8px">
+        <span class="lbl">Rules · prt.routing.toml</span>
+        <div><span class="dim">if</span> mechanical|format|moved|generated <span class="dim">→</span> <span class="tN">none</span></div>
+        <div><span class="dim">if</span> risk ≥ 4 | auth | money | async <span class="dim">→</span> <span class="tD">deep</span></div>
+        <div><span class="dim">if</span> tag security <span class="dim">→ +</span> security prompt</div>
+        <div><span class="dim">if</span> breaking <span class="dim">→ +</span> callers context</div>
+        <div><span class="dim">if</span> fast confidence &lt; .60 <span class="dim">→</span> <span class="tE">escalate</span></div>
+        <div><span class="dim">else →</span> <span class="tF">fast</span></div>
+        <div class="dim" style="margin-top:6px">deep slots 3 · cap $0.40/PR</div>
+      </div>
+      <div class="box" style="padding:16px 12px 8px">
+        <span class="lbl">Grouping</span>
+        <div>41 units → <span class="b">7 groups</span> + 1 ungrouped</div>
+        <div class="dim">19 structural links · 82 embed pairs</div>
+        <div class="dim">Jev kept 31 (same intent 14 · caller 9 · test 5 · pattern 3)</div>
+        <div>mechanical: 23 units → 1 example</div>
+      </div>
+      <div class="box" style="padding:16px 12px 8px">
+        <span class="lbl">Calibration</span>
+        <div>sampled group 1 to deep too: <span class="add">agrees</span></div>
+        <div class="dim">fast-tier miss rate 3% · 30 days</div>
+        <div class="dim">your "wrong label" flags: 4 this week</div>
+      </div>
+    </div>
+  </div>
+  <div class="dim" style="display:flex;gap:18px;flex-wrap:wrap">
+    <span><span class="key">P</span> toggle pipeline</span><span><span class="key">enter</span> open group</span><span><span class="key">D</span> force deep</span><span><span class="key">s</span> skip review</span><span><span class="key">e</span> edit rules</span><span><span class="key">?</span> help</span>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":860}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

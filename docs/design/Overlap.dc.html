@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>prt — Overlap</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&amp;display=swap">
+<style>
+body{margin:0}
+.t{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:13px;line-height:20px;color:#d4d4cf;background:#0e1014}
+.dim{color:#8b929c}.acc{color:#f0a63a}.blu{color:#79b8ff}.add{color:#7ee2a8}.del{color:#ff9b9b}.b{font-weight:700;color:#f2f2ec}
+.box{border:1px solid #2b313c;position:relative}
+.lbl{position:absolute;top:-11px;left:10px;background:#0e1014;padding:0 6px;color:#8b929c}
+.key{background:#2b313c;color:#e6e6e0;padding:0 5px}
+.it{padding:6px 10px;border-left:2px solid transparent}
+.chk{background:#16202e;border-left:2px solid #79b8ff}
+.c{padding:6px 8px;border-bottom:1px solid #20252e}
+.h3{background:#5a3a10;color:#ffd28f}.h2{background:#3a2a14;color:#f0c27a}.h1{background:#1a1f28;color:#8b929c}.h0{color:#3e4550}
+a{color:#79b8ff}a:hover{color:#a8d1ff}
+</style>
+</helmet>
+<div class="t" style="width:1280px;height:800px;box-sizing:border-box;padding:14px;display:flex;flex-direction:column;gap:14px">
+  <div style="display:flex;justify-content:space-between">
+    <div><span class="acc b">prt</span> <span class="dim">·</span> acme/portal <span class="dim">· 6 PRs · 2 branches · role:</span> frontend <span class="dim">(owns web/*)</span></div>
+    <div class="dim">synced 1m ago · gh ✓ · model ✓</div>
+  </div>
+  <div style="display:flex;gap:14px;flex:1;min-height:0">
+    <div class="box" style="width:350px;padding-top:12px;display:flex;flex-direction:column">
+      <span class="lbl">Queue · 3 selected</span>
+      <div class="dim" style="padding:4px 10px">── NEEDS YOU ─────────────────</div>
+      <div class="it chk"><span class="blu">[x]</span> <span class="b">#482</span> Migrate session to JWT<div class="dim">      review requested · 2d</div></div>
+      <div class="it"><span class="dim">[ ]</span> <span class="b">#479</span> Fix race in invoice sync<div class="dim">      CI red · 5h</div></div>
+      <div class="it chk"><span class="blu">[x]</span> <span class="b">#486</span> Refactor meter API client<div class="dim">      touches web/auth · 1d</div></div>
+      <div class="dim" style="padding:4px 10px">── YOURS ─────────────────────</div>
+      <div class="it"><span class="dim">[ ]</span> <span class="b">#471</span> Chart tooltips<div class="dim">      changes requested · 3d</div></div>
+      <div class="it"><span class="dim">[ ]</span> <span class="b">#488</span> Bump Next.js 15.4<div class="dim">      bot · green</div></div>
+      <div class="dim" style="padding:4px 10px">── BRANCHES ──────────────────</div>
+      <div class="it chk"><span class="blu">[x]</span> <span class="blu">feat/billing-export</span><div class="dim">      3 unpushed · 6d</div></div>
+      <div class="it"><span class="dim">[ ]</span> <span class="blu">spike/fastapi-ws</span><div class="dim">      local only · 12d</div></div>
+      <div style="flex:1"></div>
+      <div class="dim" style="padding:6px 10px;border-top:1px solid #2b313c">space toggle · esc clear</div>
+    </div>
+    <div class="box" style="flex:1;padding:14px 18px;display:flex;flex-direction:column;gap:20px;min-width:0">
+      <div style="display:flex;justify-content:space-between">
+        <div><span class="b" style="font-size:15px">Overlap</span> <span class="dim">· #482 · #486 · feat/billing-export</span></div>
+        <div class="dim">files / lines / modules: <span class="b">files</span> ▾</div>
+      </div>
+      <div style="display:flex;gap:18px">
+        <div class="box" style="padding:16px 12px 10px;width:380px">
+          <span class="lbl">Pairwise — shared files</span>
+          <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr))">
+            <div class="c"></div><div class="c dim">#482</div><div class="c dim">#486</div><div class="c dim">billing</div>
+            <div class="c dim">#482</div><div class="c h0">—</div><div class="c h3 b">2 ✕</div><div class="c h1">1</div>
+            <div class="c dim">#486</div><div class="c h3 b">2 ✕</div><div class="c h0">—</div><div class="c h2">3</div>
+            <div class="c dim">billing</div><div class="c h1">1</div><div class="c h2">3</div><div class="c h0">—</div>
+          </div>
+          <div class="dim" style="margin-top:8px">✕ = textual conflict on merge</div>
+        </div>
+        <div class="box" style="padding:16px 12px 10px;flex:1">
+          <span class="lbl">Verdict</span>
+          <div><span class="acc b">HIGH</span> between #482 and #486.</div>
+          <div style="margin-top:6px">Both rewrite the fetch wrapper in <span class="b">web/api/client.ts</span> — #482 adds token refresh, #486 adds retries. They need to be one design, not a merge fix.</div>
+          <div style="margin-top:6px" class="dim">billing-export only reads from client.ts; safe after rebase.</div>
+        </div>
+      </div>
+      <div class="box" style="padding:16px 12px 10px">
+        <span class="lbl">Shared files</span>
+        <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:0 12px">
+          <div class="dim">file</div><div class="dim">touched by</div><div class="dim">lines overlap</div><div class="dim">status</div>
+          <div class="b">web/api/client.ts</div><div>#482 #486 billing</div><div>18 – 64</div><div class="del">✕ conflict</div>
+          <div class="b">web/auth/useSession.ts</div><div>#482 #486</div><div>14 – 31</div><div class="del">✕ conflict</div>
+          <div>web/api/types.ts</div><div>#486 billing</div><div class="dim">none</div><div class="add">✓ clean</div>
+          <div>web/billing/Export.tsx</div><div>#486 billing</div><div class="dim">none</div><div class="add">✓ clean</div>
+        </div>
+      </div>
+      <div class="box" style="padding:16px 12px 10px">
+        <span class="lbl">Suggested order</span>
+        <div><span class="blu">1</span> <span class="b">#486</span> <span class="dim">— smaller (+96), no release pressure; land retries first</span></div>
+        <div><span class="blu">2</span> <span class="b">#482</span> <span class="dim">— rebase; build refresh on top of the retry wrapper (fixes its 401 race too)</span></div>
+        <div><span class="blu">3</span> <span class="blu">feat/billing-export</span> <span class="dim">— rebase, push, open PR</span></div>
+      </div>
+    </div>
+  </div>
+  <div class="dim" style="display:flex;gap:18px;flex-wrap:wrap">
+    <span><span class="key">tab</span> files/lines/modules</span><span><span class="key">enter</span> open shared file 3-way</span><span><span class="key">m</span> comment order on PRs</span><span><span class="key">esc</span> back</span><span><span class="key">?</span> help</span>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":800}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

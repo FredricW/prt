@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>prt v3 — Grouped code</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&amp;display=swap">
+<style>
+body{margin:0}
+.t{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:13px;line-height:20px;color:#d4d4cf;background:#0e1014}
+.dim{color:#8b929c}.acc{color:#f0a63a}.blu{color:#79b8ff}.add{color:#7ee2a8}.del{color:#ff9b9b}.b{font-weight:700;color:#f2f2ec}
+.box{border:1px solid #2b313c;position:relative}
+.lbl{position:absolute;top:-11px;left:10px;background:#0e1014;padding:0 6px;color:#8b929c}
+.key{background:#2b313c;color:#e6e6e0;padding:0 5px}
+.it{padding:5px 10px;border-left:2px solid transparent}
+.sel{background:#1b2130;border-left:2px solid #f0a63a}
+.tab{padding:0 10px}.tabon{background:#f0a63a;color:#0e1014;font-weight:700;padding:0 10px}
+.flt{padding:0 8px;border:1px solid #3a414d}.fon{background:#79b8ff;color:#0e1014;border:1px solid #79b8ff;padding:0 8px}
+.g{padding:6px 10px;border-left:2px solid transparent;border-bottom:1px solid #1d222b}
+.gsel{background:#1b2130;border-left:2px solid #f0a63a}
+.chip{background:#232933;color:#e6e6e0;padding:0 6px;margin-right:4px}
+.chw{background:#4a3410;color:#ffd28f;padding:0 6px;margin-right:4px}
+.chr{background:#3a1a1c;color:#ffb3b3;padding:0 6px;margin-right:4px}
+.chb{background:#16263a;color:#a8d1ff;padding:0 6px;margin-right:4px}
+.ln{white-space:pre}
+.la{background:#12261c;color:#9ff0c0;white-space:pre}.ld{background:#2a1517;color:#ffb3b3;white-space:pre}
+.hh{background:#161b24;padding:4px 10px;display:flex;justify-content:space-between}
+.rv{border-left:2px solid #ff9b9b;padding:6px 10px;background:#1f1416}
+a{color:#79b8ff}a:hover{color:#a8d1ff}
+</style>
+</helmet>
+<div class="t" style="width:1280px;height:860px;box-sizing:border-box;padding:14px;display:flex;flex-direction:column;gap:14px">
+  <div style="display:flex;justify-content:space-between">
+    <div><span class="acc b">prt</span> <span class="dim">·</span> acme/portal <span class="dim">· #482 Migrate auth session to JWT</span></div>
+    <div class="dim">41 change units → <span class="b">7 groups</span> · review 6/7 done</div>
+  </div>
+  <div style="display:flex;gap:14px;flex:1;min-height:0">
+    <div class="box" style="width:400px;padding-top:12px;display:flex;flex-direction:column">
+      <span class="lbl">Change groups · review order</span>
+      <div style="padding:4px 10px 8px;display:flex;gap:6px;align-items:center"><span class="dim">by:</span><span class="flt">file</span><span class="fon">change</span><span class="dim">· interfaces → callers → tests</span></div>
+      <div class="g"><span class="dim">1</span> <span class="b">Middleware verify</span><div class="dim">5 units · 2 files · desc #1 · <span class="add">fast ✓</span> · skim</div></div>
+      <div class="g"><span class="dim">2</span> <span class="b">Session shape</span> <span class="acc">⚠</span><div class="dim">3 units · 3 files · breaking · <span class="add">fast ✓</span></div></div>
+      <div class="g gsel"><span class="acc">3</span> <span class="b">Token refresh</span><div>4 units · 3 files · desc #2 · <span class="del">deep · 1 issue</span></div></div>
+      <div class="g"><span class="dim">4</span> <span class="b">Logout → revoke</span><div class="dim">3 units · 3 files · <span class="del">fast→deep · 1 issue</span></div></div>
+      <div class="g"><span class="dim">5</span> <span class="b">⟳ getSession → useSession</span><div class="dim">mechanical ×23 · <span class="add">22 identical</span> · <span class="acc">1 differs</span></div></div>
+      <div class="g"><span class="dim">6</span> <span class="b">Remove session store</span><div class="dim">2 units · deletions only · no LLM</div></div>
+      <div class="g"><span class="dim">7</span> <span class="b">Tests</span><div class="dim">attached to groups 1–4 · <span class="blu">reviewing…</span></div></div>
+      <div class="dim" style="padding:6px 10px">── ungrouped ──────────────────────</div>
+      <div class="g"><span class="acc">!</span> tokens.py@12 leeway 30s→120s<div class="dim">no links · undocumented · deep queued</div></div>
+      <div style="flex:1"></div>
+      <div class="dim" style="padding:6px 10px;border-top:1px solid #2b313c">split suggestion: groups 1–2 · 3 · 4–6</div>
+    </div>
+    <div class="box" style="flex:1;padding:14px 16px;display:flex;flex-direction:column;gap:12px;min-width:0">
+      <div style="display:flex;justify-content:space-between">
+        <div style="display:flex;gap:4px"><span class="tab dim">1 Overview</span><span class="tabon">2 Code</span><span class="tab dim">3 Architecture</span></div>
+        <div class="dim">group 3 of 7</div>
+      </div>
+      <div>
+        <div class="b" style="font-size:15px">Token refresh <span class="dim" style="font-weight:400">— implements "silent refresh before expiry"</span></div>
+        <div><span class="chw">auth</span><span class="chw">async</span><span class="chw">risk 5</span><span class="chr">tests: 1 of 3 units</span><span class="chb">routed: deep · security</span></div>
+      </div>
+      <div class="box" style="padding:14px 12px 8px">
+        <span class="lbl">Why these belong together</span>
+        <div><span class="b">useSession@43</span> <span class="dim">─calls→</span> <span class="b">client.ts@18</span> <span class="dim">─calls→</span> <span class="b">jwt.py@60</span> <span class="dim">/refresh</span></div>
+        <div><span class="b">auth.test.ts@12</span> <span class="dim">─tests→</span> useSession@43</div>
+        <div class="dim">links: 2 call edges · 1 test-by-name · embed .84 → Jev "same intent" .93</div>
+      </div>
+      <div class="box" style="padding-top:12px;overflow:hidden">
+        <span class="lbl">Units · interface first</span>
+        <div class="hh"><span><span class="dim">1</span> server/middleware/jwt.py@60</span><span class="dim">interface · skim</span></div>
+        <div class="la"> + @router.post("/refresh")  →  sets new cookie, 401 if expired &gt; 7d</div>
+        <div class="hh"><span><span class="dim">2</span> web/api/client.ts@18</span><span class="dim">caller · read</span></div>
+        <div class="la"> + if (res.status === 401 &amp;&amp; !retried) { await refresh(); return send(req, true) }</div>
+        <div class="hh"><span><span class="acc">3</span> web/auth/useSession.ts@43</span><span class="acc">caller · read</span></div>
+        <div class="la"> +   const r = await fetch('/api/auth/refresh', { method: 'POST' })</div>
+        <div class="la"> +   if (r.status === 401) return signOut()</div>
+        <div class="hh"><span><span class="dim">4</span> web/auth/auth.test.ts@12</span><span class="dim">test · skim</span></div>
+        <div class="la"> + it('refreshes when under 60s left', …)</div>
+      </div>
+      <div class="rv">
+        <div><span class="del b">issue</span> <span class="dim">· deep · security · 7.2s</span></div>
+        <div>Two refresh paths now exist (client.ts and useSession). Parallel requests can trigger both; one 401 signs the user out mid-refresh. Use one shared in-flight refresh promise.</div>
+      </div>
+      <div class="box" style="padding:14px 12px 8px">
+        <span class="lbl">Group 5 · mechanical preview</span>
+        <div>Example 1 of 23: <span class="del">− getSession()</span> <span class="add">+ useSession()</span> <span class="dim">· 22 verified identical in code</span></div>
+        <div><span class="acc">1 differs:</span> Header.tsx:12 also drops an argument → promoted to its own unit in group 4</div>
+      </div>
+    </div>
+  </div>
+  <div class="dim" style="display:flex;gap:18px;flex-wrap:wrap">
+    <span><span class="key">g</span> group by file/change</span><span><span class="key">J/K</span> next group</span><span><span class="key">n/p</span> next unit</span><span><span class="key">⇧M</span> merge groups</span><span><span class="key">X</span> split group</span><span><span class="key">R</span> re-review deep</span><span><span class="key">?</span> help</span>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":860}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>prt v2 — Overview</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&amp;display=swap">
+<style>
+body{margin:0}
+.t{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:13px;line-height:20px;color:#d4d4cf;background:#0e1014}
+.dim{color:#8b929c}.acc{color:#f0a63a}.blu{color:#79b8ff}.add{color:#7ee2a8}.del{color:#ff9b9b}.b{font-weight:700;color:#f2f2ec}
+.box{border:1px solid #2b313c;position:relative}
+.lbl{position:absolute;top:-11px;left:10px;background:#0e1014;padding:0 6px;color:#8b929c}
+.key{background:#2b313c;color:#e6e6e0;padding:0 5px}
+.it{padding:5px 10px;border-left:2px solid transparent}
+.sel{background:#1b2130;border-left:2px solid #f0a63a}
+.tab{padding:0 10px}.tabon{background:#f0a63a;color:#0e1014;font-weight:700;padding:0 10px}
+.chip{background:#232933;color:#e6e6e0;padding:0 6px;margin-right:6px}
+.chw{background:#4a3410;color:#ffd28f;padding:0 6px;margin-right:6px}
+.cE{display:inline-block;width:14px;height:12px;background:#f0a63a;margin-right:3px}
+.cS{display:inline-block;width:14px;height:12px;background:#6b5426;margin-right:3px}
+.cK{display:inline-block;width:14px;height:12px;background:#2e343e;margin-right:3px}
+.cU{display:inline-block;width:12px;height:10px;border:1px solid #79b8ff;margin-right:3px}
+.bar{display:inline-block;height:12px}
+.row{display:flex;gap:10px;align-items:center}
+.fn{width:170px;white-space:nowrap;overflow:hidden}
+a{color:#79b8ff}a:hover{color:#a8d1ff}
+</style>
+</helmet>
+<div class="t" style="width:1280px;height:860px;box-sizing:border-box;padding:14px;display:flex;flex-direction:column;gap:14px">
+  <div style="display:flex;justify-content:space-between">
+    <div><span class="acc b">prt</span> <span class="dim">·</span> acme/portal <span class="dim">· 6 PRs · 2 branches · role:</span> frontend <span class="dim">(owns web/*)</span></div>
+    <div class="dim">labels 19/19 chunks · 0.4s · synced 1m ago</div>
+  </div>
+  <div style="display:flex;gap:14px;flex:1;min-height:0">
+    <div class="box" style="width:330px;padding-top:12px;display:flex;flex-direction:column">
+      <span class="lbl">Queue · ranked</span>
+      <div class="dim" style="padding:2px 10px">── NEEDS YOU ───────────────</div>
+      <div class="it sel"><span class="acc">▮▮▮▮</span> <span class="b">#482</span> Migrate session to JWT<div><span class="acc">⚠1</span> breaking · <span class="acc">4</span> eyes · ~12m</div><div class="dim">why: asked you · release · risk×untested</div></div>
+      <div class="it"><span class="acc">▮▮▮</span><span class="dim">▯</span> <span class="b">#479</span> Fix race in invoice sync<div>CI red · <span class="acc">1</span> eyes · ~4m</div></div>
+      <div class="it"><span class="acc">▮▮</span><span class="dim">▯▯</span> <span class="b">#486</span> Refactor meter API client<div><span class="del">✕</span> conflicts #482 · 2 eyes · ~6m</div></div>
+      <div class="dim" style="padding:2px 10px">── YOURS ───────────────────</div>
+      <div class="it"><span class="acc">▮▮▮</span><span class="dim">▯</span> <span class="b">#471</span> Chart tooltips<div>1 of 3 comments still open</div></div>
+      <div class="it"><span class="dim">▮▯▯▯</span> <span class="b">#488</span> Bump Next.js 15.4<div class="dim">deps only · 0 eyes · skip</div></div>
+      <div class="dim" style="padding:2px 10px">── BRANCHES ────────────────</div>
+      <div class="it"><span class="acc">▮▮</span><span class="dim">▯▯</span> <span class="blu">feat/billing-export</span><div>ready for PR <span class="dim">.81</span> · unpushed 6d</div></div>
+      <div class="it"><span class="dim">▮▯▯▯</span> <span class="blu">spike/fastapi-ws</span><div class="dim">spike · abandoned? .70</div></div>
+      <div style="flex:1"></div>
+      <div class="dim" style="padding:6px 10px;border-top:1px solid #2b313c">w weights · s sort: urgency ▾</div>
+    </div>
+    <div class="box" style="flex:1;padding:14px 16px;display:flex;flex-direction:column;gap:16px;min-width:0">
+      <div style="display:flex;justify-content:space-between">
+        <div style="display:flex;gap:4px"><span class="tabon">1 Overview</span><span class="tab dim">2 Code</span><span class="tab dim">3 Architecture</span></div>
+        <div class="dim">@ingrid · 2d · main ← feat/jwt-session</div>
+      </div>
+      <div>
+        <div class="b" style="font-size:15px">#482  Migrate auth session to JWT</div>
+        <div><span class="blu">ai·from labels</span> Moves sessions to JWT. Mostly refactor — one breaking hook change and an untested refresh path are what need you.</div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:4px">
+        <div class="row"><span class="bar" style="width:310px;background:#79b8ff"></span><span class="bar" style="width:100px;background:#f0a63a"></span><span class="bar" style="width:60px;background:#7ee2a8"></span><span class="bar" style="width:30px;background:#3a414d"></span></div>
+        <div><span class="blu">■</span> refactor 62%  <span class="acc">■</span> feature 20%  <span class="add">■</span> test 12%  <span class="dim">■ noise 6%</span></div>
+        <div><span class="add">+412</span> <span class="del">−188</span> <span class="dim">→</span> <span class="b">~90 lines that matter</span> <span class="dim">·</span> ~12 min <span class="dim">·</span> <span class="acc">4 of 19 chunks need eyes</span></div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px 16px">
+        <div class="box" style="padding:14px 12px 8px">
+          <span class="lbl">Headlines · contract surface</span>
+          <div><span class="acc">⚠</span> breaking: <span class="b">useSession().expiresAt</span> ISO → ms <span class="dim">.86</span></div>
+          <div><span class="acc">⚠</span> route removed: <span class="b">/logout</span> <span class="dim">.97</span></div>
+          <div class="dim">  no migrations · no env changes</div>
+        </div>
+        <div class="box" style="padding:14px 12px 8px">
+          <span class="lbl">Check before approving · hot spots</span>
+          <div><span class="acc">1</span> useSession.ts:43 logs out on parallel 401 <span class="dim">.82</span></div>
+          <div><span class="acc">2</span> Header.tsx:41 still calls /logout <span class="dim">.74</span></div>
+          <div><span class="acc">3</span> tokens.py:12 leeway 30s→120s <span class="dim">.51</span></div>
+        </div>
+        <div class="box" style="padding:14px 12px 8px">
+          <span class="lbl">Risk</span>
+          <div><span class="acc b">HIGH</span> <span class="dim">max chunk 5/5 · refresh()</span></div>
+          <div style="margin-top:4px"><span class="chw">auth ×3</span><span class="chip">async ×1</span><span class="chip">data-write ×1</span></div>
+          <div style="margin-top:4px"><span class="del">test gap:</span> 2 of 3 risky chunks untested</div>
+        </div>
+        <div class="box" style="padding:14px 12px 8px">
+          <span class="lbl">Description fidelity</span>
+          <div><span class="add">✓</span> 3 of 4 bullets implemented</div>
+          <div><span class="del">✗</span> "rate-limit refresh" — no chunk found</div>
+          <div><span class="acc">+</span> 1 undocumented: tokens.py leeway tweak</div>
+          <div class="dim">  coherence: single-purpose .88</div>
+        </div>
+        <div class="box" style="padding:14px 12px 8px">
+          <span class="lbl">Minimap · attention per chunk</span>
+          <div class="row"><span class="fn">useSession.ts</span><span><span class="cE"></span><span class="cE"></span><span class="cS"></span></span></div>
+          <div class="row"><span class="fn">Header.tsx</span><span><span class="cE"></span></span></div>
+          <div class="row"><span class="fn">logout.ts</span><span><span class="cS"></span><span class="cK"></span></span></div>
+          <div class="row"><span class="fn">client.ts</span><span><span class="cE"></span><span class="cU"></span></span></div>
+          <div class="row"><span class="fn dim">jwt.py</span><span><span class="cS"></span><span class="cS"></span><span class="cK"></span><span class="cK"></span></span></div>
+          <div class="row"><span class="fn dim">tokens.py</span><span><span class="cS"></span><span class="cU"></span><span class="cK"></span></span></div>
+          <div class="row"><span class="fn dim">+8 files</span><span><span class="cK"></span><span class="cK"></span><span class="cK"></span><span class="cK"></span></span></div>
+          <div class="dim" style="margin-top:4px"><span class="acc">■</span> eyes <span style="color:#a78445">■</span> skim ■ skip <span class="blu">□</span> unsure</div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:18px">
+          <div class="box" style="padding:14px 12px 8px">
+            <span class="lbl">Your slice</span>
+            <div><span class="b">web/auth</span> 3 · web/components 1 · web/api 1</div>
+            <div class="dim">server/* is 14 chunks — skip unless curious</div>
+          </div>
+          <div class="box" style="padding:14px 12px 8px">
+            <span class="lbl">Since you looked · Fri</span>
+            <div>2 chunks changed · <span class="add">1</span> of 2 comments addressed</div>
+            <div class="dim">open: "what happens on clock skew?"</div>
+          </div>
+          <div class="dim"><span class="blu">□ 2</span> low-confidence labels — kept expanded</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="dim" style="display:flex;gap:18px;flex-wrap:wrap">
+    <span><span class="key">j/k</span> move</span><span><span class="key">space</span> select</span><span><span class="key">1 2 3</span> tabs</span><span><span class="key">enter</span> jump to hot spot</span><span><span class="key">L</span> raw labels</span><span><span class="key">w</span> weights</span><span><span class="key">a</span> approve</span><span><span class="key">?</span> help</span>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":860}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

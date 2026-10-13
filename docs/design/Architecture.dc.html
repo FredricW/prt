@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>prt — Architecture</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&amp;display=swap">
+<style>
+body{margin:0}
+.t{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:13px;line-height:20px;color:#d4d4cf;background:#0e1014}
+.dim{color:#8b929c}.acc{color:#f0a63a}.blu{color:#79b8ff}.add{color:#7ee2a8}.del{color:#ff9b9b}.b{font-weight:700;color:#f2f2ec}
+.box{border:1px solid #2b313c;position:relative}
+.lbl{position:absolute;top:-11px;left:10px;background:#0e1014;padding:0 6px;color:#8b929c}
+.key{background:#2b313c;color:#e6e6e0;padding:0 5px}
+.it{padding:6px 10px;border-left:2px solid transparent}
+.sel{background:#1b2130;border-left:2px solid #f0a63a}
+.tab{padding:0 10px}.tabon{background:#f0a63a;color:#0e1014;font-weight:700;padding:0 10px}
+.m{position:absolute;width:180px;height:48px;box-sizing:border-box;border:1px solid #3a414d;background:#0e1014;padding:4px 10px}
+.mc{border-color:#f0a63a}.mn{border-color:#7ee2a8}.mr{border:1px dashed #ff9b9b;color:#8b929c}
+.v{position:absolute;width:0;border-left:1px solid #5b6371}.h{position:absolute;height:0;border-top:1px solid #5b6371}
+.vn{border-left:2px solid #7ee2a8}.vr{border-left:1px dashed #ff9b9b}.hr{border-top:1px dashed #ff9b9b}
+.ar{position:absolute;font-size:10px;line-height:10px;color:#5b6371}
+a{color:#79b8ff}a:hover{color:#a8d1ff}
+</style>
+</helmet>
+<div class="t" style="width:1280px;height:800px;box-sizing:border-box;padding:14px;display:flex;flex-direction:column;gap:14px">
+  <div style="display:flex;justify-content:space-between">
+    <div><span class="acc b">prt</span> <span class="dim">·</span> acme/portal <span class="dim">· 6 PRs · 2 branches · role:</span> frontend <span class="dim">(owns web/*)</span></div>
+    <div class="dim">synced 1m ago · gh ✓ · model ✓</div>
+  </div>
+  <div style="display:flex;gap:14px;flex:1;min-height:0">
+    <div class="box" style="width:350px;padding-top:12px;display:flex;flex-direction:column">
+      <span class="lbl">Queue · ranked</span>
+      <div class="dim" style="padding:4px 10px">── NEEDS YOU ─────────────────</div>
+      <div class="it sel"><span class="acc">▮▮▮▮</span> <span class="b">#482</span> Migrate session to JWT<div class="dim">  review requested · blocks v2.3 · 2d</div></div>
+      <div class="it"><span class="acc">▮▮▮</span><span class="dim">▯</span> <span class="b">#479</span> Fix race in invoice sync<div class="dim">  CI red after your approval · 5h</div></div>
+      <div class="it"><span class="acc">▮▮</span><span class="dim">▯▯</span> <span class="b">#486</span> Refactor meter API client<div class="dim">  touches web/auth · 1d</div></div>
+      <div class="dim" style="padding:4px 10px">── YOURS ─────────────────────</div>
+      <div class="it"><span class="acc">▮▮▮</span><span class="dim">▯</span> <span class="b">#471</span> Chart tooltips<div class="dim">  changes requested by @olav · 3d</div></div>
+      <div class="it"><span class="dim">▮▯▯▯</span> <span class="b">#488</span> Bump Next.js 15.4<div class="dim">  bot · green · no conflicts</div></div>
+      <div class="dim" style="padding:4px 10px">── BRANCHES ──────────────────</div>
+      <div class="it"><span class="acc">▮▮</span><span class="dim">▯▯</span> <span class="blu">feat/billing-export</span><div class="dim">  3 unpushed · 6d stale · no PR</div></div>
+      <div class="it"><span class="dim">▮▯▯▯</span> <span class="blu">spike/fastapi-ws</span><div class="dim">  local only · 12d</div></div>
+      <div style="flex:1"></div>
+      <div class="dim" style="padding:6px 10px;border-top:1px solid #2b313c">/ filter   s sort: urgency ▾</div>
+    </div>
+    <div class="box" style="flex:1;padding:14px 18px;display:flex;flex-direction:column;gap:14px;min-width:0">
+      <div style="display:flex;justify-content:space-between">
+        <div style="display:flex;gap:4px"><span class="tab dim">1 Overview</span><span class="tab dim">2 Code</span><span class="tabon">3 Architecture</span></div>
+        <div class="dim">#482 · modules touched + 1 hop</div>
+      </div>
+      <div style="display:flex;gap:18px;flex:1;min-height:0">
+        <div class="box" style="flex:1;padding:20px 14px 10px">
+          <span class="lbl">Module graph — depth 1</span>
+          <div style="position:relative;width:560px;height:470px">
+            <div class="v" style="left:100px;top:58px;height:22px"></div>
+            <div class="v" style="left:320px;top:58px;height:22px"></div>
+            <div class="h" style="left:100px;top:80px;width:220px"></div>
+            <div class="v" style="left:210px;top:80px;height:30px"></div>
+            <div class="ar" style="left:205px;top:100px">▼</div>
+            <div class="v" style="left:210px;top:158px;height:52px"></div>
+            <div class="ar" style="left:205px;top:200px">▼</div>
+            <div class="v vn" style="left:209px;top:258px;height:52px"></div>
+            <div class="ar add" style="left:205px;top:300px">▼</div>
+            <div class="add" style="position:absolute;left:222px;top:274px">+ new edge</div>
+            <div class="v" style="left:210px;top:358px;height:52px"></div>
+            <div class="ar" style="left:205px;top:400px">▼</div>
+            <div class="h hr" style="left:300px;top:434px;width:80px"></div>
+            <div class="h hr" style="left:300px;top:234px;width:170px"></div>
+            <div class="v vr" style="left:470px;top:234px;height:176px"></div>
+            <div class="del" style="position:absolute;left:310px;top:210px">− removed</div>
+            <div class="m" style="left:10px;top:10px">web/app<div class="dim">routes · 0 files</div></div>
+            <div class="m mc" style="left:230px;top:10px"><span class="acc">●</span> web/components<div class="dim">1 file · stale call</div></div>
+            <div class="m mc" style="left:120px;top:110px"><span class="acc">●</span> web/auth<div class="dim">2 files</div></div>
+            <div class="m mc" style="left:120px;top:210px"><span class="acc">●</span> web/api<div class="dim">1 file</div></div>
+            <div class="m mn" style="left:120px;top:310px"><span class="add">+</span> server/middleware<div class="dim">new module</div></div>
+            <div class="m mc" style="left:120px;top:410px"><span class="acc">●</span> server/auth<div class="dim">3 files</div></div>
+            <div class="m mr" style="left:380px;top:410px">✕ server/session<div>deleted</div></div>
+          </div>
+        </div>
+        <div style="width:230px;display:flex;flex-direction:column;gap:18px;padding-top:10px">
+          <div class="box" style="padding:14px 12px 10px">
+            <span class="lbl">Net effect</span>
+            <div>Session lookup moves out of <span class="b">server/session</span> into new middleware.</div>
+            <div style="margin-top:8px">web/api no longer talks to the session store directly.</div>
+          </div>
+          <div class="box" style="padding:14px 12px 10px">
+            <span class="lbl">Legend</span>
+            <div><span class="acc">●</span> changed</div>
+            <div><span class="add">+</span> new module / edge</div>
+            <div><span class="del">✕ ╌</span> removed</div>
+            <div class="dim">── unchanged</div>
+          </div>
+          <div class="dim">Graph from import analysis; labels by model.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="dim" style="display:flex;gap:18px;flex-wrap:wrap">
+    <span><span class="key">hjkl</span> move focus</span><span><span class="key">enter</span> files in module</span><span><span class="key">+/-</span> depth</span><span><span class="key">d</span> diff-only</span><span><span class="key">?</span> help</span>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":800}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

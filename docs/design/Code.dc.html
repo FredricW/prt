@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>prt — Code</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&amp;display=swap">
+<style>
+body{margin:0}
+.t{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:13px;line-height:20px;color:#d4d4cf;background:#0e1014}
+.dim{color:#8b929c}.acc{color:#f0a63a}.blu{color:#79b8ff}.add{color:#7ee2a8}.del{color:#ff9b9b}.b{font-weight:700;color:#f2f2ec}
+.box{border:1px solid #2b313c;position:relative}
+.lbl{position:absolute;top:-11px;left:10px;background:#0e1014;padding:0 6px;color:#8b929c}
+.key{background:#2b313c;color:#e6e6e0;padding:0 5px}
+.it{padding:6px 10px;border-left:2px solid transparent}
+.sel{background:#1b2130;border-left:2px solid #f0a63a}
+.tab{padding:0 10px}.tabon{background:#f0a63a;color:#0e1014;font-weight:700;padding:0 10px}
+.f{padding:2px 8px;white-space:nowrap}.fon{background:#1b2130}
+.la{background:#12261c;color:#9ff0c0;white-space:pre}.ld{background:#2a1517;color:#ffb3b3;white-space:pre}.lc{white-space:pre;color:#b4b8bf}
+.ai{border-left:2px solid #79b8ff;padding:4px 10px;background:#131a26;margin:8px 0}
+a{color:#79b8ff}a:hover{color:#a8d1ff}
+</style>
+</helmet>
+<div class="t" style="width:1280px;height:800px;box-sizing:border-box;padding:14px;display:flex;flex-direction:column;gap:14px">
+  <div style="display:flex;justify-content:space-between">
+    <div><span class="acc b">prt</span> <span class="dim">·</span> acme/portal <span class="dim">· 6 PRs · 2 branches · role:</span> frontend <span class="dim">(owns web/*)</span></div>
+    <div class="dim">synced 1m ago · gh ✓ · model ✓</div>
+  </div>
+  <div style="display:flex;gap:14px;flex:1;min-height:0">
+    <div class="box" style="width:350px;padding-top:12px;display:flex;flex-direction:column">
+      <span class="lbl">Queue · ranked</span>
+      <div class="dim" style="padding:4px 10px">── NEEDS YOU ─────────────────</div>
+      <div class="it sel"><span class="acc">▮▮▮▮</span> <span class="b">#482</span> Migrate session to JWT<div class="dim">  review requested · blocks v2.3 · 2d</div></div>
+      <div class="it"><span class="acc">▮▮▮</span><span class="dim">▯</span> <span class="b">#479</span> Fix race in invoice sync<div class="dim">  CI red after your approval · 5h</div></div>
+      <div class="it"><span class="acc">▮▮</span><span class="dim">▯▯</span> <span class="b">#486</span> Refactor meter API client<div class="dim">  touches web/auth · 1d</div></div>
+      <div class="dim" style="padding:4px 10px">── YOURS ─────────────────────</div>
+      <div class="it"><span class="acc">▮▮▮</span><span class="dim">▯</span> <span class="b">#471</span> Chart tooltips<div class="dim">  changes requested by @olav · 3d</div></div>
+      <div class="it"><span class="dim">▮▯▯▯</span> <span class="b">#488</span> Bump Next.js 15.4<div class="dim">  bot · green · no conflicts</div></div>
+      <div class="dim" style="padding:4px 10px">── BRANCHES ──────────────────</div>
+      <div class="it"><span class="acc">▮▮</span><span class="dim">▯▯</span> <span class="blu">feat/billing-export</span><div class="dim">  3 unpushed · 6d stale · no PR</div></div>
+      <div class="it"><span class="dim">▮▯▯▯</span> <span class="blu">spike/fastapi-ws</span><div class="dim">  local only · 12d</div></div>
+      <div style="flex:1"></div>
+      <div class="dim" style="padding:6px 10px;border-top:1px solid #2b313c">/ filter   s sort: urgency ▾</div>
+    </div>
+    <div class="box" style="flex:1;padding:14px 18px;display:flex;flex-direction:column;gap:14px;min-width:0">
+      <div style="display:flex;justify-content:space-between">
+        <div style="display:flex;gap:4px"><span class="tab dim">1 Overview</span><span class="tabon">2 Code</span><span class="tab dim">3 Architecture</span></div>
+        <div class="dim">#482 · 14 files · sorted by relevance to you</div>
+      </div>
+      <div style="display:flex;gap:14px;flex:1;min-height:0">
+        <div class="box" style="width:250px;padding-top:12px">
+          <span class="lbl">Files</span>
+          <div class="f fon"><span class="acc">!</span> web/auth/useSession.ts <span class="add">+38</span><span class="del">−21</span></div>
+          <div class="f"><span class="acc">!</span> web/components/Header.tsx <span class="dim">0</span></div>
+          <div class="f"><span class="dim"> </span> web/auth/logout.ts <span class="add">+12</span><span class="del">−9</span></div>
+          <div class="f"><span class="dim"> </span> web/api/client.ts <span class="add">+24</span><span class="del">−6</span></div>
+          <div class="dim f">── not yours ──────</div>
+          <div class="f dim">  server/middleware/jwt.py <span class="add">+141</span></div>
+          <div class="f dim">  server/auth/tokens.py <span class="add">+96</span><span class="del">−40</span></div>
+          <div class="f dim">  server/session/store.py <span class="del">−88</span></div>
+          <div class="f dim">  … 7 more (tests, config)</div>
+          <div class="dim f" style="margin-top:10px">! = flagged by summary</div>
+        </div>
+        <div class="box" style="flex:1;padding:14px 14px 10px;min-width:0;overflow:hidden">
+          <span class="lbl">web/auth/useSession.ts</span>
+          <div class="ai"><span class="blu">ai</span> Return type unchanged; <span class="b">expiresAt</span> switches to epoch ms. Callers doing <span class="b">new Date(expiresAt)</span> still work; string compares break.</div>
+          <div class="lc dim">@@ -14,11 +14,13 @@ export function useSession()</div>
+          <div class="lc">   const { data } = useSWR('/api/auth/me', fetcher)</div>
+          <div class="ld"> - const expiresAt = data?.session.expires   // ISO</div>
+          <div class="la"> + const claims = decodeJwt(data?.token)</div>
+          <div class="la"> + const expiresAt = claims.exp * 1000         // ms</div>
+          <div class="lc">   return { user: data?.user, expiresAt, status }</div>
+          <div class="ai"><span class="blu">ai</span> New refresh path. <span class="acc">No retry</span> if two requests hit 401 at once — second one logs the user out.</div>
+          <div class="lc dim">@@ -41,6 +43,18 @@</div>
+          <div class="la"> + useEffect(() =&gt; {</div>
+          <div class="la"> +   if (expiresAt - Date.now() &lt; 60_000) refresh()</div>
+          <div class="la"> + }, [expiresAt])</div>
+          <div class="la"> + async function refresh() {</div>
+          <div class="la"> +   const r = await fetch('/api/auth/refresh', { method: 'POST' })</div>
+          <div class="la"> +   if (r.status === 401) return signOut()</div>
+          <div class="la"> + }</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="dim" style="display:flex;gap:18px;flex-wrap:wrap">
+    <span><span class="key">J/K</span> next file</span><span><span class="key">n/p</span> next hunk</span><span><span class="key">x</span> hide not-yours</span><span><span class="key">u</span> unified/split</span><span><span class="key">C</span> comment on line</span><span><span class="key">e</span> open in $EDITOR</span><span><span class="key">?</span> help</span>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":800}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

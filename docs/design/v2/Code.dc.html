@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>prt v2 — Code</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&amp;display=swap">
+<style>
+body{margin:0}
+.t{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:13px;line-height:20px;color:#d4d4cf;background:#0e1014}
+.dim{color:#8b929c}.acc{color:#f0a63a}.blu{color:#79b8ff}.add{color:#7ee2a8}.del{color:#ff9b9b}.b{font-weight:700;color:#f2f2ec}
+.box{border:1px solid #2b313c;position:relative}
+.lbl{position:absolute;top:-11px;left:10px;background:#0e1014;padding:0 6px;color:#8b929c}
+.key{background:#2b313c;color:#e6e6e0;padding:0 5px}
+.it{padding:5px 10px;border-left:2px solid transparent}
+.sel{background:#1b2130;border-left:2px solid #f0a63a}
+.tab{padding:0 10px}.tabon{background:#f0a63a;color:#0e1014;font-weight:700;padding:0 10px}
+.chip{background:#232933;color:#e6e6e0;padding:0 6px;margin-right:4px}
+.chw{background:#4a3410;color:#ffd28f;padding:0 6px;margin-right:4px}
+.chr{background:#3a1a1c;color:#ffb3b3;padding:0 6px;margin-right:4px}
+.chu{border:1px solid #79b8ff;color:#a8d1ff;padding:0 5px;margin-right:4px}
+.flt{padding:0 8px;border:1px solid #3a414d}.fon{background:#f0a63a;color:#0e1014;border:1px solid #f0a63a;padding:0 8px}
+.f{padding:2px 8px;white-space:nowrap;display:flex;justify-content:space-between}.fsel{background:#1b2130}
+.cE{display:inline-block;width:10px;height:10px;background:#f0a63a;margin-left:2px}
+.cS{display:inline-block;width:10px;height:10px;background:#6b5426;margin-left:2px}
+.cK{display:inline-block;width:10px;height:10px;background:#2e343e;margin-left:2px}
+.cU{display:inline-block;width:8px;height:8px;border:1px solid #79b8ff;margin-left:2px}
+.ln{display:flex;white-space:pre}
+.g{width:22px;text-align:center;flex:none}
+.g0{color:#3e4550}.g1{background:#3a2a14;color:#f0c27a}.g2{background:#6b4614;color:#ffd28f}
+.la{background:#12261c;color:#9ff0c0;flex:1}.ld{background:#2a1517;color:#ffb3b3;flex:1}.lc{color:#b4b8bf;flex:1}
+.hh{background:#161b24;padding:6px 10px;border-top:1px solid #2b313c}
+.q{border-left:2px solid #79b8ff;padding:4px 10px;background:#131a26}
+a{color:#79b8ff}a:hover{color:#a8d1ff}
+</style>
+</helmet>
+<div class="t" style="width:1280px;height:860px;box-sizing:border-box;padding:14px;display:flex;flex-direction:column;gap:14px">
+  <div style="display:flex;justify-content:space-between">
+    <div><span class="acc b">prt</span> <span class="dim">·</span> acme/portal <span class="dim">· 6 PRs · 2 branches · role:</span> frontend <span class="dim">(owns web/*)</span></div>
+    <div class="dim">labels 19/19 chunks · 0.4s · synced 1m ago</div>
+  </div>
+  <div style="display:flex;gap:14px;flex:1;min-height:0">
+    <div class="box" style="width:330px;padding-top:12px;display:flex;flex-direction:column">
+      <span class="lbl">Queue · ranked</span>
+      <div class="dim" style="padding:2px 10px">── NEEDS YOU ───────────────</div>
+      <div class="it sel"><span class="acc">▮▮▮▮</span> <span class="b">#482</span> Migrate session to JWT<div><span class="acc">⚠1</span> breaking · <span class="acc">4</span> eyes · ~12m</div><div class="dim">why: asked you · release · risk×untested</div></div>
+      <div class="it"><span class="acc">▮▮▮</span><span class="dim">▯</span> <span class="b">#479</span> Fix race in invoice sync<div>CI red · <span class="acc">1</span> eyes · ~4m</div></div>
+      <div class="it"><span class="acc">▮▮</span><span class="dim">▯▯</span> <span class="b">#486</span> Refactor meter API client<div><span class="del">✕</span> conflicts #482 · 2 eyes · ~6m</div></div>
+      <div class="dim" style="padding:2px 10px">── YOURS ───────────────────</div>
+      <div class="it"><span class="acc">▮▮▮</span><span class="dim">▯</span> <span class="b">#471</span> Chart tooltips<div>1 of 3 comments still open</div></div>
+      <div class="it"><span class="dim">▮▯▯▯</span> <span class="b">#488</span> Bump Next.js 15.4<div class="dim">deps only · 0 eyes · skip</div></div>
+      <div class="dim" style="padding:2px 10px">── BRANCHES ────────────────</div>
+      <div class="it"><span class="acc">▮▮</span><span class="dim">▯▯</span> <span class="blu">feat/billing-export</span><div>ready for PR <span class="dim">.81</span> · unpushed 6d</div></div>
+      <div class="it"><span class="dim">▮▯▯▯</span> <span class="blu">spike/fastapi-ws</span><div class="dim">spike · abandoned? .70</div></div>
+      <div style="flex:1"></div>
+      <div class="dim" style="padding:6px 10px;border-top:1px solid #2b313c">w weights · s sort: urgency ▾</div>
+    </div>
+    <div class="box" style="flex:1;padding:14px 16px;display:flex;flex-direction:column;gap:12px;min-width:0">
+      <div style="display:flex;justify-content:space-between">
+        <div style="display:flex;gap:4px"><span class="tab dim">1 Overview</span><span class="tabon">2 Code</span><span class="tab dim">3 Architecture</span></div>
+        <div class="dim">#482 · showing <span class="b">5</span> of 19 chunks</div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <span class="dim">show:</span><span class="fon">needs eyes</span><span class="fon">behaviour changes</span><span class="flt">risk ≥ 3</span><span class="fon">mine</span><span class="flt">untested</span><span class="flt">undocumented</span><span class="flt">unsure</span>
+      </div>
+      <div style="display:flex;gap:14px;flex:1;min-height:0">
+        <div class="box" style="width:250px;padding-top:12px">
+          <span class="lbl">Files · by attention</span>
+          <div class="f fsel"><span>useSession.ts</span><span><span class="cE"></span><span class="cE"></span><span class="cS"></span></span></div>
+          <div class="f"><span>Header.tsx</span><span><span class="cE"></span></span></div>
+          <div class="f"><span>client.ts</span><span><span class="cE"></span><span class="cU"></span></span></div>
+          <div class="f"><span>logout.ts</span><span><span class="cS"></span><span class="cK"></span></span></div>
+          <div class="f dim"><span>tokens.py</span><span><span class="cS"></span><span class="cU"></span><span class="cK"></span></span></div>
+          <div class="f dim"><span>jwt.py</span><span><span class="cS"></span><span class="cS"></span><span class="cK"></span><span class="cK"></span></span></div>
+          <div class="f dim"><span>store.py</span><span><span class="cK"></span><span class="cK"></span></span></div>
+          <div class="f dim"><span>+7 tests, config</span><span><span class="cK"></span><span class="cK"></span></span></div>
+          <div class="dim" style="padding:10px 8px 0">gutter:</div>
+          <div style="padding:0 8px"><span class="g2" style="padding:0 4px">◆</span> <span class="dim">suspicious</span></div>
+          <div style="padding:0 8px"><span class="acc">~</span> <span class="dim">value tweak</span>  <span class="acc">⋯</span> <span class="dim">leftover</span></div>
+        </div>
+        <div class="box" style="flex:1;padding-top:12px;min-width:0;overflow:hidden">
+          <span class="lbl">web/auth/useSession.ts</span>
+          <div class="hh"><span class="dim">@@ 14</span>  <span class="chip">feature</span><span class="chip">behaviour ✓</span><span class="chw">⚠ breaking .86</span><span class="chip">desc #1</span><span class="chip">tests ✓</span><span class="acc">read</span></div>
+          <div class="ln"><span class="g g0">·</span><span class="lc">   const { data } = useSWR('/api/auth/me', fetcher)</span></div>
+          <div class="ln"><span class="g g0">·</span><span class="ld"> - const expiresAt = data?.session.expires</span></div>
+          <div class="ln"><span class="g g0">·</span><span class="la"> + const claims = decodeJwt(data?.token)</span></div>
+          <div class="ln"><span class="g g1">◆</span><span class="la"> + const expiresAt = claims.exp * 1000</span></div>
+          <div class="hh"><span class="dim">@@ 43</span>  <span class="chip">feature</span><span class="chw">auth</span><span class="chw">async</span><span class="chw">risk 5</span><span class="chr">tests ✗</span><span class="chu">desc? .41</span><span class="acc">read</span></div>
+          <div class="ln"><span class="g g0">·</span><span class="la"> + useEffect(() =&gt; {</span></div>
+          <div class="ln"><span class="g acc">~</span><span class="la"> +   if (expiresAt - Date.now() &lt; 60_000) refresh()</span></div>
+          <div class="ln"><span class="g g0">·</span><span class="la"> + }, [expiresAt])</span></div>
+          <div class="ln"><span class="g g0">·</span><span class="la"> + async function refresh() {</span></div>
+          <div class="ln"><span class="g g1">◆</span><span class="la"> +   const r = await fetch('/api/auth/refresh', { method: 'POST' })</span></div>
+          <div class="ln"><span class="g acc">⋯</span><span class="la"> +   console.log('refresh', r.status)</span></div>
+          <div class="ln"><span class="g g2">◆</span><span class="la"> +   if (r.status === 401) return signOut()</span></div>
+          <div class="ln"><span class="g g0">·</span><span class="la"> + }</span></div>
+          <div style="padding:8px 10px"><div class="q"><span class="blu">ask author</span> What should happen when two tabs refresh at the same time?</div></div>
+          <div class="dim" style="padding:2px 10px">▸ 2 chunks hidden: <span class="b" style="font-weight:400;color:#b4b8bf">format ×1</span> · <span style="color:#b4b8bf">moved ×1</span> from session.ts:20–38</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="dim" style="display:flex;gap:18px;flex-wrap:wrap">
+    <span><span class="key">n/p</span> next chunk</span><span><span class="key">f</span> filters</span><span><span class="key">z</span> expand hidden</span><span><span class="key">L</span> all labels</span><span><span class="key">!</span> wrong label</span><span><span class="key">C</span> comment</span><span><span class="key">?</span> help</span>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":860}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>
