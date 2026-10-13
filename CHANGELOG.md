@@ -175,10 +175,12 @@ offline over fixture PRs #101–#104.
 - `make snapshot` / `--offline` run without Jev, so they show "labels
   unavailable" and git facts only.
 
-### M2 — groups (integrated 2026-10-13)
+### M2 — groups (released 2026-10-13)
 
-Gate: `make check` (vet, vet `-tags live`, tests, lint 0 issues) and
-`make snapshot` green. Embeddings recorded once from local Ollama
+Release gate: `go build ./...`, `go vet ./...`, `make lint` (0 issues),
+`make test` and `make snapshot` all green on `4742b15`; `make demo` runs the
+TUI offline against `testdata/fixture-repo` with `testdata/fixtures/prs.json`,
+replaying `testdata/recordings/{jev,embed}`. Embeddings recorded once from local Ollama
 (embeddinggemma-2, 111 texts, $0); M2 Jev answers recorded once (276 calls,
 $0.0096; cumulative $0.0293 of the $1.00 cap). `TestRecordedReplay` replays
 both strictly and asserts the grouping outcomes over #101–#104.
@@ -190,7 +192,9 @@ both strictly and asserts the grouping outcomes over #101–#104.
   demo/snapshot that replays the recorded answers.
 - **Deferred:** three-word titles for groups Jev cannot name (fast LLM, M3;
   placeholders until then); the Pipeline page itself (M3); routing tier and
-  review status in the group list (M3); the ONNX embedder (still a stub).
+  review status in the group list (M3); the ONNX embedder (still a stub;
+  falls back to Ollama); batched `git cat-file` reads and a per-base-SHA
+  singleflight for the symbol index (performance only).
 - **Blocked:** nothing.
 
 #### Added
@@ -218,6 +222,22 @@ both strictly and asserts the grouping outcomes over #101–#104.
   daemon.
 - `prt --jev-replay DIR --embed-replay DIR`; `make demo`/`make snapshot`
   replay `testdata/recordings`; `make record-embed`.
+
+#### Fixed (M2 review, rounds 1 and 2; details in DECISIONS)
+
+- Group edits made mid-run re-run the item; a merge needs two surviving
+  units; a stage 5 failure clears stale groups.
+- Stage 2 failure keeps Jev-confirmed and mechanical links.
+- `separate_pr` answers are cached per file content.
+- Mechanical groups verify and partition by the literal edit, so unrelated
+  literal edits are no longer collapsed as "×N verified identical"; mode A
+  collapses mechanical repeats by file.
+- Structural splits are bounded and cancellable (400 units: ~116 s → <1 s);
+  pair requests are capped at `max_pairs_per_unit` × units.
+- `onnx:` embed specs fall back to Ollama; `OLLAMA_HOST` is parsed like
+  Ollama's client; the embed skip note shows on the Code page.
+- Symbol index: failed reads are not cached; `ls-tree -z` keeps quoted
+  file names.
 
 #### Known limitations
 
