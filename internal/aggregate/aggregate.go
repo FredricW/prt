@@ -4,11 +4,11 @@
 // contributions. No I/O, no model calls; the TL;DR is filled in by the
 // pipeline from the returned record.
 //
-// M0 state: line counts plus the urgency placeholder (DECISIONS "M0 urgency
-// placeholder"): only terms that need no labels contribute; label terms are
-// present with value 0 so M3 only has to fill them in.
+// M1 state: every per-unit and per-item formula over labels. Urgency keeps
+// the M0 placeholder (DECISIONS "M0 urgency placeholder"): only terms that
+// need no labels contribute; label terms are present with value 0 so M3 only
+// has to fill them in.
 //
-// TODO(M1): composition, headlines, risk, test gap, attention/minutes.
 // TODO(M3): hot spots with findings, label urgency terms.
 package aggregate
 
@@ -41,18 +41,90 @@ type Input struct {
 	AgeDays            float64
 	Release            bool // base is a release branch
 	CIRedAfterApproval bool
+	// Owns are the user's owned globs (config user.owns), used for "Your
+	// slice" module names; File.Owned already says which files are owned.
+	Owns []string
+	// LabelsMissing is set by the pipeline when Jev was unavailable for this
+	// run; it is copied to ItemAgg.LabelsMissing.
+	LabelsMissing bool
 }
 
-// Item computes the overview record: line counts, minutes and urgency.
+// Item computes the overview record from units, labels and git facts: per
+// unit aggregates, composition, attention and minutes, risk, hot spots,
+// headlines, description fidelity, the Code page file list, "Your slice",
+// group aggregates and urgency. It is pure and deterministic: every slice is
+// ordered independently of map iteration.
+//
+// Minutes are the label-based estimate when at least one label is a real
+// answer; otherwise (no labels, or Jev unreachable) the M0 line-count
+// stand-in, so an unlabelled item is not ranked as if every line needed eyes.
 func Item(in Input) model.ItemAgg {
-	agg := model.ItemAgg{ItemID: in.Item.ID, UnitsTotal: len(in.Units)}
-	for _, u := range in.Units {
-		agg.Added += u.Adds
-		agg.Removed += u.Dels
+	unsureBelow := in.Pipeline.UnsureBelow
+	if unsureBelow <= 0 {
+		unsureBelow = defaultUnsureBelow
+	}
+	idx := newIndex(in.Item.ID, in.Labels)
+	us := units(in, idx, unsureBelow)
+	s := summarise(us, unsureBelow)
+
+	agg := model.ItemAgg{
+		ItemID:         in.Item.ID,
+		Composition:    s.composition,
+		EffectiveLines: s.effective,
+		UnitsTotal:     len(us),
+		RiskMax:        float64(s.riskMax),
+		RiskAny:        riskAny(us),
+		RiskTags:       s.riskTags,
+		TestGap:        s.testGap,
+		RiskyUnits:     s.risky,
+		Unsure:         s.unsure,
+		Headlines:      headlines(us),
+		HotSpots:       hotSpots(us),
+		Undocumented:   []string{},
+		Files:          files(in.Files, us),
+		Slice:          slice(in.Owns, us),
+		Groups:         groups(in.Groups, us, unsureBelow),
+		Units:          make([]model.UnitAgg, 0, len(us)),
+		LabelsMissing:  in.LabelsMissing,
+	}
+	for _, f := range us {
+		countUnit(&agg, f)
+	}
+	agg.Bullets, agg.Fidelity = bullets(in.Item.Body, us)
+	if l, ok := idx.item[model.QShape]; ok && !model.IsUnknown(l) {
+		agg.Shape, agg.ShapeP = l.Value, l.P
 	}
 	agg.Minutes = StandInMinutes(agg.Added + agg.Removed)
+	if idx.anyKnown {
+		agg.Minutes = s.minutes
+	}
 	agg.UrgencyTerms, agg.Urgency, agg.Why = Urgency(in, agg.Minutes)
 	return agg
+}
+
+// countUnit adds one unit's lines, attention and flags to the item totals.
+func countUnit(agg *model.ItemAgg, f unitFacts) {
+	a := f.agg
+	agg.Units = append(agg.Units, a)
+	agg.Added += f.unit.Adds
+	agg.Removed += f.unit.Dels
+	if a.Noise {
+		agg.NoiseLines += f.unit.Adds + f.unit.Dels
+	}
+	switch a.Attention {
+	case model.AttnEyes:
+		agg.UnitsEyes++
+	case model.AttnSkim:
+		agg.UnitsSkim++
+	default:
+		agg.UnitsSkip++
+	}
+	if a.Undocumented {
+		agg.Undocumented = append(agg.Undocumented, a.UnitID)
+	}
+	if a.Unsure {
+		agg.UnsureUnits = append(agg.UnsureUnits, a.UnitID)
+	}
 }
 
 // StandInMinutes is the M0 reading-time estimate for a number of changed lines.

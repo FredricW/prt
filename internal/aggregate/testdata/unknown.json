@@ -1,0 +1,36 @@
+{
+  "item": {"id": "pr:103", "kind": "pr", "number": 103, "title": "Jev was down", "body": "- First bullet\n- Second bullet\n"},
+  "owns": ["lib/**"],
+  "files": [
+    {"itemId": "pr:103", "path": "lib/x.go", "owned": true, "adds": 6, "dels": 1},
+    {"itemId": "pr:103", "path": "cmd/main.go", "owned": false, "adds": 2, "dels": 0}
+  ],
+  "units": [
+    {"id": "k1", "path": "lib/x.go", "range": {"old": {"start": 1, "count": 1}, "new": {"start": 1, "count": 3}}, "diff": "-a\n+b\n+c\n+d", "kind": "modified", "adds": 3, "dels": 1, "order": 0},
+    {"id": "k2", "path": "lib/x.go", "range": {"old": {"start": 10, "count": 0}, "new": {"start": 12, "count": 3}}, "diff": "+e\n+f\n+g", "kind": "added", "adds": 3, "dels": 0, "order": 1},
+    {"id": "k3", "path": "cmd/main.go", "range": {"old": {"start": 4, "count": 0}, "new": {"start": 4, "count": 2}}, "diff": "+h\n+i", "kind": "added", "adds": 2, "dels": 0, "order": 2}
+  ],
+  "labels": [
+    {"u": "k1", "q": "kind", "v": "unknown"},
+    {"u": "k1", "q": "depth", "v": "unknown"},
+    {"u": "k1", "q": "risk", "v": "unknown"},
+    {"u": "k1", "q": "relevance", "v": "unknown"},
+    {"u": "k1", "q": "covered", "v": "unknown"},
+    {"u": "k1", "q": "behaviour", "v": "unknown"},
+    {"u": "k1", "q": "breaking", "v": "unknown"},
+    {"u": "k1", "q": "contract", "v": "unknown"},
+    {"u": "k1", "q": "desc_bullet", "v": "unknown"},
+    {"u": "k1", "q": "test_weakened", "v": "unknown"},
+    {"u": "k1", "q": "fmt", "l": 1, "v": "unknown"},
+    {"u": "k1", "q": "fmt", "l": 2, "v": "unknown"},
+    {"u": "k1", "q": "fmt", "l": 3, "v": "unknown"},
+    {"u": "k1", "q": "pii_or_secret", "l": 2, "v": "unknown"},
+    {"u": "k1", "q": "suspicious", "l": 2, "v": "unknown"},
+    {"u": "k2", "q": "kind", "v": "unknown"},
+    {"u": "k2", "q": "depth", "v": "unknown"},
+    {"u": "k2", "q": "risk", "v": "unknown"},
+    {"u": "k2", "q": "desc_bullet", "v": "unknown"},
+    {"u": "k3", "q": "kind", "v": "unknown"},
+    {"u": "k3", "q": "depth", "v": "unknown"}
+  ]
+}

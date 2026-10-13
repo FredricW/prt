@@ -1,0 +1,71 @@
+{
+  "item": {"id": "pr:102", "kind": "pr", "number": 102, "title": "Rename fetch helper", "body": "No bullets here."},
+  "files": [
+    {"itemId": "pr:102", "path": "src/a.ts", "owned": false, "adds": 0, "dels": 0}
+  ],
+  "units": [
+    {"id": "n1", "path": "src/a.ts", "range": {"old": {"start": 1, "count": 0}, "new": {"start": 1, "count": 2}}, "diff": "+a\n+b", "kind": "moved", "adds": 2, "dels": 0, "order": 0},
+    {"id": "n2", "path": "src/a.ts", "range": {"old": {"start": 5, "count": 1}, "new": {"start": 5, "count": 1}}, "diff": "-a\n+ a", "kind": "modified", "format": true, "adds": 1, "dels": 1, "order": 1},
+    {"id": "n3", "path": "src/a.ts", "range": {"old": {"start": 9, "count": 1}, "new": {"start": 9, "count": 1}}, "diff": "-a\n+b", "kind": "modified", "adds": 1, "dels": 1, "order": 2},
+    {"id": "n4", "path": "src/gen.ts", "range": {"old": {"start": 1, "count": 0}, "new": {"start": 1, "count": 2}}, "diff": "+a\n+b", "kind": "added", "adds": 2, "dels": 0, "order": 3},
+    {"id": "n5", "path": "src/b.ts", "range": {"old": {"start": 3, "count": 2}, "new": {"start": 3, "count": 3}}, "diff": " ctx\n-x\n+a\n+b", "kind": "modified", "adds": 2, "dels": 1, "order": 4},
+    {"id": "n6", "path": "src/b.ts", "range": {"old": {"start": 20, "count": 0}, "new": {"start": 20, "count": 2}}, "diff": "+a\n+b", "kind": "added", "adds": 2, "dels": 0, "order": 5},
+    {"id": "n7", "path": "src/gen2.ts", "range": {"old": {"start": 1, "count": 0}, "new": {"start": 1, "count": 4}}, "diff": "+a\n+b\n+c\n+d", "kind": "added", "adds": 4, "dels": 0, "order": 6},
+    {"id": "n8", "path": "src/c.ts", "range": {"old": {"start": 1, "count": 0}, "new": {"start": 1, "count": 10}}, "diff": "", "kind": "added", "adds": 10, "dels": 0, "order": 7},
+    {"id": "n9", "path": "src/c.ts", "range": {"old": {"start": 30, "count": 0}, "new": {"start": 30, "count": 1}}, "diff": "+z", "kind": "added", "adds": 1, "dels": 0, "order": 8},
+    {"id": "m1", "path": "src/m1.ts", "range": {"old": {"start": 1, "count": 1}, "new": {"start": 1, "count": 1}}, "diff": "-a\n+b", "kind": "modified", "adds": 1, "dels": 1, "order": 9},
+    {"id": "m2", "path": "src/m2.ts", "range": {"old": {"start": 1, "count": 1}, "new": {"start": 1, "count": 1}}, "diff": "-a\n+b", "kind": "modified", "adds": 1, "dels": 1, "order": 10},
+    {"id": "m3", "path": "src/m3.ts", "range": {"old": {"start": 1, "count": 1}, "new": {"start": 1, "count": 1}}, "diff": "-a\n+b", "kind": "modified", "adds": 1, "dels": 1, "order": 11},
+    {"id": "n10", "path": "src/d.ts", "range": {"old": {"start": 1, "count": 0}, "new": {"start": 1, "count": 3}}, "diff": "", "kind": "added", "adds": 3, "dels": 0, "order": 12}
+  ],
+  "groups": [
+    {"id": "gm", "itemId": "pr:102", "unitIds": ["m1", "m2", "m3"], "mechanical": true, "exampleUnit": "m2", "count": 3, "order": 0}
+  ],
+  "labels": [
+    {"u": "n1", "q": "kind", "v": "formatting", "p": 0.9},
+    {"u": "n1", "q": "depth", "v": "read", "p": 0.9},
+
+    {"u": "n2", "q": "kind", "v": "generated", "p": 0.9},
+    {"u": "n2", "q": "depth", "v": "read", "p": 0.9},
+
+    {"u": "n3", "q": "kind", "v": "formatting", "p": 0.9},
+    {"u": "n3", "q": "depth", "v": "read", "p": 0.9},
+
+    {"u": "n4", "q": "kind", "v": "generated", "p": 0.9},
+    {"u": "n4", "q": "depth", "v": "read", "p": 0.9},
+    {"u": "n4", "q": "fmt", "l": 1, "p": 0.9},
+    {"u": "n4", "q": "fmt", "l": 2, "p": 0.9},
+
+    {"u": "n5", "q": "kind", "v": "refactor", "p": 0.9},
+    {"u": "n5", "q": "depth", "v": "read", "p": 0.9},
+    {"u": "n5", "q": "fmt", "l": 4, "p": 0.9},
+    {"u": "n5", "q": "fmt", "l": 5, "p": 0.8},
+
+    {"u": "n6", "q": "kind", "v": "refactor", "p": 0.9},
+    {"u": "n6", "q": "depth", "v": "skim", "p": 0.9},
+    {"u": "n6", "q": "fmt", "l": 20, "p": 0.9},
+    {"u": "n6", "q": "fmt", "l": 21, "p": 0.3},
+
+    {"u": "n7", "q": "kind", "v": "generated", "p": 0.5},
+    {"u": "n7", "q": "depth", "v": "read", "p": 0.9},
+
+    {"u": "n8", "q": "kind", "v": "feature", "p": 0.9},
+    {"u": "n8", "q": "depth", "v": "skip", "p": 0.55},
+
+    {"u": "n9", "q": "kind", "v": "bugfix", "p": 0.9},
+    {"u": "n9", "q": "depth", "v": "read", "p": 0.9},
+
+    {"u": "m1", "q": "kind", "v": "refactor", "p": 0.9},
+    {"u": "m1", "q": "depth", "v": "skim", "p": 0.9},
+    {"u": "m2", "q": "kind", "v": "refactor", "p": 0.9},
+    {"u": "m2", "q": "depth", "v": "skim", "p": 0.9},
+    {"u": "m3", "q": "kind", "v": "refactor", "p": 0.9},
+    {"u": "m3", "q": "depth", "v": "skim", "p": 0.9},
+
+    {"u": "n10", "q": "kind", "v": "feature", "p": 0.9},
+    {"u": "n10", "q": "depth", "v": "read", "p": 0.9},
+    {"u": "n10", "q": "fmt", "l": 1, "p": 0.9},
+    {"u": "n10", "q": "fmt", "l": 2, "p": 0.9},
+    {"u": "n10", "q": "fmt", "l": 3, "p": 0.9}
+  ]
+}
