@@ -68,6 +68,15 @@ const (
 	StateReady     ItemState = "ready"
 	StateStale     ItemState = "stale"
 	StateError     ItemState = "error"
+	// StateNotAnalysed (M5.1): only the free stages (fetch, parse, link) ran
+	// because the item is outside the [pipeline] auto_review strategy and
+	// nobody asked for it; the picker and Overview show "not analysed · r to
+	// run". StateNote is "".
+	StateNotAnalysed ItemState = "not-analysed"
+	// StateStopped (M5.1): the user stopped the item's analysis (stop / stop
+	// all). StateNote is the stage it stopped at ("jev"); the picker shows
+	// "stopped at <stage> · r to resume". Nothing restarts it automatically.
+	StateStopped ItemState = "stopped"
 )
 
 // Item is a PR or a local branch under review.
@@ -179,6 +188,14 @@ type Item struct {
 	LastCommitAt time.Time `json:"lastCommitAt,omitzero"`
 	BranchState  string    `json:"branchState,omitempty"`
 	BranchStateP float64   `json:"branchStateP,omitempty"`
+
+	// RequestedSHA (M5.1) is the head the user explicitly asked to analyse
+	// (r, :resume, enter on a search result, :add). While it equals HeadSHA
+	// the item may run its model-backed stages whatever the auto_review
+	// strategy (see AutoReview.Allows), so an explicit run interrupted by a
+	// restart resumes. A new push makes it stale again: the next run of the
+	// new head needs a new request (or strategy coverage). Set by the daemon.
+	RequestedSHA string `json:"requestedSha,omitempty"`
 }
 
 // Branch states: the options of the catalogue's branch-scope question
@@ -477,6 +494,10 @@ const (
 	ReviewFailed      ReviewStatus = "failed"
 	ReviewSkipped     ReviewStatus = "skipped"
 	ReviewStaleLabels ReviewStatus = "stale-labels"
+	// ReviewStopped (M5.1): the call was in flight (or queued in this run)
+	// when the user stopped the item; not a failure, not retried, re-run on
+	// resume. Never cached as a finished review.
+	ReviewStopped ReviewStatus = "stopped"
 )
 
 // Severity of a review finding.
@@ -826,6 +847,10 @@ const (
 	StageFailed  StageStatus = "failed"
 	StageCached  StageStatus = "skipped-cache"
 	StageSkipped StageStatus = "skipped"
+	// StageStopped (M5.1): the user stopped the run while this stage was
+	// running; its output was not stored. Resume re-runs it (earlier stages
+	// hit their caches).
+	StageStopped StageStatus = "stopped"
 )
 
 // RunLog records one stage execution (what the Pipeline page shows).

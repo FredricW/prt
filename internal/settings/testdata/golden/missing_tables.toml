@@ -1,0 +1,37 @@
+# only GitHub and key bindings so far
+
+[github]
+repo = "acme/portal"
+
+[keys]
+settings = ","
+
+[user]
+role = "backend \"core\" \\ ops"
+owns = ["api/**", "internal/{a,b}/*.go"]
+
+[pipeline]
+auto_review = "needs-you+yours"
+unsure_below = 0.55
+keep_pair_p = 1.0
+embed_min_cosine = 0.7
+max_group_units = 12
+concurrency = 6
+
+[models]
+fast = "anthropic:claude-haiku-6"
+deep = "anthropic:claude-opus-6"
+embed = "ollama:nomic-embed-code"
+
+[rank]
+w_requested = 4.0
+w_breaking = 2.0
+w_risk = 0.8
+w_test_gap = 0.6
+w_relevance = 0.5
+w_release = 2.0
+w_ci_red = 2.5
+w_age = 0.4
+w_minutes = 0.015
+w_unpushed = 0.3
+w_ready_stale = 0.0

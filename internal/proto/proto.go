@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/fredricw/prt/internal/config"
 	"github.com/fredricw/prt/internal/model"
 )
 
@@ -89,7 +90,135 @@ const (
 	// (the search prompt closed): ItemParams → {}. An item that is listed
 	// (ranked, discovered or added) is left alone. M5.
 	MethodRemovePreview = "remove_preview"
+	// MethodStop stops analysis (M5.1): StopParams → StopResult. In-flight
+	// stages are cancelled (RunLog rows and routing rows "stopped"), queued
+	// jobs dropped, items left StateStopped ("stopped at <stage>").
+	MethodStop = "stop"
+	// MethodResume resumes stopped (or not-analysed) items from their last
+	// completed stage; content-hash caches mean nothing finished is paid
+	// again (M5.1): ResumeParams → ResumeResult. It is an explicit request,
+	// so the auto_review strategy does not gate it.
+	MethodResume = "resume"
+	// MethodSettings returns the editable settings, where they are saved and
+	// the environment status (M5.1): SettingsParams → SettingsInfo.
+	MethodSettings = "settings"
+	// MethodSaveSettings writes the settings to the chosen scope's prt.toml
+	// (and prt.routing.toml for cost cap and deep slots), reloads the
+	// configuration in the daemon and applies it live (M5.1):
+	// SaveSettingsParams → SettingsInfo (after the reload).
+	MethodSaveSettings = "save_settings"
 )
+
+// StopParams is the params of MethodStop: ItemID's analysis, or with All
+// every running and queued analysis (ItemID ignored).
+type StopParams struct {
+	ItemID string `json:"itemId,omitempty"`
+	All    bool   `json:"all,omitempty"`
+}
+
+// StopResult lists the items that were running or queued and are now
+// stopped (empty when there was nothing to stop: not an error).
+type StopResult struct {
+	Stopped []string `json:"stopped,omitempty"`
+}
+
+// ResumeParams is the params of MethodResume: ItemID, or with All every
+// item in StateStopped.
+type ResumeParams struct {
+	ItemID string `json:"itemId,omitempty"`
+	All    bool   `json:"all,omitempty"`
+}
+
+// ResumeResult lists the items queued again.
+type ResumeResult struct {
+	Resumed []string `json:"resumed,omitempty"`
+}
+
+// SettingsScope is where the settings page saves.
+type SettingsScope string
+
+// Settings scopes.
+const (
+	// ScopeRepo is <gitDir>/prt (the default).
+	ScopeRepo SettingsScope = "repo"
+	// ScopeGlobal is $XDG_CONFIG_HOME/prt (config.GlobalDir).
+	ScopeGlobal SettingsScope = "global"
+)
+
+// SettingsValues are the settings page's fields (M5.1). Every field maps
+// to one TOML key: prt.toml unless noted.
+type SettingsValues struct {
+	AutoReview string   `json:"autoReview"` // [pipeline] auto_review
+	Role       string   `json:"role"`       // [user] role
+	Owns       []string `json:"owns"`       // [user] owns
+	CostCapUSD float64  `json:"costCapUsd"` // prt.routing.toml cost_cap_usd
+	DeepSlots  int      `json:"deepSlots"`  // prt.routing.toml deep_slots
+	Fast       string   `json:"fast"`       // [models] fast
+	Deep       string   `json:"deep"`       // [models] deep
+	Embed      string   `json:"embed"`      // [models] embed
+	// Rank holds the urgency weights ([rank], every w_* key).
+	Rank           config.Rank `json:"rank"`
+	UnsureBelow    float64     `json:"unsureBelow"`    // [pipeline] unsure_below
+	KeepPairP      float64     `json:"keepPairP"`      // [pipeline] keep_pair_p
+	EmbedMinCosine float64     `json:"embedMinCosine"` // [pipeline] embed_min_cosine
+	MaxGroupUnits  int         `json:"maxGroupUnits"`  // [pipeline] max_group_units
+	Concurrency    int         `json:"concurrency"`    // [pipeline] concurrency
+}
+
+// Probe is the outcome of one environment check. Note is a short reason
+// ("unreachable at 127.0.0.1:11434", "not set"); it never holds a secret.
+type Probe struct {
+	OK   bool   `json:"ok"`
+	Note string `json:"note,omitempty"`
+}
+
+// EnvStatus is what the settings page shows about the daemon's
+// environment: presence only, never values.
+type EnvStatus struct {
+	JevKey       Probe `json:"jevKey"`       // JEV_API_KEY set
+	AnthropicKey Probe `json:"anthropicKey"` // PRT_ANTHROPIC_API_KEY set
+	Ollama       Probe `json:"ollama"`       // OLLAMA_HOST answers
+	GitHub       Probe `json:"github"`       // gh auth token / client wired
+}
+
+// SettingsParams is the params of MethodSettings. Ensure names a file to
+// create with built-in content when missing, so the page's "edit" actions
+// always open a file: "routing" (prt.routing.toml) or "questions"
+// (prt.questions.toml, a commented starter); "" for none.
+type SettingsParams struct {
+	Ensure string `json:"ensure,omitempty"`
+}
+
+// SettingsInfo is the result of MethodSettings and MethodSaveSettings.
+type SettingsInfo struct {
+	Values SettingsValues `json:"values"`
+	// Source is the prt.toml the values were read from ("builtin" when
+	// none); RoutingSource likewise for prt.routing.toml.
+	Source        string `json:"source"`
+	RoutingSource string `json:"routingSource"`
+	// RepoDir and GlobalDir are the two scopes' directories ("" when the
+	// global one is unknown).
+	RepoDir   string `json:"repoDir"`
+	GlobalDir string `json:"globalDir,omitempty"`
+	// RoutingPath and QuestionsPath are the files the page's edit actions
+	// open in $EDITOR (the active file, else the repo scope's path).
+	RoutingPath   string    `json:"routingPath"`
+	QuestionsPath string    `json:"questionsPath"`
+	Env           EnvStatus `json:"env"`
+	// Warnings are config warnings and save notes ("global prt.toml is
+	// shadowed by .git/prt/prt.toml").
+	Warnings []string `json:"warnings,omitempty"`
+	// Applied says what a save changed live ("re-aggregated 4 items,
+	// re-routed 2"); "" for MethodSettings.
+	Applied string `json:"applied,omitempty"`
+}
+
+// SaveSettingsParams is the params of MethodSaveSettings ("" Scope means
+// ScopeRepo).
+type SaveSettingsParams struct {
+	Scope  SettingsScope  `json:"scope,omitempty"`
+	Values SettingsValues `json:"values"`
+}
 
 // SearchSource is one of the search-and-add sources (spec Picker "Search
 // and add").
@@ -343,6 +472,9 @@ const (
 	EventPatch  EventType = "patch"  // stage output stored; re-read Detail
 	EventRemove EventType = "remove" // item removed
 	EventLog    EventType = "log"    // human-readable status note
+	// EventSettings: the daemon reloaded its configuration (M5.1); screens
+	// that show settings or the strategy re-read MethodSettings.
+	EventSettings EventType = "settings"
 )
 
 // Event is a state patch pushed to subscribers.
@@ -371,6 +503,11 @@ type ItemParams struct {
 	ItemID    string      `json:"itemId"`
 	FromStage model.Stage `json:"fromStage,omitempty"`
 	Force     bool        `json:"force,omitempty"`
+	// User marks a refresh the user asked for by hand (`r`, Pipeline page
+	// `r`): it runs the model stages whatever the auto_review strategy and
+	// records Item.RequestedSHA. Without it (the TUI's automatic first
+	// load) the strategy decides (M5.1). The safe default is false.
+	User bool `json:"user,omitempty"`
 }
 
 // CheckoutParams is the params of MethodCheckout. Without Force, a dirty work

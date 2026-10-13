@@ -1,0 +1,51 @@
+future_knob = true # unknown top-level key
+
+[ "user" ]
+	role = "backend \"core\" \\ ops"	# tab-indented, literal string
+	nickname = "me"	# unknown key
+	owns = ["api/**", "internal/{a,b}/*.go"]
+
+[github]
+repo = "acme/portal"
+release_branches = [
+  "release/*",
+  "hotfix/*",
+]
+
+[keys]
+"stop" = "ctrl+x"
+quit = "q"
+
+[pipeline]
+line_batch = 20
+"auto_review" = "needs-you+yours"
+refresh_seconds = 60
+note = """
+a multi-line string
+concurrency = 99
+"""
+unsure_below = 0.55
+keep_pair_p = 1.0
+embed_min_cosine = 0.7
+max_group_units = 12
+concurrency = 6
+
+[models]
+jev_base_url = "https://gateway.example"
+extra = { a = 1, b = [2, 3] }
+fast = "anthropic:claude-haiku-6"
+deep = "anthropic:claude-opus-6"
+embed = "ollama:nomic-embed-code"
+
+[rank]
+w_requested = 4.0
+w_breaking = 2.0
+w_risk = 0.8
+w_test_gap = 0.6
+w_relevance = 0.5
+w_release = 2.0
+w_ci_red = 2.5
+w_age = 0.4
+w_minutes = 0.015
+w_unpushed = 0.3
+w_ready_stale = 0.0

@@ -17,6 +17,8 @@ import (
 	"path/filepath"
 
 	"github.com/BurntSushi/toml"
+
+	"github.com/fredricw/prt/internal/model"
 )
 
 // File names.
@@ -77,6 +79,17 @@ type Pipeline struct {
 	// ready for PR or superseded (≤ 0: default 14; spec open question,
 	// DECISIONS "Branch states (M5)"). Not in the spec's sample prt.toml.
 	AbandonedDays int `toml:"abandoned_days"`
+	// AutoReview is the auto-review strategy (M5.1; model.AutoReview:
+	// "manual", "needs-you", "needs-you+yours", "all"; default "needs-you").
+	// It gates the model-backed stages of runs nobody asked for. Load turns
+	// an unknown value into the default with a warning.
+	AutoReview string `toml:"auto_review"`
+}
+
+// Strategy returns the parsed auto_review (the default when unknown).
+func (p Pipeline) Strategy() model.AutoReview {
+	a, _ := model.ParseAutoReview(p.AutoReview)
+	return a
 }
 
 // DefaultAbandonedDays is the default pipeline.abandoned_days.
@@ -126,6 +139,7 @@ func Defaults() Config {
 			MaxGroupUnits: 8, EmbedMinCosine: 0.72, EmbedTopK: 3, KeepPairP: 0.60, UnsureBelow: 0.60,
 			Concurrency: 4, LineBatch: 20, MechanicalMin: 3, RefreshSeconds: 60,
 			MaxPairsPerUnit: DefaultMaxPairsPerUnit, AbandonedDays: DefaultAbandonedDays,
+			AutoReview: string(model.DefaultAutoReview),
 		},
 		Models: Models{
 			Embed: "ollama:embeddinggemma-2",
@@ -190,6 +204,21 @@ func Dirs(gitDir string) []string {
 	return dirs
 }
 
+// GlobalDir returns $XDG_CONFIG_HOME/prt (or ~/.config/prt), the user-wide
+// config directory (the settings page's "global" scope); "" when neither
+// is known.
+func GlobalDir() string {
+	dirs := Dirs("")
+	if len(dirs) == 0 {
+		return ""
+	}
+	return dirs[0]
+}
+
+// RepoDir returns <gitDir>/prt, the per-repo config directory (the settings
+// page's default "repo" scope).
+func RepoDir(gitDir string) string { return filepath.Join(gitDir, "prt") }
+
 // Find returns the first existing path of name in dirs, or "".
 func Find(dirs []string, name string) string {
 	for _, d := range dirs {
@@ -215,6 +244,11 @@ func Load(dirs []string) (Config, error) {
 	if c.Models.JevEndpoint != "" {
 		warns = append(warns, fmt.Sprintf("%s: models.jev_endpoint is ignored; Jev is reached through models.jev_base_url (env JEV_BASE_URL)", p))
 	}
+	a, err := model.ParseAutoReview(c.Pipeline.AutoReview)
+	if err != nil {
+		warns = append(warns, fmt.Sprintf("%s: pipeline.%v; using %q", p, err, a))
+	}
+	c.Pipeline.AutoReview = string(a)
 	c.Source, c.Warnings = p, warns
 	return c, nil
 }

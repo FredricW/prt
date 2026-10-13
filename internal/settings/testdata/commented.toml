@@ -1,0 +1,34 @@
+# prt.toml — the spec's sample, with comments.
+
+[user]
+role = "frontend"            # free text, sent to Jev with relevance questions
+owns = ["web/**", "packages/ui/**"]
+
+[github]
+repo = "acme/portal"         # default: origin remote
+release_branches = ["release/*"]
+
+[rank]
+# urgency weights
+w_requested = 3.0
+w_breaking = 2.0
+w_risk = 0.8
+w_test_gap = 0.6
+w_relevance = 0.5
+w_release = 2.0
+w_ci_red = 2.5
+w_age = 0.4
+w_minutes = 0.02
+
+[pipeline]
+max_group_units = 8
+embed_min_cosine = 0.72
+keep_pair_p = 0.60     # keep a pair at p >= this
+unsure_below = 0.60
+concurrency = 4
+
+[models]
+embed = "onnx:models/code-embed-small.onnx"   # or "ollama:nomic-embed-code"
+jev_endpoint = "https://api.<jev-domain>/v1/systemone"
+fast = "anthropic:claude-haiku-5-5"
+deep = "anthropic:claude-opus-5-5"

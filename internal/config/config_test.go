@@ -45,6 +45,43 @@ func TestLookupOrderAndOverlay(t *testing.T) {
 	}
 }
 
+func TestAutoReview(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	if got := Defaults().Pipeline.Strategy(); got != "needs-you" {
+		t.Fatalf("default strategy %q", got)
+	}
+	for _, tc := range []struct {
+		body, want string
+		warn       bool
+	}{
+		{"[pipeline]\nauto_review = \"all\"\n", "all", false},
+		{"[pipeline]\nauto_review = \"Manual\"\n", "manual", false},
+		{"[pipeline]\nauto_review = \"sometimes\"\n", "needs-you", true},
+		{"[pipeline]\nconcurrency = 2\n", "needs-you", false},
+	} {
+		gitDir := t.TempDir()
+		write(t, filepath.Join(gitDir, "prt"), MainFile, tc.body)
+		c, err := Load(Dirs(gitDir))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if c.Pipeline.AutoReview != tc.want || string(c.Pipeline.Strategy()) != tc.want || (len(c.Warnings) > 0) != tc.warn {
+			t.Errorf("%q: got %q warnings %q", tc.body, c.Pipeline.AutoReview, c.Warnings)
+		}
+	}
+}
+
+func TestDirsHelpers(t *testing.T) {
+	xdg := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", xdg)
+	if got := GlobalDir(); got != filepath.Join(xdg, "prt") {
+		t.Errorf("GlobalDir = %q", got)
+	}
+	if got := RepoDir("/r/.git"); got != filepath.Join("/r/.git", "prt") {
+		t.Errorf("RepoDir = %q", got)
+	}
+}
+
 func TestUnknownKeyWarns(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	gitDir := t.TempDir()

@@ -1,0 +1,11 @@
+[user]
+role = "platform"
+owns = [
+  "infra/**",       # terraform
+  # the deploy scripts
+  "scripts/deploy/**",
+] # what I own
+team = "core"
+
+[pipeline]
+concurrency = 2

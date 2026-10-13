@@ -1,0 +1,18 @@
+# team routing: deep for anything risky
+
+deep_slots = 5 # parallel deep reviews
+cost_cap_usd = 2.0
+escalate_below = 0.5
+
+[[rule]]
+when = "risk >= 3"
+tier = "deep"
+deep_slots = 9   # not the top-level key
+context = [
+  "callers", # who calls it
+  "tests",
+]
+
+[[rule]]
+when = "true"
+tier = "fast"

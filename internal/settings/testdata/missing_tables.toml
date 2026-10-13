@@ -1,0 +1,7 @@
+# only GitHub and key bindings so far
+
+[github]
+repo = "acme/portal"
+
+[keys]
+settings = ","

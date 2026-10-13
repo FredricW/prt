@@ -1,0 +1,29 @@
+future_knob = true # unknown top-level key
+
+[ "user" ]
+	role = 'literal role'	# tab-indented, literal string
+	nickname = "me"	# unknown key
+
+[github]
+repo = "acme/portal"
+release_branches = [
+  "release/*",
+  "hotfix/*",
+]
+
+[keys]
+"stop" = "ctrl+x"
+quit = "q"
+
+[pipeline]
+line_batch = 20
+"auto_review" = "ALL"
+refresh_seconds = 60
+note = """
+a multi-line string
+concurrency = 99
+"""
+
+[models]
+jev_base_url = "https://gateway.example"
+extra = { a = 1, b = [2, 3] }
