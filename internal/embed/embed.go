@@ -44,6 +44,10 @@ func Cosine(a, b []float32) float64 {
 
 // FromSpec builds an Embedder from a config spec "ollama:<model>" or
 // "onnx:<path>". ollamaHost may be empty (then OLLAMA_HOST or the default).
+// An ONNX model that is not Ready falls back to Ollama with
+// DefaultOllamaModel (spec stack: "fallback to a local Ollama /api/embed if
+// ONNX is unavailable"); the choice is made once here, so Model() always
+// names the adapter whose vectors are cached.
 func FromSpec(spec, ollamaHost string) (Embedder, error) {
 	kind, arg, ok := strings.Cut(spec, ":")
 	if !ok {
@@ -53,7 +57,11 @@ func FromSpec(spec, ollamaHost string) (Embedder, error) {
 	case "ollama":
 		return NewOllama(ollamaHost, arg), nil
 	case "onnx":
-		return NewONNX(arg), nil
+		o := NewONNX(arg)
+		if o.Ready() != nil {
+			return NewOllama(ollamaHost, DefaultOllamaModel), nil
+		}
+		return o, nil
 	}
 	return nil, fmt.Errorf("embed: unknown adapter %q", kind)
 }

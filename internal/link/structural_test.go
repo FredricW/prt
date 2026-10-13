@@ -228,6 +228,27 @@ func TestStructuralSourceErrorsDegrade(t *testing.T) {
 	}
 }
 
+// showFailSource lists files but fails every Show.
+type showFailSource struct{ Source }
+
+func (showFailSource) Show(context.Context, string, string) ([]byte, error) {
+	return nil, errors.New("transient")
+}
+
+// A file read failing while the index is built must not cache that
+// partial index for the base SHA.
+func TestStructuralShowErrorNotCached(t *testing.T) {
+	base, head, units := tsScenario()
+	cache := &mapCache{}
+	in := Input{BaseSHA: "base", HeadSHA: "head", Files: scenarioFiles(), Units: units, Src: showFailSource{fakeRepo(base, head)}, Cache: cache}
+	if _, err := Structural(context.Background(), in); err != nil {
+		t.Fatal(err)
+	}
+	if cache.puts != 0 {
+		t.Errorf("an index with failed file reads was cached")
+	}
+}
+
 func TestStructuralLanguages(t *testing.T) {
 	ctx := context.Background()
 	base := map[string]string{

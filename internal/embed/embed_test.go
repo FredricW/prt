@@ -66,4 +66,13 @@ func TestFromSpec(t *testing.T) {
 	if _, err := FromSpec("bogus", ""); err == nil {
 		t.Fatal("want error")
 	}
+	// The ONNX stub is never ready: the spec's ONNX → Ollama fallback, with
+	// the Ollama model id as the cache key.
+	e, err = FromSpec("onnx:models/code.onnx", "http://h:1")
+	if err != nil || e.Model() != "ollama:"+DefaultOllamaModel {
+		t.Fatalf("onnx spec = %v (%T), %v; want the Ollama fallback", e, e, err)
+	}
+	if _, ok := e.(*Ollama); !ok {
+		t.Fatalf("onnx spec built %T", e)
+	}
 }

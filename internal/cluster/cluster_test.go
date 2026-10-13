@@ -13,9 +13,10 @@ import (
 // unitMod adjusts a test unit.
 type unitMod func(*model.ChangeUnit)
 
-func atPath(p string) unitMod  { return func(u *model.ChangeUnit) { u.Path = p } }
-func sym(s string) unitMod     { return func(u *model.ChangeUnit) { u.Symbol = s } }
-func shapeOf(h string) unitMod { return func(u *model.ChangeUnit) { u.ShapeHash = h } }
+func atPath(p string) unitMod   { return func(u *model.ChangeUnit) { u.Path = p } }
+func sym(s string) unitMod      { return func(u *model.ChangeUnit) { u.Symbol = s } }
+func shapeOf(h string) unitMod  { return func(u *model.ChangeUnit) { u.ShapeHash = h } }
+func withDiff(d string) unitMod { return func(u *model.ChangeUnit) { u.Diff = d } }
 
 // u is a unit with path src/<id>.go; items() sets Order.
 func u(id string, mods ...unitMod) model.ChangeUnit {
@@ -288,6 +289,31 @@ func TestMechanical(t *testing.T) {
 			units: mechUnits(),
 			links: []model.Link{mc("e", "m1"), mc("e", "m2"), st("c", "m1", model.LinkCalls), jv("x", "m2", 0.9, 0.9)},
 			want:  []string{"M:e,m1,m2", "U:x", "U:c"},
+		},
+		{
+			// Same shape hash ($s : $s), different literal edits: the
+			// shape alone would collapse three unrelated JSON edits.
+			name: "same shape, different literals is ejected",
+			units: items(
+				u("e", shapeOf("s"), withDiff("-  \"k\": \"old\",\n+  \"k\": \"new\",\n")),
+				u("m1", shapeOf("s"), withDiff("-  \"k\": \"old\",\n+  \"k\": \"new\",\n")),
+				u("m2", shapeOf("s"), withDiff("-  \"k\": \"old\",\n+  \"k\": \"new\",\n")),
+				u("x", shapeOf("s"), withDiff("-  \"k\": \"alt\",\n+  \"k\": \"neu\",\n")),
+			),
+			links:   []model.Link{mc("e", "m1"), mc("e", "m2"), mc("e", "x")},
+			want:    []string{"M:e,m1,m2", "U:x"},
+			ejected: 1,
+		},
+		{
+			// A rename at call sites with different arguments is one edit.
+			name: "rename with different context verifies",
+			units: items(
+				u("e", shapeOf("s"), withDiff("-\tgetUser(a)\n+\tfetchUser(a)\n")),
+				u("m1", shapeOf("s"), withDiff("-\tgetUser(b, \"x\")\n+\tfetchUser(b, \"x\")\n")),
+				u("m2", shapeOf("s"), withDiff("-  getUser(c)\n+  fetchUser(c)\n")),
+			),
+			links: []model.Link{mc("e", "m1"), mc("e", "m2")},
+			want:  []string{"M:e,m1,m2"},
 		},
 		{
 			name:  "empty shape hash never verifies",

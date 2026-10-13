@@ -60,9 +60,13 @@ func mechanicalClasses(g *graph) [][]link {
 }
 
 // verify splits a class into verified members (example first in units,
-// which stays ascending) and ejected targets.
+// which stays ascending) and ejected targets. A member needs the example's
+// shape hash (the candidate key) and its literal edit signature (editSig):
+// the shape hash maps every literal to one placeholder, so it alone cannot
+// tell `"old"` → `"new"` from `"alt"` → `"neu"`.
 func verify(g *graph, example int, class []link, taken []bool) *group {
 	shape := g.units[example].ShapeHash
+	sig := editSig(g.units[example].Diff)
 	m := &group{example: example, mechanical: true}
 	seen := map[int]bool{}
 	members := []int{}
@@ -74,7 +78,7 @@ func verify(g *graph, example int, class []link, taken []bool) *group {
 			continue
 		}
 		seen[l.to] = true
-		if shape != "" && g.units[l.to].ShapeHash == shape {
+		if shape != "" && g.units[l.to].ShapeHash == shape && editSig(g.units[l.to].Diff) == sig {
 			members = append(members, l.to)
 			m.mechLinks = append(m.mechLinks, l)
 			continue

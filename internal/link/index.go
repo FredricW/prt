@@ -63,8 +63,8 @@ func loadIndex(ctx context.Context, in Input) (*symIndex, error) {
 }
 
 // buildIndex parses every supported source file of rev (≤ maxIndexFiles, in
-// path order). complete is false when the listing failed, so a transient
-// error is not cached.
+// path order). complete is false when the listing or any file read failed,
+// so a transient error is not cached for the base SHA.
 func buildIndex(ctx context.Context, src Source, rev string) (*symIndex, bool, error) {
 	idx := &symIndex{Files: map[string]indexFile{}}
 	if src == nil || rev == "" {
@@ -87,12 +87,14 @@ func buildIndex(ctx context.Context, src Source, rev string) (*symIndex, bool, e
 	if len(files) > maxIndexFiles {
 		files, idx.Truncated = files[:maxIndexFiles], true
 	}
+	complete := true
 	for _, p := range files {
 		if err := ctx.Err(); err != nil {
 			return nil, false, fmt.Errorf("link: symbol index: %w", err)
 		}
 		b, err := src.Show(ctx, rev, p)
 		if err != nil {
+			complete = false
 			continue
 		}
 		if syn := parseSyntax(ctx, parse.Lang(p), b); syn != nil {
@@ -102,7 +104,7 @@ func buildIndex(ctx context.Context, src Source, rev string) (*symIndex, bool, e
 	if err := ctx.Err(); err != nil {
 		return nil, false, fmt.Errorf("link: symbol index: %w", err)
 	}
-	return idx, true, nil
+	return idx, complete, nil
 }
 
 // indexEntry keeps the parts of a file's syntax the index needs.
