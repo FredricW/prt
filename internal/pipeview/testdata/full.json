@@ -38,7 +38,11 @@
     "noiseLines": 0, "added": 120, "removed": 40, "effectiveLines": 140, "minutes": 22,
     "unitsTotal": 13, "unitsEyes": 5, "unitsSkim": 4, "unitsSkip": 4,
     "headlines": [], "hotSpots": [], "riskMax": 4, "riskAny": 0.5, "riskTags": {}, "testGap": 1, "riskyUnits": 3,
-    "fidelity": 1, "undocumented": [], "unsure": 0, "urgency": 3.2, "urgencyTerms": [], "why": "asked you", "units": [], "groups": [],
+    "fidelity": 1, "undocumented": [], "unsure": 0, "urgency": 3.2, "urgencyTerms": [
+      {"name": "w_requested", "words": "asked you", "value": 1, "weight": 3, "contrib": 3},
+      {"name": "w_risk", "words": "risk", "value": 4, "weight": 0.5, "contrib": 2},
+      {"name": "w_minutes", "words": "size", "value": 18, "weight": 0.1, "contrib": -1.8}
+    ], "why": "asked you · risk", "units": [], "groups": [],
     "grouping": {
       "units": 24, "structural": {"calls": 4, "tests": 3, "moved": 2}, "embedCandidates": 12, "mechanicalCandidates": 5,
       "pairsAsked": 12, "jevKept": {"same intent": 3, "caller update": 2, "test for": 1}, "jevRejected": 5, "cutLinks": 1,

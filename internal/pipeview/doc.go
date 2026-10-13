@@ -36,7 +36,7 @@ func (b *docBuilder) add(s ...string) { b.lines = append(b.lines, s...) }
 func (b *docBuilder) hit(h hit)       { b.hits = append(b.hits, h) }
 
 // build lays out the whole page: header, stage strip (and its log),
-// routing table, totals, rules, grouping and calibration.
+// routing table, totals, rules, grouping, calibration and urgency weights.
 func (m *Model) build() docBuilder {
 	var b docBuilder
 	b.add(m.headerLine())
@@ -45,7 +45,7 @@ func (m *Model) build() docBuilder {
 	if m.stageLog {
 		m.buildStageLog(&b)
 	}
-	sections := []func(*docBuilder){m.buildTable, m.buildTotals, m.buildRules, m.buildGrouping, m.buildCalibration}
+	sections := []func(*docBuilder){m.buildTable, m.buildTotals, m.buildRules, m.buildGrouping, m.buildCalibration, m.buildUrgency}
 	for _, s := range sections {
 		b.add("")
 		s(&b)

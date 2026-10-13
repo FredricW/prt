@@ -222,6 +222,29 @@ func lastAt(s string) string {
 	return clock(t)
 }
 
+// buildUrgency adds the urgency weights panel (spec Ranking: "Weights live
+// in prt.toml and are shown on the Pipeline page"): each stored term as
+// words weight×value = contribution, then the stored total and "why". It
+// reads ItemAgg.UrgencyTerms only; the Overview's `w` overlay shows the same
+// terms as a table.
+func (m *Model) buildUrgency(b *docBuilder) {
+	b.add(m.st.head.Render("Urgency") + m.st.dim.Render("  weights from prt.toml [rank]"))
+	if m.d.Agg == nil || len(m.d.Agg.UrgencyTerms) == 0 {
+		b.add(m.st.dim.Render("  no urgency terms yet"))
+		return
+	}
+	parts := make([]string, 0, len(m.d.Agg.UrgencyTerms))
+	for _, t := range m.d.Agg.UrgencyTerms {
+		parts = append(parts, fmt.Sprintf("%s %.2f×%.2f=%+.2f", t.Words, t.Weight, t.Value, t.Contrib))
+	}
+	m.addPara(b, "  "+strings.Join(parts, " · "))
+	total := fmt.Sprintf("  total %+.2f", m.d.Agg.Urgency)
+	if m.d.Agg.Why != "" {
+		total += " · why: " + m.d.Agg.Why
+	}
+	m.addPara(b, total)
+}
+
 // buildCalibration adds the calibration panel from Agg.Calibration.
 func (m *Model) buildCalibration(b *docBuilder) {
 	b.add(m.st.head.Render("Calibration"))
