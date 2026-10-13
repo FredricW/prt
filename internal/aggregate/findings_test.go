@@ -110,7 +110,9 @@ func TestGroupKind(t *testing.T) {
 		}, model.KindFormatting},
 		{"unknown label", []unitFacts{feature, kindFacts(model.LabelUnknown, model.UnitModified, false)}, "unknown"},
 		{"missing label", []unitFacts{feature, kindFacts("", model.UnitModified, false)}, "unknown"},
-		{"unknown beats mixed", []unitFacts{feature, kindFacts("test", model.UnitAdded, false), kindFacts("", model.UnitAdded, false)}, "unknown"},
+		// Two known kinds differ: mixed whatever the unknown member is.
+		{"known disagreement beats unknown", []unitFacts{feature, kindFacts("test", model.UnitAdded, false), kindFacts("", model.UnitAdded, false)}, "mixed"},
+		{"unknown first, then disagreement", []unitFacts{kindFacts("", model.UnitAdded, false), feature, kindFacts("test", model.UnitAdded, false)}, "mixed"},
 		{"mixed", []unitFacts{feature, kindFacts("test", model.UnitAdded, false)}, "mixed"},
 		{"moved with feature", []unitFacts{feature, kindFacts("", model.UnitMoved, false)}, "mixed"},
 		{"empty", nil, "unknown"},

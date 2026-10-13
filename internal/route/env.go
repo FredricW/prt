@@ -223,24 +223,44 @@ func (e *groupEnv) maxScore(q string, rung bool) Value {
 	return Value{Kind: KindNum, N: best}
 }
 
-// choice is the value every unit shares, else "mixed"; Unknown when any
-// unit's label is unknown or missing.
+// choice is the value every unit shares, else "mixed". "mixed" is decided
+// as soon as two known values differ, even when other units are unknown
+// (whatever they say, the group is mixed); it is Unknown when the known
+// units agree but some unit's label is unknown or missing.
 func (e *groupEnv) choice(q string) Value {
-	shared := ""
-	for i, u := range e.f.Units {
-		l, ok := e.label(u.ID, q)
-		if !ok {
-			return Value{}
-		}
-		switch {
-		case i == 0:
-			shared = l.Value
-		case l.Value != shared:
-			shared = kindMixed
+	vals := make([]string, 0, len(e.f.Units))
+	for _, u := range e.f.Units {
+		if l, ok := e.label(u.ID, q); ok {
+			vals = append(vals, l.Value)
+		} else {
+			vals = append(vals, kindUnknown)
 		}
 	}
-	if shared == "" {
+	return foldChoice(vals)
+}
+
+// foldChoice folds unit values ("unknown" for an unknown unit) into the
+// group value: the value every unit shares; "mixed" once two known values
+// differ (whatever the unknown units say); otherwise Unknown — with Either
+// set to the value the known units share, since the group can then only be
+// that value or "mixed".
+func foldChoice(vals []string) Value {
+	shared, unknown := "", false
+	for _, v := range vals {
+		switch {
+		case v == kindUnknown || v == "":
+			unknown = true
+		case shared == "":
+			shared = v
+		case v != shared:
+			return Value{Kind: KindStr, S: kindMixed}
+		}
+	}
+	switch {
+	case shared == "":
 		return Value{}
+	case unknown:
+		return Value{Either: shared}
 	}
 	return Value{Kind: KindStr, S: shared}
 }
@@ -250,34 +270,20 @@ func (e *groupEnv) choice(q string) Value {
 // when its label is unknown, so kind does not follow LabelsMissing blindly.
 func (e *groupEnv) kind() Value {
 	k := e.f.GroupAgg.Kind
-	if k == "" {
-		k = e.derivedKind()
-	}
-	if k == kindUnknown || k == "" {
-		return Value{}
+	// GroupAgg.Kind "unknown" carries no Either bound; derive it from the
+	// units so `kind in [...]` can still be decided.
+	if k == "" || k == kindUnknown {
+		return e.derivedKind()
 	}
 	return Value{Kind: KindStr, S: k}
 }
 
-func (e *groupEnv) derivedKind() string {
-	shared := ""
-	unknown := false
-	for i, u := range e.f.Units {
-		k := e.unitKind(u)
-		if k == kindUnknown {
-			unknown = true
-		}
-		switch {
-		case i == 0:
-			shared = k
-		case k != shared:
-			shared = kindMixed
-		}
+func (e *groupEnv) derivedKind() Value {
+	vals := make([]string, 0, len(e.f.Units))
+	for _, u := range e.f.Units {
+		vals = append(vals, e.unitKind(u))
 	}
-	if unknown {
-		return kindUnknown
-	}
-	return shared
+	return foldChoice(vals)
 }
 
 // unitKind is a unit's effective kind: "moved" for git-moved units,

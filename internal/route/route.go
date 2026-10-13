@@ -79,6 +79,11 @@ type Value struct {
 	// Comparisons the bound settles (`risk >= 4` with a known 5) decide;
 	// the rest stay Unknown.
 	AtLeast bool
+	// Either marks an Unknown choice (such as `kind`) whose true value is
+	// either Either or "mixed": the known units share Either and the rest
+	// are unknown. `in [...]`, `==` and `!=` decide when both candidates
+	// give the same answer; the rest stay Unknown.
+	Either string
 }
 
 // Env is what a rule expression is evaluated against for one group.
@@ -194,8 +199,8 @@ type Decision struct {
 	RuleIndex int    // 1-based; 0 when Unknown decided
 	Rule      string // the `when` text that fired ("" when Unknown decided)
 	Words     string // "if … → tier" or "labels unknown → deep"
-	// Prompts are the specialist prompts to append: the fired rule's
-	// prompts whose trigger fired (security: tag.auth|tag.pii|tag.money;
+	// Prompts are the specialist prompts to append: every prompt whose
+	// trigger fired, for any reviewed decision (security: tag.auth|tag.pii|tag.money;
 	// performance: tag.io_in_loop|tag.async|kind perf|effect performance;
 	// tests: kind test|test_weakened). Context is the rule's context
 	// kinds plus the stage-6 decisions: callers when any unit is breaking,
@@ -237,6 +242,7 @@ func decide(rs Rules, g GroupFacts) Decision {
 		if t == Unknown {
 			d.Tier, d.Unknown = model.TierDeep, true
 			d.Words = fmt.Sprintf("labels unknown → deep (rule %d)", r.Index)
+			d.Prompts = firedPrompts(env, nil)
 			d.Context = autoContext(env, nil)
 		} else {
 			d.Tier, d.RuleIndex, d.Rule, d.Words = r.Tier, r.Index, r.When.String(), r.Words
@@ -263,16 +269,24 @@ func groupHotSpot(g GroupFacts) float64 {
 	return best
 }
 
-// firedPrompts keeps the rule's prompts whose trigger fired, in rule order.
-func firedPrompts(e *groupEnv, prompts []string) []string {
+// firedPrompts is every specialist prompt whose trigger fired (spec stage
+// 7: "appended when the matching tag fired"), whichever rule decided: the
+// rule's own prompts first in rule order, then the others in canonical
+// order. A rule's `prompts` list orders, it does not gate.
+func firedPrompts(e *groupEnv, rulePrompts []string) []string {
 	var out []string
-	for _, p := range prompts {
+	for _, p := range append(slices.Clone(rulePrompts), promptNames...) {
 		if !slices.Contains(out, p) && promptFired(e, p) {
 			out = append(out, p)
 		}
 	}
 	return out
 }
+
+// AutoPrompts are the specialist prompts whose trigger fired for a group
+// on its own: what a review the user forces deep gets when no rule routed
+// the group.
+func AutoPrompts(f GroupFacts) []string { return firedPrompts(newGroupEnv(f), nil) }
 
 // promptFired evaluates a specialist prompt's trigger. Kind and effect are
 // read per unit ("any unit has kind perf"), like the other triggers.

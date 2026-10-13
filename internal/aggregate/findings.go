@@ -109,24 +109,28 @@ func unitKindKey(f unitFacts) string {
 	return f.agg.Kind
 }
 
-// groupKind is the kind every member shares, "unknown" when any member's
-// kind is unknown (or the group has no known members), else "mixed".
+// groupKind is the kind every member shares; "mixed" as soon as two known
+// kinds differ (whatever the unknown members say); "unknown" when the known
+// members agree but some member's kind is unknown (or no member is known).
 func groupKind(members []unitFacts) string {
-	if len(members) == 0 {
-		return unknownKind
-	}
 	kinds := map[string]bool{}
+	unknown := false
+	shared := ""
 	for _, f := range members {
 		k := unitKindKey(f)
 		if k == unknownKind {
-			return unknownKind
+			unknown = true
+			continue
 		}
-		kinds[k] = true
+		kinds[k], shared = true, k
 	}
-	if len(kinds) == 1 {
-		return unitKindKey(members[0])
+	switch {
+	case len(kinds) > 1:
+		return groupKindMixed
+	case unknown || len(kinds) == 0:
+		return unknownKind
 	}
-	return groupKindMixed
+	return shared
 }
 
 // groupHotSpot is the max model.UnitHotSpot over the members (0 if none).

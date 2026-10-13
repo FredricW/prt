@@ -67,7 +67,14 @@ func TestRouteDefaultRules(t *testing.T) {
 		{
 			name:  "async tag without security tags",
 			facts: func() GroupFacts { return group(two, set(quiet("feature"), yes("a", "risk_tags.async"))) },
-			tier:  model.TierDeep, ruleIndex: 2, prompts: nil, context: []string{"callers", "tests"},
+			tier:  model.TierDeep, ruleIndex: 2, prompts: []string{"performance"}, context: []string{"callers", "tests"},
+		},
+		{
+			name: "pii on the catch-all rule gets security",
+			facts: func() GroupFacts {
+				return group(two, set(set(quiet("feature"), yes("a", "risk_tags.pii")), score("a", model.QRisk, 3, 3)))
+			},
+			tier: model.TierFast, ruleIndex: 5, prompts: []string{"security"},
 		},
 		{
 			name:  "breaking only",
@@ -93,8 +100,24 @@ func TestRouteDefaultRules(t *testing.T) {
 			tier: model.TierFast, ruleIndex: 5, context: []string{"types", "config"},
 		},
 		{
-			name:  "unknown kind, not mechanical",
+			// The kind is feature or mixed, never a noise kind: rule 1 is False.
+			name:  "unknown kind beside a known feature",
 			facts: func() GroupFacts { return group(two, set(quiet("feature"), unknownLabel("a", model.QKind))) },
+			tier:  model.TierFast, ruleIndex: 5,
+		},
+		{
+			// Two known kinds differ: mixed whatever the third says.
+			name: "feature, test, unknown kind",
+			facts: func() GroupFacts {
+				three := []model.ChangeUnit{unit("a", 1), unit("c", 2), unit("d", 3)}
+				ls := append(append(fullLabels("a", "feature"), fullLabels("c", "test")...), fullLabels("d", "feature")...)
+				return group(three, set(ls, unknownLabel("d", model.QKind)))
+			},
+			tier: model.TierFast, ruleIndex: 5, words: "if true → fast", prompts: []string{"tests"},
+		},
+		{
+			name:  "unknown kind beside a known dependency",
+			facts: func() GroupFacts { return group(two, set(quiet("dependency"), unknownLabel("a", model.QKind))) },
 			tier:  model.TierDeep, unknown: true, words: "labels unknown → deep (rule 1)",
 		},
 		{
@@ -201,6 +224,34 @@ func TestRouteKnownMaxSettlesComparison(t *testing.T) {
 			t.Fatal(err)
 		}
 		if got, err := e.Eval(NewEnv(group([]model.ChangeUnit{a, c}, ls))); err != nil || got != tc.want {
+			t.Errorf("%s = %v (%v), want %v", tc.when, got, err, tc.want)
+		}
+	}
+}
+
+// A choice whose known units agree on v and whose other units are unknown
+// can only be v or "mixed": comparisons both candidates answer alike decide.
+func TestEvalEitherChoice(t *testing.T) {
+	a, c := unit("a", 1), unit("c", 2)
+	ls := set(append(fullLabels("a", "feature"), fullLabels("c", "feature")...), unknownLabel("c", model.QKind))
+	env := NewEnv(group([]model.ChangeUnit{a, c}, ls))
+	for _, tc := range []struct {
+		when string
+		want Tri
+	}{
+		{"kind in [formatting, moved]", False},
+		{"kind in [feature, mixed]", True},
+		{"kind in [feature]", Unknown},
+		{"kind == test", False},
+		{"kind != test", True},
+		{"kind == feature", Unknown},
+		{`"test" == kind`, False},
+	} {
+		e, err := Parse(tc.when)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got, err := e.Eval(env); err != nil || got != tc.want {
 			t.Errorf("%s = %v (%v), want %v", tc.when, got, err, tc.want)
 		}
 	}

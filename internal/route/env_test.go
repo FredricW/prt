@@ -77,8 +77,15 @@ func TestEnvChoice(t *testing.T) {
 		t.Errorf("contract = %+v, want mixed", got)
 	}
 	f.Labels = set(clone(base), unknownLabel("c", model.QContract))
-	if got := lookup(t, f, model.QContract); got != unk {
-		t.Errorf("contract = %+v, want unknown", got)
+	if got := lookup(t, f, model.QContract); got != (Value{Either: model.ContractNone}) {
+		t.Errorf("contract = %+v, want unknown (none or mixed)", got)
+	}
+	// Two known values that differ settle "mixed" despite an unknown unit.
+	d := unit("d", 5)
+	f = group([]model.ChangeUnit{a, c, d}, append(clone(base), fullLabels("d", "feature")...))
+	f.Labels = set(set(f.Labels, choice("c", model.QContract, "signature")), unknownLabel("d", model.QContract))
+	if got := lookup(t, f, model.QContract); got != s("mixed") {
+		t.Errorf("contract = %+v, want mixed", got)
 	}
 }
 
@@ -99,10 +106,13 @@ func TestEnvKind(t *testing.T) {
 		{"moved without labels", []model.ChangeUnit{moved}, nil, "", s("moved")},
 		{"format-only", []model.ChangeUnit{format}, fullLabels("f", "refactor"), "", s("formatting")},
 		{"formatting label", []model.ChangeUnit{unit("a", 1)}, fullLabels("a", "formatting"), "", s("formatting")},
-		{"unknown", []model.ChangeUnit{unit("a", 1), unit("c", 2)}, fullLabels("a", "feature"), "", unk},
-		{"unknown beats mixed", []model.ChangeUnit{unit("a", 1), unit("c", 2), moved}, fullLabels("a", "feature"), "", unk},
+		{"unknown: feature or mixed", []model.ChangeUnit{unit("a", 1), unit("c", 2)}, fullLabels("a", "feature"), "", Value{Either: "feature"}},
+		{"known disagreement beats unknown", []model.ChangeUnit{unit("a", 1), unit("c", 2), moved}, fullLabels("a", "feature"), "", s("mixed")},
+		{"feature, test, unknown", []model.ChangeUnit{unit("a", 1), unit("c", 2), unit("d", 5)}, append(fullLabels("a", "feature"), fullLabels("c", "test")...), "", s("mixed")},
+		{"no unit known", []model.ChangeUnit{unit("a", 1), unit("c", 2)}, nil, "", unk},
 		{"agg wins", []model.ChangeUnit{unit("a", 1)}, fullLabels("a", "feature"), "dependency", s("dependency")},
-		{"agg unknown", []model.ChangeUnit{unit("a", 1)}, fullLabels("a", "feature"), "unknown", unk},
+		{"agg unknown derives from units", []model.ChangeUnit{unit("a", 1), unit("c", 2)}, fullLabels("a", "feature"), "unknown", Value{Either: "feature"}},
+		{"agg unknown, nothing known", []model.ChangeUnit{unit("a", 1)}, nil, "unknown", unk},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

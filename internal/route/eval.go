@@ -156,6 +156,9 @@ func (n *cmpNode) val(env Env) (Value, error) {
 		return Value{}, err
 	}
 	if lv.Kind == KindUnknown || rv.Kind == KindUnknown {
+		if t, ok := eitherCompare(n.op, lv, rv); ok {
+			return triValue(t), nil
+		}
 		return triValue(boundCompare(n.op, lv, rv)), nil
 	}
 	switch n.op {
@@ -221,6 +224,45 @@ func boundCompare(op string, lv, rv Value) Tri {
 	return Unknown
 }
 
+// candidates are the values an Either-bounded Unknown can take.
+func candidates(v Value) []string { return []string{v.Either, kindMixed} }
+
+// decideAll is True when pred holds for every candidate, False when for
+// none, else Unknown.
+func decideAll(cands []string, pred func(string) bool) Tri {
+	yes, no := 0, 0
+	for _, c := range cands {
+		if pred(c) {
+			yes++
+		} else {
+			no++
+		}
+	}
+	switch {
+	case no == 0:
+		return True
+	case yes == 0:
+		return False
+	}
+	return Unknown
+}
+
+// eitherCompare decides `==`/`!=` between an Either-bounded Unknown and a
+// known string; ok is false when neither side is such a pair.
+func eitherCompare(op string, lv, rv Value) (Tri, bool) {
+	if op != "==" && op != "!=" {
+		return Unknown, false
+	}
+	switch {
+	case lv.Kind == KindUnknown && lv.Either != "" && rv.Kind == KindStr:
+	case rv.Kind == KindUnknown && rv.Either != "" && lv.Kind == KindStr:
+		lv, rv = rv, lv
+	default:
+		return Unknown, false
+	}
+	return decideAll(candidates(lv), func(c string) bool { return (c == rv.S) == (op == "==") }), true
+}
+
 // inNode is `x in [a, b]`, compared by string form.
 type inNode struct {
 	l     node
@@ -236,15 +278,22 @@ func (n *inNode) val(env Env) (Value, error) {
 		return Value{}, err
 	}
 	if lv.Kind == KindUnknown {
-		return triValue(Unknown), nil
+		if lv.Either == "" {
+			return triValue(Unknown), nil
+		}
+		return triValue(decideAll(candidates(lv), n.has)), nil
 	}
-	s := valueString(lv)
+	return triValue(decideAll([]string{valueString(lv)}, n.has)), nil
+}
+
+// has reports whether the list holds s (by string form).
+func (n *inNode) has(s string) bool {
 	for _, it := range n.items {
 		if valueString(it) == s {
-			return triValue(True), nil
+			return true
 		}
 	}
-	return triValue(False), nil
+	return false
 }
 
 // valueString is the string form `in` compares: strings as is, numbers in
