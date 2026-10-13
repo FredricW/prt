@@ -207,8 +207,12 @@ func (b *builder) pyRegs(v *view, s side, ls []line) []reg {
 	return out
 }
 
-// pyDecoRegs returns the routes of a flask/fastapi decorator on line i.
+// pyDecoRegs returns the routes of a flask/fastapi decorator on line i (none
+// when the match lies in a string, such as a docstring line).
 func (d *doc) pyDecoRegs(i int, m []int) []reg {
+	if d.lines[i].inString(m[0]) {
+		return nil
+	}
 	pi, c := d.pyInfo(), d.lines[i].code
 	recv, call, p := sub(c, m, 1), sub(c, m, 2), sub(c, m, 4)
 	rt := pi.chain(recv, 0)

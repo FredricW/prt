@@ -1,0 +1,38 @@
+=== added
+diff --git a/server.go b/server.go
+--- a/server.go
++++ b/server.go
+@@ -10,4 +10,7 @@ func main() {
+ 	app := fiber.New()
+ 	api := app.Group("/api")
++	api.Get("/users/:id", getUser)
++	api.Post("/users", createUser)
++	app.Delete("/sessions/:id", deleteSession)
+ 	log.Fatal(app.Listen(":3000"))
+=== removed
+diff --git a/server.go b/server.go
+--- a/server.go
++++ b/server.go
+@@ -10,4 +10,3 @@ func main() {
+ 	app := fiber.New()
+-	app.Put("/users/:id", updateUser)
+ 	log.Fatal(app.Listen(":3000"))
+=== changed
+diff --git a/server.go b/server.go
+--- a/server.go
++++ b/server.go
+@@ -10,4 +10,4 @@ func main() {
+ 	app := fiber.New()
+-	app.Get("/user/:id", getUser)
++	app.Get("/users/:id", getUser)
+ 	log.Fatal(app.Listen(":3000"))
+=== negative
+diff --git a/server.go b/server.go
+--- a/server.go
++++ b/server.go
+@@ -30,2 +30,5 @@ func getUser(c *fiber.Ctx) error {
+ 	id := c.Params("id")
++	log.Println("GET /users")
++	// app.Get("/x", h)
++	return c.SendString("/users/" + id)
+ }

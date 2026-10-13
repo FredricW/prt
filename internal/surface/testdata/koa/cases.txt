@@ -1,0 +1,48 @@
+=== added
+diff --git a/src/routes.js b/src/routes.js
+--- a/src/routes.js
++++ b/src/routes.js
+@@ -1,6 +1,8 @@
+ const Koa = require("koa");
+ const Router = require("@koa/router");
+ const app = new Koa();
+ const router = new Router({ prefix: "/api" });
++router.get("/users/:id", getUser);
++router.del("/users/:id", deleteUser);
+ app.use(router.routes());
+ app.listen(3000);
+=== removed
+diff --git a/src/routes.js b/src/routes.js
+--- a/src/routes.js
++++ b/src/routes.js
+@@ -1,7 +1,6 @@
+ const Koa = require("koa");
+ const Router = require("@koa/router");
+ const app = new Koa();
+ const router = new Router({ prefix: "/api" });
+-router.post("/sessions", createSession);
+ app.use(router.routes());
+ app.listen(3000);
+=== changed
+diff --git a/src/routes.js b/src/routes.js
+--- a/src/routes.js
++++ b/src/routes.js
+@@ -1,7 +1,7 @@
+ const Koa = require("koa");
+ const Router = require("@koa/router");
+ const app = new Koa();
+ const router = new Router({ prefix: "/api" });
+-router.get("/user/:id", getUser);
++router.get("/users/:id", getUser);
+ app.use(router.routes());
+ app.listen(3000);
+=== negative
+diff --git a/src/routes.js b/src/routes.js
+--- a/src/routes.js
++++ b/src/routes.js
+@@ -1,4 +1,6 @@
+ const Koa = require("koa");
+ const Router = require("@koa/router");
++// router.get("/legacy", legacy);
++const cached = cache.get("/users");
+ const app = new Koa();

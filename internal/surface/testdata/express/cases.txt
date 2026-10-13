@@ -34,6 +34,30 @@ diff --git a/server/app.js b/server/app.js
 +router.get("/users/:id", getUser);
  app.use("/api", router);
  app.listen(3000);
+=== otherhandler
+diff --git a/server/app.js b/server/app.js
+--- a/server/app.js
++++ b/server/app.js
+@@ -1,6 +1,6 @@
+ const express = require("express");
+ const app = express();
+ const router = express.Router();
+-router.put("/users/:id", updateUser);
++router.get("/users/:id", getUser);
+ app.use("/api", router);
+ app.listen(3000);
+=== inlinemethod
+diff --git a/server/app.js b/server/app.js
+--- a/server/app.js
++++ b/server/app.js
+@@ -1,6 +1,6 @@
+ const express = require("express");
+ const app = express();
+ const router = express.Router();
+-router.put("/users/:id", (req, res) => save(req, res));
++router.patch("/users/:id", (req, res) => save(req, res));
+ app.use("/api", router);
+ app.listen(3000);
 === crossfile
 diff --git a/server/app.ts b/server/app.ts
 --- a/server/app.ts

@@ -47,4 +47,17 @@ diff --git a/app/main.py b/app/main.py
 +resp = requests.get("/api/users")
 +"""@app.route("/doc")"""
 +redirect("/login")
+=== docstring
+diff --git a/app/views.py b/app/views.py
+--- a/app/views.py
++++ b/app/views.py
+@@ -1,3 +1,9 @@
+ from flask import Flask
+ app = Flask(__name__)
++def helper():
++    """Mounted like:
++    @app.route("/docstring-route")
++    """
++    return None
++
 

@@ -56,10 +56,30 @@ func TestAPIEndpoints(t *testing.T) {
 		{"echo", "changed", []string{"changed route: GET /users/:id"}},
 		{"echo", "negative", nil},
 
+		{"fiber", "added", []string{"added route: GET /api/users/:id", "added route: POST /api/users", "added route: DELETE /sessions/:id"}},
+		{"fiber", "removed", []string{"removed route: PUT /users/:id"}},
+		{"fiber", "changed", []string{"changed route: GET /users/:id"}},
+		{"fiber", "negative", nil},
+
+		{"hono", "added", []string{"added route: GET /users/:id", "added route: POST /users",
+			"added route: GET /admin/stats", "added mount: /admin"}},
+		{"hono", "removed", []string{"removed route: DELETE /users/:id"}},
+		{"hono", "changed", []string{"changed route: GET /users/:id"}},
+		{"hono", "negative", nil},
+
+		{"koa", "added", []string{"added route: GET /api/users/:id", "added route: DELETE /api/users/:id"}},
+		{"koa", "removed", []string{"removed route: POST /api/sessions"}},
+		{"koa", "changed", []string{"changed route: GET /api/users/:id"}},
+		{"koa", "negative", nil},
+
 		{"express", "added", []string{"added route: GET /api/users/:id", "added route: POST /api/users",
 			"added mount: /api", "added route: DELETE /sessions/:id"}},
 		{"express", "removed", []string{"removed route: PUT /api/users/:id"}},
 		{"express", "changed", []string{"changed route: GET /api/users/:id"}},
+		// Another method with another handler is another endpoint: the old
+		// one is removed; an inline handler under a new method is a change.
+		{"express", "otherhandler", []string{"removed route: PUT /api/users/:id", "added route: GET /api/users/:id"}},
+		{"express", "inlinemethod", []string{"changed route: PATCH /api/users/:id"}},
 		{"express", "crossfile", []string{"added mount: /api/users", "added route: GET /api/users/:id", "added route: PATCH /api/users/:id"}},
 		{"express", "negative", nil},
 
@@ -79,6 +99,7 @@ func TestAPIEndpoints(t *testing.T) {
 		{"flask", "removed", []string{"removed route: GET /users/<int:id>/avatar"}},
 		{"flask", "changed", []string{"changed route: POST /login"}},
 		{"flask", "negative", nil},
+		{"flask", "docstring", nil},
 
 		{"fastapi", "added", []string{"added route: GET /items/{item_id}", "added route: PUT /items/{item_id}/tags", "added route: PATCH /items/{item_id}/tags"}},
 		{"fastapi", "removed", []string{"removed route: DELETE /sessions/{sid}"}},

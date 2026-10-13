@@ -207,9 +207,13 @@ func pairRegs(before, after []reg) []model.SurfaceEntry {
 	// The same handler in the same file under another method or path.
 	pass(func(o, n reg) bool { return o.handler != "" && o.handler == n.handler && o.a.v.f == n.a.v.f },
 		changedReg)
-	// The same path in the same file under another method.
-	pass(func(o, n reg) bool { return normPath(o.full) == normPath(n.full) && o.a.v.f == n.a.v.f },
-		changedReg)
+	// The same path in the same file under another method, when the
+	// handlers may be one (sameHandler). Two named handlers that differ are
+	// two endpoints: the old one's removal breaks its clients, so it stays
+	// a removal.
+	pass(func(o, n reg) bool {
+		return normPath(o.full) == normPath(n.full) && o.a.v.f == n.a.v.f && sameHandler(o, n)
+	}, changedReg)
 	for i, o := range before {
 		if !usedOld[i] {
 			out = append(out, regEntry(o, model.SurfaceRemoved, o.kind, ""))
@@ -221,6 +225,14 @@ func pairRegs(before, after []reg) []model.SurfaceEntry {
 		}
 	}
 	return out
+}
+
+// sameHandler reports whether two registrations may serve one endpoint
+// whose method changed: a handler is unknown on a side (inline), only names
+// the method (a Next.js route export), or did not change.
+func sameHandler(o, n reg) bool {
+	named := func(r reg) bool { return r.handler != "" && !strings.EqualFold(r.handler, r.method) }
+	return !named(o) || !named(n) || o.handler == n.handler
 }
 
 // changedReg is the entry of a registration whose method or path changed.

@@ -1,0 +1,43 @@
+=== added
+diff --git a/src/index.ts b/src/index.ts
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -1,5 +1,9 @@
+ import { Hono } from "hono";
+ const app = new Hono();
+ const admin = new Hono();
++app.get("/users/:id", getUser);
++app.post("/users", createUser);
++admin.get("/stats", stats);
++app.route("/admin", admin);
+ export default app;
+=== removed
+diff --git a/src/index.ts b/src/index.ts
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -1,4 +1,3 @@
+ import { Hono } from "hono";
+ const app = new Hono();
+-app.delete("/users/:id", deleteUser);
+ export default app;
+=== changed
+diff --git a/src/index.ts b/src/index.ts
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -1,4 +1,4 @@
+ import { Hono } from "hono";
+ const app = new Hono();
+-app.get("/user/:id", getUser);
++app.get("/users/:id", getUser);
+ export default app;
+=== negative
+diff --git a/src/index.ts b/src/index.ts
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -1,3 +1,6 @@
+ import { Hono } from "hono";
+ const app = new Hono();
++// app.get("/legacy", legacy);
++const msg = "app.get('/x', h)";
++const cached = cache.get("/users");
+ export default app;
