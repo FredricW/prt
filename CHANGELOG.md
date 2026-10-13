@@ -430,3 +430,47 @@ exercised against `gh.Fake`.
   design).
 
 ### M5 — polish
+
+#### Added
+
+- The design canvas look (`internal/theme`, `docs/design/`): header with
+  repo, counts and role; a "Queue · ranked" picker box with urgency bars and
+  why-lines; tabs `1 Overview  2 Code  3 Architecture`; titled boxes on the
+  Overview (two columns from 100 columns); key hints at the bottom.
+- Search and add (`/`): local branches, open PRs and closed/merged PRs
+  (leading `!`, or when nothing open matches) merged as they land; `enter`
+  adds to the Added section or jumps to a listed item, `tab` previews the
+  item's Overview without adding it. `x` removes an added item; `space`
+  marks items (the overlap view is M6).
+- Command line (`:`): `:add`, `:tier deep|none|rules`, `:cap`, `:q`, with
+  history.
+- Branch states: Jev's `branch.state` (WIP, ready for PR, spike,
+  superseded by #N) with its probability, and `abandoned?` after
+  `pipeline.abandoned_days` (14) without commits; unpushed commits, the
+  commit list and a suggested PR title on the Overview; ready branches
+  climb with `w_ready_stale`.
+- Architecture tab (`3`): the module graph around the diff (new, changed,
+  removed and context modules, hop depth `+`/`-`, changed-only `d`), the
+  contracts it crosses and its net effect; `enter` lists a module's files
+  and jumps to one on the Code page.
+- Code page: side-by-side diffs (`u`, from a 140-column terminal), syntax
+  colour, `e` opens the line in `$EDITOR`, `o` opens the unit on GitHub.
+- Label overrides (`!`) re-run only the aggregate; reviews of groups whose
+  labels changed are marked "⚑ stale labels" with the change in the note.
+- Pipeline page: the v3 layout, per-question override rates (flagged over
+  15%) in the Calibration panel.
+
+#### Fixed (M5 review; details in DECISIONS)
+
+- Closing the search prompt after `tab` on an item already in the picker no
+  longer deletes it (and its reviews and group edits); a late preview reply
+  after `enter` no longer deletes the just-added item. Previews are
+  discarded through the new `RemovePreview`, which only removes previews.
+- The Code page shows label overrides (chips, filters, `L`, the `!` picker)
+  instead of Jev's original answer; `L` says "! (was …)" with Jev's value.
+- `abandoned?` now appears on its own as an idle branch ages: discovery and
+  the Overview re-apply the age rule to the stored state.
+- Branches added from search get their unpushed count after analysis.
+- Closed and merged PRs added from search are no longer sent to Jev as open
+  PRs or named as superseding a branch.
+- Side-by-side needs a 140-column terminal, not a 140-column Code pane.

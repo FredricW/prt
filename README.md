@@ -10,7 +10,10 @@ every number on screen traces back to a label, a rule or a git fact.
 > Jev labels: Overview page, labelled Code page), M2 (grouped change units,
 > Code page by change) and M3 (routed fast/deep LLM reviews, TL;DR, urgency
 > ranking, Pipeline page) and M4 (review comments, AI drafts, review
-> submission, create PR, "Since you looked") are done. See
+> submission, create PR, "Since you looked") and M5 (search-and-add,
+> command line, branch states, Architecture tab, side-by-side diffs, syntax
+> colour, the design canvas look) are done; M6 (overlap view) is not
+> started. See
 > [`docs/spec.md`](docs/spec.md) for the design and
 > [`CHANGELOG.md`](CHANGELOG.md) for what works today.
 
@@ -90,6 +93,24 @@ prt                 # picker on the left, the selected PR/branch on the right
   on the new PR (`a` and `A` need a PR). Push the branch first: prt refuses
   to open a PR while it has commits that are not on its upstream. The Overview's "Since you looked" lists what changed since
   your last review or visit and which of your comments look addressed.
+- `/` searches local branches and open PRs (closed and merged ones with a
+  leading `!`, or when nothing open matches): `enter` adds the result to the
+  Added section (or jumps to it when it is already listed), `tab` previews
+  its Overview without adding it; closing the prompt drops the preview. `x`
+  removes an added item; `space` marks items for the overlap view (M6).
+- `:` opens the command line: `:add <query>`, `:tier deep|none|rules`,
+  `:cap 1.00` / `:cap default`, `:q`.
+- `3` opens the Architecture tab: the module graph around the diff (`h`/`j`/
+  `k`/`l` move, `+`/`-` depth, `d` changed modules only, `enter` lists a
+  module's files and jumps to one), with the contracts it crosses and its
+  net effect.
+- On the Code page `u` toggles side-by-side (needs a terminal of at least
+  140 columns; narrower ones show unified), `e` opens the line in
+  `$EDITOR` and `o` opens the unit on GitHub.
+- Branches show their state in the picker and on the Overview: `WIP`,
+  `ready for PR`, `spike`, `superseded by #N` (from Jev, with its
+  probability) or `abandoned?` after 14 days without commits
+  (`pipeline.abandoned_days`), plus unpushed commits and a suggested PR title.
 - `r` re-runs analysis for the selected item; `?` shows every key; `q` quits.
 - `prt daemon` keeps analysis warm in the background (one per repo); `prt`
   connects to it automatically, or runs everything in-process with `--no-daemon`.
