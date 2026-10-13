@@ -16,8 +16,6 @@ import (
 	"github.com/google/go-github/v66/github"
 	"github.com/shurcooL/githubv4"
 	"golang.org/x/oauth2"
-
-	"github.com/fredricw/prt/internal/model"
 )
 
 // ErrUnauthorized is returned (wrapped) when GitHub answers 401: the token is
@@ -57,7 +55,8 @@ func ParseRemote(url string) (Repo, bool) {
 }
 
 // API implements Client against api.github.com: go-github for REST (diffs,
-// contents, reviews) and githubv4 for search and PR metadata.
+// contents, review submission, PR creation) and githubv4 for search, PR
+// metadata, review threads, replies and resolving (threads.go, writes.go).
 type API struct {
 	Repo Repo
 	REST *github.Client
@@ -325,22 +324,3 @@ func (a *API) CODEOWNERS(ctx context.Context, ref string) (string, error) {
 	}
 	return "", nil
 }
-
-// Threads implements Client. TODO(M4): GraphQL reviewThreads.
-func (a *API) Threads(context.Context, int) ([]Thread, error) { return nil, ErrNotImplemented }
-
-// SubmitReview implements Client. TODO(M4): REST POST /repos/{o}/{r}/pulls/{n}/reviews.
-func (a *API) SubmitReview(context.Context, int, ReviewSubmission) ([]model.Comment, error) {
-	return nil, ErrNotImplemented
-}
-
-// Reply implements Client. TODO(M4): REST reply to a review comment.
-func (a *API) Reply(context.Context, int, int64, string) (model.Comment, error) {
-	return model.Comment{}, ErrNotImplemented
-}
-
-// ResolveThread implements Client. TODO(M4): GraphQL resolveReviewThread.
-func (a *API) ResolveThread(context.Context, string) error { return ErrNotImplemented }
-
-// CreatePR implements Client. TODO(M4): REST POST /repos/{o}/{r}/pulls.
-func (a *API) CreatePR(context.Context, NewPR) (PR, error) { return PR{}, ErrNotImplemented }

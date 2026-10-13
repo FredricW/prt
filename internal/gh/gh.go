@@ -68,15 +68,25 @@ type PR struct {
 	UpdatedAt time.Time `json:"updatedAt"`
 }
 
-// Thread is a review thread with its comments.
+// Thread is a review thread with its comments (GraphQL reviewThreads).
+//
+// Line/StartLine are the thread's current position on Side (GitHub `line`
+// and `startLine`; 0 when outdated, in which case OriginalLine is set).
+// Each comment is a model.Comment with Source github, ThreadID = ID, Path,
+// Line and Side copied from the thread, GHID (databaseId), Author (login),
+// Body, CreatedAt, CommitSHA (originalCommit oid), InReplyTo = the first
+// comment's GHID for replies, and State posted (resolved when the thread
+// is resolved). Comments are in thread order.
 type Thread struct {
-	ID       string          `json:"id"` // GraphQL node id
-	Path     string          `json:"path"`
-	Line     int             `json:"line"`
-	Side     model.Side      `json:"side"`
-	Resolved bool            `json:"resolved"`
-	Outdated bool            `json:"outdated"`
-	Comments []model.Comment `json:"comments"`
+	ID           string          `json:"id"` // GraphQL node id
+	Path         string          `json:"path"`
+	Line         int             `json:"line"`
+	StartLine    int             `json:"startLine,omitempty"`
+	OriginalLine int             `json:"originalLine,omitempty"`
+	Side         model.Side      `json:"side"`
+	Resolved     bool            `json:"resolved"`
+	Outdated     bool            `json:"outdated"`
+	Comments     []model.Comment `json:"comments"`
 }
 
 // ReviewEvent is the verdict of a submitted review.
@@ -90,12 +100,22 @@ const (
 )
 
 // ReviewSubmission is one GitHub review containing all drafts as line comments
-// (REST POST /repos/{o}/{r}/pulls/{n}/reviews).
+// (REST POST /repos/{o}/{r}/pulls/{n}/reviews). BuildReviewRequest turns it
+// into the exact REST body.
 type ReviewSubmission struct {
 	CommitSHA string          `json:"commitId"`
 	Event     ReviewEvent     `json:"event"`
 	Body      string          `json:"body,omitempty"`
-	Comments  []model.Comment `json:"comments"` // path, line, side, body (startLine for ranges)
+	Comments  []model.Comment `json:"comments"` // path, line, side, body (startLine/startSide for ranges)
+}
+
+// SubmittedReview is the outcome of SubmitReview: the review's id and URL
+// and the submitted comments with State posted, GHID and ReviewID set (in
+// submission order; GHID 0 when GitHub did not report it).
+type SubmittedReview struct {
+	ID       int64           `json:"id"`
+	URL      string          `json:"url,omitempty"`
+	Comments []model.Comment `json:"comments"`
 }
 
 // NewPR is the input for creating a PR from a branch (`P` on a branch).
@@ -121,15 +141,19 @@ type Client interface {
 	PR(ctx context.Context, number int) (PR, error)
 	// PRDiff returns the PR's unified diff (fallback when the head is not local).
 	PRDiff(ctx context.Context, number int) (string, error)
-	// Threads returns the PR's review threads.
+	// Threads returns the PR's review threads (GraphQL reviewThreads, all
+	// pages) with their comments.
 	Threads(ctx context.Context, number int) ([]Thread, error)
-	// SubmitReview posts one review with line comments; returns the posted comments with GHIDs.
-	SubmitReview(ctx context.Context, number int, r ReviewSubmission) ([]model.Comment, error)
-	// Reply adds a reply to a review thread.
-	Reply(ctx context.Context, number int, inReplyTo int64, body string) (model.Comment, error)
-	// ResolveThread marks a thread resolved.
+	// SubmitReview posts one review with line comments (REST POST
+	// /repos/{o}/{r}/pulls/{n}/reviews with BuildReviewRequest's body).
+	SubmitReview(ctx context.Context, number int, r ReviewSubmission) (SubmittedReview, error)
+	// Reply adds a reply to a review thread (GraphQL
+	// addPullRequestReviewThreadReply) and returns it as a github comment
+	// of that thread.
+	Reply(ctx context.Context, threadID, body string) (model.Comment, error)
+	// ResolveThread marks a thread resolved (GraphQL resolveReviewThread).
 	ResolveThread(ctx context.Context, threadID string) error
-	// CreatePR opens a PR and returns it.
+	// CreatePR opens a PR (REST POST /repos/{o}/{r}/pulls) and returns it.
 	CreatePR(ctx context.Context, p NewPR) (PR, error)
 	// CODEOWNERS returns the CODEOWNERS file content at ref, or "" if absent.
 	CODEOWNERS(ctx context.Context, ref string) (string, error)

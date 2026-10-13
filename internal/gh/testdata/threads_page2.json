@@ -1,0 +1,43 @@
+{
+  "data": {
+    "repository": {
+      "pullRequest": {
+        "reviewThreads": {
+          "pageInfo": {"endCursor": "dGhyZWFkczoz", "hasNextPage": false},
+          "nodes": [
+            {
+              "id": "PRRT_c",
+              "isResolved": true,
+              "isOutdated": false,
+              "path": "web/src/range.ts",
+              "line": 5,
+              "startLine": 3,
+              "originalLine": 5,
+              "diffSide": "RIGHT",
+              "comments": {
+                "nodes": [
+                  {
+                    "databaseId": 7004,
+                    "body": "Extract these three lines?",
+                    "createdAt": "2026-10-06T17:10:00Z",
+                    "author": null,
+                    "originalCommit": {"oid": "aaaa000000000000000000000000000000000001"},
+                    "replyTo": null
+                  },
+                  {
+                    "databaseId": 7005,
+                    "body": "Out of scope.",
+                    "createdAt": "2026-10-07T08:57:00Z",
+                    "author": {"login": "alice"},
+                    "originalCommit": null,
+                    "replyTo": null
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      }
+    }
+  }
+}

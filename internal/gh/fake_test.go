@@ -105,7 +105,7 @@ func TestFakeConcurrent(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			_, _ = f.SearchPRs(ctx, "is:open", 0)
-			_, _ = f.CreatePR(ctx, NewPR{Title: "y"})
+			_, _ = f.CreatePR(ctx, NewPR{Title: "y", Head: "h", Base: "main"})
 			_, _ = f.Viewer(ctx)
 		}()
 	}

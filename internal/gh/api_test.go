@@ -60,6 +60,15 @@ func (f *fakeGitHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // recordingFor picks the testdata file answering a GraphQL request.
 func recordingFor(req gqlRequest) string {
 	switch {
+	case strings.Contains(req.Query, "addPullRequestReviewThreadReply("):
+		return "reply.json"
+	case strings.Contains(req.Query, "resolveReviewThread("):
+		return "resolve.json"
+	case strings.Contains(req.Query, "reviewThreads(first: 100, after: $after)"):
+		if req.Variables["after"] != nil {
+			return "threads_page2.json"
+		}
+		return "threads_page1.json"
 	case strings.Contains(req.Query, "pullRequests("):
 		return "open_prs.json"
 	case strings.Contains(req.Query, "search("):
@@ -391,6 +400,17 @@ func TestAPIUnauthorized(t *testing.T) {
 		"PR":         func() error { _, err := a.PR(ctx, 1); return err },
 		"PRDiff":     func() error { _, err := a.PRDiff(ctx, 1); return err },
 		"CODEOWNERS": func() error { _, err := a.CODEOWNERS(ctx, ""); return err },
+		"Threads":    func() error { _, err := a.Threads(ctx, 1); return err },
+		"SubmitReview": func() error {
+			_, err := a.SubmitReview(ctx, 1, ReviewSubmission{Event: EventApprove})
+			return err
+		},
+		"Reply":         func() error { _, err := a.Reply(ctx, "T", "hi"); return err },
+		"ResolveThread": func() error { return a.ResolveThread(ctx, "T") },
+		"CreatePR": func() error {
+			_, err := a.CreatePR(ctx, NewPR{Title: "t", Head: "h", Base: "main"})
+			return err
+		},
 	}
 	for name, call := range calls {
 		err := call()
@@ -424,16 +444,5 @@ func TestAPIGraphQLErrorNotCached(t *testing.T) {
 	}
 	if a.viewer != "" {
 		t.Error("failed lookup must not be cached")
-	}
-}
-
-func TestAPINotImplemented(t *testing.T) {
-	a := newAPIWithURLs(testRepo, nil, "http://127.0.0.1:0/", "http://127.0.0.1:0/graphql")
-	ctx := context.Background()
-	if _, err := a.Threads(ctx, 1); !errors.Is(err, ErrNotImplemented) {
-		t.Errorf("Threads: %v", err)
-	}
-	if err := a.ResolveThread(ctx, "x"); !errors.Is(err, ErrNotImplemented) {
-		t.Errorf("ResolveThread: %v", err)
 	}
 }

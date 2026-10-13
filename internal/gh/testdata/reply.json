@@ -1,0 +1,17 @@
+{
+  "data": {
+    "addPullRequestReviewThreadReply": {
+      "comment": {
+        "databaseId": 7010,
+        "body": "Done in the latest push.",
+        "createdAt": "2026-10-13T09:00:00Z",
+        "author": {"login": "fredric"},
+        "path": "web/src/api.ts",
+        "line": 12,
+        "originalLine": 10,
+        "originalCommit": {"oid": "aaaa000000000000000000000000000000000003"},
+        "replyTo": {"databaseId": 7001}
+      }
+    }
+  }
+}

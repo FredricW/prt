@@ -30,9 +30,22 @@ type Fake struct {
 	Owners    string
 	Err       error // when set, every call returns it
 
-	Submitted []ReviewSubmission
-	Created   []NewPR
-	Resolved  []string
+	// Repo is "owner/name" (Fixture.Repo); it builds CreatePR URLs
+	// ("fake/fake" when empty).
+	Repo string
+	// HeadSHAs maps a branch ref to the head SHA CreatePR reports for a PR
+	// with that head (optional; lets callers fake pushed heads).
+	HeadSHAs map[string]string
+
+	// Writes are recorded, never sent: Submitted and Payloads (the exact
+	// REST body, see BuildReviewRequest) with PayloadPRs (PR numbers),
+	// Replies, Resolved thread ids and Created PRs.
+	Submitted  []ReviewSubmission
+	Payloads   []ReviewRequest
+	PayloadPRs []int
+	Replies    []FakeReply
+	Created    []NewPR
+	Resolved   []string
 }
 
 var _ Client = (*Fake)(nil)
@@ -203,55 +216,145 @@ func (f *Fake) PRDiff(_ context.Context, number int) (string, error) {
 	return d, nil
 }
 
-// Threads implements Client.
+// Threads implements Client. It returns deep copies, so callers may mutate
+// the result without changing the fake.
 func (f *Fake) Threads(_ context.Context, number int) ([]Thread, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return f.ThreadMap[number], f.Err
-}
-
-// SubmitReview implements Client.
-func (f *Fake) SubmitReview(_ context.Context, _ int, r ReviewSubmission) ([]model.Comment, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.Err != nil {
 		return nil, f.Err
 	}
-	f.Submitted = append(f.Submitted, r)
-	out := make([]model.Comment, len(r.Comments))
-	for i, c := range r.Comments {
-		c.GHID = int64(1000*len(f.Submitted) + i)
-		c.State = model.CommentPosted
-		out[i] = c
+	ts := f.ThreadMap[number]
+	if ts == nil {
+		return nil, nil
+	}
+	out := make([]Thread, len(ts))
+	for i, t := range ts {
+		t.Comments = slices.Clone(t.Comments)
+		out[i] = t
 	}
 	return out, nil
 }
 
-// Reply implements Client.
-func (f *Fake) Reply(_ context.Context, _ int, inReplyTo int64, body string) (model.Comment, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return model.Comment{Body: body, InReplyTo: inReplyTo, Source: model.CommentUser, State: model.CommentPosted}, f.Err
+// repoName is the fake's "owner/name".
+func (f *Fake) repoName() string {
+	if f.Repo == "" {
+		return "fake/fake"
+	}
+	return f.Repo
 }
 
-// ResolveThread implements Client.
+// SubmitReview implements Client. It validates and records the submission
+// (Submitted) and its exact REST body (Payloads, with the PR number in
+// PayloadPRs); nothing leaves the process. Review ids are 1, 2, ...; the
+// i-th comment of review n gets GHID 1000·n + i.
+func (f *Fake) SubmitReview(_ context.Context, number int, r ReviewSubmission) (SubmittedReview, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.Err != nil {
+		return SubmittedReview{}, f.Err
+	}
+	req, err := BuildReviewRequest(r)
+	if err != nil {
+		return SubmittedReview{}, err
+	}
+	f.Submitted = append(f.Submitted, r)
+	f.Payloads = append(f.Payloads, req)
+	f.PayloadPRs = append(f.PayloadPRs, number)
+	n := int64(len(f.Submitted))
+	out := SubmittedReview{ID: n, URL: fmt.Sprintf("https://github.com/%s/pull/%d#pullrequestreview-%d", f.repoName(), number, n)}
+	for i, c := range r.Comments {
+		c.GHID = 1000*n + int64(i)
+		c.ReviewID = n
+		c.State = model.CommentPosted
+		out.Comments = append(out.Comments, c)
+	}
+	return out, nil
+}
+
+// Reply implements Client: the reply (GHID 900000+n, ID gh-<GHID>) is
+// recorded in Replies and, when the thread is known, positioned like the
+// thread's comments (ItemID, Path, Line, Side, InReplyTo the first comment)
+// and appended to it in ThreadMap. An empty body is an error, as on API.
+func (f *Fake) Reply(_ context.Context, threadID, body string) (model.Comment, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.Err != nil {
+		return model.Comment{}, f.Err
+	}
+	if strings.TrimSpace(body) == "" {
+		return model.Comment{}, fmt.Errorf("gh fake: reply to %s: empty body", threadID)
+	}
+	f.Replies = append(f.Replies, FakeReply{ThreadID: threadID, Body: body})
+	ghID := int64(900000 + len(f.Replies))
+	c := model.Comment{
+		ID: CommentID(ghID), Body: body, ThreadID: threadID, Author: f.Login,
+		Source: model.CommentGitHub, State: model.CommentPosted, GHID: ghID,
+	}
+	for n, ts := range f.ThreadMap {
+		for i, t := range ts {
+			if t.ID != threadID {
+				continue
+			}
+			c = normaliseComment(c, t, n)
+			if len(t.Comments) > 0 {
+				c.InReplyTo = t.Comments[0].GHID
+			}
+			f.ThreadMap[n][i].Comments = append(f.ThreadMap[n][i].Comments, c)
+		}
+	}
+	return c, nil
+}
+
+// FakeReply is one recorded Fake.Reply call.
+type FakeReply struct {
+	ThreadID string
+	Body     string
+}
+
+// ResolveThread implements Client: records the id in Resolved and marks
+// the thread (and its comments) resolved in ThreadMap.
 func (f *Fake) ResolveThread(_ context.Context, id string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.Err != nil {
+		return f.Err
+	}
 	f.Resolved = append(f.Resolved, id)
-	return f.Err
+	for n, ts := range f.ThreadMap {
+		for i, t := range ts {
+			if t.ID != id {
+				continue
+			}
+			f.ThreadMap[n][i].Resolved = true
+			for j := range t.Comments {
+				f.ThreadMap[n][i].Comments[j].State = model.CommentResolved
+			}
+		}
+	}
+	return nil
 }
 
-// CreatePR implements Client.
+// CreatePR implements Client. Like API it rejects a NewPR without title,
+// head or base (ErrBadPR, nothing recorded). The new PR is numbered after
+// the highest known one, authored by Login, with URL
+// https://github.com/<Repo>/pull/<n> and HeadSHA from HeadSHAs[head].
 func (f *Fake) CreatePR(_ context.Context, p NewPR) (PR, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.Err != nil {
 		return PR{}, f.Err
 	}
+	if err := validateNewPR(p); err != nil {
+		return PR{}, err
+	}
 	f.Created = append(f.Created, p)
 	n := maxKey(f.PRs) + 1
-	pr := PR{Number: n, Title: p.Title, Body: p.Body, HeadRef: p.Head, BaseRef: p.Base, Draft: p.Draft, State: "open"}
+	pr := PR{
+		Number: n, Title: p.Title, Body: p.Body, Author: f.Login, HeadRef: p.Head, HeadSHA: f.HeadSHAs[p.Head],
+		BaseRef: p.Base, Draft: p.Draft, State: "open", CI: model.CIUnknown,
+		URL: fmt.Sprintf("https://github.com/%s/pull/%d", f.repoName(), n),
+	}
 	if f.PRs == nil {
 		f.PRs = map[int]PR{}
 	}

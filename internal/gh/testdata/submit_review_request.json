@@ -1,0 +1,1 @@
+{"commit_id":"cccc000000000000000000000000000000000001","body":"Two blockers.","event":"REQUEST_CHANGES","comments":[{"path":"web/src/api.ts","line":12,"side":"RIGHT","body":"Use 5 minutes."},{"path":"web/src/old.ts","line":7,"side":"LEFT","body":"Keep the guard."},{"path":"web/src/range.ts","line":5,"side":"RIGHT","start_line":3,"start_side":"RIGHT","body":"Extract a helper."}]}
