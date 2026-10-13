@@ -15,6 +15,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sync"
 
 	"github.com/fredricw/prt/internal/config"
 )
@@ -68,6 +69,46 @@ func Load(path string) (Layout, error) {
 	}
 	l.SidebarWidth, l.CodeListWidth = max(0, l.SidebarWidth), max(0, l.CodeListWidth)
 	return l, nil
+}
+
+// Saver saves one process's layout without undoing another's: every prt
+// process (a workspace TUI and a single-repo one, say) shares ui.json, so a
+// save writes only the widths this process changed since it loaded or last
+// saved them, over what the file holds now; a width another process saved
+// meanwhile stays. Safe for concurrent use.
+type Saver struct {
+	path string
+	mu   sync.Mutex
+	base Layout // this process's widths as last loaded or saved
+}
+
+// NewSaver returns the Saver of the layout file at path, whose widths the
+// process loaded as loaded (Load; the zero Layout when that failed).
+func NewSaver(path string, loaded Layout) *Saver {
+	return &Saver{path: path, base: loaded}
+}
+
+// Save writes the widths of l that differ from the last loaded or saved
+// ones into the file's current layout and saves it (Save). A file that
+// cannot be read is replaced by l whole.
+func (s *Saver) Save(l Layout) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	cur, err := Load(s.path)
+	if err != nil {
+		cur = s.base
+	}
+	if l.SidebarWidth != s.base.SidebarWidth {
+		cur.SidebarWidth = l.SidebarWidth
+	}
+	if l.CodeListWidth != s.base.CodeListWidth {
+		cur.CodeListWidth = l.CodeListWidth
+	}
+	if err := Save(s.path, cur); err != nil {
+		return err
+	}
+	s.base = l
+	return nil
 }
 
 // Save writes l to path atomically (a temp file in the same directory, then
