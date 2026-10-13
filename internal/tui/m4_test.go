@@ -317,21 +317,17 @@ func TestCreatePRFormOnBranch(t *testing.T) {
 	m, f, _, last := m4Model(t)
 	m.picker.moveTo(1) // the branch
 	m = feed[detailMsg](t, m, m.selectionChanged())
-	for _, k := range []string{"A"} {
+	// Approve and request changes need a PR: the verdict is never silently
+	// turned into a COMMENT review on a new PR.
+	for _, k := range []string{"A", "a"} {
 		m = pressRun(t, m, k)
 		if m.form != nil || !strings.Contains(m.note, "no PR yet") {
 			t.Errorf("%s on a branch: form %v note %q", k, m.form != nil, m.note)
 		}
 	}
-	for _, k := range []string{"a", "S"} {
-		m = pressRun(t, m, k)
-		d := last()
-		if m.form == nil || d.spec.kind != formCreatePR || d.v.Title != "Add feature x" || d.v.Base != "develop" {
-			t.Fatalf("%s on a branch: want the create-PR form prefilled, got %+v", k, d)
-		}
-		if k == "a" {
-			m = pressRun(t, m, "esc")
-		}
+	m = pressRun(t, m, "S")
+	if d := last(); m.form == nil || d.spec.kind != formCreatePR || d.v.Title != "Add feature x" || d.v.Base != "develop" {
+		t.Fatalf("S on a branch: want the create-PR form prefilled, got %+v", d)
 	}
 	d := last()
 	d.v.Body, d.v.Draft, d.v.Title = "Body text", true, " Feature x "
@@ -349,6 +345,22 @@ func TestCreatePRFormOnBranch(t *testing.T) {
 	m = update(t, m, itemsMsg{items: items})
 	if got := selectedID(m); got != "pr:9" {
 		t.Errorf("selected %s, want the new PR", got)
+	}
+}
+
+// Right after the picker moves, the new item's detail (and so its draft
+// count) is still loading: S must not open a form claiming "0 drafts".
+func TestSubmitWaitsForDetail(t *testing.T) {
+	m, f, _, _ := m4Model(t)
+	m.picker.moveTo(1) // the branch; its detail is not fed in
+	for _, k := range []string{"S", "a", "A"} {
+		m = update(t, m, keyMsg(k))
+		if m.form != nil || !strings.Contains(m.note, "loading") {
+			t.Errorf("%s before the detail loaded: form %v note %q", k, m.form != nil, m.note)
+		}
+	}
+	if len(f.cc.submits) != 0 || len(f.cc.createPRs) != 0 {
+		t.Errorf("sent: %v %v", f.cc.submits, f.cc.createPRs)
 	}
 }
 
@@ -517,6 +529,7 @@ func TestRebindM4Keys(t *testing.T) {
 	// A rebound submit key opens the form; the old one no longer does.
 	f := newFake(m4Items()...)
 	m := newTestModel(t, f, Options{Keys: &km})
+	m = feed[detailMsg](t, m, m.selectionChanged())
 	m, _ = withScriptedForms(m)
 	m = pressRun(t, m, "S")
 	if m.form != nil {

@@ -42,7 +42,8 @@ type KeyMap struct {
 	ForceDeep, SkipReview, RerunStage, EditRules, CallLog, RaiseCap key.Binding
 	// Review (M4, item scope). Approve (a) and RequestChanges (A) open the
 	// submit form with that verdict preselected; Submit (S) opens it. On a
-	// branch without a PR, Submit and Approve open the create-PR form. The
+	// branch without a PR, Submit opens the create-PR form (Approve and
+	// RequestChanges need a PR and say so). The
 	// Code page sees a first (Accept on an ai-draft).
 	Approve, RequestChanges, Submit key.Binding
 	// Code page comments layer (handed to codeview): comment on line (C),

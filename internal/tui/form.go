@@ -149,16 +149,22 @@ func validateForm(k formKind, v formValues, d draftCount) error {
 }
 
 // openSubmit handles S, a and A: the submit form with ev preselected on a
-// PR, the create-PR form on a branch (S and a; A needs a PR).
+// PR, the create-PR form on a branch (S only: approving or requesting
+// changes needs a PR). The draft count comes from the item's loaded
+// detail, so the form waits until the selected item's detail is in.
 func (m *Model) openSubmit(ev proto.ReviewEvent) tea.Cmd {
 	it, ok := m.picker.selected()
 	if !ok {
 		m.note = "no item selected"
 		return nil
 	}
+	if m.detail == nil || m.detail.Item.ID != it.ID {
+		m.note = "loading " + itemLabel(it) + " — try again in a moment"
+		return nil
+	}
 	d := m.draftsFor(it.ID)
 	if it.Kind == model.KindBranch && it.Number == 0 {
-		if ev == proto.EventRequestChanges {
+		if ev != proto.EventComment {
 			m.note = "no PR yet — " + m.keys.Submit.Help().Key + " creates one"
 			return nil
 		}
