@@ -11,19 +11,22 @@ import (
 )
 
 func TestFakeQualifiers(t *testing.T) {
-	f := &Fake{PRs: map[int]PR{
+	f := &Fake{Login: "Me", PRs: map[int]PR{
 		12: {Number: 12, Title: "Old login", State: "merged"},
-		3:  {Number: 3, Title: "Add login", State: "open"},
-		7:  {Number: 7, Title: "Dropped idea", State: "closed"},
-		1:  {Number: 1, Title: "No state yet"},
+		3:  {Number: 3, Title: "Add login", State: "open", ReviewRequested: true},
+		7:  {Number: 7, Title: "Dropped idea", State: "closed", ViewerCommented: true},
+		1:  {Number: 1, Title: "No state yet", Author: "me"},
+		20: {Number: 20, Title: "Asked bob", Reviewers: []string{"bob"}},
 	}}
 	tests := []struct {
 		query string
 		limit int
 		want  []int
 	}{
-		{"involves:@me", 0, []int{1, 3, 7, 12}},
-		{"repo:a/b is:pr is:open", 0, []int{1, 3}},
+		{"involves:@me", 0, []int{1, 3, 7}},
+		{"involves:bob", 0, []int{20}},
+		{"is:open involves:@me", 0, []int{1, 3}},
+		{"repo:a/b is:pr is:open", 0, []int{1, 3, 20}},
 		{"is:closed", 0, []int{7, 12}},
 		{"is:merged", 0, []int{12}},
 		{"IS:MERGED login", 0, []int{12}},
@@ -43,6 +46,41 @@ func TestFakeQualifiers(t *testing.T) {
 		}
 		if !slices.Equal(nums, tt.want) {
 			t.Errorf("SearchPRs(%q, %d) = %v, want %v", tt.query, tt.limit, nums, tt.want)
+		}
+	}
+}
+
+func TestFakeListOpenPRs(t *testing.T) {
+	f := &Fake{PRs: map[int]PR{
+		2: {Number: 2, State: "open", Files: []string{"web/a.ts"}},
+		1: {Number: 1},
+		3: {Number: 3, State: "merged"},
+	}}
+	got, err := f.ListOpenPRs(context.Background(), 0)
+	if err != nil || len(got) != 2 || got[0].Number != 1 || got[1].Number != 2 || got[1].Files[0] != "web/a.ts" {
+		t.Fatalf("ListOpenPRs = %+v, %v", got, err)
+	}
+	if got, _ := f.ListOpenPRs(context.Background(), 1); len(got) != 1 {
+		t.Fatalf("limit ignored: %+v", got)
+	}
+}
+
+func TestMentions(t *testing.T) {
+	tests := []struct {
+		body string
+		want bool
+	}{
+		{"@fredric can you look?", true},
+		{"cc @Fredric.", true},
+		{"thanks (@fredric)", true},
+		{"@fredric-bot ran", false},
+		{"@fredrickson", false},
+		{"mail fredric@example.com", false},
+		{"nobody", false},
+	}
+	for _, tt := range tests {
+		if got := mentions(tt.body, "fredric"); got != tt.want {
+			t.Errorf("mentions(%q) = %v, want %v", tt.body, got, tt.want)
 		}
 	}
 }

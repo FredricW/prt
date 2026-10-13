@@ -26,8 +26,10 @@
           "changedFiles": 6,
           "createdAt": "2026-10-01T09:00:00Z",
           "updatedAt": "2026-10-12T15:30:00Z",
+          "isCrossRepository": true,
           "viewerLatestReview": null,
-          "comments": {"nodes": [{"viewerDidAuthor": false}]},
+          "comments": {"nodes": [{"viewerDidAuthor": false, "body": "@fredric thoughts on the token TTL?"}]},
+          "reviewThreads": {"nodes": [{"isResolved": false}, {"isResolved": true}, {"isResolved": false}]},
           "commits": {"nodes": [{"commit": {"statusCheckRollup": {"state": "SUCCESS"}}}]}
         },
         {
@@ -49,7 +51,7 @@
           "changedFiles": 2,
           "createdAt": "2026-10-02T09:00:00Z",
           "updatedAt": "2026-10-03T09:00:00Z",
-          "viewerLatestReview": {"state": "APPROVED"},
+          "viewerLatestReview": {"state": "APPROVED", "commit": {"oid": "2000000000000000000000000000000000000000"}},
           "comments": {"nodes": []},
           "commits": {"nodes": [{"commit": {"statusCheckRollup": {"state": "FAILURE"}}}]}
         }

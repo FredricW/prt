@@ -30,28 +30,42 @@ func (r Repo) String() string { return r.Owner + "/" + r.Name }
 
 // PR is the PR metadata prt needs for picker and overview.
 type PR struct {
-	Number          int           `json:"number"`
-	Title           string        `json:"title"`
-	Body            string        `json:"body"`
-	Author          string        `json:"author"`
-	State           string        `json:"state"` // open, closed, merged
-	Draft           bool          `json:"draft"`
-	HeadRef         string        `json:"headRef"`
-	HeadSHA         string        `json:"headSha"`
-	BaseRef         string        `json:"baseRef"`
-	BaseSHA         string        `json:"baseSha"`
-	URL             string        `json:"url"`
-	Labels          []string      `json:"labels,omitempty"`
-	Reviewers       []string      `json:"reviewers,omitempty"` // requested reviewers
-	ReviewRequested bool          `json:"reviewRequested"`     // viewer is a requested reviewer
-	ViewerApproved  bool          `json:"viewerApproved"`
-	ViewerCommented bool          `json:"viewerCommented"`
-	CI              model.CIState `json:"ci"`
-	Additions       int           `json:"additions"`
-	Deletions       int           `json:"deletions"`
-	ChangedFiles    int           `json:"changedFiles"`
-	CreatedAt       time.Time     `json:"createdAt"`
-	UpdatedAt       time.Time     `json:"updatedAt"`
+	Number          int      `json:"number"`
+	Title           string   `json:"title"`
+	Body            string   `json:"body"`
+	Author          string   `json:"author"`
+	State           string   `json:"state"` // open, closed, merged
+	Draft           bool     `json:"draft"`
+	HeadRef         string   `json:"headRef"`
+	HeadSHA         string   `json:"headSha"`
+	BaseRef         string   `json:"baseRef"`
+	BaseSHA         string   `json:"baseSha"`
+	URL             string   `json:"url"`
+	Labels          []string `json:"labels,omitempty"`
+	Reviewers       []string `json:"reviewers,omitempty"` // requested reviewers
+	ReviewRequested bool     `json:"reviewRequested"`     // viewer is a requested reviewer
+	ViewerApproved  bool     `json:"viewerApproved"`
+	ViewerCommented bool     `json:"viewerCommented"` // informational; not a Needs-you trigger
+	// ViewerReviewedSHA is the commit the viewer's latest submitted review
+	// was made on ("" when the viewer has not reviewed). A head that moved
+	// past it means "re-review after a push".
+	ViewerReviewedSHA string `json:"viewerReviewedSha,omitempty"`
+	// ViewerAddressed is true when a recent comment by someone else
+	// @-mentions the viewer and the viewer has not commented since.
+	ViewerAddressed bool `json:"viewerAddressed,omitempty"`
+	// CrossRepo is true when the head lives in a fork, so HeadRef names a
+	// branch in another repository.
+	CrossRepo bool `json:"crossRepo,omitempty"`
+	// OpenThreads counts unresolved review threads (first 100).
+	OpenThreads  int           `json:"openThreads,omitempty"`
+	CI           model.CIState `json:"ci"`
+	Additions    int           `json:"additions"`
+	Deletions    int           `json:"deletions"`
+	ChangedFiles int           `json:"changedFiles"`
+	// Files lists changed paths; set only by ListOpenPRs (first 100 files).
+	Files     []string  `json:"files,omitempty"`
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
 }
 
 // Thread is a review thread with its comments.
@@ -99,6 +113,10 @@ type Client interface {
 	Viewer(ctx context.Context) (string, error)
 	// SearchPRs runs a GitHub issue search (e.g. "repo:o/r is:pr is:open involves:@me").
 	SearchPRs(ctx context.Context, query string, limit int) ([]PR, error)
+	// ListOpenPRs returns up to limit open PRs of the repo, most recently
+	// updated first, with Files set (used to match owned-path globs locally,
+	// since issue search has no path qualifier).
+	ListOpenPRs(ctx context.Context, limit int) ([]PR, error)
 	// PR returns one PR's metadata.
 	PR(ctx context.Context, number int) (PR, error)
 	// PRDiff returns the PR's unified diff (fallback when the head is not local).

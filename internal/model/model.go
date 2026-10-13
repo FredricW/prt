@@ -45,6 +45,10 @@ const (
 	SectionNeedsYou Section = "needs-you"
 	SectionYours    Section = "yours"
 	SectionBranches Section = "branches"
+	// SectionInvolved holds PRs a source returned (involves:@me, owned
+	// paths) that trigger none of the Needs-you rules; listed after
+	// Branches and hidden when empty (see DECISIONS.md).
+	SectionInvolved Section = "involved"
 	SectionAdded    Section = "added"
 )
 
@@ -108,6 +112,14 @@ type Item struct {
 	UrgencyQuartile int `json:"urgencyQuartile,omitempty"`
 	// Why is the top three urgency terms in words ("asked you · release · age").
 	Why string `json:"why,omitempty"`
+	// Minutes is the estimated review time (M0: the line-count stand-in;
+	// ItemAgg.Minutes once the diff is aggregated).
+	Minutes float64 `json:"minutes,omitempty"`
+	// OpenThreads counts unresolved GitHub review threads (PRs).
+	OpenThreads int `json:"openThreads,omitempty"`
+	// CrossRepo is true for a PR whose head lives in a fork: Ref is then a
+	// branch name in another repository, never a local branch.
+	CrossRepo bool `json:"crossRepo,omitempty"`
 }
 
 // FileRole is the Jev-assigned role of a changed file.

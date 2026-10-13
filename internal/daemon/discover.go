@@ -7,6 +7,8 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/bmatcuk/doublestar/v4"
+
 	"github.com/fredricw/prt/internal/aggregate"
 	"github.com/fredricw/prt/internal/gh"
 	"github.com/fredricw/prt/internal/gitx"
@@ -15,41 +17,52 @@ import (
 	"github.com/fredricw/prt/internal/store"
 )
 
-// Search queries for the picker sources (spec: Picker, Sources).
+// Picker source limits (spec: Picker, Sources).
 const (
 	involvesQuery = "is:pr is:open involves:@me"
-	ownedQuery    = "is:pr is:open path:"
 	searchLimit   = 100
+	// ownedLimit caps the open PRs listed to match owned-path globs.
+	ownedLimit = 100
 )
 
 // Discover implements Client. It refreshes the picker sources:
 //
-//   - open PRs involving the viewer and PRs touching owned paths (GitHub);
+//   - open PRs involving the viewer, and open PRs whose changed files match
+//     an owned-path glob (GitHub);
+//   - Added PRs that no source returned get fresh metadata;
 //   - local branches with commits not on the default branch that do not
-//     belong to a PR (matched by head SHA or head ref);
-//   - Added items keep their section but get fresh metadata.
+//     belong to a PR (matched by head SHA, or head ref for same-repo PRs).
 //
 // Ranked items that disappeared from every source are removed. GitHub
 // errors never fail discovery: they are logged, reported as an EventLog
-// note, and PR items from the cache are kept.
+// note, and PR items from the cache are kept. A missing default branch
+// skips only the branch source. Runs are serialised, so two overlapping
+// callers (daemon loop, TUI ticks) never prune each other's results.
 func (c *InProcess) Discover(ctx context.Context) error {
-	def, err := c.d.Git.DefaultBranch(ctx)
-	if err != nil {
-		return fmt.Errorf("daemon: default branch: %w", err)
-	}
+	c.discoverMu.Lock()
+	defer c.discoverMu.Unlock()
 	seen := map[string]bool{}
 	ghOK := c.discoverPRs(ctx, seen)
+	if ghOK {
+		c.refreshAdded(ctx, seen)
+	}
 	prHeads, prRefs, err := c.prIndex(ctx, seen, ghOK)
 	if err != nil {
 		return err
 	}
-	if err := c.discoverBranches(ctx, def, prHeads, prRefs, seen); err != nil {
+	branchesOK := true
+	def, err := c.d.Git.DefaultBranch(ctx)
+	if err != nil {
+		branchesOK = false
+		c.log.Warn("no default branch; local branches skipped", "err", err)
+		c.send(proto.Event{Type: proto.EventLog, Note: "no default branch; local branches skipped"})
+	} else if err := c.discoverBranches(ctx, def, prHeads, prRefs, seen); err != nil {
 		return err
 	}
-	return c.prune(ctx, seen, ghOK)
+	return c.prune(ctx, seen, ghOK, branchesOK)
 }
 
-// discoverPRs runs the GitHub searches and upserts PR items. It reports
+// discoverPRs runs the GitHub sources and upserts PR items. It reports
 // whether GitHub answered (false when offline or on error).
 func (c *InProcess) discoverPRs(ctx context.Context, seen map[string]bool) bool {
 	if c.d.GH == nil {
@@ -72,8 +85,9 @@ func (c *InProcess) discoverPRs(ctx context.Context, seen map[string]bool) bool 
 }
 
 // searchPRs returns the viewer and the open PRs from all GitHub sources,
-// deduplicated and sorted by number. Owned-path searches are best effort:
-// their errors are logged only.
+// deduplicated and sorted by number. The owned-path source lists open PRs
+// with their changed files and matches them against user.owns locally
+// (issue search has no path qualifier); its errors are logged only.
 func (c *InProcess) searchPRs(ctx context.Context) (string, []gh.PR, error) {
 	viewer, err := c.d.GH.Viewer(ctx)
 	if err != nil {
@@ -87,14 +101,13 @@ func (c *InProcess) searchPRs(ctx context.Context) (string, []gh.PR, error) {
 	for _, pr := range hits {
 		byNum[pr.Number] = pr
 	}
-	for _, glob := range c.d.Config.User.Owns {
-		res, err := c.d.GH.SearchPRs(ctx, ownedQuery+glob, searchLimit)
+	if owns := c.d.Config.User.Owns; len(owns) > 0 {
+		open, err := c.d.GH.ListOpenPRs(ctx, ownedLimit)
 		if err != nil {
-			c.log.Warn("owned-path search failed", "glob", glob, "err", err)
-			continue
+			c.log.Warn("owned-path source failed", "err", err)
 		}
-		for _, pr := range res {
-			if _, ok := byNum[pr.Number]; !ok {
+		for _, pr := range open {
+			if _, ok := byNum[pr.Number]; !ok && touchesOwned(pr.Files, owns) {
 				byNum[pr.Number] = pr
 			}
 		}
@@ -107,27 +120,68 @@ func (c *InProcess) searchPRs(ctx context.Context) (string, []gh.PR, error) {
 	return viewer, prs, nil
 }
 
-// prSection assigns a ranked PR to a picker section (spec: Sections).
-func prSection(pr gh.PR, viewer string) model.Section {
+// touchesOwned reports whether any path matches any owned glob.
+func touchesOwned(paths, globs []string) bool {
+	for _, p := range paths {
+		for _, g := range globs {
+			if ok, err := doublestar.Match(g, p); err == nil && ok {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// refreshAdded gives Added PR items that no source returned fresh metadata
+// (one PR call each; failures are logged and the cached item is kept).
+func (c *InProcess) refreshAdded(ctx context.Context, seen map[string]bool) {
+	items, err := c.d.Store.Items(ctx)
+	if err != nil {
+		c.log.Warn("refresh added: items", "err", err)
+		return
+	}
+	viewer, _ := c.d.GH.Viewer(ctx)
+	for _, it := range items {
+		if it.Source != model.SourceAdded || it.Kind != model.KindPR || it.Number <= 0 || seen[it.ID] {
+			continue
+		}
+		pr, err := c.d.GH.PR(ctx, it.Number)
+		if err != nil {
+			c.log.Warn("refresh added PR", "pr", it.Number, "err", err)
+			continue
+		}
+		if err := c.upsertPR(ctx, pr, viewer); err != nil {
+			c.log.Warn("store added PR", "pr", it.Number, "err", err)
+		}
+	}
+}
+
+// prSection assigns a ranked PR to a picker section (spec: Sections). Needs
+// you is limited to the spec's four triggers: review requested, CI red on
+// something the viewer approved, re-review after a push (the viewer's latest
+// review is on an older commit than head), and a comment addressed to the
+// viewer. Authored PRs go to Yours; any other involvement (owned paths,
+// earlier comments, answered mentions) goes to Involved.
+func prSection(pr gh.PR, head, viewer string) model.Section {
 	authored := viewer != "" && strings.EqualFold(pr.Author, viewer)
+	reReview := pr.ViewerReviewedSHA != "" && head != "" && pr.ViewerReviewedSHA != head
 	switch {
-	case pr.ReviewRequested,
-		pr.ViewerApproved && pr.CI == model.CIRed,
-		pr.ViewerCommented && !authored:
+	case pr.ReviewRequested, pr.ViewerApproved && pr.CI == model.CIRed:
 		return model.SectionNeedsYou
 	case authored:
 		return model.SectionYours
-	default:
-		// Owned-path matches and any other involvement. TODO(M1): only
-		// owned-path matches once relevance labels exist.
+	case reReview, pr.ViewerAddressed:
 		return model.SectionNeedsYou
+	default:
+		return model.SectionInvolved
 	}
 }
 
 // prHead is the PR's head SHA, resolved from the local head ref when GitHub
-// did not report one (fixtures).
+// did not report one (fixtures). Fork PRs are never resolved locally: their
+// head ref names a branch in another repository.
 func (c *InProcess) prHead(ctx context.Context, pr gh.PR) string {
-	if pr.HeadSHA != "" || pr.HeadRef == "" {
+	if pr.HeadSHA != "" || pr.HeadRef == "" || pr.CrossRepo {
 		return pr.HeadSHA
 	}
 	sha, err := c.d.Git.ResolveRef(ctx, pr.HeadRef)
@@ -144,6 +198,7 @@ func applyPR(it *model.Item, pr gh.PR, head string) {
 	it.Ref, it.BaseRef, it.Title, it.Body, it.Author = pr.HeadRef, pr.BaseRef, pr.Title, pr.Body, pr.Author
 	it.Reviewers, it.CI, it.Labels, it.URL, it.Draft = pr.Reviewers, pr.CI, pr.Labels, pr.URL, pr.Draft
 	it.ViewerApproved, it.ReviewRequested = pr.ViewerApproved, pr.ReviewRequested
+	it.OpenThreads, it.CrossRepo = pr.OpenThreads, pr.CrossRepo
 	if pr.Additions+pr.Deletions > 0 { // fixtures may omit counts; keep the diff's
 		it.Additions, it.Deletions = pr.Additions, pr.Deletions
 	}
@@ -155,21 +210,26 @@ func applyPR(it *model.Item, pr gh.PR, head string) {
 }
 
 // markStale flags an analysed item whose head moved since its analysis.
+// Items in flight are left alone here; the run itself notices the moved
+// head when it finishes (see InProcess.finish).
 func markStale(it *model.Item, head string) {
 	if it.HeadSHA == "" || head == "" || it.HeadSHA == head {
 		return
 	}
 	if it.State == model.StateReady || it.State == model.StateError {
-		it.State, it.StateNote = model.StateStale, "new push since analysis"
+		it.State, it.StateNote = model.StateStale, staleNote
 	}
 }
+
+// staleNote is the state note of an item whose head moved since analysis.
+const staleNote = "new push since analysis"
 
 func (c *InProcess) upsertPR(ctx context.Context, pr gh.PR, viewer string) error {
 	head := c.prHead(ctx, pr)
 	return c.upsertDiscovered(ctx, model.PRItemID(pr.Number), func(it *model.Item) {
 		applyPR(it, pr, head)
 		if it.Source != model.SourceAdded {
-			it.Section = prSection(pr, viewer)
+			it.Section = prSection(pr, head, viewer)
 		}
 	})
 }
@@ -197,17 +257,20 @@ func (c *InProcess) upsertDiscovered(ctx context.Context, id string, fill func(*
 	return nil
 }
 
-// setUrgency computes the M0 urgency from item metadata alone; it equals
-// what the aggregate stage computes once the diff's line counts are known.
-// TODO(M3): keep label terms from the stored ItemAgg.
+// setUrgency computes the M0 urgency and minutes from item metadata alone;
+// it equals what the aggregate stage computes once the diff's line counts
+// are known. TODO(M3): keep label terms from the stored ItemAgg.
 func (c *InProcess) setUrgency(it *model.Item) {
 	age, release, ciRed := aggregate.Facts(*it, c.d.Config.GitHub.ReleaseBranches, c.now())
 	in := aggregate.Input{Item: *it, Weights: c.d.Config.Rank, AgeDays: age, Release: release, CIRedAfterApproval: ciRed}
-	_, it.Urgency, it.Why = aggregate.Urgency(in, aggregate.StandInMinutes(it.Additions+it.Deletions))
+	it.Minutes = aggregate.StandInMinutes(it.Additions + it.Deletions)
+	_, it.Urgency, it.Why = aggregate.Urgency(in, it.Minutes)
 }
 
 // prIndex returns the head SHAs and head refs of the PR items that stay in
-// the picker, for hiding local branches that belong to a PR.
+// the picker, for hiding local branches that belong to a PR. Fork PRs add
+// only their SHA: their head ref names a branch in another repository, so
+// a same-named local branch is unrelated.
 func (c *InProcess) prIndex(ctx context.Context, seen map[string]bool, ghOK bool) (map[string]bool, map[string]bool, error) {
 	items, err := c.d.Store.Items(ctx)
 	if err != nil {
@@ -221,7 +284,7 @@ func (c *InProcess) prIndex(ctx context.Context, seen map[string]bool, ghOK bool
 		if it.HeadSHA != "" {
 			heads[it.HeadSHA] = true
 		}
-		if it.Ref != "" {
+		if it.Ref != "" && !it.CrossRepo {
 			refs[it.Ref] = true
 		}
 	}
@@ -229,18 +292,27 @@ func (c *InProcess) prIndex(ctx context.Context, seen map[string]bool, ghOK bool
 }
 
 // discoverBranches upserts local branches ahead of the default branch that
-// do not belong to a PR.
+// do not belong to a PR. Ahead counts are measured against the
+// remote-tracking default branch when it exists (gitx.CompareRef).
 func (c *InProcess) discoverBranches(ctx context.Context, def string, prHeads, prRefs, seen map[string]bool) error {
 	refs, err := c.d.Git.Refs(ctx, false)
 	if err != nil {
 		return fmt.Errorf("daemon: refs: %w", err)
 	}
+	base := gitx.CompareRef(ctx, c.d.Git, def)
 	for _, r := range refs {
 		if r.Remote || r.Name == def || prHeads[r.SHA] || prRefs[r.Name] {
 			continue
 		}
-		ahead, err := c.d.Git.CountAhead(ctx, def, r.Name)
-		if err != nil || ahead == 0 {
+		id := model.BranchItemID(r.Name)
+		ahead, err := c.d.Git.CountAhead(ctx, base, r.Name)
+		if err != nil {
+			// Unknown, not absent: keep whatever is stored.
+			c.log.Warn("count ahead", "branch", r.Name, "base", base, "err", err)
+			seen[id] = true
+			continue
+		}
+		if ahead == 0 {
 			continue
 		}
 		unpushed := ahead
@@ -249,9 +321,8 @@ func (c *InProcess) discoverBranches(ctx context.Context, def string, prHeads, p
 				unpushed = n
 			}
 		}
-		id := model.BranchItemID(r.Name)
 		if err := c.upsertDiscovered(ctx, id, func(it *model.Item) {
-			applyBranch(it, r, def, ahead, unpushed)
+			applyBranch(it, r, base, ahead, unpushed)
 		}); err != nil {
 			return err
 		}
@@ -260,8 +331,8 @@ func (c *InProcess) discoverBranches(ctx context.Context, def string, prHeads, p
 	return nil
 }
 
-func applyBranch(it *model.Item, r gitx.Ref, def string, ahead, unpushed int) {
-	it.Kind, it.Ref, it.BaseRef, it.Title, it.Author = model.KindBranch, r.Name, def, r.Subject, r.Author
+func applyBranch(it *model.Item, r gitx.Ref, base string, ahead, unpushed int) {
+	it.Kind, it.Ref, it.BaseRef, it.Title, it.Author = model.KindBranch, r.Name, base, r.Subject, r.Author
 	if it.Source != model.SourceAdded {
 		it.Section = model.SectionBranches
 	}
@@ -270,14 +341,15 @@ func applyBranch(it *model.Item, r gitx.Ref, def string, ahead, unpushed int) {
 }
 
 // prune removes ranked items no source returned. PR items are kept when
-// GitHub did not answer (cache).
-func (c *InProcess) prune(ctx context.Context, seen map[string]bool, ghOK bool) error {
+// GitHub did not answer, branch items when the branch source did not run.
+func (c *InProcess) prune(ctx context.Context, seen map[string]bool, ghOK, branchesOK bool) error {
 	items, err := c.d.Store.Items(ctx)
 	if err != nil {
 		return fmt.Errorf("daemon: items: %w", err)
 	}
 	for _, it := range items {
-		if it.Source == model.SourceAdded || seen[it.ID] || (it.Kind == model.KindPR && !ghOK) {
+		if it.Source == model.SourceAdded || seen[it.ID] ||
+			(it.Kind == model.KindPR && !ghOK) || (it.Kind == model.KindBranch && !branchesOK) {
 			continue
 		}
 		if err := c.Remove(ctx, it.ID); err != nil {

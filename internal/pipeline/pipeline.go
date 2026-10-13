@@ -96,12 +96,23 @@ func (p *Pipeline) Run(ctx context.Context, it model.Item) error {
 // (fetch or parse); soft failures (Jev, embeddings, reviews) are logged in
 // RunLog rows and the item still completes.
 func (p *Pipeline) RunWith(ctx context.Context, it model.Item, opt RunOptions) error {
+	_, err := p.RunHead(ctx, it, opt)
+	return err
+}
+
+// RunHead is RunWith that also returns the head SHA the run analysed ("" if
+// fetch failed), so the caller can tell whether the item moved meanwhile.
+func (p *Pipeline) RunHead(ctx context.Context, it model.Item, opt RunOptions) (string, error) {
 	f, err := runStage(ctx, p, it.ID, model.StageFetch, func(rl *model.RunLog) (model.Fetch, error) {
 		return p.fetch(ctx, it, opt.Force, rl)
 	})
 	if err != nil {
-		return err
+		return "", err
 	}
+	return f.HeadSHA, p.runAfterFetch(ctx, it, f)
+}
+
+func (p *Pipeline) runAfterFetch(ctx context.Context, it model.Item, f model.Fetch) error {
 	files, err := diff.Parse(f.Diff)
 	if err != nil {
 		p.d.Log.Warn("parse diff failed", "item", it.ID, "err", err)
@@ -182,7 +193,7 @@ func (p *Pipeline) applyAgg(ctx context.Context, it model.Item, f model.Fetch, a
 	if cur.HeadSHA == f.HeadSHA {
 		cur.BaseSHA = f.BaseSHA
 	}
-	cur.Urgency, cur.Why = agg.Urgency, agg.Why
+	cur.Urgency, cur.Why, cur.Minutes = agg.Urgency, agg.Why, agg.Minutes
 	cur.Additions, cur.Deletions = agg.Added, agg.Removed
 	if err := p.d.Store.UpsertItem(ctx, cur); err != nil {
 		return fmt.Errorf("pipeline: store item %s: %w", cur.ID, err)
@@ -290,6 +301,7 @@ func (p *Pipeline) localDiff(ctx context.Context, it model.Item, head string) (s
 		}
 		base = b
 	}
+	base = gitx.CompareRef(ctx, p.d.Git, base)
 	mb, err := p.d.Git.MergeBase(ctx, base, head)
 	if err != nil {
 		return "", "", fmt.Errorf("%w: merge-base %s %s: %w", ErrNoDiff, base, head, err)

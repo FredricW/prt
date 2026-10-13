@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/fredricw/prt/internal/proto"
@@ -58,6 +59,11 @@ func listen(ctx context.Context, path string) (net.Listener, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, fmt.Errorf("daemon: socket dir: %w", err)
 	}
+	// The fallback directory lives in a temp dir that other users may share:
+	// refuse one somebody else created.
+	if fi, err := os.Lstat(filepath.Dir(path)); err != nil || !fi.IsDir() || !ownedByMe(fi) {
+		return nil, fmt.Errorf("daemon: socket dir %s is not a directory owned by this user", filepath.Dir(path))
+	}
 	if _, err := os.Stat(path); err == nil {
 		if socketAlive(ctx, path) {
 			return nil, fmt.Errorf("%w on %s", ErrDaemonRunning, path)
@@ -76,6 +82,13 @@ func listen(ctx context.Context, path string) (net.Listener, error) {
 		return nil, fmt.Errorf("daemon: chmod socket: %w", err)
 	}
 	return ln, nil
+}
+
+// ownedByMe reports whether fi belongs to the current user (true where the
+// platform does not report owners).
+func ownedByMe(fi os.FileInfo) bool {
+	st, ok := fi.Sys().(*syscall.Stat_t)
+	return !ok || int(st.Uid) == os.Getuid()
 }
 
 // socketAlive reports whether something answers on the socket.

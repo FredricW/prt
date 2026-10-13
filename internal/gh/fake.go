@@ -15,8 +15,10 @@ import (
 // SearchPRs returns, in number order, every PR whose number, title, head ref
 // or author contains each non-qualifier search term. The state qualifiers
 // is:open, is:closed (closed or merged, as on GitHub) and is:merged filter on
-// PR.State, where an empty State counts as open; every other qualifier
-// (repo:, is:pr, involves:@me, ...) is ignored. All methods are safe for
+// PR.State, where an empty State counts as open; involves:@me (or
+// involves:<login>) keeps PRs the user authored, is a requested reviewer
+// of, or has viewer activity on; every other qualifier (repo:, is:pr, ...)
+// is ignored. All methods are safe for
 // concurrent use once the Fake is shared; set fields before sharing it.
 type Fake struct {
 	mu sync.Mutex
@@ -49,11 +51,18 @@ func (f *Fake) SearchPRs(_ context.Context, query string, limit int) ([]PR, erro
 	if f.Err != nil {
 		return nil, f.Err
 	}
-	terms, state := parseFakeQuery(query)
+	q := parseFakeQuery(query)
+	who := q.involves
+	if who == "@me" {
+		who = strings.ToLower(f.Login)
+	}
 	var out []PR
 	for _, n := range sortedKeys(f.PRs) {
 		p := f.PRs[n]
-		if !stateMatches(p.State, state) || !matches(p, terms) {
+		if !stateMatches(p.State, q.state) || !matches(p, q.terms) {
+			continue
+		}
+		if q.involves != "" && !involves(p, who, strings.EqualFold(who, f.Login)) {
 			continue
 		}
 		out = append(out, p)
@@ -64,21 +73,63 @@ func (f *Fake) SearchPRs(_ context.Context, query string, limit int) ([]PR, erro
 	return out, nil
 }
 
-// parseFakeQuery splits a search query into lower-cased free-text terms and
-// the last is:open/closed/merged qualifier ("" when absent).
-func parseFakeQuery(query string) (terms []string, state string) {
+// ListOpenPRs implements Client: open PRs (empty State counts as open) in
+// number order, with whatever Files the fixture gives them.
+func (f *Fake) ListOpenPRs(_ context.Context, limit int) ([]PR, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.Err != nil {
+		return nil, f.Err
+	}
+	var out []PR
+	for _, n := range sortedKeys(f.PRs) {
+		p := f.PRs[n]
+		if !stateMatches(p.State, "open") {
+			continue
+		}
+		out = append(out, p)
+		if limit > 0 && len(out) == limit {
+			break
+		}
+	}
+	return out, nil
+}
+
+// fakeQuery is a parsed search query.
+type fakeQuery struct {
+	terms    []string // lower-cased free text
+	state    string   // last is:open/closed/merged ("" when absent)
+	involves string   // involves:<login> (@me resolved by the caller), "" when absent
+}
+
+// parseFakeQuery splits a search query into its free-text terms and the
+// qualifiers the fake honours.
+func parseFakeQuery(query string) fakeQuery {
+	var q fakeQuery
 	for _, w := range strings.Fields(query) {
 		lw := strings.ToLower(w)
 		switch {
 		case lw == "is:open" || lw == "is:closed" || lw == "is:merged":
-			state = strings.TrimPrefix(lw, "is:")
+			q.state = strings.TrimPrefix(lw, "is:")
+		case strings.HasPrefix(lw, "involves:"):
+			q.involves = strings.TrimPrefix(lw, "involves:")
 		case strings.Contains(lw, ":"):
 			// other qualifiers are ignored
 		default:
-			terms = append(terms, lw)
+			q.terms = append(q.terms, lw)
 		}
 	}
-	return terms, state
+	return q
+}
+
+// involves mirrors GitHub's involves: qualifier with the facts a fake PR
+// has: author, requested reviewer, or any recorded viewer activity (the
+// viewer-* flags describe login == the fake's Login).
+func involves(p PR, login string, isViewer bool) bool {
+	if strings.EqualFold(p.Author, login) || slices.ContainsFunc(p.Reviewers, func(r string) bool { return strings.EqualFold(r, login) }) {
+		return true
+	}
+	return isViewer && (p.ReviewRequested || p.ViewerApproved || p.ViewerCommented || p.ViewerAddressed || p.ViewerReviewedSHA != "")
 }
 
 // stateMatches applies an is: state qualifier to a PR state.

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -233,6 +234,46 @@ func TestSocketCloseClosesEvents(t *testing.T) {
 func TestDialMissingSocket(t *testing.T) {
 	if _, err := Dial(context.Background(), socketPath(t)); err == nil {
 		t.Fatal("dial of a missing socket should fail")
+	}
+}
+
+func TestSocketPathLength(t *testing.T) {
+	short := "/r/.git"
+	if got := socketPathIn(short, "/tmp"); got != "/r/.git/prt/prtd.sock" {
+		t.Errorf("short git dir: %q", got)
+	}
+	long := "/" + strings.Repeat("deep/", 30) + ".git"
+	a, b := socketPathIn(long, "/tmp"), socketPathIn(long+"/", "/tmp")
+	if !strings.HasPrefix(a, "/tmp/prt-") || len(a) > maxSocketPath || a != b {
+		t.Errorf("long git dir: %q / %q", a, b)
+	}
+	if socketPathIn(long+"x", "/tmp") == a {
+		t.Error("different repos must get different sockets")
+	}
+}
+
+// A deeply nested repo must still get a working daemon socket.
+func TestServeLongGitDir(t *testing.T) {
+	root, err := os.MkdirTemp("", "prt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(root) })
+	gitDir := filepath.Join(root, strings.Repeat("nested-directory/", 8), ".git")
+	path := SocketPath(gitDir)
+	t.Cleanup(func() { _ = os.RemoveAll(filepath.Dir(path)) })
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	errc := make(chan error, 1)
+	go func() { errc <- Serve(ctx, socketBacking(t), path) }()
+	s := dialRetry(t, path)
+	if _, err := s.Items(ctx); err != nil {
+		t.Fatal(err)
+	}
+	_ = s.Close()
+	cancel()
+	if err := <-errc; err != nil {
+		t.Fatal(err)
 	}
 }
 

@@ -35,12 +35,22 @@ type prNode struct {
 	Additions          int
 	Deletions          int
 	ChangedFiles       int
+	IsCrossRepository  bool
 	CreatedAt          githubv4.DateTime
 	UpdatedAt          githubv4.DateTime
-	ViewerLatestReview *struct{ State string }
-	Comments           struct {
-		Nodes []struct{ ViewerDidAuthor bool }
+	ViewerLatestReview *struct {
+		State  string
+		Commit *struct{ Oid string }
+	}
+	Comments struct {
+		Nodes []struct {
+			ViewerDidAuthor bool
+			Body            string
+		}
 	} `graphql:"comments(last: 20)"`
+	ReviewThreads struct {
+		Nodes []struct{ IsResolved bool }
+	} `graphql:"reviewThreads(first: 100)"`
 	Commits struct {
 		Nodes []struct {
 			Commit struct {
@@ -105,12 +115,27 @@ func prFromNode(n prNode, viewer string) PR {
 			p.ReviewRequested = true
 		}
 	}
-	if r := n.ViewerLatestReview; r != nil {
+	p.CrossRepo = n.IsCrossRepository
+	if r := n.ViewerLatestReview; r != nil && r.State != "PENDING" {
 		p.ViewerApproved = r.State == "APPROVED"
-		p.ViewerCommented = r.State != "PENDING"
+		p.ViewerCommented = true
+		if r.State != "DISMISSED" && r.Commit != nil {
+			p.ViewerReviewedSHA = r.Commit.Oid
+		}
 	}
 	for _, c := range n.Comments.Nodes {
 		p.ViewerCommented = p.ViewerCommented || c.ViewerDidAuthor
+		switch {
+		case c.ViewerDidAuthor:
+			p.ViewerAddressed = false // the viewer has answered since
+		case mentions(c.Body, viewer):
+			p.ViewerAddressed = true
+		}
+	}
+	for _, t := range n.ReviewThreads.Nodes {
+		if !t.IsResolved {
+			p.OpenThreads++
+		}
 	}
 	if len(n.Commits.Nodes) > 0 {
 		if roll := n.Commits.Nodes[len(n.Commits.Nodes)-1].Commit.StatusCheckRollup; roll != nil {
@@ -118,6 +143,49 @@ func prFromNode(n prNode, viewer string) PR {
 		}
 	}
 	return p
+}
+
+// mentions reports whether body @-mentions login (case-insensitive; the
+// mention must end at a character that cannot continue a login).
+func mentions(body, login string) bool {
+	if login == "" {
+		return false
+	}
+	lb, needle := strings.ToLower(body), "@"+strings.ToLower(login)
+	for i := 0; ; {
+		j := strings.Index(lb[i:], needle)
+		if j < 0 {
+			return false
+		}
+		start, end := i+j, i+j+len(needle)
+		before := start == 0 || !isLoginChar(lb[start-1])
+		if before && (end == len(lb) || !isLoginChar(lb[end])) {
+			return true
+		}
+		i = end
+	}
+}
+
+func isLoginChar(b byte) bool {
+	return b == '-' || b >= 'a' && b <= 'z' || b >= '0' && b <= '9' || b >= 'A' && b <= 'Z'
+}
+
+// openPRsQuery lists a repository's open pull requests with changed paths.
+type openPRsQuery struct {
+	Repository struct {
+		PullRequests struct {
+			PageInfo struct {
+				EndCursor   githubv4.String
+				HasNextPage bool
+			}
+			Nodes []struct {
+				PullRequest prNode `graphql:"... on PullRequest"`
+				Files       struct {
+					Nodes []struct{ Path string }
+				} `graphql:"files(first: 100)"`
+			}
+		} `graphql:"pullRequests(states: OPEN, first: $first, after: $after, orderBy: {field: UPDATED_AT, direction: DESC})"`
+	} `graphql:"repository(owner: $owner, name: $name)"`
 }
 
 // ciFromRollup maps a GitHub StatusState onto model.CIState.

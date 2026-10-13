@@ -202,6 +202,52 @@ func (a *API) searchPage(ctx context.Context, query string, first int, after *gi
 	return nodes, &cur, nil
 }
 
+// openPRsPage is the page size of ListOpenPRs (each PR carries up to 100
+// file paths, so pages stay smaller than search pages).
+const openPRsPage = 50
+
+// ListOpenPRs implements Client; limit <= 0 means 100.
+func (a *API) ListOpenPRs(ctx context.Context, limit int) ([]PR, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	viewer, err := a.Viewer(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var out []PR
+	var after *githubv4.String
+	for len(out) < limit {
+		var q openPRsQuery
+		vars := map[string]any{
+			"owner": githubv4.String(a.Repo.Owner),
+			"name":  githubv4.String(a.Repo.Name),
+			"first": githubv4.Int(int32(min(limit-len(out), openPRsPage))),
+			"after": after,
+		}
+		if err := a.GQL.Query(ctx, &q, vars); err != nil {
+			return nil, fmt.Errorf("gh: open PRs: %w", err)
+		}
+		conn := q.Repository.PullRequests
+		for _, n := range conn.Nodes {
+			if n.PullRequest.Number <= 0 || len(out) >= limit {
+				continue
+			}
+			p := prFromNode(n.PullRequest, viewer)
+			for _, f := range n.Files.Nodes {
+				p.Files = append(p.Files, f.Path)
+			}
+			out = append(out, p)
+		}
+		if !conn.PageInfo.HasNextPage {
+			break
+		}
+		cur := conn.PageInfo.EndCursor
+		after = &cur
+	}
+	return out, nil
+}
+
 // scopeQuery adds `repo:owner/name` and `is:pr` to a search query that lacks them.
 func scopeQuery(query string, repo Repo) string {
 	hasRepo, hasPR := false, false

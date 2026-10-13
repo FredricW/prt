@@ -36,8 +36,10 @@ type InProcess struct {
 	// itemMu guards every read-modify-write of a stored Item (shared with
 	// the pipeline through Deps.ItemLock).
 	itemMu *sync.Mutex
-	q      *queue
-	wg     sync.WaitGroup
+	// discoverMu serialises Discover runs (see Discover).
+	discoverMu sync.Mutex
+	q          *queue
+	wg         sync.WaitGroup
 
 	evMu   sync.RWMutex
 	closed bool
@@ -165,7 +167,7 @@ func quartile(u, top float64) int {
 }
 
 var sectionOrder = map[model.Section]int{
-	model.SectionNeedsYou: 0, model.SectionYours: 1, model.SectionBranches: 2, model.SectionAdded: 3,
+	model.SectionNeedsYou: 0, model.SectionYours: 1, model.SectionBranches: 2, model.SectionInvolved: 3, model.SectionAdded: 4,
 }
 
 func sectionRank(s model.Section) int {
@@ -236,10 +238,54 @@ func (c *InProcess) Detail(ctx context.Context, itemID string) (proto.Detail, er
 	return det, err
 }
 
-// Refresh implements Client: queues the item for analysis (deduplicated);
-// with p.Force the fetch cache is bypassed. p.FromStage is not used yet.
+// Refresh implements Client: queues the item for analysis (deduplicated).
+// With p.Force (key `r`) the head is re-resolved first (local ref for
+// branches, GitHub for PRs) and the fetch cache is bypassed, so new commits
+// are analysed without waiting for the next discovery. p.FromStage is not
+// used yet.
 func (c *InProcess) Refresh(ctx context.Context, p proto.ItemParams) error {
+	if p.Force {
+		if err := c.refreshHead(ctx, p.ItemID); err != nil {
+			return err
+		}
+	}
 	return c.Analyse(ctx, p.Force, p.ItemID)
+}
+
+// refreshHead re-reads one item's head (and, for PRs, its metadata). A
+// lookup failure keeps the stored head: the refresh still re-runs.
+func (c *InProcess) refreshHead(ctx context.Context, id string) error {
+	it, err := c.d.Store.Item(ctx, id)
+	if err != nil {
+		return fmt.Errorf("daemon: refresh %s: %w", id, err)
+	}
+	switch {
+	case it.Kind == model.KindPR && it.Number > 0 && c.d.GH != nil:
+		pr, err := c.d.GH.PR(ctx, it.Number)
+		if err != nil {
+			c.log.Warn("refresh: PR lookup failed; keeping stored head", "item", id, "err", err)
+			return nil
+		}
+		viewer, _ := c.d.GH.Viewer(ctx)
+		head := c.prHead(ctx, pr)
+		// No stale mark: the item is about to be re-analysed.
+		return c.upsertDiscovered(ctx, id, func(it *model.Item) {
+			st, note := it.State, it.StateNote
+			applyPR(it, pr, head)
+			it.State, it.StateNote = st, note
+			if it.Source != model.SourceAdded {
+				it.Section = prSection(pr, head, viewer)
+			}
+		})
+	case it.Kind == model.KindBranch && it.Ref != "":
+		sha, err := c.d.Git.ResolveRef(ctx, it.Ref)
+		if err != nil || sha == it.HeadSHA {
+			return nil
+		}
+		_, _, err = c.updateItem(ctx, id, func(it *model.Item) { it.HeadSHA = sha })
+		return err
+	}
+	return nil
 }
 
 // Analyse queues items for background analysis as one batch, so they start
@@ -265,16 +311,28 @@ func (c *InProcess) analyse(j job) {
 		return
 	}
 	c.setState(it.ID, model.StateFetching, "")
-	c.finish(it.ID, c.p.RunWith(c.ctx, it, pipeline.RunOptions{Force: j.force}))
+	head, err := c.p.RunHead(c.ctx, it, pipeline.RunOptions{Force: j.force})
+	c.finish(it.ID, head, err)
 }
 
-func (c *InProcess) finish(id string, err error) {
+// finish records the outcome of a run that analysed head. If discovery
+// moved the item's head while the run was in flight, the result describes
+// an old commit: the item becomes Stale instead of Ready.
+func (c *InProcess) finish(id, head string, err error) {
 	if err != nil {
 		c.log.Warn("analysis failed", "item", id, "err", err)
 		c.setState(id, model.StateError, err.Error())
 		return
 	}
-	c.setState(id, model.StateReady, "")
+	if _, _, err := c.updateItem(context.Background(), id, func(it *model.Item) {
+		if head != "" && it.HeadSHA != "" && it.HeadSHA != head {
+			it.State, it.StateNote = model.StateStale, staleNote
+			return
+		}
+		it.State, it.StateNote = model.StateReady, ""
+	}); err != nil {
+		c.log.Warn("set item state", "item", id, "err", err)
+	}
 }
 
 // RunSync runs the pipeline for an item and waits (tests, --snapshot).
@@ -283,8 +341,8 @@ func (c *InProcess) RunSync(ctx context.Context, itemID string) error {
 	if err != nil {
 		return fmt.Errorf("daemon: run %s: %w", itemID, err)
 	}
-	err = c.p.Run(ctx, it)
-	c.finish(itemID, err)
+	head, err := c.p.RunHead(ctx, it, pipeline.RunOptions{})
+	c.finish(itemID, head, err)
 	return err
 }
 
@@ -402,6 +460,17 @@ func (c *InProcess) Checkout(ctx context.Context, p proto.CheckoutParams) (proto
 	if it.Ref == "" {
 		return res, fmt.Errorf("daemon: %s has no head ref", it.ID)
 	}
+	if it.CrossRepo {
+		// The head ref names a branch in the fork; a same-named local branch
+		// is unrelated. Check out the head commit (detached) if it is local.
+		if it.HeadSHA == "" {
+			return res, fmt.Errorf("daemon: #%d is from a fork and its head is unknown; run `gh pr checkout %d`", it.Number, it.Number)
+		}
+		if _, err := c.d.Git.ResolveRef(ctx, it.HeadSHA); err != nil {
+			return res, fmt.Errorf("daemon: #%d is from a fork and %.12s is not local; run `gh pr checkout %d`", it.Number, it.HeadSHA, it.Number)
+		}
+		res.Ref = it.HeadSHA
+	}
 	if !p.Force {
 		dirty, err := c.d.Git.IsDirty(ctx)
 		if err != nil {
@@ -412,8 +481,8 @@ func (c *InProcess) Checkout(ctx context.Context, p proto.CheckoutParams) (proto
 			return res, nil
 		}
 	}
-	if err := c.d.Git.Checkout(ctx, it.Ref); err != nil {
-		return res, fmt.Errorf("daemon: checkout %s: %w", it.Ref, err)
+	if err := c.d.Git.Checkout(ctx, res.Ref); err != nil {
+		return res, fmt.Errorf("daemon: checkout %s: %w", res.Ref, err)
 	}
 	res.CheckedOut = true
 	return res, nil

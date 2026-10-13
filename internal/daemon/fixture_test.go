@@ -12,8 +12,8 @@ import (
 	"github.com/fredricw/prt/internal/testutil"
 )
 
-// TestFixtureRepoDiscoverAndRun runs discovery and the pipeline against the
-// generated fixture repo and the offline GitHub fixture (both skip if absent).
+// TestFixtureRepoDiscoverAndRun runs discovery and the pipeline against a
+// freshly generated fixture repo and the offline GitHub fixture.
 func TestFixtureRepoDiscoverAndRun(t *testing.T) {
 	ctx := context.Background()
 	repo := testutil.FixtureRepo(t)
@@ -42,6 +42,18 @@ func TestFixtureRepoDiscoverAndRun(t *testing.T) {
 	}
 	if len(m) != len(want) {
 		t.Errorf("items = %v, want exactly %v", keys(m), want)
+	}
+	sections := map[string]model.Section{
+		model.PRItemID(101):                      model.SectionNeedsYou, // review requested
+		model.PRItemID(102):                      model.SectionYours,    // authored
+		model.PRItemID(103):                      model.SectionNeedsYou, // review requested
+		model.PRItemID(104):                      model.SectionNeedsYou, // approved, CI red
+		model.BranchItemID("05-spike-dark-mode"): model.SectionBranches,
+	}
+	for id, sec := range sections {
+		if got := m[id].Section; got != sec {
+			t.Errorf("%s section = %q, want %q", id, got, sec)
+		}
 	}
 	for _, id := range want {
 		if _, ok := m[id]; !ok {

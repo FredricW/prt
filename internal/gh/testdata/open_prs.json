@@ -1,0 +1,36 @@
+{
+  "data": {
+    "repository": {
+      "pullRequests": {
+        "pageInfo": {"endCursor": "Y3Vyc29yOjE=", "hasNextPage": false},
+        "nodes": [
+          {
+            "number": 11,
+            "title": "Tweak theme",
+            "body": "",
+            "author": {"login": "erin"},
+            "state": "OPEN",
+            "isDraft": false,
+            "headRefName": "theme",
+            "headRefOid": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "baseRefName": "main",
+            "baseRefOid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "url": "https://github.com/acme/widgets/pull/11",
+            "labels": {"nodes": []},
+            "reviewRequests": {"nodes": []},
+            "additions": 3,
+            "deletions": 1,
+            "changedFiles": 2,
+            "createdAt": "2026-10-10T09:00:00Z",
+            "updatedAt": "2026-10-11T09:00:00Z",
+            "viewerLatestReview": null,
+            "comments": {"nodes": []},
+            "reviewThreads": {"nodes": []},
+            "commits": {"nodes": []},
+            "files": {"nodes": [{"path": "web/src/styles/theme.css"}, {"path": "README.md"}]}
+          }
+        ]
+      }
+    }
+  }
+}

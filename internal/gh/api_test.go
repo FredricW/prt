@@ -60,6 +60,8 @@ func (f *fakeGitHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // recordingFor picks the testdata file answering a GraphQL request.
 func recordingFor(req gqlRequest) string {
 	switch {
+	case strings.Contains(req.Query, "pullRequests("):
+		return "open_prs.json"
 	case strings.Contains(req.Query, "search("):
 		if req.Variables["after"] != nil {
 			return "search_page2.json"
@@ -215,6 +217,12 @@ func TestAPISearchMapping(t *testing.T) {
 			t.Errorf("#%d labels/reviewers = %v/%v", tt.num, p.Labels, p.Reviewers)
 		}
 	}
+	if p := byNum[1]; !p.ViewerAddressed || p.OpenThreads != 2 || !p.CrossRepo || p.ViewerReviewedSHA != "" {
+		t.Errorf("#1 addressed/threads/cross/reviewed = %v/%d/%v/%q", p.ViewerAddressed, p.OpenThreads, p.CrossRepo, p.ViewerReviewedSHA)
+	}
+	if p := byNum[2]; p.ViewerReviewedSHA != "2000000000000000000000000000000000000000" || p.ViewerAddressed || p.CrossRepo {
+		t.Errorf("#2 reviewed/addressed/cross = %q/%v/%v", p.ViewerReviewedSHA, p.ViewerAddressed, p.CrossRepo)
+	}
 	p1 := byNum[1]
 	if p1.Author != "alice" || p1.HeadRef != "feat/login" || p1.HeadSHA != strings.Repeat("1", 40) ||
 		p1.BaseRef != "main" || p1.URL != "https://github.com/acme/widgets/pull/1" ||
@@ -233,10 +241,32 @@ func TestAPIPR(t *testing.T) {
 	if p.Number != 7 || p.State != "closed" || p.CI != model.CIPending || !p.ViewerCommented || p.ViewerApproved || p.ReviewRequested {
 		t.Errorf("PR = %+v", p)
 	}
+	if p.ViewerAddressed || p.ViewerReviewedSHA != p.HeadSHA {
+		t.Errorf("answered mention must not count; reviewed SHA = %q", p.ViewerReviewedSHA)
+	}
 	reqs := fg.requests()
 	vars := reqs[len(reqs)-1].Variables
 	if vars["owner"] != "acme" || vars["name"] != "widgets" || vars["number"] != float64(7) {
 		t.Errorf("variables = %v", vars)
+	}
+}
+
+func TestAPIListOpenPRs(t *testing.T) {
+	a, fg := newTestAPI(t, nil)
+	prs, err := a.ListOpenPRs(context.Background(), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(prs) != 1 || prs[0].Number != 11 || !slices.Equal(prs[0].Files, []string{"web/src/styles/theme.css", "README.md"}) {
+		t.Fatalf("got %+v", prs)
+	}
+	reqs := fg.requests()
+	last := reqs[len(reqs)-1]
+	if !strings.Contains(last.Query, "pullRequests(states: OPEN") || !strings.Contains(last.Query, "files(first: 100)") {
+		t.Errorf("query = %s", last.Query)
+	}
+	if last.Variables["owner"] != "acme" || last.Variables["first"] != float64(openPRsPage) {
+		t.Errorf("variables = %v", last.Variables)
 	}
 }
 

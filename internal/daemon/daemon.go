@@ -9,14 +9,35 @@ package daemon
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"os"
 	"path/filepath"
 
 	"github.com/fredricw/prt/internal/model"
 	"github.com/fredricw/prt/internal/proto"
 )
 
-// SocketPath returns the daemon socket path for a git dir.
-func SocketPath(gitDir string) string { return filepath.Join(gitDir, "prt", "prtd.sock") }
+// maxSocketPath is the longest Unix socket path used as is. sun_path holds
+// 104 bytes on macOS and 108 on Linux, including the terminating NUL.
+const maxSocketPath = 100
+
+// SocketPath returns the daemon socket path for a git dir:
+// <gitDir>/prt/prtd.sock, or, when that is too long for a Unix socket (deep
+// repos, worktrees), $TMPDIR/prt-<hash of gitDir>/prtd.sock. Daemon and TUI
+// derive it the same way, so both agree.
+func SocketPath(gitDir string) string {
+	return socketPathIn(gitDir, os.TempDir())
+}
+
+func socketPathIn(gitDir, tmp string) string {
+	p := filepath.Join(gitDir, "prt", "prtd.sock")
+	if len(p) <= maxSocketPath {
+		return p
+	}
+	sum := sha256.Sum256([]byte(filepath.Clean(gitDir)))
+	return filepath.Join(tmp, "prt-"+hex.EncodeToString(sum[:8]), "prtd.sock")
+}
 
 // Client is what screens use to read state and send commands.
 type Client interface {
