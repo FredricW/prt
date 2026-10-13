@@ -2,8 +2,8 @@
 //
 // Usage:
 //
-//	prt [--repo DIR] [--no-daemon] [--offline] [--snapshot [--width N --height N]]
-//	prt daemon [--repo DIR] [--offline]
+//	prt [--repo DIR] [--no-daemon] [--offline] [--fixtures FILE] [--snapshot [--width N --height N --now TIME]]
+//	prt daemon [--repo DIR] [--offline] [--fixtures FILE]
 package main
 
 import (
@@ -13,9 +13,12 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"syscall"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/log"
@@ -39,6 +42,8 @@ func main() { os.Exit(run(os.Args[1:], os.Stdout, os.Stderr)) }
 
 type options struct {
 	repo     string
+	fixtures string
+	now      string
 	noDaemon bool
 	offline  bool
 	snapshot bool
@@ -63,6 +68,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 	fs.IntVar(&o.width, "width", 120, "snapshot width")
 	fs.IntVar(&o.height, "height", 30, "snapshot height")
 	fs.IntVar(&o.maxItems, "max-items", 4, "snapshot: number of items to render")
+	fs.StringVar(&o.fixtures, "fixtures", "", "use a fake GitHub client loaded from this JSON fixture (works with --offline)")
+	fs.StringVar(&o.now, "now", "", "snapshot: fixed current time (RFC 3339) so ages are stable")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
@@ -72,6 +79,16 @@ func run(args []string, stdout, stderr io.Writer) int {
 	if *showVersion {
 		_, _ = fmt.Fprintln(stdout, "prt", version)
 		return 0
+	}
+
+	var nowFn func() time.Time
+	if o.now != "" {
+		t, err := time.Parse(time.RFC3339, o.now)
+		if err != nil {
+			_, _ = fmt.Fprintln(stderr, "prt: --now:", err)
+			return 2
+		}
+		nowFn = func() time.Time { return t }
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -87,6 +104,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	if daemonMode {
 		inproc := daemon.NewInProcess(env.deps)
 		defer func() { _ = inproc.Close() }()
+		go discoverLoop(ctx, inproc, time.Duration(env.cfg.Pipeline.RefreshSeconds)*time.Second, env.deps.Log)
 		if err := daemon.Serve(ctx, inproc, daemon.SocketPath(env.gitDir)); err != nil {
 			_, _ = fmt.Fprintln(stderr, "prt daemon:", err)
 			return 1
@@ -108,13 +126,23 @@ func run(args []string, stdout, stderr io.Writer) int {
 	defer func() { _ = client.Close() }()
 
 	if o.snapshot {
-		if err := tui.Snapshot(ctx, client, stdout, o.width, o.height, o.maxItems); err != nil {
+		if err := tui.SnapshotWithOptions(ctx, client, stdout, o.width, o.height, o.maxItems, tui.Options{Now: nowFn}); err != nil {
 			_, _ = fmt.Fprintln(stderr, "prt:", err)
 			return 1
 		}
 		return 0
 	}
-	p := tea.NewProgram(tui.New(client, nil), tea.WithAltScreen(), tea.WithContext(ctx), tea.WithMouseCellMotion())
+	topts := tui.Options{
+		Open:         openURL,
+		RefreshEvery: time.Duration(env.cfg.Pipeline.RefreshSeconds) * time.Second,
+		Now:          nowFn,
+	}
+	if km, err := tui.KeyMapFromConfig(env.cfg.Keys); err != nil {
+		env.deps.Log.Warn("bad [keys] in prt.toml; using defaults", "err", err)
+	} else {
+		topts.Keys = &km
+	}
+	p := tea.NewProgram(tui.NewWithOptions(client, nil, topts), tea.WithAltScreen(), tea.WithContext(ctx), tea.WithMouseCellMotion())
 	if _, err := p.Run(); err != nil && !errors.Is(err, tea.ErrProgramKilled) {
 		_, _ = fmt.Fprintln(stderr, "prt:", err)
 		return 1
@@ -124,6 +152,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 
 type environment struct {
 	deps    pipeline.Deps
+	cfg     config.Config
 	gitDir  string
 	closers []func()
 }
@@ -187,8 +216,19 @@ func setup(ctx context.Context, o options) (*environment, error) {
 	}
 
 	d := pipeline.Deps{Git: g, Store: st, Config: cfg, Routing: routing, Questions: cat, Log: logger}
+	if o.fixtures != "" {
+		fake, err := gh.LoadFixture(o.fixtures)
+		if err != nil {
+			env.close()
+			return nil, fmt.Errorf("--fixtures: %w", err)
+		}
+		d.GH = fake
+		logger.Info("using GitHub fixture", "path", o.fixtures)
+	}
 	if !o.offline {
-		d.GH = githubClient(ctx, g, cfg, logger)
+		if d.GH == nil {
+			d.GH = githubClient(ctx, g, cfg, logger)
+		}
 		jevURL := os.Getenv("JEV_BASE_URL")
 		if jevURL == "" {
 			jevURL = cfg.Models.JevBaseURL
@@ -212,7 +252,49 @@ func setup(ctx context.Context, o options) (*environment, error) {
 		}
 	}
 	env.deps = d
+	env.cfg = cfg
 	return env, nil
+}
+
+// discoverLoop runs discovery now and then every interval until ctx ends, so
+// a daemon keeps the picker fresh with no TUI attached. interval <= 0 runs
+// discovery once.
+func discoverLoop(ctx context.Context, c daemon.Client, interval time.Duration, logger *log.Logger) {
+	discover := func() {
+		if err := c.Discover(ctx); err != nil && ctx.Err() == nil {
+			logger.Warn("discover", "err", err)
+		}
+	}
+	discover()
+	if interval <= 0 {
+		return
+	}
+	t := time.NewTicker(interval)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			discover()
+		}
+	}
+}
+
+// openURL opens url in the default browser (key `o`).
+func openURL(url string) error {
+	name := "xdg-open"
+	if runtime.GOOS == "darwin" {
+		name = "open"
+	}
+	// Background context: the browser must outlive any request. url is a
+	// single argv entry, never interpreted by a shell.
+	cmd := exec.CommandContext(context.Background(), name, url) //nolint:gosec // see above
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	go func() { _ = cmd.Wait() }()
+	return nil
 }
 
 // githubClient returns nil when the repo is not on GitHub or gh has no token.

@@ -3,6 +3,9 @@ export CGO_ENABLED := 1
 
 FIXTURE_SRC  := testdata/fixtures
 FIXTURE_REPO := testdata/fixture-repo
+FIXTURE_PRS  := testdata/fixtures/prs.json
+# Fixed clock for snapshots so ages are byte-stable.
+SNAPSHOT_NOW := 2026-10-13T12:00:00Z
 
 .PHONY: build test lint check demo fixtures snapshot
 
@@ -30,8 +33,8 @@ $(FIXTURE_REPO)/.git:
 
 # Interactive TUI against the fixture repo, fully offline.
 demo: build | $(FIXTURE_REPO)/.git
-	./bin/prt --no-daemon --offline --repo $(FIXTURE_REPO)
+	./bin/prt --no-daemon --offline --repo $(FIXTURE_REPO) --fixtures $(FIXTURE_PRS)
 
 # Non-interactive: render a few screens to stdout (for agents and CI).
 snapshot: build | $(FIXTURE_REPO)/.git
-	./bin/prt --no-daemon --offline --snapshot --width 120 --height 30 --repo $(FIXTURE_REPO)
+	./bin/prt --no-daemon --offline --snapshot --width 120 --height 30 --now $(SNAPSHOT_NOW) --repo $(FIXTURE_REPO) --fixtures $(FIXTURE_PRS)
