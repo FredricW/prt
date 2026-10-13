@@ -7,8 +7,8 @@ embedding model, reviews from the cheapest LLM tier that can do the job, and
 every number on screen traces back to a label, a rule or a git fact.
 
 > Status: early development. M0 (a fast PR browser) and M1 (change units and
-> Jev labels: Overview page, labelled Code page) are done; grouping comes in
-> M2. See
+> Jev labels: Overview page, labelled Code page) and M2 (grouped change
+> units, Code page by change) are done; the review pipeline comes in M3. See
 > [`docs/spec.md`](docs/spec.md) for the design and
 > [`CHANGELOG.md`](CHANGELOG.md) for what works today.
 
@@ -55,6 +55,13 @@ prt                 # picker on the left, the selected PR/branch on the right
   `f` opens the filters bar (then `1`–`9`, `0` toggle filters; needs eyes,
   behaviour and mine are on by default), `z` expands collapsed noise, `L`
   shows the raw Jev labels of the current unit.
+- `g` on the Code page switches between by file and by change: groups of
+  units that belong together (calls, tests, moves, Jev-confirmed pairs) in
+  review order, with a "why these belong together" list; a mechanical change
+  shows one example and "×N verified identical". `M` on two groups merges
+  them, `X` splits the group at the cursor; prt remembers your edits.
+- Keys are rebindable under `[keys]` in `prt.toml` (actions as in the
+  spec's keyboard table, plus `mode`, `merge_groups`, `split_group`).
 - Labels need `JEV_API_KEY`. Without it (or when Jev is unreachable) items
   show `labels unavailable`: the Overview shows git facts only and the Code
   page shows every unit with its diff, filters off.
@@ -71,10 +78,10 @@ make demo       # interactive
 make snapshot   # non-interactive
 ```
 
-Both run with `--offline`, so Jev is never called and every fixture item
-shows the `labels unavailable` mode (git facts, filters off). To see label
-chips, gutter marks, filters and the full Overview, run `prt` with
-`JEV_API_KEY` set.
+Both run with `--offline` and replay the answers recorded in
+`testdata/recordings` (`--jev-replay`, `--embed-replay`), so Jev is never
+called but the fixture PRs show real labels and groups. Anything not recorded
+(the local branch) shows the `labels unavailable` mode.
 
 Configuration is optional: `prt.toml`, `prt.routing.toml` and
 `prt.questions.toml` are looked up in `.git/prt/`, then `$XDG_CONFIG_HOME/prt/`.
@@ -88,6 +95,9 @@ make test       # go test ./...
 make lint       # golangci-lint v2
 make check      # vet + test + lint; must pass before every commit
 make fixtures   # regenerate testdata/fixture-repo
+make record-jev-dry  # count the Jev requests a recording would send (free)
+make record-jev      # record Jev answers for the fixtures (JEV_API_KEY, $1 cap)
+make record-embed    # record Ollama embeddings for the fixtures (local)
 ```
 
 Layout and interfaces: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).

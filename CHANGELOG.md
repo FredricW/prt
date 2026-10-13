@@ -175,7 +175,59 @@ offline over fixture PRs #101–#104.
 - `make snapshot` / `--offline` run without Jev, so they show "labels
   unavailable" and git facts only.
 
-### M2 — groups
+### M2 — groups (integrated 2026-10-13)
+
+Gate: `make check` (vet, vet `-tags live`, tests, lint 0 issues) and
+`make snapshot` green. Embeddings recorded once from local Ollama
+(embeddinggemma-2, 111 texts, $0); M2 Jev answers recorded once (276 calls,
+$0.0096; cumulative $0.0293 of the $1.00 cap). `TestRecordedReplay` replays
+both strictly and asserts the grouping outcomes over #101–#104.
+
+- **Shipped:** stage 2 structural links, stage 3 embeddings and candidates,
+  stage 4 Jev pair confirmation, stage 5 clustering with mechanical groups,
+  Jev group names and split suggestions, user merge/split, Code page mode B,
+  the Pipeline page's grouping data (`ItemAgg.Grouping`), and an offline
+  demo/snapshot that replays the recorded answers.
+- **Deferred:** three-word titles for groups Jev cannot name (fast LLM, M3;
+  placeholders until then); the Pipeline page itself (M3); routing tier and
+  review status in the group list (M3); the ONNX embedder (still a stub).
+- **Blocked:** nothing.
+
+#### Added
+
+- `internal/link`: call, import, test, moved (including symbol-level moves
+  across files) and same-symbol links from tree-sitter, with a repo symbol
+  index cached per base SHA; embed kNN candidates (cosine ≥
+  `embed_min_cosine` or top 3) and mechanical candidates by shape hash.
+- `internal/embed`: replay and recorder for embeddings; vectors cached by
+  unit id; no embedder → stage 3 skipped with a status note.
+- `internal/judge`: Jev `relation` for candidate pairs (kept when p ≥
+  `keep_pair_p` and not unrelated), `name_bullet` for groups, `separate_pr`
+  per file; request truncation within the 32k/64k limits.
+- `internal/cluster`: connected components over structural and confirmed
+  links; oversized components split at their weakest Jev links, then at
+  structural bridges; mechanical groups (count ≥ 3, shape-hash verified,
+  non-matching members ejected); review order interface → callers → tests;
+  placeholder names; user edits.
+- Aggregate: a description bullet counts as implemented only when a
+  claiming unit is wired (called or imported by non-test code).
+- Code page mode B (`g`): groups in review order with counts and bullet,
+  ungrouped units and split suggestions at the bottom, a "why these belong
+  together" block, mechanical groups as one example plus "×N verified
+  identical"; `M` merges and `X` splits groups, stored and re-run by the
+  daemon.
+- `prt --jev-replay DIR --embed-replay DIR`; `make demo`/`make snapshot`
+  replay `testdata/recordings`; `make record-embed`.
+
+#### Known limitations
+
+- embeddinggemma-2 cosines are compressed; the fixture repo uses
+  `embed_min_cosine = 0.88` (see DECISIONS). The spec default 0.72 makes
+  nearly every pair a candidate with this model.
+- Large star-shaped groups (one helper and all its updated callers, e.g.
+  #102's 17-unit `requestJSON` group) stay whole above `max_group_units`.
+- The snapshot's status bar does not show the replay source note (the
+  interactive TUI does).
 
 ### M3 — review pipeline
 

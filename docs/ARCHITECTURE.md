@@ -43,7 +43,7 @@ Nothing outside those five packages makes a network call or runs `git`.
 
 | Package | Owner | Purpose | Status |
 | --- | --- | --- | --- |
-| `cmd/prt` | M0 | flags (`--repo --no-daemon --offline --fixtures --snapshot --now`), `daemon` subcommand (socket + periodic discovery), wiring from env, browser opener | done for M0 |
+| `cmd/prt` | M0 | flags (`--repo --no-daemon --offline --fixtures --snapshot --now --jev-replay --embed-replay`), `daemon` subcommand (socket + periodic discovery), wiring from env, browser opener | M2 (replay flags) |
 | `internal/model` | M0 | domain types (spec "Data model"), `UnitID`, `GroupID`, `ContentHash`, aggregates | done |
 | `internal/config` | M0 | `prt.toml`, `prt.routing.toml` (+ raw `prt.questions.toml`), lookup `.git/prt` → XDG → builtin, unknown keys warned about (`Config.Warnings`) | done |
 | `internal/gitx` | M0 | `Git` interface, `Exec` (git CLI), `Fake` | done |
@@ -54,17 +54,18 @@ Nothing outside those five packages makes a network call or runs `git`.
 | `internal/daemon` | M0 | `Client` interface, `InProcess` (discovery, worker pool, checkout), `Serve`/`Dial` over the socket | done for M0 |
 | `internal/diffview` | M0 | plain unified diff viewer component (lazy row rendering, file navigation, intra-line highlight) | done |
 | `internal/tui` | M0→M5 | root model, picker, Overview/Code tabs, help overlay, rebindable keys, `Snapshot` (no-TTY render) | M0 done |
-| `internal/pipeline` | M0→M3 | stage orchestration, caching, RunLog events, degradation | fetch (local or `PRDiff` fallback)/parse/aggregate wired; others skipped |
+| `internal/pipeline` | M0→M3 | stage orchestration, caching, RunLog events, degradation | fetch/parse/link/embed/jev (labels + pairs)/cluster (names, split)/aggregate wired; route and review skipped (M3) |
 | `internal/parse` | M1 | tree-sitter split at function boundaries, symbol/signature, shape hash, format detection, `Lang` | hunk fallback only |
 | `internal/questions` | M1 | catalogue types, validation, `Wire()` to `jev.Question`, embedded `default.toml` | types done; catalogue partial |
 | `internal/jev` | M1 | `Client`, `HTTP` (AI Gateway `/v1/evaluate`), `Fake`, `Replay`, `Recorder`, `RequestKey` | done (batching lives in `labels`) |
 | `internal/labels` | M1 | stage 4 labels: per-unit and per-line-batch Jev requests from the catalogue, token-limit splitting, answer → `model.Label` mapping, unknown on `ErrUnavailable` | M1 |
-| `internal/codeview` | M1/M2 | Code page component: mode A by file (file list, chips, gutter marks, noise collapse, filters, `L` overlay); mode B in M2 | M1 |
+| `internal/codeview` | M1/M2 | Code page component: mode A by file (file list, chips, gutter marks, noise collapse, filters, `L` overlay); mode B by change (groups, why links, mechanical example, merge/split) | M2 |
 | `tools/recordjev` | M1 | runs the pipeline over fixture PRs with a recording, budget-guarded Jev client; writes `testdata/recordings/jev/` and `SPEND.md`; shares `pipelinetest.FixtureRun`, `Problems` and `Expectations` with the replay test | M1 |
-| `internal/aggregate` | M1/M3 | spec "Ranking and aggregation" arithmetic, urgency + "why" | M0 urgency placeholder (no label terms) |
-| `internal/link` | M2 | structural links, embed kNN candidates, mechanical candidates | TODO |
-| `internal/embed` | M2 | `Embedder`, `Ollama` (`/api/embed`), `ONNX` stub, `Fake`, `Cosine`, `FromSpec` | done (ONNX TODO) |
-| `internal/cluster` | M2 | components, splitting, mechanical groups, review order | placeholder: one group per unit |
+| `internal/aggregate` | M1/M3 | spec "Ranking and aggregation" arithmetic, urgency + "why" | M1 arithmetic + M2 wired-unit fidelity rule |
+| `internal/link` | M2 | structural links (symbol index per base SHA), embed kNN candidates, mechanical candidates, `UnitText` | M2 |
+| `internal/judge` | M2 | non-unit Jev questions: pair `relation` (+ `Confirm`), group `name_bullet` (+ `ApplyNames`), file `separate_pr` (+ `Suggestion`); answers are labels on pair/group/file subjects | M2 |
+| `internal/embed` | M2 | `Embedder`, `Ollama` (`/api/embed`), `ONNX` stub, `Fake`, `Cosine`, `FromSpec`, `Replay`/`Recorder` over `testdata/recordings/embed` | M2 (ONNX TODO) |
+| `internal/cluster` | M2 | components, splitting (weakest Jev links, then structural bridges), mechanical groups, review order, placeholder names, user edits | M2 |
 | `internal/route` | M3 | `when` expression parser/evaluator, `Route`, context decisions, slots/cap | placeholder |
 | `internal/review` | M3 | `Reviewer`, `Tiers`, `Anthropic` adapter (`PRT_ANTHROPIC_API_KEY`), `Fake` | interface + fake done; adapter TODO |
 | `internal/testutil` | all | `RepoRoot`, `Testdata`, `FixtureRepo` (generates a fresh copy into `t.TempDir()`), `RecordingsDir` | done |
