@@ -50,12 +50,16 @@ func (c *HTTP) Evaluate(ctx context.Context, req Request) (Response, error) {
 	}
 	hr, err := http.NewRequestWithContext(ctx, http.MethodPost, c.BaseURL+"/v1/evaluate", bytes.NewReader(body))
 	if err != nil {
-		return Response{}, err
+		return Response{}, fmt.Errorf("jev: build request: %w", err)
 	}
 	hr.Header.Set("Authorization", "Bearer "+c.apiKey)
 	hr.Header.Set("Content-Type", "application/json")
 	resp, err := c.HC.Do(hr)
 	if err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			// Cancellation is the caller's decision, not an outage.
+			return Response{}, fmt.Errorf("jev: %w", ctxErr)
+		}
 		return Response{}, fmt.Errorf("%w: %w", ErrUnavailable, err)
 	}
 	defer func() { _ = resp.Body.Close() }()

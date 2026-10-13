@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -100,6 +101,9 @@ type Recording struct {
 	Key      string   `json:"key"`
 	Request  Request  `json:"request"`
 	Response Response `json:"response"`
+	// Synthetic marks a hand-written or heuristic response (not from the
+	// real endpoint), used only if live recording was blocked.
+	Synthetic bool `json:"synthetic,omitempty"`
 }
 
 // RequestKey is the content hash of a request's canonical JSON (map keys are
@@ -128,13 +132,17 @@ func (r *Replay) Evaluate(_ context.Context, req Request) (Response, error) {
 	if err != nil {
 		return Response{}, err
 	}
-	b, err := os.ReadFile(filepath.Join(r.Dir, key+".json"))
+	path := filepath.Join(r.Dir, key+".json")
+	b, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return Response{}, fmt.Errorf("%w %s in %s (run make record-jev)", ErrNoRecording, key, r.Dir)
+	}
 	if err != nil {
-		return Response{}, fmt.Errorf("%w: %s", ErrNoRecording, key)
+		return Response{}, fmt.Errorf("jev: read recording %s: %w", path, err)
 	}
 	var rec Recording
 	if err := json.Unmarshal(b, &rec); err != nil {
-		return Response{}, fmt.Errorf("jev: bad recording %s: %w", key, err)
+		return Response{}, fmt.Errorf("jev: bad recording %s: %w", path, err)
 	}
 	return rec.Response, nil
 }
@@ -144,6 +152,9 @@ func (r *Replay) Evaluate(_ context.Context, req Request) (Response, error) {
 type Recorder struct {
 	Live Client
 	Dir  string
+	// Synthetic is copied into every Recording (set when Live is not the
+	// real endpoint).
+	Synthetic bool
 }
 
 var _ Client = (*Recorder)(nil)
@@ -156,17 +167,22 @@ func (r *Recorder) Evaluate(ctx context.Context, req Request) (Response, error) 
 	}
 	key, err := RequestKey(req)
 	if err != nil {
-		return resp, err
+		return resp, fmt.Errorf("jev: record: %w", err)
 	}
 	if req.Model == "" {
 		req.Model = Model
 	}
-	b, err := json.MarshalIndent(Recording{Key: key, Request: req, Response: resp}, "", "  ")
+	// Only the request body and response are written; the Recorder never
+	// sees auth headers or keys (those live inside the Live client).
+	b, err := json.MarshalIndent(Recording{Key: key, Request: req, Response: resp, Synthetic: r.Synthetic}, "", "  ")
 	if err != nil {
-		return resp, err
+		return resp, fmt.Errorf("jev: record %s: %w", key, err)
 	}
 	if err := os.MkdirAll(r.Dir, 0o755); err != nil {
-		return resp, err
+		return resp, fmt.Errorf("jev: record %s: %w", key, err)
 	}
-	return resp, os.WriteFile(filepath.Join(r.Dir, key+".json"), append(b, '\n'), 0o600)
+	if err := os.WriteFile(filepath.Join(r.Dir, key+".json"), append(b, '\n'), 0o600); err != nil {
+		return resp, fmt.Errorf("jev: record %s: %w", key, err)
+	}
+	return resp, nil
 }

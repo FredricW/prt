@@ -134,4 +134,7 @@ type Client interface {
 }
 
 // EstimateTokens is a cheap upper-ish estimate used for batching.
-func EstimateTokens(s string) int { return (len(s) + approxCharsPerToken - 1) / approxCharsPerToken }
+func EstimateTokens(s string) int { return EstimateTokensLen(len(s)) }
+
+// EstimateTokensLen is EstimateTokens for a text of n bytes.
+func EstimateTokensLen(n int) int { return (n + approxCharsPerToken - 1) / approxCharsPerToken }

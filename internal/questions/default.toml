@@ -1,19 +1,433 @@
-# Built-in Jev question catalogue (spec: "Jev question catalogue").
-# TODO(M1): add every row of the spec table. Users override this file with
-# .git/prt/prt.questions.toml or $XDG_CONFIG_HOME/prt/prt.questions.toml.
+# Built-in Jev question catalogue (spec: "Jev question catalogue"; every row of
+# the spec table). Users override this file with .git/prt/prt.questions.toml or
+# $XDG_CONFIG_HOME/prt/prt.questions.toml.
+#
+# Fields per [[question]]:
+#   scope    line | unit | file | group | pair | item | branch
+#   id       slug [a-z][a-z0-9_]* (no "__"); equals a model.Q* constant
+#   type     N (boolean), C (choice), S (score)
+#   prompt   one factor, written for a judgment model reading a code diff
+#   options  C: the choice values (stored verbatim as label values)
+#            S: rungs lowest -> highest ("1: ..", "2: ..")
+#            N: empty (one boolean) or "<sub>: <description>" per sub-question
+#               of an "N xk" row (labels "<id>.<sub>")
+#   criteria optional descriptions: C option -> description; N "true"/"false"
+#   dynamic  "pr_bullets": choice options are the PR description bullets
+#            (b1..bN) plus "none", built per item
+#   inputs   extra state the question needs beyond the unit (see
+#            questions.KnownInputs)
+#   feeds    the UI elements/stages that consume the answer (never empty)
+#   deferred milestone whose consumer is not built yet; deferred rows are
+#            never sent (DECISIONS "M1 live questions")
+
+# ---------------------------------------------------------------- line scope
+
+[[question]]
+scope = "line"
+id = "fmt"
+type = "N"
+prompt = "Is this added line a formatting or whitespace-only change (indentation, line wrapping, quotes, trailing commas) with no effect on what the code does?"
+feeds = ["collapse"]
+
+[[question]]
+scope = "line"
+id = "value_tweak"
+type = "N"
+prompt = "Does this added line change the value of a literal such as a timeout, limit, size, URL, threshold or retry count, while leaving the surrounding logic the same?"
+feeds = ["gutter_value"]
+
+[[question]]
+scope = "line"
+id = "leftover"
+type = "N"
+prompt = "Is this added line a leftover that should not be merged: a debug print or log, commented-out code, or a TODO/FIXME/XXX note?"
+feeds = ["gutter_leftover"]
+
+[[question]]
+scope = "line"
+id = "swallow"
+type = "N"
+prompt = "Does this added line ignore, discard or swallow an error or exception (empty catch, ignored return error, blanket except, error replaced by a default value)?"
+feeds = ["risk"]
+
+[[question]]
+scope = "line"
+id = "pii_or_secret"
+type = "N"
+prompt = "Could this added line log, store, send or expose personal data (emails, names, addresses, ids) or a secret (password, token, API key)?"
+feeds = ["risk", "headline"]
+
+[[question]]
+scope = "line"
+id = "suspicious"
+type = "S"
+prompt = "How likely is this added line to contain a bug?"
+options = [
+  "1: almost certainly correct",
+  "2: probably correct",
+  "3: worth a second look",
+  "4: likely a bug",
+  "5: almost certainly a bug",
+]
+feeds = ["gutter_suspicious"]
+
+# ---------------------------------------------------------------- unit scope
 
 [[question]]
 scope = "unit"
 id = "kind"
 type = "C"
-prompt = "What kind of change is this unit?"
+prompt = "What kind of change is this unit, judged by its main purpose?"
 options = ["feature", "bugfix", "refactor", "perf", "test", "config", "docs", "dependency", "generated", "formatting"]
 feeds = ["composition", "collapse"]
+
+[question.criteria]
+feature = "adds or extends user-visible or API-visible functionality"
+bugfix = "corrects behaviour that was wrong"
+refactor = "restructures code without changing what it does"
+perf = "makes existing behaviour faster or cheaper"
+test = "adds or changes tests or test helpers"
+config = "changes configuration, build, CI or environment settings"
+docs = "changes documentation or comments only"
+dependency = "adds, removes or bumps a dependency or lockfile entry"
+generated = "machine-generated output such as codegen, snapshots or vendored files"
+formatting = "whitespace, ordering or style only; no change in meaning"
+
+[[question]]
+scope = "unit"
+id = "behaviour"
+type = "N"
+prompt = "Does this change alter runtime behaviour (not just names, formatting, comments or types)?"
+feeds = ["filters"]
+
+[[question]]
+scope = "unit"
+id = "effect"
+type = "C"
+prompt = "Where would a user or client first notice the effect of this change?"
+options = ["none", "ui", "api response", "stored data", "performance"]
+feeds = ["overview"]
+
+[question.criteria]
+none = "no externally visible effect"
+ui = "what the user interface shows or how it behaves"
+"api response" = "the shape or content of an API response"
+"stored data" = "what is written to a database, file or cache"
+performance = "speed, latency or resource use"
+
+[[question]]
+scope = "unit"
+id = "desc_bullet"
+type = "C"
+prompt = "Which bullet of the pull request description does this change implement?"
+dynamic = "pr_bullets"
+inputs = ["pr_title", "pr_bullets"]
+feeds = ["fidelity", "group_names"]
+
+[question.criteria]
+none = "implements none of the listed bullets"
+
+[[question]]
+scope = "unit"
+id = "breaking"
+type = "N"
+prompt = "Does this change break existing callers or consumers (removed or renamed export, changed parameters, changed return shape, stricter validation)?"
+inputs = ["callers"]
+feeds = ["headlines", "context"]
+
+[[question]]
+scope = "unit"
+id = "contract"
+type = "C"
+prompt = "Which external contract, if any, does this change modify?"
+options = ["none", "signature", "api shape", "schema/migration", "env/flag", "event format"]
+feeds = ["headlines"]
+
+[question.criteria]
+none = "no contract changes"
+signature = "the signature of an exported function, method or type"
+"api shape" = "an HTTP/RPC request or response shape"
+"schema/migration" = "a database schema or a data migration"
+"env/flag" = "an environment variable, config key or feature flag"
+"event format" = "the format of an emitted event, message or log consumed elsewhere"
+
+[[question]]
+scope = "unit"
+id = "reversible"
+type = "N"
+prompt = "Could this change be reverted with a plain code revert, without a migration or a data fix?"
+feeds = ["risk"]
+
+[[question]]
+scope = "unit"
+id = "risk_tags"
+type = "N"
+prompt = "Does this change touch the following area?"
+options = [
+  "auth: authentication, authorisation, sessions or permissions",
+  "async: concurrency, async ordering or possible race conditions",
+  "error_path: error handling or failure paths",
+  "data_write: writes, updates or deletes persisted data",
+  "money: prices, payments, billing or currency amounts",
+  "pii: personal data about users",
+  "io_in_loop: network, disk or database calls inside a loop",
+  "date_tz: dates, times or time zones",
+]
+feeds = ["chips", "routing"]
+
+[[question]]
+scope = "unit"
+id = "fail_mode"
+type = "C"
+prompt = "If this change is wrong, what is the most likely kind of failure?"
+options = ["crash", "wrong data", "security", "slowdown", "cosmetic"]
+feeds = ["hot_spots"]
+
+[question.criteria]
+crash = "an exception, panic or failed request"
+"wrong data" = "silently incorrect results or corrupted data"
+security = "a vulnerability or data exposure"
+slowdown = "degraded performance or resource exhaustion"
+cosmetic = "a visual or textual glitch only"
 
 [[question]]
 scope = "unit"
 id = "risk"
 type = "S"
-prompt = "Overall risk if this change is wrong."
-options = ["1: negligible", "2: low", "3: moderate", "4: high", "5: severe"]
+prompt = "How bad would it be if this change were wrong?"
+options = [
+  "1: negligible, nobody would notice",
+  "2: low, a minor annoyance that is easy to fix",
+  "3: moderate, a visible bug for some users",
+  "4: high, broken core flow or wrong data",
+  "5: severe, outage, data loss or security hole",
+]
 feeds = ["everything"]
+
+[[question]]
+scope = "unit"
+id = "covered"
+type = "N"
+prompt = "Is this change exercised by any of the test files changed in this pull request (listed in the state)?"
+inputs = ["changed_tests"]
+feeds = ["test_gap"]
+
+[[question]]
+scope = "unit"
+id = "test_weakened"
+type = "N"
+prompt = "Does this change skip, delete or weaken a test (removed assertions, looser expectations, added skip/only)?"
+feeds = ["headline"]
+
+[[question]]
+scope = "unit"
+id = "follows_pattern"
+type = "N"
+prompt = "Does this change follow the pattern used by the neighbouring functions in the same module?"
+inputs = ["neighbours"]
+feeds = ["quality"]
+deferred = "M2"
+
+[[question]]
+scope = "unit"
+id = "duplicates_helper"
+type = "N"
+prompt = "Does this change re-implement logic that one of the candidate helpers in the state already provides?"
+inputs = ["helpers"]
+feeds = ["quality"]
+deferred = "M2"
+
+[[question]]
+scope = "unit"
+id = "interface"
+type = "N"
+prompt = "Does this change define something (function, type, constant, endpoint) that other changes in this pull request use?"
+inputs = ["links"]
+feeds = ["group_order"]
+deferred = "M2"
+
+[[question]]
+scope = "unit"
+id = "relevance"
+type = "S"
+prompt = "How relevant is this change to the reviewer, given their role and the paths they own (listed in the state)?"
+options = [
+  "1: unrelated to their role and paths",
+  "2: tangential",
+  "3: adjacent to their area",
+  "4: inside their area",
+  "5: central to what they own",
+]
+inputs = ["role", "owned_globs"]
+feeds = ["ranking", "your_slice"]
+
+[[question]]
+scope = "unit"
+id = "depth"
+type = "C"
+prompt = "How closely does a reviewer need to look at this change?"
+options = ["skip", "skim", "read", "run locally"]
+feeds = ["attention", "minutes"]
+
+[question.criteria]
+skip = "nothing to review (generated, formatting, trivial)"
+skim = "a glance is enough"
+read = "needs a careful line-by-line read"
+"run locally" = "needs to be run or tested by hand to be sure"
+
+[[question]]
+scope = "unit"
+id = "needs_context"
+type = "N"
+prompt = "To review this change properly, does a reviewer need to see code outside the diff of this kind?"
+options = [
+  "callers: the callers of the changed code",
+  "types: the definitions of the types involved",
+  "tests: the tests for the changed code",
+  "config: the configuration or flags it reads",
+]
+feeds = ["routing_context"]
+deferred = "M3"
+
+[[question]]
+scope = "unit"
+id = "reasoning"
+type = "S"
+prompt = "How much reasoning does a reviewer need to judge whether this change is correct?"
+options = [
+  "1: none, obviously correct at a glance",
+  "2: a little, local and straightforward",
+  "3: some, needs tracing a few values",
+  "4: a lot, subtle control or data flow",
+  "5: deep, concurrency, invariants or cross-module effects",
+]
+feeds = ["routing_tiebreak"]
+deferred = "M3"
+
+# ---------------------------------------------------------------- file scope
+
+[[question]]
+scope = "file"
+id = "role"
+type = "C"
+prompt = "What role does this file play in the codebase?"
+options = ["core", "glue", "ui", "test", "config", "generated"]
+feeds = ["file_list"]
+deferred = "M2"
+
+[[question]]
+scope = "file"
+id = "separate_pr"
+type = "N"
+prompt = "Should the changes to this file be split into their own pull request, given the other change groups listed?"
+inputs = ["group_list"]
+feeds = ["split_suggestion"]
+deferred = "M2"
+
+# --------------------------------------------------------------- group scope
+
+[[question]]
+scope = "group"
+id = "name_bullet"
+type = "C"
+prompt = "Which bullet of the pull request description does this group of changes implement?"
+dynamic = "pr_bullets"
+inputs = ["pr_body"]
+feeds = ["group_name"]
+deferred = "M2"
+
+[question.criteria]
+none = "implements none of the listed bullets"
+
+# ---------------------------------------------------------------- pair scope
+
+[[question]]
+scope = "pair"
+id = "relation"
+type = "C"
+prompt = "How are these two changes related?"
+options = ["same intent", "caller update", "test for", "same pattern", "unrelated"]
+inputs = ["both_units"]
+feeds = ["links"]
+deferred = "M2"
+
+[[question]]
+scope = "pair"
+id = "semantic_conflict"
+type = "C"
+prompt = "If both changes were merged, how would they interact?"
+options = ["none", "same", "contradictory", "order-dependent"]
+inputs = ["both_units"]
+feeds = ["overlap"]
+deferred = "M6"
+
+# ---------------------------------------------------------------- item scope
+
+[[question]]
+scope = "item"
+id = "shape"
+type = "C"
+prompt = "What is the overall shape of this pull request?"
+options = ["single-purpose", "mixed", "sweeping refactor", "WIP"]
+inputs = ["aggregates", "pr_body"]
+feeds = ["coherence"]
+deferred = "M3"
+
+[[question]]
+scope = "item"
+id = "desc_sufficient"
+type = "N"
+prompt = "Would the description alone let a reviewer judge whether this pull request does what it should?"
+inputs = ["pr_body", "headlines"]
+feeds = ["fidelity"]
+deferred = "M3"
+
+[[question]]
+scope = "item"
+id = "flagged"
+type = "N"
+prompt = "Is this pull request behind a feature flag, or otherwise safe to ship dark?"
+inputs = ["flag_labels"]
+feeds = ["risk"]
+deferred = "M3"
+
+[[question]]
+scope = "item"
+id = "rollback"
+type = "C"
+prompt = "How hard would it be to roll this pull request back after release?"
+options = ["trivial", "revert", "needs migration", "one-way"]
+inputs = ["contract_labels"]
+feeds = ["risk"]
+deferred = "M3"
+
+[[question]]
+scope = "item"
+id = "needs_other_reviewer"
+type = "C"
+prompt = "Does this pull request need a specialist reviewer in addition to the requested ones?"
+options = ["none", "security", "backend", "data"]
+inputs = ["tag_counts"]
+feeds = ["overview"]
+deferred = "M3"
+
+[[question]]
+scope = "item"
+id = "comment_addressed"
+type = "N"
+prompt = "Is this review comment addressed by the latest push?"
+inputs = ["comment_and_diff"]
+feeds = ["since_you_looked"]
+deferred = "M4"
+
+# -------------------------------------------------------------- branch scope
+
+[[question]]
+scope = "branch"
+id = "state"
+type = "C"
+prompt = "What state is this branch in?"
+options = ["WIP", "ready for PR", "spike", "abandoned", "superseded"]
+inputs = ["branch_log"]
+feeds = ["picker"]
+deferred = "M5"

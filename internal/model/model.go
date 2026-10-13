@@ -123,6 +123,15 @@ type Item struct {
 	// CrossRepo is true for a PR whose head lives in a fork: Ref is then a
 	// branch name in another repository, never a local branch.
 	CrossRepo bool `json:"crossRepo,omitempty"`
+
+	// LabelsUnavailable is copied from ItemAgg.LabelsMissing by the pipeline:
+	// Jev was unreachable, so the picker shows "labels unavailable".
+	LabelsUnavailable bool `json:"labelsUnavailable,omitempty"`
+	// Breaking and NeedsEyes are copied from the aggregate (count of
+	// headline units labelled breaking; units with attention eyes) for the
+	// picker's Needs-you secondary line.
+	Breaking  int `json:"breaking,omitempty"`
+	NeedsEyes int `json:"needsEyes,omitempty"`
 }
 
 // FileRole is the Jev-assigned role of a changed file.
@@ -197,18 +206,22 @@ type ChangeUnit struct {
 	Order     int      `json:"order"` // position within the item, for stable ordering
 }
 
-// Label is one Jev answer for a unit (or a line, file, group, pair or item:
-// UnitID then holds that subject's key, see LabelSubject).
+// Label is one Jev answer for a unit (or a line of it; or a file or item:
+// UnitID then holds FileSubject / ItemSubject). Value, P, Score and Probs
+// follow the conventions documented in labels.go.
 type Label struct {
 	UnitID     string  `json:"unitId"`
 	Question   string  `json:"question"` // question id, e.g. "risk" or "risk_tags.auth"
 	Line       int     `json:"line,omitempty"`
-	Value      string  `json:"value"`           // choice, "yes"/"no", score as decimal, or "unknown"
-	P          float64 `json:"p"`               // probability of Value
+	Value      string  `json:"value"`           // choice, "yes"/"no", 1-based score rung, or "unknown"
+	P          float64 `json:"p"`               // booleans: P(yes); choice/score: P(Value)
 	Confidence float64 `json:"confidence"`      // 0 when unknown
 	Model      string  `json:"model,omitempty"` // e.g. "typesafe-ai/jev"
 	Overridden *string `json:"overridden,omitempty"`
-	Score      float64 `json:"score,omitempty"` // interpolated score for Score questions
+	Score      float64 `json:"score,omitempty"` // interpolated 1-based score for Score questions
+	// Probs is the full distribution: choice option → p, or 1-based score
+	// rung ("1".."5") → p. Empty for booleans and unknown labels.
+	Probs map[string]float64 `json:"probs,omitempty"`
 }
 
 // LabelUnknown is the value used when Jev is unreachable (spec: failure handling).
