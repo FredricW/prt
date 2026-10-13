@@ -84,6 +84,13 @@ type Result struct {
 	Cost  float64
 	// Unavailable is true when any call failed with jev.ErrUnavailable.
 	Unavailable bool
+	// Answered is the number of calls that succeeded and Failed the number
+	// that failed with jev.ErrUnavailable or were skipped by the circuit
+	// breaker, so callers can tell a partial failure from an outage.
+	Answered, Failed int
+	// Tripped is true when the circuit breaker skipped requests (Jev looked
+	// unreachable, not merely rate-limited once).
+	Tripped bool
 }
 
 // Run labels in.Units with c. It returns an error only for failures that are
@@ -197,7 +204,8 @@ func assemble(units []model.ChangeUnit, p plan, outs []outcome) Result {
 	for k, j := range p.jobs {
 		o := outs[k]
 		if o.skipped {
-			res.Unavailable = true
+			res.Unavailable, res.Tripped = true, true
+			res.Failed++
 			for _, b := range j.binds {
 				perUnit[j.unit] = append(perUnit[j.unit], unknownLabel(units[j.unit].ID, b.line, b.wq))
 			}
@@ -211,9 +219,11 @@ func assemble(units []model.ChangeUnit, p plan, outs []outcome) Result {
 		switch {
 		case o.err == nil:
 			res.Cost += o.resp.CostUSD()
+			res.Answered++
 			perUnit[j.unit] = append(perUnit[j.unit], decodeAll(unitID, j, o.resp)...)
 		case errors.Is(o.err, jev.ErrUnavailable):
 			res.Unavailable = true
+			res.Failed++
 			for _, b := range j.binds {
 				perUnit[j.unit] = append(perUnit[j.unit], unknownLabel(unitID, b.line, b.wq))
 			}

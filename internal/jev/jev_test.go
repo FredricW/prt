@@ -44,6 +44,51 @@ func TestHTTPEvaluate(t *testing.T) {
 	}
 }
 
+// A single 429 or 5xx is retried once; a second one is ErrUnavailable.
+func TestHTTPRetriesOnce(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		statuses []int
+		wantErr  bool
+	}{
+		{"429 then ok", []int{http.StatusTooManyRequests, http.StatusOK}, false},
+		{"503 then ok", []int{http.StatusServiceUnavailable, http.StatusOK}, false},
+		{"twice 502", []int{http.StatusBadGateway, http.StatusBadGateway, http.StatusOK}, true},
+		{"400 not retried", []int{http.StatusBadRequest, http.StatusOK}, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			calls := 0
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				s := tc.statuses[calls]
+				calls++
+				if s != http.StatusOK {
+					w.Header().Set("Retry-After", "0")
+					http.Error(w, "busy", s)
+					return
+				}
+				_, _ = w.Write([]byte(`{"answers":{}}`))
+			}))
+			defer srv.Close()
+			c := NewHTTP(srv.URL, "test-key")
+			c.RetryWait = -1
+			_, err := c.Evaluate(context.Background(), Request{State: "s"})
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("err = %v, want error %v", err, tc.wantErr)
+			}
+			if tc.statuses[0] >= 500 || tc.statuses[0] == http.StatusTooManyRequests {
+				if calls != 2 {
+					t.Fatalf("calls = %d, want 2", calls)
+				}
+				if tc.wantErr && !errors.Is(err, ErrUnavailable) {
+					t.Fatalf("err = %v, want ErrUnavailable", err)
+				}
+			} else if calls != 1 {
+				t.Fatalf("calls = %d, want 1", calls)
+			}
+		})
+	}
+}
+
 func TestHTTPNoKeyIsUnavailable(t *testing.T) {
 	_, err := NewHTTP("http://127.0.0.1:0", "").Evaluate(context.Background(), Request{})
 	if !errors.Is(err, ErrUnavailable) {

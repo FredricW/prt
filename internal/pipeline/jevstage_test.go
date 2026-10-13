@@ -3,7 +3,9 @@ package pipeline
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -318,6 +320,69 @@ func TestJevUnknownsReaskedWhenJevReturns(t *testing.T) {
 	}
 }
 
+// flakyJev fails the first line-question request with ErrUnavailable and
+// answers everything else through Fake.
+type flakyJev struct {
+	jev.Fake
+	mu     sync.Mutex
+	failed bool
+}
+
+func (f *flakyJev) Evaluate(ctx context.Context, req jev.Request) (jev.Response, error) {
+	f.mu.Lock()
+	fail := false
+	if !f.failed {
+		for name := range req.Questions {
+			if strings.Contains(name, "__l") {
+				fail, f.failed = true, true
+				break
+			}
+		}
+	}
+	f.mu.Unlock()
+	if fail {
+		return jev.Response{}, fmt.Errorf("%w: HTTP 429", jev.ErrUnavailable)
+	}
+	return f.Fake.Evaluate(ctx, req)
+}
+
+// Regression: one failed request (a 429 among many) marked the whole item
+// labels-unavailable, and its line labels stayed unknown forever because
+// one known line satisfied the cache check.
+func TestJevPartialFailureKeepsLabelsAndReasks(t *testing.T) {
+	e := newLabelEnv(t)
+	fj := &flakyJev{}
+	p := e.pipeline(fj)
+	e.run(t, p)
+	if e.agg(t).LabelsMissing || e.storedItem(t).LabelsUnavailable {
+		t.Fatal("one failed request marked the item labels-unavailable")
+	}
+	rl := e.stage(t, model.StageJev)
+	if !strings.Contains(rl.Note, "1 of") {
+		t.Errorf("jev note = %q, want the partial failure count", rl.Note)
+	}
+	unknownLines := 0
+	for _, l := range e.labels(t) {
+		if l.Line > 0 && model.IsUnknown(l) {
+			unknownLines++
+		}
+	}
+	if unknownLines == 0 {
+		t.Fatal("failed line batch left no unknown line labels")
+	}
+
+	n := len(fj.Calls)
+	e.run(t, p)
+	if len(fj.Calls) == n || e.stage(t, model.StageJev).CacheHit {
+		t.Fatal("unknown line labels were not re-asked")
+	}
+	for _, l := range e.labels(t) {
+		if model.IsUnknown(l) {
+			t.Errorf("still unknown after Jev recovered: %+v", l)
+		}
+	}
+}
+
 // Needs the real internal/labels (a non-ErrUnavailable client error is a
 // labels.Run error).
 func TestJevErrorFailsStageSoftly(t *testing.T) {
@@ -461,24 +526,35 @@ func TestUnitsNeedingLabels(t *testing.T) {
 	partial := model.ChangeUnit{ID: "partial", Dels: 1}
 	unknown := model.ChangeUnit{ID: "unknown", Dels: 1}
 	noLines := model.ChangeUnit{ID: "nolines", Adds: 1, Diff: "+y"}
+	// Regression: one labelled line used to satisfy every line, so a failed
+	// line batch stayed unknown forever.
+	someLines := model.ChangeUnit{ID: "somelines", Adds: 2, Diff: "+a\n+b"}
+	unknownLine := model.ChangeUnit{ID: "unknownline", Adds: 2, Diff: "+a\n+b"}
 
 	var stored []model.Label
 	stored = append(stored, full(del)...)
 	stored = append(stored, full(add)...)
-	stored = append(stored, lines(add, 3)...)
+	stored = append(stored, lines(add, 1)...) // Line = position among added lines
+	stored = append(stored, full(someLines)...)
+	stored = append(stored, lines(someLines, 1)...)
+	stored = append(stored, full(unknownLine)...)
+	stored = append(stored, lines(unknownLine, 1)...)
+	ul := lines(unknownLine, 2)
+	ul[0].Value = model.LabelUnknown
+	stored = append(stored, ul...)
 	stored = append(stored, full(partial)[1:]...)
 	u := full(unknown)
 	u[0].Value = model.LabelUnknown
 	stored = append(stored, u...)
 	stored = append(stored, full(noLines)...)
 
-	got := unitsNeedingLabels([]model.ChangeUnit{del, add, partial, unknown, noLines}, stored, cat, nil)
+	got := unitsNeedingLabels([]model.ChangeUnit{del, add, partial, unknown, noLines, someLines, unknownLine}, stored, cat, nil)
 	var ids []string
 	for _, u := range got {
 		ids = append(ids, u.ID)
 	}
-	if strings.Join(ids, ",") != "partial,unknown,nolines" {
-		t.Errorf("need = %v, want [partial unknown nolines]", ids)
+	if strings.Join(ids, ",") != "partial,unknown,nolines,somelines,unknownline" {
+		t.Errorf("need = %v, want [partial unknown nolines somelines unknownline]", ids)
 	}
 }
 

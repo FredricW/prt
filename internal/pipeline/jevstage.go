@@ -17,8 +17,9 @@ const HeadlineBreaking = "breaking"
 
 // jevOut is the outcome of stage 4 (labels) for one item.
 type jevOut struct {
-	// missing is true when some units could not be labelled this run (Jev
-	// nil or unavailable, or labels.Run failed): ItemAgg.LabelsMissing.
+	// missing is true when Jev looked unreachable this run (nil client, no
+	// call answered, circuit breaker tripped, or labels.Run failed):
+	// ItemAgg.LabelsMissing. A partial failure does not set it.
 	missing bool
 }
 
@@ -71,9 +72,16 @@ func (p *Pipeline) labelStage(ctx context.Context, it model.Item, files []model.
 		}
 		return jevOut{missing: true}, fmt.Errorf("pipeline: labels %s: %w", it.ID, runErr)
 	}
-	out := jevOut{missing: res.Unavailable}
-	if res.Unavailable {
+	// Only an outage (no call answered, or the circuit breaker tripped)
+	// marks the item labels-missing; a partial failure leaves the affected
+	// units unknown (shown as unsure) and they are asked again on the next
+	// run (unitsNeedingLabels).
+	out := jevOut{missing: res.Unavailable && (res.Answered == 0 || res.Tripped)}
+	switch {
+	case out.missing:
 		rl.Note = "Jev unavailable"
+	case res.Unavailable:
+		rl.Note = fmt.Sprintf("%d of %d Jev requests failed; affected labels unknown", res.Failed, res.Failed+res.Answered)
 	}
 	return out, p.storeLabels(ctx, dropShadowedUnknowns(res.Labels, stored, hashes), rl)
 }
@@ -206,20 +214,19 @@ func liveLabelIDs(cat questions.Catalogue, s questions.Scope) []string {
 
 // unitsNeedingLabels returns the units whose stored labels are incomplete:
 // a unit is complete when every live unit-scope label id has a current unit
-// label (known, and asked with the item-level inputs in hashes) and, if the
-// unit adds lines, every live line-scope label id has at least one current
-// line label. Unknown line labels on other lines are not inspected (the
-// labeller may legitimately skip lines such as blank ones, so "every added
-// line" cannot be required).
+// label (known, and asked with the item-level inputs in hashes) and every
+// live line-scope label id has a current label on every added line (the
+// labeller asks about every '+' line, so a missing or unknown line label
+// means a failed call or a malformed answer, as for unit labels).
 func unitsNeedingLabels(units []model.ChangeUnit, stored []model.Label, cat questions.Catalogue, hashes map[string]string) []model.ChangeUnit {
 	type key struct {
 		unit, q string
-		line    bool
+		line    int
 	}
 	known := map[key]bool{}
 	for _, l := range stored {
 		if current(l, hashes) {
-			known[key{l.UnitID, l.Question, l.Line > 0}] = true
+			known[key{l.UnitID, l.Question, l.Line}] = true
 		}
 	}
 	unitQs, lineQs := liveLabelIDs(cat, questions.ScopeUnit), liveLabelIDs(cat, questions.ScopeLine)
@@ -227,11 +234,11 @@ func unitsNeedingLabels(units []model.ChangeUnit, stored []model.Label, cat ques
 	for _, u := range units {
 		complete := true
 		for _, q := range unitQs {
-			complete = complete && known[key{u.ID, q, false}]
+			complete = complete && known[key{u.ID, q, 0}]
 		}
-		if u.Adds > 0 {
+		for pos := 1; complete && pos <= len(model.AddedLineNumbers(u)); pos++ {
 			for _, q := range lineQs {
-				complete = complete && known[key{u.ID, q, true}]
+				complete = complete && known[key{u.ID, q, pos}]
 			}
 		}
 		if !complete {
