@@ -177,10 +177,13 @@ so no model is called but the fixture PRs show real labels, groups, reviews
 and TL;DRs. They also pass `--drafts testdata/fixtures/drafts.json`, which
 seeds a few local draft comments (drafts you already have are kept). Anything not recorded (the local branch) shows the `labels
 unavailable` mode; most deep groups of the larger PRs stay queued over the
-default $0.40 per-item cost cap. `make demo` uses the default `needs-you`
-strategy, so in a fixture store nothing has analysed yet (`make snapshot`
-analyses every item regardless of strategy) #102 and the branch show
-`not analysed` until you press `r`.
+default $0.40 per-item cost cap. `make demo` runs under the default
+`needs-you` strategy: PRs in Needs you are analysed automatically, while
+#102 (Yours) and the fixture branch show `not analysed` until you press `r`.
+`make snapshot` renders through a synchronous run that ignores the strategy,
+so it analyses every item. In this replay mode only `.git/prt/` is read, so
+the settings page saves to the repo scope only, and its GitHub line says the
+client is the fixture (gh auth is not checked).
 
 Configuration is optional: `prt.toml`, `prt.routing.toml` and
 `prt.questions.toml` are looked up in `.git/prt/`, then `$XDG_CONFIG_HOME/prt/`.
