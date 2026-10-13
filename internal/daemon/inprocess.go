@@ -16,6 +16,7 @@ import (
 
 	"github.com/charmbracelet/log"
 
+	"github.com/fredricw/prt/internal/config"
 	"github.com/fredricw/prt/internal/gh"
 	"github.com/fredricw/prt/internal/gitx"
 	"github.com/fredricw/prt/internal/model"
@@ -63,11 +64,28 @@ type InProcess struct {
 	cancel context.CancelFunc
 	once   sync.Once
 
-	// runs holds the cancel func of each item's running analysis, so
-	// removing the item (x, a discarded preview) stops it before the paid
-	// stages run (see cancelRun).
+	// runs holds each item's running analysis (its cancel func and the
+	// stage in flight), so removing the item (x, a discarded preview) stops
+	// it before the paid stages run (see cancelRun) and a user stop knows
+	// where it stopped (M5.1).
 	runMu sync.Mutex
-	runs  map[string]context.CancelFunc
+	runs  map[string]*runEntry
+
+	// run executes one pipeline run (c.p.RunHead; tests substitute it to
+	// see the options each job gets).
+	run func(ctx context.Context, it model.Item, opt pipeline.RunOptions) (string, error)
+
+	// settingsMu guards sdeps (M5.1, control.go).
+	settingsMu sync.Mutex
+	sdeps      SettingsDeps
+	// saveMu serialises SaveSettings (read files, save, reload, apply).
+	saveMu sync.Mutex
+}
+
+// runEntry is one running analysis (guarded by InProcess.runMu).
+type runEntry struct {
+	cancel context.CancelCauseFunc
+	stage  model.Stage // the last stage that started ("" before fetch)
 }
 
 var _ Client = (*InProcess)(nil)
@@ -80,7 +98,7 @@ func NewInProcess(d pipeline.Deps) *InProcess {
 	c := &InProcess{
 		events: make(chan proto.Event, 256), ctx: ctx, cancel: cancel,
 		itemMu: &sync.Mutex{}, commentLock: pipeline.NewKeyedLock(),
-		runs: map[string]context.CancelFunc{},
+		runs: map[string]*runEntry{},
 	}
 	// A random start keeps draft ids unique across processes too: with a
 	// fixed clock (--now) every process would otherwise count from 1 and
@@ -104,14 +122,26 @@ func NewInProcess(d pipeline.Deps) *InProcess {
 	d.CommentLock = c.commentLock
 	c.d, c.log, c.now = d, d.Log, d.Now
 	c.p = pipeline.New(d)
-	slots := d.Config.Pipeline.Concurrency
-	if slots <= 0 {
-		slots = defaultConcurrency
-	}
-	c.q = newQueue(slots, &c.wg, c.analyse)
+	c.run = c.p.RunHead
+	c.q = newQueue(slotsFor(d.Config), &c.wg, c.analyse)
 	c.recoverStates(ctx)
 	return c
 }
+
+// slotsFor is the worker-pool size of a configuration.
+func slotsFor(cfg config.Config) int {
+	if cfg.Pipeline.Concurrency <= 0 {
+		return defaultConcurrency
+	}
+	return cfg.Pipeline.Concurrency
+}
+
+// cfg returns the live prt.toml configuration (the pipeline's, which
+// SaveSettings replaces; M5.1). Read it per use, never cache it.
+func (c *InProcess) cfg() config.Config { return c.p.Config() }
+
+// strategy is the live auto-review strategy.
+func (c *InProcess) strategy() model.AutoReview { return c.cfg().Pipeline.Strategy() }
 
 // SetGitHubNote records why GitHub is disabled (no token, origin not on
 // GitHub, --offline). With no GitHub client, each discovery reports it as an
@@ -184,6 +214,7 @@ func (c *InProcess) onStage(rl model.RunLog) {
 	default:
 		return
 	}
+	c.noteStage(rl.ItemID, rl.Stage)
 	if rl.Stage == model.StageFetch {
 		c.setState(rl.ItemID, model.StateFetching, "")
 		return
@@ -347,7 +378,7 @@ func (c *InProcess) Detail(ctx context.Context, itemID string) (proto.Detail, er
 	if agg, ok, err := s.Agg(ctx, itemID); err == nil && ok {
 		if agg.Branch != nil && it.Kind == model.KindBranch && (it.AnalysedSHA == "" || it.AnalysedSHA == it.HeadSHA) {
 			// The Branch state box ages like the picker line (setUrgency).
-			b := pipeline.AgeBranchInfo(*agg.Branch, idleDays(it, c.now()), c.d.Config.Pipeline.AbandonedDays)
+			b := pipeline.AgeBranchInfo(*agg.Branch, idleDays(it, c.now()), c.cfg().Pipeline.AbandonedDays)
 			agg.Branch = &b
 		}
 		det.Agg = &agg
@@ -377,7 +408,10 @@ func labelSubjects(itemID string, files []model.File, units []model.ChangeUnit) 
 // branches, GitHub for PRs) and the fetch cache is bypassed, so new commits
 // are analysed without waiting for the next discovery. p.FromStage (the
 // Pipeline page's `r` on a stage) makes that stage and the later ones
-// ignore their caches; such a job follows a run in flight.
+// ignore their caches; such a job follows a run in flight. With p.User (a
+// hand-made `r`) the job is explicit: it records Item.RequestedSHA and runs
+// the model stages whatever the strategy; without it (the TUI's automatic
+// first load, even when forced) the auto_review strategy gates it (M5.1).
 func (c *InProcess) Refresh(ctx context.Context, p proto.ItemParams) error {
 	if p.FromStage != "" && !pipeline.ValidStage(p.FromStage) {
 		return fmt.Errorf("daemon: refresh %s: unknown stage %q", p.ItemID, p.FromStage)
@@ -387,15 +421,46 @@ func (c *InProcess) Refresh(ctx context.Context, p proto.ItemParams) error {
 			return err
 		}
 	}
-	if p.FromStage == "" {
-		return c.Analyse(ctx, p.Force, p.ItemID)
-	}
 	it, err := c.d.Store.Item(ctx, p.ItemID)
 	if err != nil {
 		return fmt.Errorf("daemon: refresh %s: %w", p.ItemID, err)
 	}
-	c.q.push(job{itemID: it.ID, urgency: it.Urgency, force: p.Force, fromStage: p.FromStage, rerun: true})
+	j := job{itemID: it.ID, urgency: it.Urgency, force: p.Force}
+	if p.FromStage != "" {
+		j.fromStage, j.rerun = p.FromStage, true
+	}
+	if p.User {
+		return c.pushExplicit(ctx, it, j)
+	}
+	c.q.push(j)
 	return nil
+}
+
+// pushExplicit queues j as an explicit request for it (job.explicit): it
+// first records the item's current head as requested (Item.RequestedSHA),
+// so the request survives a restart and the item's later automatic runs of
+// this head are allowed too (model.AutoReview.Allows).
+func (c *InProcess) pushExplicit(ctx context.Context, it model.Item, j job) error {
+	j.explicit = true
+	if err := c.markRequested(ctx, it); err != nil {
+		return err
+	}
+	c.q.push(j)
+	return nil
+}
+
+// markRequested sets it's RequestedSHA to its head (when known and not
+// already set), emitting an item event.
+func (c *InProcess) markRequested(ctx context.Context, it model.Item) error {
+	if it.HeadSHA == "" || it.RequestedSHA == it.HeadSHA {
+		return nil
+	}
+	_, _, err := c.updateItem(ctx, it.ID, func(s *model.Item) {
+		if s.HeadSHA != "" {
+			s.RequestedSHA = s.HeadSHA
+		}
+	})
+	return err
 }
 
 // refreshHead re-reads one item's head (and, for PRs, its metadata). A
@@ -466,81 +531,226 @@ func (c *InProcess) EditGroups(ctx context.Context, p proto.GroupEditParams) err
 		return fmt.Errorf("daemon: edit groups %s: %w", p.ItemID, err)
 	}
 	// rerun: a run already in flight may have read the edits before this
-	// one was stored, so another run must follow it.
-	c.q.push(job{itemID: it.ID, urgency: it.Urgency, rerun: true})
-	return nil
+	// one was stored, so another run must follow it. Explicit: the user
+	// acted on this item.
+	return c.pushExplicit(ctx, it, job{itemID: it.ID, urgency: it.Urgency, rerun: true})
 }
 
 // Analyse queues items for background analysis as one batch, so they start
-// in urgency order. Unknown ids are an error; nothing is queued then.
+// in urgency order. Unknown ids are an error; nothing is queued then. A
+// direct call is an explicit request (tests, tools): the daemon's own
+// automatic paths use queueAuto, which the auto_review strategy gates.
 func (c *InProcess) Analyse(ctx context.Context, force bool, ids ...string) error {
-	jobs := make([]job, 0, len(ids))
-	for _, id := range ids {
-		it, err := c.d.Store.Item(ctx, id)
-		if err != nil {
-			return fmt.Errorf("daemon: refresh %s: %w", id, err)
+	var items []model.Item
+	jobs, err := c.jobsFor(ctx, ids, func(it model.Item) job {
+		items = append(items, it)
+		return job{itemID: it.ID, urgency: it.Urgency, force: force, explicit: true}
+	})
+	if err != nil {
+		return err
+	}
+	for _, it := range items {
+		if err := c.markRequested(ctx, it); err != nil {
+			return err
 		}
-		jobs = append(jobs, job{itemID: it.ID, urgency: it.Urgency, force: force})
 	}
 	c.q.push(jobs...)
 	return nil
 }
 
-// analyse runs one queued job on a worker.
+// queueAuto queues automatic (gated) non-forced runs of ids as one batch,
+// in urgency order. Unknown ids are an error; nothing is queued then.
+func (c *InProcess) queueAuto(ctx context.Context, ids ...string) error {
+	jobs, err := c.jobsFor(ctx, ids, func(it model.Item) job {
+		return job{itemID: it.ID, urgency: it.Urgency}
+	})
+	if err != nil {
+		return err
+	}
+	c.q.push(jobs...)
+	return nil
+}
+
+// jobsFor loads ids and builds one job each with mk.
+func (c *InProcess) jobsFor(ctx context.Context, ids []string, mk func(model.Item) job) ([]job, error) {
+	jobs := make([]job, 0, len(ids))
+	for _, id := range ids {
+		it, err := c.d.Store.Item(ctx, id)
+		if err != nil {
+			return nil, fmt.Errorf("daemon: refresh %s: %w", id, err)
+		}
+		jobs = append(jobs, mk(it))
+	}
+	return jobs, nil
+}
+
+// stopQueued is the StateNote of an item stopped before its run started.
+const stopQueued = "queued"
+
+// analyse runs one queued job on a worker. The run is registered in runs
+// before anything else, so a user stop (Stop) either cancels it or is seen
+// by the stop-mark check below.
 func (c *InProcess) analyse(j job) {
+	runCtx, cancel := context.WithCancelCause(c.ctx)
+	entry := &runEntry{cancel: cancel}
+	c.runMu.Lock()
+	c.runs[j.itemID] = entry
+	c.runMu.Unlock()
+	defer func() {
+		c.runMu.Lock()
+		if c.runs[j.itemID] == entry {
+			delete(c.runs, j.itemID)
+		}
+		c.runMu.Unlock()
+		cancel(nil)
+	}()
+	if c.q.stoppedBefore(j) {
+		c.setStopped(j.itemID, stopQueued)
+		return
+	}
 	it, err := c.d.Store.Item(c.ctx, j.itemID)
 	if err != nil {
 		c.log.Warn("analyse: item gone", "item", j.itemID, "err", err)
 		return
 	}
-	runCtx, cancel := context.WithCancel(c.ctx)
-	c.runMu.Lock()
-	c.runs[it.ID] = cancel
-	c.runMu.Unlock()
-	defer func() {
-		c.runMu.Lock()
-		delete(c.runs, it.ID)
-		c.runMu.Unlock()
-		cancel()
-	}()
+	pl, ok := c.gate(j, it)
+	if !ok {
+		c.log.Debug("analyse: automatic job for a stopped item skipped", "item", it.ID)
+		return
+	}
 	c.setState(it.ID, model.StateFetching, "")
-	head, err := c.p.RunHead(runCtx, it, j.options())
-	c.finish(runCtx, it.ID, head, err)
+	head, err := c.run(runCtx, it, pl.opts)
+	c.finish(runCtx, it.ID, outcome{head: head, err: err, explicit: j.explicit, notAnalysed: pl.notAnalysed, stage: c.runStage(entry)})
+}
+
+// plan is how a job runs once the strategy has been applied (gate).
+type plan struct {
+	opts pipeline.RunOptions
+	// notAnalysed: a full free-only run of an item with no analysis of its
+	// head; finish marks it model.StateNotAnalysed.
+	notAnalysed bool
+}
+
+// gate applies the auto_review strategy when a job starts (so a strategy
+// change applies to queued jobs; DECISIONS "M5.1 user override"). An
+// explicit job, or one whose item the strategy allows (covered, or its head
+// requested), runs as queued. Otherwise the run is FreeOnly: an item with a
+// stored analysis of its current head is only re-aggregated (never
+// downgraded to not analysed); any other item runs the free stages and ends
+// not analysed. An automatic job of a stopped item does not run at all
+// (nothing restarts a stopped item automatically): ok is false.
+func (c *InProcess) gate(j job, it model.Item) (p plan, ok bool) {
+	opts := j.options()
+	if j.explicit {
+		return plan{opts: opts}, true
+	}
+	if it.State == model.StateStopped {
+		return plan{}, false
+	}
+	if c.strategy().Allows(it) {
+		return plan{opts: opts}, true
+	}
+	opts.FreeOnly = true
+	if it.AnalysedSHA != "" && it.AnalysedSHA == it.HeadSHA {
+		return plan{opts: pipeline.RunOptions{AggregateOnly: true, FreeOnly: true}}, true
+	}
+	return plan{opts: opts, notAnalysed: true}, true
+}
+
+// runStage returns the stage e's run was in (fetch before the first row).
+func (c *InProcess) runStage(e *runEntry) model.Stage {
+	c.runMu.Lock()
+	defer c.runMu.Unlock()
+	if e.stage == "" {
+		return model.StageFetch
+	}
+	return e.stage
+}
+
+// noteStage records the stage the item's running analysis entered.
+func (c *InProcess) noteStage(id string, s model.Stage) {
+	c.runMu.Lock()
+	defer c.runMu.Unlock()
+	if e := c.runs[id]; e != nil {
+		e.stage = s
+	}
 }
 
 // cancelRun stops the item's running analysis, if any: the item was
 // removed, so its later stages (Jev, paid reviews) must not run. The queue
 // never runs two jobs for one item at once, so the entry is that run's.
+// The cause is nil: finish treats it as an interruption, not a user stop.
 func (c *InProcess) cancelRun(id string) {
-	c.runMu.Lock()
-	cancel := c.runs[id]
-	c.runMu.Unlock()
-	if cancel != nil {
-		cancel()
-	}
+	c.cancelRunCause(id, nil)
 }
 
-// finish records the outcome of a run that analysed head. If discovery
+// cancelRunCause cancels the item's running analysis with cause and
+// reports whether one was running.
+func (c *InProcess) cancelRunCause(id string, cause error) bool {
+	c.runMu.Lock()
+	e := c.runs[id]
+	c.runMu.Unlock()
+	if e == nil {
+		return false
+	}
+	e.cancel(cause)
+	return true
+}
+
+// outcome is what a run returned plus how it was started.
+type outcome struct {
+	head string
+	err  error
+	// explicit: the user asked for it; the analysed head becomes RequestedSHA.
+	explicit bool
+	// notAnalysed: a free-only run of an item without an analysis (plan).
+	notAnalysed bool
+	// stage is the stage in flight when the run ended (for a user stop).
+	stage model.Stage
+}
+
+// stoppedByUser reports whether a run ended because the user stopped it
+// (Stop: cancel cause pipeline.ErrStopped).
+func stoppedByUser(runCtx context.Context, err error) bool {
+	return errors.Is(err, pipeline.ErrStopped) || errors.Is(context.Cause(runCtx), pipeline.ErrStopped)
+}
+
+// finish records the outcome of a run that analysed o.head. If discovery
 // moved the item's head while the run was in flight, the result describes
-// an old commit: the item becomes Stale instead of Ready. A run that failed
-// because runCtx was cancelled (quit, daemon stop) was interrupted, not
-// broken: the item goes back to "not analysed" so it is queued again.
-func (c *InProcess) finish(runCtx context.Context, id, head string, err error) {
-	if err != nil && runCtx.Err() != nil {
-		c.log.Info("analysis interrupted", "item", id, "err", err)
+// an old commit: the item becomes Stale instead of Ready. A run the user
+// stopped leaves the item StateStopped at the stage in flight. A run that
+// failed because runCtx was cancelled otherwise (quit, daemon stop, the
+// item removed) was interrupted, not broken: the item goes back to "not
+// analysed" so it is queued again. A free-only run of an unanalysed item
+// leaves it StateNotAnalysed (and AnalysedSHA unset).
+func (c *InProcess) finish(runCtx context.Context, id string, o outcome) {
+	if stoppedByUser(runCtx, o.err) {
+		c.log.Info("analysis stopped", "item", id, "stage", o.stage)
+		c.setStopped(id, string(o.stage))
+		return
+	}
+	if o.err != nil && runCtx.Err() != nil {
+		c.log.Info("analysis interrupted", "item", id, "err", o.err)
 		c.resetState(id)
 		return
 	}
-	if err != nil {
-		c.log.Warn("analysis failed", "item", id, "err", err)
-		c.setState(id, model.StateError, err.Error())
+	if o.err != nil {
+		c.log.Warn("analysis failed", "item", id, "err", o.err)
+		c.setState(id, model.StateError, o.err.Error())
 		return
 	}
 	if _, _, err := c.updateItem(context.Background(), id, func(it *model.Item) {
-		if head != "" {
-			it.AnalysedSHA = head
+		if o.notAnalysed {
+			markNotAnalysed(it)
+			return
 		}
-		if head != "" && it.HeadSHA != "" && it.HeadSHA != head {
+		if o.head != "" {
+			it.AnalysedSHA = o.head
+			if o.explicit {
+				it.RequestedSHA = o.head
+			}
+		}
+		if o.head != "" && it.HeadSHA != "" && it.HeadSHA != o.head {
 			it.State, it.StateNote = model.StateStale, staleNote
 			return
 		}
@@ -548,6 +758,26 @@ func (c *InProcess) finish(runCtx context.Context, id, head string, err error) {
 	}); err != nil {
 		c.log.Warn("set item state", "item", id, "err", err)
 	}
+}
+
+// markNotAnalysed sets the state after a free-only run: not analysed, or
+// Stale (Ready) when an earlier analysis of another (this) head is stored,
+// so an analysed item is never downgraded.
+func markNotAnalysed(it *model.Item) {
+	switch it.AnalysedSHA {
+	case "":
+		it.State, it.StateNote = model.StateNotAnalysed, ""
+	case it.HeadSHA:
+		it.State, it.StateNote = model.StateReady, ""
+	default:
+		it.State, it.StateNote = model.StateStale, staleNote
+	}
+}
+
+// setStopped marks an item stopped by the user at stage ("queued" when it
+// had not started).
+func (c *InProcess) setStopped(id, stage string) {
+	c.setState(id, model.StateStopped, stage)
 }
 
 // resetState marks an interrupted item as not analysed, or Stale when an
@@ -621,33 +851,44 @@ func (c *InProcess) recoverPending(ctx context.Context, itemID string) {
 	}
 }
 
-// AnalysePending queues every never-analysed item (State "") in urgency
-// order, so a daemon with no TUI attached fills the cache.
+// AnalysePending queues, as automatic (gated) jobs in urgency order, every
+// never-run item (State "") and every not-analysed item the strategy now
+// allows, so a daemon with no TUI attached fills the cache for the items
+// the auto_review strategy covers (daemon start, every discovery tick).
+// Stopped, stale, failed and ready items are never queued here.
 func (c *InProcess) AnalysePending(ctx context.Context) error {
 	items, err := c.d.Store.Items(ctx)
 	if err != nil {
 		return fmt.Errorf("daemon: items: %w", err)
 	}
-	var ids []string
-	for _, it := range items {
-		if it.State == "" {
-			ids = append(ids, it.ID)
-		}
-	}
+	ids := c.pendingIDs(items)
 	if len(ids) == 0 {
 		return nil
 	}
-	return c.Analyse(ctx, false, ids...)
+	return c.queueAuto(ctx, ids...)
 }
 
-// RunSync runs the pipeline for an item and waits (tests, --snapshot).
+// pendingIDs are the items AnalysePending queues.
+func (c *InProcess) pendingIDs(items []model.Item) []string {
+	auto := c.strategy()
+	var ids []string
+	for _, it := range items {
+		if it.State == "" || (it.State == model.StateNotAnalysed && auto.Allows(it)) {
+			ids = append(ids, it.ID)
+		}
+	}
+	return ids
+}
+
+// RunSync runs the pipeline for an item and waits (tests, --snapshot). A
+// direct call: the strategy does not gate it and it records no request.
 func (c *InProcess) RunSync(ctx context.Context, itemID string) error {
 	it, err := c.d.Store.Item(ctx, itemID)
 	if err != nil {
 		return fmt.Errorf("daemon: run %s: %w", itemID, err)
 	}
 	head, err := c.p.RunHead(ctx, it, pipeline.RunOptions{})
-	c.finish(ctx, itemID, head, err)
+	c.finish(ctx, itemID, outcome{head: head, err: err})
 	return err
 }
 
@@ -666,12 +907,20 @@ func (c *InProcess) Add(ctx context.Context, query string) (model.Item, error) {
 	if err != nil {
 		return model.Item{}, err
 	}
-	c.analyseNow(it)
+	// Adding is an explicit request (M5.1): it runs whatever the strategy.
+	if err := c.pushExplicit(ctx, it, job{itemID: it.ID, urgency: it.Urgency, user: true}); err != nil {
+		return it, err
+	}
+	if s, err := c.d.Store.Item(ctx, it.ID); err == nil {
+		it = s
+	}
 	return it, nil
 }
 
-// analyseNow queues it ahead of every automatic job (job.user): the user
-// asked for it by hand, so it starts in the next free slot.
+// analyseNow queues it ahead of every other job (job.user), as an
+// automatic job: a tab preview starts in the next free slot, but the
+// auto_review strategy decides whether its model stages run (previews are
+// covered only by "all").
 func (c *InProcess) analyseNow(it model.Item) {
 	c.q.push(job{itemID: it.ID, urgency: it.Urgency, user: true})
 }

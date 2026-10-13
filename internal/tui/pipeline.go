@@ -154,9 +154,11 @@ func (m *Model) pipeActionCmd() tea.Cmd {
 		// re-run: re-running a later stage re-runs it on the current
 		// analysis, and FromStage already makes it and the later stages
 		// skip their caches.
+		// The user asked for it: User lets the model stages run whatever the
+		// auto_review strategy (M5.1).
 		force := a.Stage == "" || a.Stage == model.StageFetch
 		return func() tea.Msg {
-			err := c.Refresh(context.Background(), proto.ItemParams{ItemID: a.ItemID, FromStage: a.Stage, Force: force})
+			err := c.Refresh(context.Background(), proto.ItemParams{ItemID: a.ItemID, FromStage: a.Stage, Force: force, User: true})
 			return rerunMsg{stage: a.Stage, err: err}
 		}
 	case pipeview.ActEditRules:

@@ -94,6 +94,20 @@ type Client interface {
 	// item (ranked, discovered, added or promoted meanwhile) is kept. The
 	// TUI uses it to discard a preview when the search prompt closes (M5).
 	RemovePreview(ctx context.Context, itemID string) error
+	// Stop cancels an item's analysis, or every running and queued one with
+	// p.All (M5.1): in-flight stages end "stopped", the item is left
+	// StateStopped ("stopped at <stage>") and nothing restarts it
+	// automatically.
+	Stop(ctx context.Context, p proto.StopParams) (proto.StopResult, error)
+	// Resume queues stopped (or not-analysed) items again as an explicit
+	// request; finished stages are served from their caches (M5.1).
+	Resume(ctx context.Context, p proto.ResumeParams) (proto.ResumeResult, error)
+	// Settings returns the settings page's values and environment status;
+	// p.Ensure creates the routing or questions file first (M5.1).
+	Settings(ctx context.Context, p proto.SettingsParams) (proto.SettingsInfo, error)
+	// SaveSettings writes the settings to the chosen scope, reloads the
+	// configuration and applies it live (M5.1); an EventSettings follows.
+	SaveSettings(ctx context.Context, p proto.SaveSettingsParams) (proto.SettingsInfo, error)
 	// Events streams patches; closed by Close.
 	Events() <-chan proto.Event
 	Close() error

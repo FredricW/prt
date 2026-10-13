@@ -109,7 +109,7 @@ func (c *InProcess) searchPRs(ctx context.Context) (string, []gh.PR, error) {
 	for _, pr := range hits {
 		byNum[pr.Number] = pr
 	}
-	if owns := c.d.Config.User.Owns; len(owns) > 0 {
+	if owns := c.cfg().User.Owns; len(owns) > 0 {
 		open, err := c.d.GH.ListOpenPRs(ctx, ownedLimit)
 		if err != nil {
 			c.log.Warn("owned-path source failed", "err", err)
@@ -309,7 +309,7 @@ func (c *InProcess) setUrgency(ctx context.Context, it *model.Item, sameHead boo
 				// An idle branch is never re-analysed (its head does not
 				// move), so the abandoned? default is re-applied here as the
 				// days pass.
-				b := pipeline.AgeBranchInfo(*agg.Branch, in.IdleDays, c.d.Config.Pipeline.AbandonedDays)
+				b := pipeline.AgeBranchInfo(*agg.Branch, in.IdleDays, c.cfg().Pipeline.AbandonedDays)
 				agg.Branch = &b
 				it.BranchState, it.BranchStateP = b.State, b.P
 			}
@@ -323,9 +323,10 @@ func (c *InProcess) setUrgency(ctx context.Context, it *model.Item, sameHead boo
 // daemon's clock (no Prior aggregate).
 func (c *InProcess) urgencyInput(it model.Item) aggregate.Input {
 	now := c.now()
-	age, release, ciRed := aggregate.Facts(it, c.d.Config.GitHub.ReleaseBranches, now)
+	cfg := c.cfg()
+	age, release, ciRed := aggregate.Facts(it, cfg.GitHub.ReleaseBranches, now)
 	return aggregate.Input{
-		Item: it, Weights: c.d.Config.Rank, AgeDays: age, IdleDays: idleDays(it, now),
+		Item: it, Weights: cfg.Rank, AgeDays: age, IdleDays: idleDays(it, now),
 		Release: release, CIRedAfterApproval: ciRed,
 	}
 }

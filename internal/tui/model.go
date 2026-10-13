@@ -30,6 +30,7 @@ import (
 	"github.com/fredricw/prt/internal/pipeview"
 	"github.com/fredricw/prt/internal/proto"
 	"github.com/fredricw/prt/internal/searchview"
+	"github.com/fredricw/prt/internal/settingsview"
 	"github.com/fredricw/prt/internal/theme"
 )
 
@@ -50,12 +51,16 @@ type Tab int
 
 // Main-pane tabs. TabPipeline is the Pipeline page: not a numbered tab but
 // a page `P` opens over the main pane and `P`/esc closes, back to the
-// previous tab. TabArch is the Architecture tab (3, M5).
+// previous tab. TabArch is the Architecture tab (3, M5). TabSettings is the
+// settings page (M5.1): like the Pipeline page it is opened over the main
+// pane (`,` or `:settings`) and closed back to the previous tab; it is not
+// tied to the selected item.
 const (
 	TabOverview Tab = iota
 	TabCode
 	TabPipeline
 	TabArch
+	TabSettings
 )
 
 // Options configures the root model; the zero value is usable.
@@ -157,6 +162,12 @@ type Model struct {
 	arch                       archPane
 	// prevTab is the tab the Pipeline page returns to.
 	prevTab Tab
+	// settings is the settings page (M5.1); settingsPrev the tab it returns
+	// to. strategy is the daemon's auto_review strategy ("" until known),
+	// named on the Overview of a not-analysed or stopped item.
+	settings     settingsPane
+	settingsPrev Tab
+	strategy     string
 
 	// search is the `/` prompt; cmd the `:` command line (M5).
 	search searchPane
@@ -233,7 +244,9 @@ func NewWithOptions(c daemon.Client, r *lipgloss.Renderer, o Options) Model {
 	pipe := pipeview.New(r)
 	arch := archview.New(r)
 	cl := cmdline.New(r)
+	sv := settingsview.New(r)
 	m := Model{
+		settings:   &sv,
 		client:     c,
 		opts:       o,
 		keys:       km,
@@ -274,9 +287,10 @@ func (m Model) now() time.Time {
 }
 
 // Init implements tea.Model: show the stored items at once (the TUI starts
-// against the cache), then discover, listen for events, schedule refresh.
+// against the cache), then discover, listen for events, schedule refresh
+// and read the auto-review strategy (M5.1).
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(m.loadItems(), m.discover(), m.listen(), m.scheduleRefresh())
+	return tea.Batch(m.loadItems(), m.discover(), m.listen(), m.scheduleRefresh(), m.loadStrategy())
 }
 
 // ---- commands -------------------------------------------------------------
@@ -359,13 +373,16 @@ func (m Model) scheduleRefresh() tea.Cmd {
 }
 
 // autoRefresh starts analysis for ids in order (daemon order is urgency
-// order, so the top of the list is ready first).
+// order, so the top of the list is ready first). It is an automatic run:
+// User is false, so the daemon's auto_review strategy decides whether the
+// model-backed stages run (M5.1; an uncovered item stops after the free
+// stages as not analysed).
 func (m Model) autoRefresh(ids []string) tea.Cmd {
 	c := m.client
 	return func() tea.Msg {
 		var errs []error
 		for _, id := range ids {
-			if err := c.Refresh(context.Background(), proto.ItemParams{ItemID: id}); err != nil {
+			if err := c.Refresh(context.Background(), proto.ItemParams{ItemID: id, User: false}); err != nil {
 				errs = append(errs, fmt.Errorf("refresh %s: %w", id, err))
 			}
 		}
@@ -373,10 +390,12 @@ func (m Model) autoRefresh(ids []string) tea.Cmd {
 	}
 }
 
+// refreshItem is `r`: a forced re-run the user asked for (User: the
+// strategy does not gate it, M5.1).
 func (m Model) refreshItem(it model.Item) tea.Cmd {
 	c, label := m.client, itemLabel(it)
 	return func() tea.Msg {
-		err := c.Refresh(context.Background(), proto.ItemParams{ItemID: it.ID, Force: true})
+		err := c.Refresh(context.Background(), proto.ItemParams{ItemID: it.ID, Force: true, User: true})
 		return refreshedMsg{label: label, err: err}
 	}
 }
@@ -435,6 +454,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if next, ok := m.onNoteMsg(msg); ok {
 		return next, nil
 	}
+	if next, ok := m.onControlMsg(msg); ok {
+		return next, nil
+	}
+	if next, cmd, ok := m.onSettingsMsg(msg); ok {
+		return next, cmd
+	}
 	if next, cmd, ok := m.onPipeMsg(msg); ok {
 		return next, cmd
 	}
@@ -456,6 +481,8 @@ func (m Model) routeOther(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateForm(msg)
 	case m.cmd.Active():
 		return m.updateCmdline(msg)
+	case m.tab == TabSettings:
+		return m.updateSettings(msg)
 	}
 	if _, ok := msg.(searchview.ResultMsg); ok || m.search.Active() {
 		return m.updateSearch(msg)
@@ -544,7 +571,9 @@ func afterInput(tm tea.Model, cmd tea.Cmd) (tea.Model, tea.Cmd) {
 // go to those components. Row 0 is the header line; the sidebar box spans
 // rows 1..body with its list starting at row 2.
 func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
-	if m.confirm != nil || m.showHelp || m.form != nil || m.cmd.Active() {
+	// The settings page is keyboard-only (a Huh form); the mouse is ignored
+	// while it is open.
+	if m.confirm != nil || m.showHelp || m.form != nil || m.cmd.Active() || m.tab == TabSettings {
 		return m, nil
 	}
 	sw, _, bh := m.dims()
@@ -675,6 +704,8 @@ func (m Model) onEvent(e proto.Event) (tea.Model, tea.Cmd) {
 		}
 	case proto.EventLog:
 		m.logNote = e.Note
+	case proto.EventSettings:
+		cmds = append(cmds, m.onSettingsEvent())
 	}
 	if it, ok := m.picker.selected(); ok && it.ID == e.ItemID && e.Type != proto.EventRemove {
 		m.detailSeq++
@@ -755,7 +786,7 @@ func (m *Model) renderOverview() {
 		return
 	}
 	_, mw, _ := m.dims()
-	m.overview.setPage(overviewPage(m.st, m.md, *m.detail, m.now(), mw))
+	m.overview.setPage(overviewPageWith(m.st, m.md, *m.detail, m.now(), mw, m.ovOpts()))
 }
 
 // jumpToUnit switches to the Code tab and focuses unit id there.
@@ -786,6 +817,8 @@ func (m Model) handleKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.updateCmdline(k)
 	case m.search.Active():
 		return m.updateSearch(k)
+	case m.tab == TabSettings:
+		return m.settingsKey(k)
 	}
 	if !m.showHelp && m.focus != FocusPicker {
 		capturing := m.tab == TabCode && m.code.Capturing()
@@ -912,8 +945,17 @@ func (m Model) handleGlobalKey(k tea.KeyMsg) (Model, tea.Cmd, bool) {
 		if !ok {
 			return m, nil, true
 		}
+		if resumable(it) {
+			// r on a stopped or not-analysed item resumes or runs it (not
+			// forced, DECISIONS "M5.1 stop / resume").
+			return m, m.resumeSelected(it), true
+		}
 		m.note = "refreshing " + itemLabel(it)
 		return m, m.refreshItem(it), true
+	case key.Matches(k, km.Stop), key.Matches(k, km.StopAll), key.Matches(k, km.Resume):
+		return m, m.controlKey(k), true
+	case key.Matches(k, km.Settings):
+		return m, m.openSettings(), true
 	case key.Matches(k, km.Open):
 		return m.handleOpen()
 	case key.Matches(k, km.Checkout):
@@ -1085,6 +1127,7 @@ func (m *Model) layout() {
 	m.code.SetSize(mw, bh-1)
 	m.pipe.SetSize(mw, bh-1)
 	m.arch.SetSize(mw, bh-1)
+	m.settings.SetSize(mw, bh-1)
 	// The main pane starts after the sidebar box and a gap, below the
 	// header and the tab bar; components map mouse cells from there.
 	for _, c := range []any{m.code, m.pipe, m.arch} {
@@ -1134,6 +1177,9 @@ func (m Model) viewMain(w int) string {
 	if m.form != nil {
 		return head + "\n" + m.viewForm()
 	}
+	if m.tab == TabSettings {
+		return head + "\n" + m.settings.View()
+	}
 	if m.previewing() {
 		return head + "\n" + m.viewPreview()
 	}
@@ -1174,8 +1220,11 @@ func (m Model) viewTabs(w int) string {
 	}
 	s := focus + tab(TabOverview, k.Overview.Help().Key+" Overview") + " " + tab(TabCode, k.Code.Help().Key+" Code") + " " +
 		tab(TabArch, k.Architecture.Help().Key+" Architecture")
-	if m.tab == TabPipeline {
+	switch m.tab {
+	case TabPipeline:
 		s += " " + tab(TabPipeline, k.Pipeline.Help().Key+" Pipeline")
+	case TabSettings:
+		s += " " + tab(TabSettings, k.Settings.Help().Key+" Settings")
 	}
 	// The tabs win: the context is cut to the room left after them.
 	room := w - ansi.StringWidth(s) - 2
@@ -1266,6 +1315,8 @@ func (m Model) hints() []theme.Hint {
 	case m.search.Active():
 		sk := searchview.DefaultKeys()
 		return append([]theme.Hint{pairHint(sk.Up, sk.Down, "results")}, theme.HintsOf(sk.Add, sk.Preview, sk.Close)...)
+	case m.tab == TabSettings:
+		return m.keys.mainHints(m.tab, flatten(m.settings.HelpBindings()))
 	case m.focus == FocusPicker:
 		return m.keys.pickerHints()
 	case m.tab == TabPipeline:

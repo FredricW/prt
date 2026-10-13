@@ -5,6 +5,9 @@ import (
 
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
+
+	"github.com/fredricw/prt/internal/cmdline"
 )
 
 // helpGroups returns the bindings of the focused pane (spec: `?` lists the
@@ -24,12 +27,45 @@ func (m Model) helpGroups() (string, [][]key.Binding) {
 	return "overview", m.keys.overviewHelp()
 }
 
-// viewHelp renders the `?` overlay shown in place of the main pane.
+// viewHelp renders the `?` overlay shown in place of the main pane: the
+// focused pane's keys, then every `:` command (M5.1).
 func (m Model) viewHelp(w int) string {
 	name, groups := m.helpGroups()
-	body := m.st.title.Render("Keys · "+name) + "\n\n" + m.helpColumns(groups, max(10, w-4)) + "\n\n" +
+	inner := max(10, w-4)
+	body := m.st.title.Render("Keys · "+name) + "\n\n" + m.helpColumns(groups, inner) + "\n\n" +
+		m.st.title.Render("Commands") + "\n" + m.commandHelp(inner) + "\n\n" +
 		m.st.dim.Render("? or esc closes")
 	return m.st.helpBox.Render(body)
+}
+
+// commandHelp lists cmdline.Help() as "usage  description" rows, the
+// descriptions wrapped to width under their own column (below the usage
+// when the pane is too narrow for two columns).
+func (m Model) commandHelp(width int) string {
+	entries := cmdline.Help()
+	col := 0
+	for _, e := range entries {
+		col = max(col, ansi.StringWidth(e.Usage))
+	}
+	col = min(col, width/2)
+	descW := width - col - 2
+	var lines []string
+	for _, e := range entries {
+		usage := m.st.bold.Render(truncate(e.Usage, width))
+		if descW < 12 || ansi.StringWidth(e.Usage) > col {
+			lines = append(lines, usage)
+			for _, l := range strings.Split(ansi.Wordwrap(e.Desc, max(1, width-2), ""), "\n") {
+				lines = append(lines, "  "+m.st.dim.Render(l))
+			}
+			continue
+		}
+		desc := strings.Split(ansi.Wordwrap(e.Desc, descW, ""), "\n")
+		lines = append(lines, padRight(usage, col)+"  "+m.st.dim.Render(desc[0]))
+		for _, l := range desc[1:] {
+			lines = append(lines, strings.Repeat(" ", col+2)+m.st.dim.Render(l))
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 // helpColumns renders groups as columns, wrapping onto further rows of

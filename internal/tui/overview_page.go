@@ -9,6 +9,7 @@ import (
 	"unicode"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/fredricw/prt/internal/codeview"
 	"github.com/fredricw/prt/internal/model"
@@ -267,11 +268,25 @@ func overviewText(st styles, md *markdown, d proto.Detail, now time.Time, width 
 // summary line, the blocks as titled boxes (two columns from twoColumnMin),
 // the confidence footer, then the description.
 func overviewPage(st styles, md *markdown, d proto.Detail, now time.Time, width int) *page {
+	return overviewPageWith(st, md, d, now, width, defaultOvOpts())
+}
+
+// defaultOvOpts are the Overview options with the default keys and no
+// known strategy.
+func defaultOvOpts() ovOpts {
+	k := DefaultKeyMap()
+	return ovOpts{runKey: k.Refresh.Help().Key, resumeKey: k.Resume.Help().Key, settingsKey: k.Settings.Help().Key}
+}
+
+// overviewPageWith is overviewPage with the strategy and keys a
+// not-analysed or stopped item's box names (M5.1).
+func overviewPageWith(st styles, md *markdown, d proto.Detail, now time.Time, width int, o ovOpts) *page {
 	p := newPage(st, width)
 	p.add(st.title.Render(titleLine(d.Item, now)), "")
 	tldrBlock(p, d)
 	switch {
 	case d.Agg == nil:
+		analysisStateBlock(p, d.Item, o)
 		pendingBlocks(p, d)
 	case d.Agg.LabelsMissing:
 		gitFactsBlocks(p, d)
@@ -304,16 +319,51 @@ func noteCells(d proto.Detail, note string) []cell {
 func pendingBlocks(p *page, d proto.Detail) {
 	it := d.Item
 	note := "analysing…"
-	if it.State == model.StateError {
+	switch it.State {
+	case model.StateError:
 		note = "not analysed"
 		if it.StateNote != "" {
 			note += " — " + it.StateNote
 		}
+	case model.StateNotAnalysed:
+		note = "not analysed"
+	case model.StateStopped:
+		note = "stopped"
 	}
 	p.dim("Composition: " + note)
 	p.add("", "")
 	p.grid(noteCells(d, note))
 	p.dim("Confidence: " + note)
+}
+
+// analysisStateBlock is the full-width box of an item without an aggregate
+// that waits for the user (M5.1): "Not analysed" (outside the auto-review
+// strategy) with "r to run", or "Stopped at <stage>" with "r or ctrl+o to
+// resume", then the strategy line when it is known. Other items get no box.
+func analysisStateBlock(p *page, it model.Item, o ovOpts) {
+	var title, action string
+	switch it.State {
+	case model.StateNotAnalysed:
+		title, action = "Not analysed", o.runKey+" to run"
+	case model.StateStopped:
+		title = "Stopped"
+		if it.StateNote != "" {
+			title += " at " + it.StateNote
+		}
+		action = o.runKey + " or " + o.resumeKey + " to resume"
+	default:
+		return
+	}
+	line := o.strategyLine()
+	p.appendPage(p.box(title, p.width, 0, func(q *page) {
+		q.add(action, "")
+		if line != "" {
+			for _, l := range strings.Split(ansi.Wordwrap(line, q.width, ""), "\n") {
+				q.dim(l)
+			}
+		}
+	}))
+	p.add("", "")
 }
 
 // gitFactsBlocks is the page when Jev was unreachable: line counts and the

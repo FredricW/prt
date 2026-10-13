@@ -30,10 +30,14 @@ func newTestStore(t *testing.T) store.Store {
 	return st
 }
 
-// newClient builds an InProcess over fakes; ghc may be nil (offline).
+// newClient builds an InProcess over fakes; ghc may be nil (offline). The
+// auto_review strategy is "all" (every run allowed, the pre-M5.1
+// behaviour the older tests assume); the strategy tests set their own in
+// mutate.
 func newClient(t *testing.T, st store.Store, g gitx.Git, ghc gh.Client, mutate func(*pipeline.Deps)) *InProcess {
 	t.Helper()
 	d := pipeline.Deps{Git: g, Store: st, Config: config.Defaults(), Now: func() time.Time { return testNow }}
+	d.Config.Pipeline.AutoReview = string(model.AutoAll)
 	if ghc != nil {
 		d.GH = ghc
 	}

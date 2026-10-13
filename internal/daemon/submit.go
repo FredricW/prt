@@ -114,6 +114,8 @@ func (c *InProcess) submit(ctx context.Context, it model.Item, commit string, ev
 	}); err != nil {
 		errs = append(errs, err)
 	}
+	// Automatic (gated): submitting is not a request to analyse; the
+	// re-run refreshes the section and aggregate where the strategy allows.
 	c.q.push(job{itemID: it.ID, urgency: it.Urgency, rerun: true})
 	return sub, posted, errors.Join(errs...)
 }
@@ -185,12 +187,23 @@ func (c *InProcess) CreatePR(ctx context.Context, p proto.CreatePRParams) (proto
 	var errs []error
 	res.Attached, err = c.attachDrafts(ctx, br, prIt)
 	errs = append(errs, err)
-	errs = append(errs, c.Remove(ctx, br.ID), c.Analyse(ctx, false, prIt.ID))
+	errs = append(errs, c.Remove(ctx, br.ID), c.analyseCreatedPR(ctx, br, prIt.ID))
 	if stored, err := c.d.Store.Item(ctx, prIt.ID); err == nil {
 		res.Item = stored
 	}
 	c.patch(prIt.ID)
 	return res, errors.Join(errs...)
+}
+
+// analyseCreatedPR queues the analysis of the PR created from branch br.
+// The PR inherits the branch's request: explicit when the user had asked
+// for, or analysed, the branch's head (its caches make the run cheap);
+// otherwise automatic, gated by the strategy (M5.1).
+func (c *InProcess) analyseCreatedPR(ctx context.Context, br model.Item, prID string) error {
+	if br.Requested() || (br.AnalysedSHA != "" && br.AnalysedSHA == br.HeadSHA) {
+		return c.Analyse(ctx, false, prID)
+	}
+	return c.queueAuto(ctx, prID)
 }
 
 // newPRFor validates a create-PR request for branch item br and returns

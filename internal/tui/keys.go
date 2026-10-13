@@ -67,6 +67,12 @@ type KeyMap struct {
 	Comment, Visual, SaveDraft, Accept, Dismiss, OverrideLabel, Thread, Resolve key.Binding
 	// Global. Command opens the `:` command line (M5).
 	Help, Quit, Command key.Binding
+	// Analysis control and settings (M5.1, global whenever no input
+	// captures keys; DECISIONS "M5.1 stop / resume"): Stop (ctrl+x) stops
+	// the selected item's analysis, StopAll (ctrl+k) every analysis, Resume
+	// (ctrl+o) resumes the selected item; Settings (,) opens the settings
+	// page.
+	Stop, StopAll, Resume, Settings key.Binding
 	// Confirm prompts.
 	Yes, No key.Binding
 }
@@ -140,6 +146,10 @@ func DefaultKeyMap() KeyMap {
 		Help:           b("help", "?"),
 		Quit:           b("quit", "q", "ctrl+c"),
 		Command:        b("command line", ":"),
+		Stop:           b("stop analysis", "ctrl+x"),
+		StopAll:        b("stop all analysis", "ctrl+k"),
+		Resume:         b("resume analysis", "ctrl+o"),
+		Settings:       b("settings", ","),
 		Yes:            b("yes", "y", "Y"),
 		No:             b("no", "n", "N", "esc"),
 	}
@@ -178,6 +188,7 @@ func (k *KeyMap) actions() map[string]*key.Binding {
 		"approve":   &k.Approve, "request_changes": &k.RequestChanges, "submit": &k.Submit,
 		"comment": &k.Comment, "visual": &k.Visual, "save_draft": &k.SaveDraft, "accept": &k.Accept,
 		"dismiss": &k.Dismiss, "override": &k.OverrideLabel, "thread": &k.Thread, "resolve": &k.Resolve,
+		"stop": &k.Stop, "stop_all": &k.StopAll, "resume": &k.Resume, "settings": &k.Settings,
 	}
 }
 
@@ -293,13 +304,17 @@ func KeyMapFromConfig(overrides map[string]string) (KeyMap, error) {
 }
 
 // splitKeys splits a comma-separated key list; "space" names the space
-// key (a literal " " cannot survive the trimming).
+// key (a literal " " cannot survive the trimming) and "comma" the comma
+// key (a literal "," is the separator; M5.1, the settings key).
 func splitKeys(s string) []string {
 	var out []string
 	for _, k := range strings.Split(s, ",") {
 		if k = strings.TrimSpace(k); k != "" {
-			if k == "space" {
+			switch k {
+			case "space":
 				k = " "
+			case "comma":
+				k = ","
 			}
 			out = append(out, k)
 		}
@@ -321,8 +336,15 @@ func (k KeyMap) pickerHelp() [][]key.Binding {
 		append([]key.Binding{k.Focus, k.NextFocus, k.PrevFocus}, append(k.tabKeys(), k.Pipeline)...),
 		{k.Refresh, k.Open, k.Checkout},
 		k.reviewKeys(),
+		k.controlKeys(),
 		{k.Command, k.Help, k.Quit},
 	}
+}
+
+// controlKeys are the M5.1 analysis-control and settings bindings, live in
+// every focus.
+func (k KeyMap) controlKeys() []key.Binding {
+	return []key.Binding{k.Stop, k.StopAll, k.Resume, k.Settings}
 }
 
 // reviewKeys are the item-scope review bindings (submit form).
@@ -355,6 +377,7 @@ func (k KeyMap) codeHelp(component [][]key.Binding) [][]key.Binding {
 	return append(out,
 		k.reviewKeys(),
 		k.navKeys(),
+		k.controlKeys(),
 		[]key.Binding{k.Refresh, k.Checkout, k.Command, k.Help, k.Quit},
 	)
 }
@@ -366,6 +389,7 @@ func (k KeyMap) overviewHelp() [][]key.Binding {
 		{k.jump(), k.RawLabels, k.Weights},
 		k.reviewKeys(),
 		k.navKeys(),
+		k.controlKeys(),
 		{k.Refresh, k.Open, k.Checkout, k.Command, k.Help, k.Quit},
 	}
 }
@@ -382,6 +406,7 @@ func (k KeyMap) pipelineHelp(component [][]key.Binding) [][]key.Binding {
 	return append(out,
 		append([]key.Binding{k.closePipeline(), k.NextFocus, k.PrevFocus}, k.tabKeys()...),
 		k.reviewKeys(),
+		k.controlKeys(),
 		[]key.Binding{k.Open, k.Command, k.Help, k.Quit},
 	)
 }
@@ -396,6 +421,7 @@ func (k KeyMap) archHelp(component [][]key.Binding) [][]key.Binding {
 	return append(out,
 		k.reviewKeys(),
 		k.navKeys(),
+		k.controlKeys(),
 		[]key.Binding{k.Refresh, k.Open, k.Checkout, k.Command, k.Help, k.Quit},
 	)
 }
@@ -428,6 +454,22 @@ func missing(groups [][]key.Binding, want ...key.Binding) []key.Binding {
 // closePipeline is the Pipeline key described as closing the page.
 func (k KeyMap) closePipeline() key.Binding { return relabel(k.Pipeline, "close pipeline") }
 
+// closeSettings is the settings page's close keys (the Settings key or
+// Back; the page itself turns them into its cancel action), for hints.
+func (k KeyMap) closeSettings() key.Binding {
+	return key.NewBinding(key.WithKeys(append(k.Settings.Keys(), k.Back.Keys()...)...),
+		key.WithHelp(k.Settings.Help().Key+"/"+k.Back.Help().Key, "close settings"))
+}
+
+// flatten joins help groups into one list (a page's hints from its help).
+func flatten(groups [][]key.Binding) []key.Binding {
+	var out []key.Binding
+	for _, g := range groups {
+		out = append(out, g...)
+	}
+	return out
+}
+
 // pairHint is one hint for two bindings ("j/k move").
 func pairHint(a, b key.Binding, desc string) theme.Hint {
 	return theme.Hint{Key: a.Help().Key + "/" + b.Help().Key, Desc: desc}
@@ -453,7 +495,7 @@ func (k KeyMap) pickerHints() []theme.Hint {
 	lead := []theme.Hint{pairHint(k.Down, k.Up, "move")}
 	hs := hintsOf(lead, k.Select, k.Search, k.Focus)
 	hs = append(hs, k.tabsHint())
-	return append(hs, theme.HintsOf(k.Pipeline, k.Refresh, k.Checkout, k.Open, k.Command, k.Help, k.Quit)...)
+	return append(hs, theme.HintsOf(relabel(k.Stop, "stop"), k.Pipeline, k.Refresh, k.Checkout, k.Open, k.Command, k.Help, k.Quit)...)
 }
 
 // mainHints is the key hint bar for the main pane; component holds the
@@ -465,7 +507,10 @@ func (k KeyMap) mainHints(tab Tab, component []key.Binding) []theme.Hint {
 		hs = append(hs, theme.HintsOf(k.Submit, k.Back)...)
 		return append(append(hs, k.tabsHint()), theme.HintsOf(k.Help, k.Quit)...)
 	case TabPipeline:
-		return theme.HintsOf(append(append([]key.Binding(nil), component...), k.closePipeline(), k.Help, k.Quit)...)
+		return theme.HintsOf(append(append([]key.Binding(nil), component...),
+			relabel(k.Stop, "stop"), relabel(k.Resume, "resume"), k.closePipeline(), k.Help, k.Quit)...)
+	case TabSettings:
+		return theme.HintsOf(append(append([]key.Binding(nil), component...), k.closeSettings())...)
 	case TabArch:
 		hs := theme.HintsOf(component...)
 		hs = append(hs, theme.HintsOf(k.Back)...)

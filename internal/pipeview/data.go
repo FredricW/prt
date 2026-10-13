@@ -23,9 +23,11 @@ func stageName(s model.Stage) string {
 }
 
 // glyph is a stage status's mark: done ✓, running ⟳, queued ·, failed ✗,
-// skipped-cache ≡, skipped –.
+// skipped-cache ≡, skipped –, stopped ■ (M5.1: the user stopped the run).
 func glyph(s model.StageStatus) string {
 	switch s {
+	case model.StageStopped:
+		return "■"
 	case model.StageDone:
 		return "✓"
 	case model.StageRunning:

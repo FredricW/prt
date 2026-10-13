@@ -56,6 +56,8 @@ type fakeClient struct {
 	hits                    map[proto.SearchSource][]proto.SearchHit
 	added, previewed        model.Item
 	searchErr               error
+	// ctl records the M5.1 stop/resume/settings calls.
+	ctl controlCalls
 }
 
 var _ daemon.Client = (*fakeClient)(nil)
@@ -268,6 +270,59 @@ func (f *fakeClient) Override(_ context.Context, p proto.OverrideParams) error {
 	defer f.mu.Unlock()
 	f.cc.overrides = append(f.cc.overrides, p)
 	return f.cc.commentErr
+}
+
+// M5.1 calls, recorded; each returns the matching canned answer (stubs
+// added by the M5.1 lead so the package compiles; the TUI work package
+// extends them).
+type controlCalls struct {
+	stops        []proto.StopParams
+	resumes      []proto.ResumeParams
+	settingsReqs []proto.SettingsParams
+	saves        []proto.SaveSettingsParams
+
+	stopped  proto.StopResult
+	resumed  proto.ResumeResult
+	settings proto.SettingsInfo
+	err      error
+	// settingsErr fails Settings only; saveErr SaveSettings only.
+	settingsErr, saveErr error
+}
+
+func (f *fakeClient) Stop(_ context.Context, p proto.StopParams) (proto.StopResult, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.ctl.stops = append(f.ctl.stops, p)
+	return f.ctl.stopped, f.ctl.err
+}
+
+func (f *fakeClient) Resume(_ context.Context, p proto.ResumeParams) (proto.ResumeResult, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.ctl.resumes = append(f.ctl.resumes, p)
+	return f.ctl.resumed, f.ctl.err
+}
+
+func (f *fakeClient) Settings(_ context.Context, p proto.SettingsParams) (proto.SettingsInfo, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.ctl.settingsReqs = append(f.ctl.settingsReqs, p)
+	if f.ctl.settingsErr != nil {
+		return proto.SettingsInfo{}, f.ctl.settingsErr
+	}
+	return f.ctl.settings, f.ctl.err
+}
+
+func (f *fakeClient) SaveSettings(_ context.Context, p proto.SaveSettingsParams) (proto.SettingsInfo, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.ctl.saves = append(f.ctl.saves, p)
+	if f.ctl.saveErr != nil {
+		return proto.SettingsInfo{}, f.ctl.saveErr
+	}
+	info := f.ctl.settings
+	info.Values = p.Values
+	return info, f.ctl.err
 }
 
 // listenerStarted is signalled each time a command asks for the event
@@ -646,6 +701,12 @@ func keyMsg(s string) tea.KeyMsg {
 		return tea.KeyMsg{Type: tea.KeyDown}
 	case "up":
 		return tea.KeyMsg{Type: tea.KeyUp}
+	case "ctrl+x":
+		return tea.KeyMsg{Type: tea.KeyCtrlX}
+	case "ctrl+k":
+		return tea.KeyMsg{Type: tea.KeyCtrlK}
+	case "ctrl+o":
+		return tea.KeyMsg{Type: tea.KeyCtrlO}
 	}
 	return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)}
 }

@@ -51,7 +51,8 @@ func (m Model) updateCmdline(msg tea.Msg) (Model, tea.Cmd) {
 	return next, batch(cmd, run)
 }
 
-// runCommand executes one submitted command line.
+// runCommand executes one submitted command line (M5.1 adds :auto, :stop
+// [all], :resume [all] and :settings).
 func (m Model) runCommand(sub cmdline.Submitted) (Model, tea.Cmd) {
 	if sub.Err != nil {
 		m.note = sub.Err.Error()
@@ -67,6 +68,14 @@ func (m Model) runCommand(sub cmdline.Submitted) (Model, tea.Cmd) {
 		return m, m.capCmd(c)
 	case cmdline.Quit:
 		return m.quit()
+	case cmdline.Auto:
+		return m, m.autoCmd(c.Strategy)
+	case cmdline.Stop:
+		return m, m.stopCmd(c.All)
+	case cmdline.Resume:
+		return m, m.resumeCmd(c.All)
+	case cmdline.Settings:
+		return m, m.openSettings()
 	}
 	m.note = "unknown command :" + sub.Line
 	return m, nil

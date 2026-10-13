@@ -220,9 +220,9 @@ func TestRemoveCancelsRunningAnalysis(t *testing.T) {
 	c := newClient(t, st, searchGit(), searchGH(), nil)
 	put(t, st, prev) // after start-up, which deletes leftover previews
 	running := func(id string) context.Context {
-		rctx, cancel := context.WithCancel(ctx)
+		rctx, cancel := context.WithCancelCause(ctx)
 		c.runMu.Lock()
-		c.runs[id] = cancel
+		c.runs[id] = &runEntry{cancel: cancel}
 		c.runMu.Unlock()
 		return rctx
 	}

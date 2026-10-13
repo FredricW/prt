@@ -230,6 +230,34 @@ func (s *Socket) RemovePreview(ctx context.Context, itemID string) error {
 	return s.call(ctx, proto.MethodRemovePreview, proto.ItemParams{ItemID: itemID}, nil)
 }
 
+// Stop implements Client.
+func (s *Socket) Stop(ctx context.Context, p proto.StopParams) (proto.StopResult, error) {
+	var r proto.StopResult
+	err := s.call(ctx, proto.MethodStop, p, &r)
+	return r, err
+}
+
+// Resume implements Client.
+func (s *Socket) Resume(ctx context.Context, p proto.ResumeParams) (proto.ResumeResult, error) {
+	var r proto.ResumeResult
+	err := s.call(ctx, proto.MethodResume, p, &r)
+	return r, err
+}
+
+// Settings implements Client.
+func (s *Socket) Settings(ctx context.Context, p proto.SettingsParams) (proto.SettingsInfo, error) {
+	var r proto.SettingsInfo
+	err := s.call(ctx, proto.MethodSettings, p, &r)
+	return r, err
+}
+
+// SaveSettings implements Client.
+func (s *Socket) SaveSettings(ctx context.Context, p proto.SaveSettingsParams) (proto.SettingsInfo, error) {
+	var r proto.SettingsInfo
+	err := s.call(ctx, proto.MethodSaveSettings, p, &r)
+	return r, err
+}
+
 // Remove implements Client.
 func (s *Socket) Remove(ctx context.Context, itemID string) error {
 	return s.call(ctx, proto.MethodRemove, proto.ItemParams{ItemID: itemID}, nil)

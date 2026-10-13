@@ -134,6 +134,8 @@ func statusText(r *model.Review) string {
 		return "queued"
 	case model.ReviewStaleLabels:
 		return glyphStale + " stale labels"
+	case model.ReviewStopped:
+		return "stopped" // the user stopped the run (M5.1); not a failure
 	case "":
 		return "pending"
 	}

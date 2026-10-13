@@ -400,6 +400,30 @@ func (s *server) call(ctx context.Context, sc *serverConn, m proto.Message) (any
 			return nil, err
 		}
 		return empty{}, c.RemovePreview(ctx, p.ItemID)
+	case proto.MethodStop:
+		p, err := params[proto.StopParams](m)
+		if err != nil {
+			return nil, err
+		}
+		return c.Stop(ctx, p)
+	case proto.MethodResume:
+		p, err := params[proto.ResumeParams](m)
+		if err != nil {
+			return nil, err
+		}
+		return c.Resume(ctx, p)
+	case proto.MethodSettings:
+		p, err := params[proto.SettingsParams](m)
+		if err != nil {
+			return nil, err
+		}
+		return c.Settings(ctx, p)
+	case proto.MethodSaveSettings:
+		p, err := params[proto.SaveSettingsParams](m)
+		if err != nil {
+			return nil, err
+		}
+		return c.SaveSettings(ctx, p)
 	case proto.MethodSubscribe:
 		sc.subscribe()
 		return empty{}, nil

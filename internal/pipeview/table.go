@@ -59,7 +59,8 @@ func tierText(r model.Review) string {
 }
 
 // statusText is the status column with its glyph ("✓ done", "▶ running
-// 12s" with a clock, "◌ queued", "✗ failed", "– skipped", "stale labels").
+// 12s" with a clock, "◌ queued", "✗ failed", "– skipped", "stale labels",
+// "■ stopped": the user stopped the run, not a failure).
 func (m *Model) statusText(r model.Review) string {
 	switch r.Status {
 	case "":
@@ -79,12 +80,14 @@ func (m *Model) statusText(r model.Review) string {
 		return "– skipped"
 	case model.ReviewStaleLabels:
 		return "stale labels"
+	case model.ReviewStopped:
+		return "■ stopped"
 	}
 	return string(r.Status)
 }
 
 // statusStyled colours the status cell: done green, running blue, failed
-// red, queued, skipped and stale labels dim.
+// red, queued, skipped, stale labels and stopped (by the user, M5.1) dim.
 func (m *Model) statusStyled(r model.Review, s string) string {
 	switch r.Status {
 	case model.ReviewDone:
@@ -93,7 +96,7 @@ func (m *Model) statusStyled(r model.Review, s string) string {
 		return m.st.blue.Render(s)
 	case model.ReviewFailed:
 		return m.st.warn.Render(s)
-	case model.ReviewQueued, model.ReviewSkipped, model.ReviewStaleLabels:
+	case model.ReviewQueued, model.ReviewSkipped, model.ReviewStaleLabels, model.ReviewStopped:
 		return m.st.dim.Render(s)
 	}
 	return s

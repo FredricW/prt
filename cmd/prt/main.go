@@ -35,6 +35,7 @@ import (
 	"github.com/fredricw/prt/internal/pipeline"
 	"github.com/fredricw/prt/internal/questions"
 	"github.com/fredricw/prt/internal/review"
+	"github.com/fredricw/prt/internal/settings"
 	"github.com/fredricw/prt/internal/store"
 	"github.com/fredricw/prt/internal/tui"
 )
@@ -57,7 +58,7 @@ type options struct {
 	height   int
 	maxItems int
 	// jevReplay / embedReplay replace Jev and the embedder with recorded
-	// answers (make demo / make snapshot); see replayDeps.
+	// answers (make demo / make snapshot); see buildModels.
 	jevReplay    string
 	embedReplay  string
 	reviewReplay string
@@ -135,6 +136,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		c := daemon.NewInProcess(env.deps)
 		c.SetGitHubNote(env.ghNote)
 		c.SetSourceNote(env.srcNote)
+		c.SetSettingsDeps(settingsDeps(o))
 		return c
 	}
 
@@ -310,33 +312,13 @@ func setup(ctx context.Context, o options) (*environment, error) {
 				env.ghNote = "GitHub disabled (" + reason + "); local branches only"
 			}
 		}
-		jevURL := os.Getenv("JEV_BASE_URL")
-		if jevURL == "" {
-			jevURL = cfg.Models.JevBaseURL
-		}
-		jc := jev.NewHTTP(jevURL, os.Getenv("JEV_API_KEY"))
-		if !jc.HasKey() {
-			logger.Warn("JEV_API_KEY not set; labels unavailable")
-		}
-		d.Jev = jc
-		if e, err := embed.FromSpec(cfg.Models.Embed, ""); err == nil {
-			d.Embedder = e
-		} else {
-			logger.Warn("embeddings disabled", "err", err)
-		}
-		key := review.AnthropicKeyFromEnv()
-		if fast, err := review.FromSpec(cfg.Models.Fast, key); err == nil {
-			d.Reviewers.Fast = fast
-		} else {
-			logger.Warn("fast review tier disabled", "spec", cfg.Models.Fast, "err", err)
-		}
-		if deep, err := review.FromSpec(cfg.Models.Deep, key); err == nil {
-			d.Reviewers.Deep = deep
-		} else {
-			logger.Warn("deep review tier disabled", "spec", cfg.Models.Deep, "err", err)
-		}
 	}
-	env.srcNote = replayDeps(&d, o)
+	m, notes := buildModels(cfg, o)
+	for _, n := range notes {
+		logger.Warn("models", "note", n)
+	}
+	d.Jev, d.Embedder, d.Reviewers = m.Jev, m.Embedder, m.Reviewers
+	env.srcNote = replayNote(o)
 	env.deps = d
 	env.cfg = cfg
 	env.repoLabel = repoLabel(ctx, g, cfg)
@@ -344,25 +326,85 @@ func setup(ctx context.Context, o options) (*environment, error) {
 	return env, nil
 }
 
-// replayDeps swaps in recorded Jev answers and embeddings when asked (they
-// win over live clients) and returns the status note naming them. A Jev
-// replay miss is reported as unavailable, so a request that was never
-// recorded degrades to "labels unavailable" instead of failing the item.
-func replayDeps(d *pipeline.Deps, o options) string {
+// buildModels constructs the model clients for cfg: live clients from the
+// environment unless offline, then recorded Jev answers, embeddings and
+// reviews when the replay flags ask (they win over live clients). It is
+// also the daemon's settings ModelFactory, so a model change on the
+// settings page swaps clients the same way. Notes are for the log and
+// never carry secrets. A Jev replay miss is reported as unavailable, so a
+// request that was never recorded degrades to "labels unavailable".
+func buildModels(cfg config.Config, o options) (pipeline.Models, []string) {
+	var m pipeline.Models
 	var notes []string
+	if !o.offline {
+		jevURL := os.Getenv("JEV_BASE_URL")
+		if jevURL == "" {
+			jevURL = cfg.Models.JevBaseURL
+		}
+		jc := jev.NewHTTP(jevURL, os.Getenv("JEV_API_KEY"))
+		if !jc.HasKey() {
+			notes = append(notes, "JEV_API_KEY not set; labels unavailable")
+		}
+		m.Jev = jc
+		if e, err := embed.FromSpec(cfg.Models.Embed, ""); err == nil {
+			m.Embedder = e
+		} else {
+			notes = append(notes, "embeddings disabled: "+err.Error())
+		}
+		key := review.AnthropicKeyFromEnv()
+		if fast, err := review.FromSpec(cfg.Models.Fast, key); err == nil {
+			m.Reviewers.Fast = fast
+		} else {
+			notes = append(notes, "fast review tier disabled ("+cfg.Models.Fast+"): "+err.Error())
+		}
+		if deep, err := review.FromSpec(cfg.Models.Deep, key); err == nil {
+			m.Reviewers.Deep = deep
+		} else {
+			notes = append(notes, "deep review tier disabled ("+cfg.Models.Deep+"): "+err.Error())
+		}
+	}
 	if o.jevReplay != "" {
-		d.Jev = &jev.Replay{Dir: o.jevReplay, MissUnavailable: true}
-		notes = append(notes, "Jev: replay of "+o.jevReplay)
+		m.Jev = &jev.Replay{Dir: o.jevReplay, MissUnavailable: true}
 	}
 	if o.embedReplay != "" {
-		d.Embedder = &embed.Replay{Dir: o.embedReplay}
-		notes = append(notes, "embeddings: replay of "+o.embedReplay)
+		m.Embedder = &embed.Replay{Dir: o.embedReplay}
 	}
 	if o.reviewReplay != "" {
 		// One Replay per tier: recording keys include the model spec. A miss
 		// is unavailable, so an unrecorded group degrades instead of failing loudly.
-		d.Reviewers.Fast = &review.Replay{Name: d.Config.Models.Fast, Dir: o.reviewReplay, MissUnavailable: true}
-		d.Reviewers.Deep = &review.Replay{Name: d.Config.Models.Deep, Dir: o.reviewReplay, MissUnavailable: true}
+		m.Reviewers.Fast = &review.Replay{Name: cfg.Models.Fast, Dir: o.reviewReplay, MissUnavailable: true}
+		m.Reviewers.Deep = &review.Replay{Name: cfg.Models.Deep, Dir: o.reviewReplay, MissUnavailable: true}
+	}
+	return m, notes
+}
+
+// settingsDeps wires the settings page's backend: the same model
+// construction as startup (so --offline and the replay flags still hold
+// after a model change), an Ollama probe unless offline (nothing is
+// contacted offline; Ollama then shows "not checked"), the process
+// environment for key presence, and the XDG config dir for global saves.
+func settingsDeps(o options) daemon.SettingsDeps {
+	sd := daemon.SettingsDeps{
+		Models:    func(cfg config.Config) (pipeline.Models, []string) { return buildModels(cfg, o) },
+		Getenv:    os.Getenv,
+		GlobalDir: config.GlobalDir(),
+	}
+	if !o.offline {
+		sd.Prober = settings.HTTPProber{}
+	}
+	return sd
+}
+
+// replayNote names the replayed sources for the status bar ("" when none).
+func replayNote(o options) string {
+	var notes []string
+	if o.jevReplay != "" {
+		notes = append(notes, "Jev: replay of "+o.jevReplay)
+	}
+	if o.embedReplay != "" {
+		notes = append(notes, "embeddings: replay of "+o.embedReplay)
+	}
+	if o.reviewReplay != "" {
 		notes = append(notes, "reviews: replay of "+o.reviewReplay)
 	}
 	if len(notes) == 0 {

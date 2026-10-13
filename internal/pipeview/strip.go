@@ -51,6 +51,8 @@ func (m *Model) cell(i int) cell {
 		c.state = "cached"
 	case model.StageSkipped:
 		c.state = "skipped"
+	case model.StageStopped:
+		c.state = "stopped"
 	default:
 		c.state = "queued"
 	}
@@ -150,7 +152,7 @@ func (m *Model) buildStrip(b *docBuilder) {
 }
 
 // boxGlyph is a stage status's mark in the strip boxes (v3 Pipeline): done
-// ✓, running ▶, queued ◌, failed ✗, cached ≡, skipped –.
+// ✓, running ▶, queued ◌, failed ✗, cached ≡, skipped –, stopped ■.
 func boxGlyph(s model.StageStatus) string {
 	switch s {
 	case model.StageRunning:

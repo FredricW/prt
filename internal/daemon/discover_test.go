@@ -11,6 +11,7 @@ import (
 	"github.com/fredricw/prt/internal/gh"
 	"github.com/fredricw/prt/internal/gitx"
 	"github.com/fredricw/prt/internal/model"
+	"github.com/fredricw/prt/internal/pipeline"
 	"github.com/fredricw/prt/internal/proto"
 )
 
@@ -241,8 +242,9 @@ func TestDiscoverOwnedPaths(t *testing.T) {
 	p1 := f.PRs[1]
 	p1.Files = []string{"web/login.ts"} // involved and owned: listed once
 	f.PRs[1] = p1
-	c := newClient(t, st, &gitx.Fake{}, f, nil)
-	c.d.Config.User.Owns = []string{"web/**"}
+	c := newClient(t, st, &gitx.Fake{}, f, func(d *pipeline.Deps) {
+		d.Config.User.Owns = []string{"web/**"}
+	})
 	if err := c.Discover(ctx); err != nil {
 		t.Fatal(err)
 	}

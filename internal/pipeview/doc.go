@@ -149,7 +149,8 @@ func (m *Model) headerLines() []string {
 	left := m.st.accent.Bold(true).Render("prt") + m.st.dim.Render(" · ") + strings.TrimSpace(name) +
 		m.st.dim.Render(" · ") + m.st.title.Render("pipeline")
 	right := m.runState()
-	if it.State != "" {
+	// The run state already says "stopped at …" or "not analysed" (M5.1).
+	if it.State != "" && it.State != model.StateStopped && it.State != model.StateNotAnalysed {
 		st := string(it.State)
 		if it.StateNote != "" {
 			st += " (" + it.StateNote + ")"
@@ -188,11 +189,46 @@ func stageVerb(s model.Stage) string {
 	return string(s)
 }
 
+// stoppedText is the run state after a user stop (M5.1): "■ stopped at
+// <stage>" with the item's StateNote, else the first stage row of the run
+// with status stopped; "" when the run was not stopped or a resumed run is
+// under way.
+func (m *Model) stoppedText() string {
+	it := m.d.Item
+	if it.State == model.StateAnalysing || it.State == model.StateFetching {
+		return ""
+	}
+	stage := ""
+	if it.State == model.StateStopped {
+		stage = it.StateNote
+	}
+	for _, s := range stripStages {
+		if stage != "" {
+			break
+		}
+		if rl, ok := m.run.latest[s]; ok && rl.Status == model.StageStopped {
+			stage = string(s)
+		}
+	}
+	switch {
+	case stage != "":
+		return m.st.dim.Render("■ stopped at " + stage)
+	case it.State == model.StateStopped:
+		return m.st.dim.Render("■ stopped")
+	}
+	return ""
+}
+
 // runState is the current run in words: "▶ reviewing · 17s elapsed" while
-// a stage runs, "✗ <stage> failed", "✓ done" or "" before any run.
+// a stage runs, "■ stopped at <stage>" after a user stop and "◌ not
+// analysed" for an item outside the auto-review strategy (M5.1), "✗ <stage>
+// failed", "✓ done" or "" before any run.
 func (m *Model) runState() string {
 	if len(m.run.all) == 0 {
-		return ""
+		if m.d.Item.State == model.StateNotAnalysed {
+			return m.st.dim.Render("◌ not analysed")
+		}
+		return m.stoppedText()
 	}
 	for i := len(stripStages) - 1; i >= 0; i-- {
 		rl, ok := m.run.latest[stripStages[i]]
@@ -208,6 +244,12 @@ func (m *Model) runState() string {
 			s += m.st.dim.Render(" · " + el + " elapsed")
 		}
 		return s
+	}
+	if s := m.stoppedText(); s != "" {
+		return s
+	}
+	if m.d.Item.State == model.StateNotAnalysed {
+		return m.st.dim.Render("◌ not analysed")
 	}
 	for _, s := range stripStages {
 		if rl, ok := m.run.latest[s]; ok && rl.Status == model.StageFailed {

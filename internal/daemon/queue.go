@@ -33,7 +33,14 @@ type job struct {
 	// the urgencies (spec: "starts analysis immediately"). A merged job
 	// keeps it when either job had it.
 	user bool
-	seq  int // enqueue order, breaks urgency ties
+	// explicit marks a job the user asked for on this item (r, :resume,
+	// :add, a group edit, a review action, a cap, an override): it runs the
+	// model-backed stages whatever the auto_review strategy. Any other job is
+	// gated by the strategy when it starts (InProcess.gate). Separate from
+	// user, which is only queue priority (a tab preview is user but not
+	// explicit). A merged job keeps it when either job had it.
+	explicit bool
+	seq      int // enqueue order, breaks urgency ties
 }
 
 // options are the pipeline run options of the job.
@@ -74,13 +81,20 @@ type queue struct {
 	waiting  []job
 	queued   map[string]int // itemID -> index in waiting (rebuilt on sort)
 	inflight map[string]job // itemID -> the job running for it
+
+	// Stop marks (M5.1): a job of item id whose seq is ≤ stopSeq[id] (or ≤
+	// stopAllSeq) was queued before the user stopped it. drop and dropAll
+	// set them; stoppedBefore lets a job that had already left the waiting
+	// list when the stop came (started, not yet registered as a run) see it.
+	stopSeq    map[string]int
+	stopAllSeq int
 }
 
 func newQueue(slots int, wg *sync.WaitGroup, run func(job)) *queue {
 	if slots <= 0 {
 		slots = 1
 	}
-	return &queue{slots: slots, run: run, wg: wg, queued: map[string]int{}, inflight: map[string]job{}}
+	return &queue{slots: slots, run: run, wg: wg, queued: map[string]int{}, inflight: map[string]job{}, stopSeq: map[string]int{}}
 }
 
 // coveredLocked reports whether the run in flight for j's item already does
@@ -108,6 +122,7 @@ func (q *queue) push(jobs ...job) {
 			q.waiting[i].keepReviewed = q.waiting[i].keepReviewed && j.keepReviewed
 			q.waiting[i].aggOnly = q.waiting[i].aggOnly && j.aggOnly
 			q.waiting[i].user = q.waiting[i].user || j.user
+			q.waiting[i].explicit = q.waiting[i].explicit || j.explicit
 			continue
 		}
 		if q.coveredLocked(j) {
@@ -167,6 +182,90 @@ func (q *queue) exec(j job) {
 	delete(q.inflight, j.itemID)
 	if !q.stopped {
 		q.startLocked()
+	}
+}
+
+// drop removes id's waiting job (a user stop) and marks every job of id
+// queued so far as stopped (see stoppedBefore). It reports whether a job
+// was waiting and whether one is running.
+func (q *queue) drop(id string) (waiting, busy bool) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.stopSeq[id] = q.seq
+	_, busy = q.inflight[id]
+	i, waiting := q.queued[id]
+	if !waiting {
+		return false, busy
+	}
+	q.waiting = append(q.waiting[:i], q.waiting[i+1:]...)
+	delete(q.queued, id)
+	q.reindexLocked()
+	return true, busy
+}
+
+// dropAll removes every waiting job (stop all) and marks every job queued
+// so far as stopped. It returns the items that were waiting and not
+// running, and the items running.
+func (q *queue) dropAll() (waiting, busy []string) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.stopAllSeq = q.seq
+	for id := range q.inflight {
+		busy = append(busy, id)
+	}
+	for _, j := range q.waiting {
+		if _, ok := q.inflight[j.itemID]; !ok {
+			waiting = append(waiting, j.itemID)
+		}
+	}
+	q.waiting = nil
+	q.queued = map[string]int{}
+	sort.Strings(busy)
+	sort.Strings(waiting)
+	return waiting, busy
+}
+
+// stoppedBefore reports whether j was queued before a stop of its item (or
+// a stop all), so it must not run.
+func (q *queue) stoppedBefore(j job) bool {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return j.seq <= q.stopAllSeq || j.seq <= q.stopSeq[j.itemID]
+}
+
+// isRunning reports whether a job of id is running.
+func (q *queue) isRunning(id string) bool {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	_, ok := q.inflight[id]
+	return ok
+}
+
+// setSlots changes how many jobs may run at once (the settings page's
+// concurrency). Growing starts waiting jobs; shrinking never kills a
+// running job, it only delays the next starts.
+func (q *queue) setSlots(n int) {
+	if n <= 0 {
+		n = 1
+	}
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.slots = n
+	if !q.stopped {
+		q.startLocked()
+	}
+}
+
+// slotCount returns the current number of slots.
+func (q *queue) slotCount() int {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return q.slots
+}
+
+func (q *queue) reindexLocked() {
+	for i, j := range q.waiting {
+		q.queued[j.itemID] = i
 	}
 }
 

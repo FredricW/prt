@@ -149,7 +149,7 @@ func TestPipelineActionsCallDaemon(t *testing.T) {
 		t.Errorf("review actions = %+v", f.reviewActions)
 	}
 	// Re-running a later stage does not force a head re-resolve or re-fetch.
-	if len(f.refreshes) != 1 || f.refreshes[0] != (proto.ItemParams{ItemID: "pr:1", FromStage: model.StageRoute}) {
+	if len(f.refreshes) != 1 || f.refreshes[0] != (proto.ItemParams{ItemID: "pr:1", FromStage: model.StageRoute, User: true}) {
 		t.Errorf("refreshes = %+v", f.refreshes)
 	}
 	if len(f.callLogs) != 1 || f.callLogs[0] != (proto.CallLogParams{ItemID: "pr:1", GroupID: "g1"}) {
@@ -168,7 +168,7 @@ func TestPipelineActionsCallDaemon(t *testing.T) {
 	p.actions["r"] = pipeview.Action{Kind: pipeview.ActRerun, Stage: model.StageFetch}
 	next, rcmd := updateCmd(t, m, keyMsg("r"))
 	m = settle(t, next, rcmd)
-	if len(f.refreshes) != 2 || f.refreshes[1] != (proto.ItemParams{ItemID: "pr:1", FromStage: model.StageFetch, Force: true}) {
+	if len(f.refreshes) != 2 || f.refreshes[1] != (proto.ItemParams{ItemID: "pr:1", FromStage: model.StageFetch, Force: true, User: true}) {
 		t.Errorf("refreshes after r on fetch = %+v", f.refreshes)
 	}
 	// An action without a group is refused locally.

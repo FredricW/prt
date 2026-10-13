@@ -97,7 +97,7 @@ func (m Model) codeContext() string {
 
 // tabContext is the dim context on the right of the tab bar.
 func (m Model) tabContext() string {
-	if m.detail == nil {
+	if m.detail == nil || m.tab == TabSettings {
 		return ""
 	}
 	switch m.tab {

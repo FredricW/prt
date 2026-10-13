@@ -65,6 +65,11 @@ func SnapshotWithOptions(ctx context.Context, c daemon.Client, w io.Writer, widt
 	tm, _ = tm.Update(tea.WindowSizeMsg{Width: width, Height: height})
 	tm, _ = tm.Update(itemsMsg{items: items})
 	m = tm.(Model)
+	// The strategy line of a not-analysed or stopped item's Overview (M5.1);
+	// a client without settings leaves it out.
+	if info, err := c.Settings(ctx, proto.SettingsParams{}); err == nil {
+		m.setStrategy(info.Values.AutoReview)
+	}
 	n := len(m.picker.items)
 	if n == 0 {
 		_, err := fmt.Fprintf(w, "=== screen: picker (empty) ===\n%s\n", m.View())

@@ -42,8 +42,8 @@ func (c *InProcess) ReviewAction(ctx context.Context, p proto.ReviewActionParams
 	if err := c.p.SetGroupOverride(ctx, it.ID, p.GroupID, tier); err != nil {
 		return fmt.Errorf("daemon: review action %s: %w", p.ItemID, err)
 	}
-	c.q.push(job{itemID: it.ID, urgency: it.Urgency, rerun: true})
-	return nil
+	// Explicit: the user acted on this item (D, R, s).
+	return c.pushExplicit(ctx, it, job{itemID: it.ID, urgency: it.Urgency, rerun: true})
 }
 
 // Routing implements Client. Without flags it describes the active rules.
@@ -182,7 +182,8 @@ func (c *InProcess) routingInfo() proto.RoutingInfo {
 // re-run that keeps the decisions of its done rows (RunOptions
 // KeepReviewed: "saving re-routes unreviewed groups"), and returns how many
 // such rows there were. Rows the user decided (D, s) are not counted: an
-// override outranks the rules.
+// override outranks the rules. The jobs are automatic: the strategy gates
+// them when they start (an item it does not allow is only re-aggregated).
 func (c *InProcess) reroute(ctx context.Context) (int, error) {
 	items, err := c.d.Store.Items(ctx)
 	if err != nil {
@@ -239,6 +240,6 @@ func (c *InProcess) SetCap(ctx context.Context, p proto.CapParams) error {
 	if !ok {
 		return fmt.Errorf("daemon: set cap %s: unknown item", p.ItemID)
 	}
-	c.q.push(job{itemID: it.ID, urgency: it.Urgency, rerun: true})
-	return nil
+	// Explicit: the user acted on this item (:cap).
+	return c.pushExplicit(ctx, it, job{itemID: it.ID, urgency: it.Urgency, rerun: true})
 }

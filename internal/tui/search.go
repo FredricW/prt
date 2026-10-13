@@ -290,7 +290,7 @@ func (m *Model) renderPreview() {
 	}
 	_, mw, _ := m.dims()
 	y := m.previewOV.vp.YOffset
-	m.previewOV.setPage(overviewPage(m.st, m.md, *m.preview, m.now(), mw))
+	m.previewOV.setPage(overviewPageWith(m.st, m.md, *m.preview, m.now(), mw, m.ovOpts()))
 	m.previewOV.vp.SetYOffset(y)
 }
 

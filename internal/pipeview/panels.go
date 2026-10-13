@@ -24,7 +24,7 @@ var (
 // statusOrder lists review statuses for the totals' status line.
 var statusOrder = []model.ReviewStatus{
 	model.ReviewDone, model.ReviewRunning, model.ReviewQueued, model.ReviewFailed,
-	model.ReviewSkipped, model.ReviewStaleLabels,
+	model.ReviewSkipped, model.ReviewStaleLabels, model.ReviewStopped,
 }
 
 // linkOrder lists structural link kinds for the grouping panel.

@@ -436,7 +436,13 @@ func (c *InProcess) applyOverride(ctx context.Context, it model.Item, o model.Ov
 	if err := c.d.Store.PutOverride(ctx, o); err != nil {
 		return fmt.Errorf("daemon: override %s/%s: %w", o.UnitID, o.Question, err)
 	}
-	jobs := []job{{itemID: it.ID, urgency: it.Urgency, rerun: true, aggOnly: true}}
+	// The item the user overrode is an explicit request; the other items
+	// holding the unit follow automatically (gated by the strategy: an
+	// item it does not allow re-aggregates free-only).
+	if err := c.markRequested(ctx, it); err != nil {
+		return err
+	}
+	jobs := []job{{itemID: it.ID, urgency: it.Urgency, rerun: true, aggOnly: true, explicit: true}}
 	for _, other := range c.itemsWithUnit(ctx, o.UnitID, it.ID) {
 		jobs = append(jobs, job{itemID: other.ID, urgency: other.Urgency, rerun: true, aggOnly: true})
 	}

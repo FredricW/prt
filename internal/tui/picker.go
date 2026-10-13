@@ -481,7 +481,11 @@ func secondaryLine(it model.Item, rc rowCtx, items ...model.Item) string {
 func secondaryFacts(st styles, it model.Item, rc rowCtx, items []model.Item) []fact {
 	var fs []fact
 	if s := stateText(it, rc); s != "" {
-		fs = append(fs, fact{{s, st.plain}})
+		style := st.plain
+		if resumable(it) {
+			style = st.dim // waiting for the user, not working (M5.1)
+		}
+		fs = append(fs, fact{{s, style}})
 	}
 	if it.LabelsUnavailable {
 		fs = append(fs, fact{{"labels unavailable", st.dim}})
@@ -510,6 +514,13 @@ func stateText(it model.Item, rc rowCtx) string {
 		return strings.TrimSpace(rc.spin + " " + strings.TrimSpace("analysing "+stage))
 	case model.StateStale:
 		return "stale · r to refresh"
+	case model.StateNotAnalysed:
+		return "not analysed · r to run"
+	case model.StateStopped:
+		if it.StateNote == "" {
+			return "stopped · r to resume"
+		}
+		return "stopped at " + it.StateNote + " · r to resume"
 	case model.StateError:
 		if it.StateNote == "" {
 			return "error"
