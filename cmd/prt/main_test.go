@@ -13,6 +13,7 @@ import (
 	"github.com/fredricw/prt/internal/embed"
 	"github.com/fredricw/prt/internal/gh"
 	"github.com/fredricw/prt/internal/jev"
+	"github.com/fredricw/prt/internal/review"
 	"github.com/fredricw/prt/internal/testutil"
 )
 
@@ -163,18 +164,27 @@ func TestReplayFlags(t *testing.T) {
 		t.Fatal(err)
 	}
 	repo := gitRepo(t, "")
-	env, err := setup(context.Background(), options{repo: repo, offline: true, jevReplay: "rec/jev", embedReplay: "rec/embed"})
+	env, err := setup(context.Background(), options{repo: repo, offline: true, jevReplay: "rec/jev", embedReplay: "rec/embed", reviewReplay: "rec/review"})
 	if err != nil {
 		t.Fatalf("replay must ignore the XDG config: %v", err)
 	}
 	defer env.close()
+	for tier, want := range map[string]string{"fast": env.deps.Config.Models.Fast, "deep": env.deps.Config.Models.Deep} {
+		rev := env.deps.Reviewers.Fast
+		if tier == "deep" {
+			rev = env.deps.Reviewers.Deep
+		}
+		if r, ok := rev.(*review.Replay); !ok || r.Dir != "rec/review" || r.Name != want || !r.MissUnavailable {
+			t.Errorf("%s reviewer = %#v, want a MissUnavailable replay of rec/review as %q", tier, rev, want)
+		}
+	}
 	if r, ok := env.deps.Jev.(*jev.Replay); !ok || r.Dir != "rec/jev" || !r.MissUnavailable {
 		t.Errorf("Jev = %#v, want a MissUnavailable replay of rec/jev", env.deps.Jev)
 	}
 	if r, ok := env.deps.Embedder.(*embed.Replay); !ok || r.Dir != "rec/embed" {
 		t.Errorf("Embedder = %#v, want a replay of rec/embed", env.deps.Embedder)
 	}
-	if want := "Jev: replay of rec/jev · embeddings: replay of rec/embed (offline)"; env.srcNote != want {
+	if want := "Jev: replay of rec/jev · embeddings: replay of rec/embed · reviews: replay of rec/review (offline)"; env.srcNote != want {
 		t.Errorf("note = %q, want %q", env.srcNote, want)
 	}
 	if _, err := setup(context.Background(), options{repo: repo, offline: true}); err == nil {
@@ -189,6 +199,7 @@ func TestSnapshotReplay(t *testing.T) {
 	rec := filepath.Join("..", "..", "testdata", "recordings")
 	code, out, errOut := runPrt("--offline", "--snapshot", "--now", "2026-10-13T12:00:00Z",
 		"--jev-replay", filepath.Join(rec, "jev"), "--embed-replay", filepath.Join(rec, "embed"),
+		"--review-replay", filepath.Join(rec, "review"),
 		"--repo", repo, "--fixtures", testutil.FixturePRs(t), "--max-items", "1")
 	if code != 0 {
 		t.Fatalf("code %d err %q", code, errOut)

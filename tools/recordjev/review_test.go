@@ -93,7 +93,13 @@ func TestReviewGuardReservesInFlight(t *testing.T) {
 		defer wg.Done()
 		_, firstErr = g.Review(context.Background(), req1)
 	}()
+	deadline := time.Now().Add(5 * time.Second)
 	for next.calls.Load() == 0 {
+		if time.Now().After(deadline) {
+			close(next.block)
+			wg.Wait()
+			t.Fatalf("first call never reached the reviewer: %v", firstErr)
+		}
 		time.Sleep(time.Millisecond)
 	}
 	if _, err := g.Review(context.Background(), req2); !errors.Is(err, ErrReviewBudget) || !strings.Contains(err.Error(), "in flight") {
