@@ -1,0 +1,11 @@
+diff --git a/pkg/a.go b/pkg/b.go
+similarity index 90%
+rename from pkg/a.go
+rename to pkg/b.go
+index 1111111..2222222 100644
+--- a/pkg/a.go
++++ b/pkg/b.go
+@@ -1,2 +1,2 @@
+-package a
++package b
+ // doc

@@ -1,0 +1,7 @@
+ pkg/a.go → pkg/b.go (renamed 90%)  +1 −1                   
+@@ -1,2 +1,2 @@
+1   - package a
+  1 + package b
+2 2   // doc
+
+
