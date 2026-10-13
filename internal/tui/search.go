@@ -75,11 +75,25 @@ func searchRows(inner int) int {
 	return max(2, min(12, inner/2))
 }
 
-// openSearch opens the prompt at the bottom of the sidebar box.
+// openSearch opens the prompt at the bottom of the sidebar box. In a
+// workspace with a repo filter the searches are limited to that repo
+// (M5.3).
 func (m *Model) openSearch() tea.Cmd {
+	if m.ws.Multi {
+		m.search.SetSearcher(repoSearcher(m.client, m.picker.filter))
+	}
 	cmd := m.search.Open()
 	m.sizeSidebar()
 	return cmd
+}
+
+// repoSearcher is c.Search with SearchParams.Repo set to repo ("" every
+// repo).
+func repoSearcher(c daemon.Client, repo string) searchview.Searcher {
+	return func(ctx context.Context, p proto.SearchParams) (proto.SearchResult, error) {
+		p.Repo = repo
+		return c.Search(ctx, p)
+	}
 }
 
 // updateSearch hands k to the open prompt and acts on its outcome: a
@@ -122,13 +136,13 @@ func (m *Model) onChoice(ch searchview.Choice) tea.Cmd {
 	case searchview.ChoicePreview:
 		if i := m.picker.indexOf(hit.ItemID); hit.Listed || i >= 0 {
 			// Already listed: nothing to preview, show it in the picker.
-			m.note = hitLabel(hit) + " is already in the picker"
+			m.note = m.hitName(hit) + " is already in the picker"
 			if i >= 0 && m.picker.moveTo(i) {
 				return m.selectionChanged()
 			}
 			return nil
 		}
-		m.note = "previewing " + hitLabel(hit) + "…"
+		m.note = "previewing " + m.hitName(hit) + "…"
 		return m.previewCmd(hit.Query)
 	}
 	return nil
@@ -172,7 +186,7 @@ func (m *Model) addCmd(query string) tea.Cmd {
 
 // removeCmd removes item it (x on an added item).
 func (m *Model) removeCmd(it model.Item) tea.Cmd {
-	c, id, label := m.client, it.ID, itemLabel(it)
+	c, id, label := m.client, it.ID, m.itemTitle(it)
 	return func() tea.Msg {
 		return removedMsg{label: label, err: c.Remove(context.Background(), id)}
 	}
@@ -265,7 +279,7 @@ func (m Model) onSearchMsg(msg tea.Msg) (Model, tea.Cmd, bool) {
 			m.note = "add failed: " + msg.err.Error()
 			return m, nil, true
 		}
-		m.note = "added " + itemLabel(msg.item) + "; analysing…"
+		m.note = "added " + m.itemTitle(msg.item) + "; analysing…"
 		m.selectAfter = msg.item.ID
 		if m.takeSelectAfter() {
 			return m, m.selectionChanged(), true
@@ -299,7 +313,7 @@ func (m Model) onSearchMsg(msg tea.Msg) (Model, tea.Cmd, bool) {
 			// Already listed (ranked, discovered or added): never track it as
 			// a preview, so closing the prompt cannot delete it. Show it by
 			// moving the picker cursor to it instead.
-			m.note = itemLabel(msg.item) + " is already in the picker"
+			m.note = m.itemTitle(msg.item) + " is already in the picker"
 			m.previewID, m.preview = "", nil // the daemon dropped any older preview
 			m.previewSeq++
 			if i := m.picker.indexOf(msg.item.ID); i >= 0 && m.picker.moveTo(i) {
@@ -327,7 +341,7 @@ func (m *Model) renderPreview() {
 	}
 	_, mw, _ := m.dims()
 	y := m.previewOV.vp.YOffset
-	m.previewOV.setPage(overviewPageWith(m.st, m.md, *m.preview, m.now(), mw, m.ovOpts()))
+	m.previewOV.setPage(overviewPageWith(m.st, m.md, *m.preview, m.now(), mw, m.ovOptsFor(m.preview.Item.Repo)))
 	m.previewOV.vp.SetYOffset(y)
 }
 
@@ -379,7 +393,7 @@ func (m *Model) removeSelected() tea.Cmd {
 		m.note = "only added items can be removed"
 		return nil
 	}
-	m.note = "removing " + itemLabel(it) + "…"
+	m.note = "removing " + m.itemTitle(it) + "…"
 	return m.removeCmd(it)
 }
 

@@ -23,6 +23,9 @@ type cmdPane interface {
 	Update(msg tea.Msg) tea.Cmd
 	PendingCommand() (cmdline.Submitted, bool)
 	View() string
+	// SetRepos gives `:repo` the workspace's repo keys and labels to
+	// complete (M5.3).
+	SetRepos(names []string)
 }
 
 var _ cmdPane = (*cmdline.Model)(nil)
@@ -52,7 +55,8 @@ func (m Model) updateCmdline(msg tea.Msg) (Model, tea.Cmd) {
 }
 
 // runCommand executes one submitted command line (M5.1 adds :auto, :stop
-// [all], :resume [all] and :settings).
+// [all], :resume [all] and :settings; M5.3 :repo, and an unqualified :add
+// takes the repo filter).
 func (m Model) runCommand(sub cmdline.Submitted) (Model, tea.Cmd) {
 	if sub.Err != nil {
 		m.note = sub.Err.Error()
@@ -61,7 +65,9 @@ func (m Model) runCommand(sub cmdline.Submitted) (Model, tea.Cmd) {
 	c := sub.Cmd
 	switch c.Kind {
 	case cmdline.Add:
-		return m, m.addCmd(c.Arg)
+		return m, m.addCmd(m.qualifyAdd(c.Arg))
+	case cmdline.Repo:
+		return m.repoCommand(c.Arg)
 	case cmdline.Tier:
 		return m, m.tierCmd(c.Tier)
 	case cmdline.Cap:

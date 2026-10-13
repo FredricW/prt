@@ -149,10 +149,11 @@ func (m *Model) selectionChanged() tea.Cmd {
 	m.overview.closeRaw()
 	it, ok := m.picker.selected()
 	if !ok {
+		// Nothing, or a repo header (M5.3: the repo card, no Detail).
 		m.cancelLoads("")
 		m.clearDetail()
 		m.detailPending = false
-		return nil
+		return m.loadRepoSettings(m.activeRepo(), false)
 	}
 	if m.detail == nil || m.detail.Item.ID != it.ID {
 		m.overview.focus = ""
@@ -164,7 +165,7 @@ func (m *Model) selectionChanged() tea.Cmd {
 	}
 	m.cancelLoads("")
 	m.detailPending = true
-	return batch(m.startLoad(it.ID), m.codeLabels())
+	return batch(m.startLoad(it.ID), m.codeLabels(), m.loadRepoSettings(it.Repo, false))
 }
 
 // clearDetail empties the main pane (nothing to show for the selection).
@@ -411,9 +412,18 @@ func (m Model) onEvent(e proto.Event) (tea.Model, tea.Cmd) {
 	case proto.EventPatch:
 		reload = m.patchReloads(e)
 	case proto.EventLog:
-		m.logNote = e.Note
+		if !m.ws.Multi || e.Repo == "" {
+			m.logNote = e.Note
+			break
+		}
+		// A repo's note (M5.3): its status may have changed, and a note that
+		// only repeats the repo header's status is not copied.
+		if note, ok := m.workspaceLogNote(e); ok {
+			m.logNote = note
+		}
+		cmds = append(cmds, m.loadWorkspace())
 	case proto.EventSettings:
-		cmds = append(cmds, m.onSettingsEvent())
+		cmds = append(cmds, m.onSettingsEvent(e))
 	}
 	if reload && m.shows(e.ItemID) {
 		cmds = append(cmds, m.scheduleReload(e.ItemID))

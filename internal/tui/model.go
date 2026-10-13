@@ -7,7 +7,9 @@
 // or the `:` command line. Colours and drawing pieces come from
 // internal/theme. It talks to the analysis side only through
 // daemon.Client; long operations are tea.Cmds returning messages and never
-// run in Update.
+// run in Update. Served a workspace (M5.3), the picker groups items by repo
+// (workspace.go, pickerws.go); the picker's and the Code page list's widths
+// can be dragged or set with < and > and are saved per user (resize.go).
 package tui
 
 import (
@@ -32,6 +34,7 @@ import (
 	"github.com/fredricw/prt/internal/searchview"
 	"github.com/fredricw/prt/internal/settingsview"
 	"github.com/fredricw/prt/internal/theme"
+	"github.com/fredricw/prt/internal/uistate"
 )
 
 // Focus is which pane has keyboard focus.
@@ -81,11 +84,13 @@ type Options struct {
 	Edit EditFunc
 	// Repo ("owner/name", else the repo directory's name) and Role (the
 	// configured role, "frontend") fill the header line; "" hides the part
-	// (M5).
+	// (M5). In a workspace (M5.3) the header names the workspace root and
+	// the shown repo's role from the daemon's Workspace answer instead.
 	Repo, Role string
 	// Root is the repository's work tree, so the Code page's `e` opens
 	// <Root>/<path>; "" uses the path as is (relative to the working
-	// directory) (M5).
+	// directory) (M5). In a workspace the shown item's repo root is used
+	// (Root only when that repo is unknown).
 	Root string
 	// EditFile opens a file at a line for the Code page's `e`; nil runs
 	// `$EDITOR +<line> <path>` (fallback vi) through tea.ExecProcess (M5).
@@ -95,6 +100,14 @@ type Options struct {
 	// daemon runs discovery itself. The default discovers on every tick
 	// (--no-daemon).
 	ReloadOnTick bool
+	// Layout is the saved pane geometry (M5.3, internal/uistate): the
+	// picker sidebar's and the Code page list's widths (0 automatic),
+	// clamped to the terminal when applied.
+	Layout uistate.Layout
+	// SaveLayout persists both widths after a border drag ends and after
+	// each `<` / `>` (M5.3); it runs in a tea.Cmd, never inside Update. nil
+	// persists nothing (snapshots, tests).
+	SaveLayout func(uistate.Layout) error
 }
 
 // Messages.
@@ -234,6 +247,22 @@ type Model struct {
 	// picker moves to once it is listed.
 	selectAfter string
 
+	// ws is the daemon's last Workspace answer (M5.3); with ws.Multi the
+	// picker groups by repo (workspace.go). repos caches each repo's live
+	// settings (strategy, role) read with Settings{Repo}; home is $HOME,
+	// shown as ~ in the header. settingsRepo is the repo the open settings
+	// page reads and saves.
+	ws           proto.WorkspaceInfo
+	repos        *repoCache
+	home         string
+	settingsRepo string
+
+	// sideUser is the picker width the user chose (M5.3; 0 automatic),
+	// codeListUser the Code page list's; sideDrag is set while the picker's
+	// border is dragged (resize.go).
+	sideUser, codeListUser int
+	sideDrag, dragMoved    bool
+
 	width, height int
 }
 
@@ -290,12 +319,15 @@ func NewWithOptions(c daemon.Client, r *lipgloss.Renderer, o Options) Model {
 		labels:     newLabelState(),
 		debounce:   reloadDebounce,
 		strip:      pipeview.StageStrip,
+		repos:      newRepoCache(),
+		home:       homeDir(),
 		width:      120,
 		height:     40,
 	}
 	m.code.SetKeys(km.codeKeys())
 	m.pipe.SetKeys(km.pipeKeys())
 	m.arch.SetKeys(km.archKeys())
+	m.applyLayout(o.Layout)
 	m.layout()
 	return m
 }
@@ -308,10 +340,11 @@ func (m Model) now() time.Time {
 }
 
 // Init implements tea.Model: show the stored items at once (the TUI starts
-// against the cache), then discover, listen for events, schedule refresh
-// and read the auto-review strategy (M5.1).
+// against the cache), then discover, listen for events, schedule refresh,
+// read the auto-review strategy (M5.1) and ask what the daemon serves (one
+// repo or a workspace, M5.3).
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(m.loadItems(), m.discover(), m.listen(), m.scheduleRefresh(), m.loadStrategy())
+	return tea.Batch(m.loadItems(), m.discover(), m.listen(), m.scheduleRefresh(), m.loadStrategy(), m.loadWorkspace())
 }
 
 // ---- commands -------------------------------------------------------------
@@ -452,7 +485,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case spinner.TickMsg:
 		return m.onSpin(msg)
 	case refreshTickMsg:
-		return m, tea.Batch(m.tickCmd(), m.scheduleRefresh())
+		return m, tea.Batch(m.tickCmd(), m.scheduleRefresh(), m.loadWorkspace())
+	case workspaceMsg:
+		return m.onWorkspace(msg)
+	case repoSettingsMsg:
+		return m.onRepoSettings(msg)
+	case layoutSavedMsg:
+		if msg.err != nil {
+			m.note = "could not save layout: " + msg.err.Error()
+		}
+		return m, nil
 	case checkoutMsg:
 		return m.onCheckout(msg), nil
 	case groupEditedMsg:
@@ -575,17 +617,31 @@ func afterInput(tm tea.Model, cmd tea.Cmd) (tea.Model, tea.Cmd) {
 }
 
 // handleMouse implements the spec's mouse support: the wheel scrolls the
-// pane under the pointer, a left click on a picker row selects that item,
-// a click on a tab selects that tab (tabbar.go; the tab bar never passes a
-// click on), clicks in the search results, the Code, Pipeline and
-// Architecture pages go to those components, and on the Overview a click
-// opens a row's unit, focuses a box or opens a "+N more" list. Row 0 is
-// the header line; the sidebar box spans rows 1..body with its list
-// starting at row 2; row 1 of the main pane is the tab bar.
+// pane under the pointer, a left click on a picker row selects that item
+// (on a repo header it folds or unfolds the repo, M5.3), a click on a tab
+// selects that tab (tabbar.go; the tab bar never passes a click on), clicks
+// in the search results, the Code, Pipeline and Architecture pages go to
+// those components, and on the Overview a click opens a row's unit, focuses
+// a box or opens a "+N more" list. A left press on the sidebar's right
+// border (or the gap after it) starts a resize drag, and while a drag of
+// that border or of the Code page list's runs, every mouse message goes to
+// it (M5.3, resize.go). Row 0 is the header line; the sidebar box spans
+// rows 1..body with its list starting at row 2; row 1 of the main pane is
+// the tab bar.
 func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	switch {
+	case m.code.Dragging():
+		return m.codeMouse(msg)
+	case m.sideDrag:
+		return m.sideDragMouse(msg)
+	}
 	// The settings page is keyboard-only (a Huh form); the mouse is ignored
 	// while it is open.
 	if m.confirm != nil || m.showHelp || m.form != nil || m.cmd.Active() || m.tab == TabSettings {
+		return m, nil
+	}
+	if m.startsSideDrag(msg) {
+		m.sideDrag, m.dragMoved = true, false
 		return m, nil
 	}
 	sw, _, bh := m.dims()
@@ -609,9 +665,9 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	case m.previewing():
 		wheelOverview(&m.previewOV, msg, wheel)
 	case m.tab == TabCode:
-		// A click on a group may ask for its units' labels (M5.2).
-		cmd := m.code.Update(msg)
-		return m, batch(cmd, m.codeLabels())
+		// A click on a group may ask for its units' labels (M5.2); a press on
+		// the list's border starts the page's own resize drag (M5.3).
+		return m.codeMouse(msg)
 	case m.tab == TabPipeline:
 		return m, m.pipe.Update(msg)
 	case m.tab == TabArch:
@@ -642,6 +698,14 @@ func (m Model) pickerMouse(msg tea.MouseMsg, row int, wheel bool) (tea.Model, te
 			return m, m.selectionChanged()
 		}
 	case msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress:
+		if l, ok := m.picker.lineAt(row); ok && l.header {
+			// A repo header folds or unfolds its repo (M5.3).
+			m.focus = FocusPicker
+			if m.picker.toggleFold(l.repo) {
+				return m, m.selectionChanged()
+			}
+			return m, nil
+		}
 		i := m.picker.itemAt(row)
 		if i < 0 {
 			return m, nil
@@ -865,10 +929,13 @@ func (m Model) handleGlobalKey(k tea.KeyMsg) (Model, tea.Cmd, bool) {
 			// forced, DECISIONS "M5.1 stop / resume").
 			return m, m.resumeSelected(it), true
 		}
-		m.note = "refreshing " + itemLabel(it)
+		m.note = "refreshing " + m.itemTitle(it)
 		return m, m.refreshItem(it), true
 	case key.Matches(k, km.Stop), key.Matches(k, km.StopAll), key.Matches(k, km.Resume):
 		return m, m.controlKey(k), true
+	case key.Matches(k, km.Narrower), key.Matches(k, km.Wider):
+		next, cmd := m.resizeKey(key.Matches(k, km.Wider))
+		return next, cmd, true
 	case key.Matches(k, km.Settings):
 		return m, m.openSettings(), true
 	case key.Matches(k, km.Open):
@@ -892,7 +959,7 @@ func (m Model) handleOpen() (Model, tea.Cmd, bool) {
 	case !ok:
 		return m, nil, true
 	case it.URL == "":
-		m.note = "no GitHub URL for " + itemLabel(it)
+		m.note = "no GitHub URL for " + m.itemTitle(it)
 		return m, nil, true
 	case m.opts.Open == nil:
 		m.note = "no opener configured"
@@ -914,6 +981,14 @@ func (m Model) handleConfirm(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m Model) handlePickerKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	km := m.keys
+	if m.ws.Multi {
+		if moved, ok := m.workspacePickerKey(k); ok {
+			if moved {
+				return m, m.selectionChanged()
+			}
+			return m, nil
+		}
+	}
 	moved := false
 	switch {
 	case key.Matches(k, km.Down):
@@ -921,9 +996,9 @@ func (m Model) handlePickerKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(k, km.Up):
 		moved = m.picker.move(-1)
 	case key.Matches(k, km.Top):
-		moved = m.picker.moveTo(0)
+		moved = m.picker.first()
 	case key.Matches(k, km.Bottom):
-		moved = m.picker.moveTo(len(m.picker.items) - 1)
+		moved = m.picker.last()
 	case key.Matches(k, km.Sort):
 		m.picker.cycleSort()
 		m.note = "sort: " + m.picker.sort.String()
@@ -1003,20 +1078,13 @@ func (m Model) handleMainKey(k tea.KeyMsg) (Model, tea.Cmd) {
 
 // ---- layout and view ------------------------------------------------------
 
-// sidebarWidth adapts the picker to narrow terminals.
-func sidebarWidth(total int) int {
-	if total >= 100 {
-		return 36
-	}
-	return max(16, min(36, total*2/5))
-}
-
 // dims returns the sidebar width, main pane width and body height (the
 // terminal minus the header line and the bottom line). The sidebar box is
 // sidebar+1 cells wide and followed by a one-cell gap, so the main pane
-// starts at column sidebar+2.
+// starts at column sidebar+2. The sidebar width is the user's (dragged or
+// set with < and >, M5.3) clamped to the terminal, else automatic.
 func (m Model) dims() (side, main, body int) {
-	side = sidebarWidth(m.width)
+	side = m.sideWidth()
 	return side, max(10, m.width-side-2), max(3, m.height-2)
 }
 
@@ -1066,6 +1134,9 @@ func (m *Model) layout() {
 func (m Model) View() string {
 	sw, mw, bh := m.dims()
 	side := fit(m.viewSidebar(), sw+1, bh)
+	if m.sideDrag {
+		side = m.heavyBorder(side, sw)
+	}
 	main := fit(m.viewMain(mw), mw, bh)
 	body := lipgloss.JoinHorizontal(lipgloss.Top, side, " ", main)
 	return m.viewHeader() + "\n" + body + "\n" + m.viewStatus()
@@ -1103,6 +1174,9 @@ func (m Model) viewMain(w int) string {
 	if m.previewing() {
 		return head + "\n" + m.viewPreview()
 	}
+	if m.picker.header != "" {
+		return head + "\n" + m.viewRepoCard(m.picker.header, w)
+	}
 	it, ok := m.picker.selected()
 	switch {
 	case !ok:
@@ -1129,13 +1203,18 @@ func spread(left, right string, w int) string {
 }
 
 // viewHeader is the top line: "prt · <repo> · N PRs · N branches · role:
-// <role>" on the left; the sort mode (when not urgency), the multi-select
-// count, busy items, drafts and the daemon's log note dim on the right.
+// <role>" on the left (in a workspace "prt · <root> · N repos · N PRs · N
+// branches · role: <the shown repo's role>", M5.3); the sort mode (when not
+// urgency), the repo filter, the multi-select count, busy items, drafts,
+// the workspace's spend and the daemon's log note dim on the right.
 func (m Model) viewHeader() string {
 	st := m.st
 	sep := st.dim.Render(" · ")
 	left := st.accent.Bold(true).Render("prt")
-	if m.opts.Repo != "" {
+	switch {
+	case m.ws.Multi:
+		left += sep + st.bold.Render(tildePath(m.ws.Root, m.home)) + sep + st.dim.Render(plural(len(m.ws.Repos), "repo"))
+	case m.opts.Repo != "":
 		left += sep + st.bold.Render(m.opts.Repo)
 	}
 	prs, branches := 0, 0
@@ -1151,8 +1230,8 @@ func (m Model) viewHeader() string {
 		nb = "1 branch"
 	}
 	left += sep + st.dim.Render(plural(prs, "PR")) + sep + st.dim.Render(nb)
-	if m.opts.Role != "" {
-		left += sep + st.dim.Render("role: ") + m.opts.Role
+	if role := m.headerRole(); role != "" {
+		left += sep + st.dim.Render("role: ") + role
 	}
 	return spread(left, st.dim.Render(strings.Join(m.headerFacts(), " · ")), m.width)
 }
@@ -1162,6 +1241,9 @@ func (m Model) headerFacts() []string {
 	var parts []string
 	if m.picker.sort != sortUrgency {
 		parts = append(parts, "sort: "+m.picker.sort.String())
+	}
+	if m.ws.Multi && m.picker.filter != "" {
+		parts = append(parts, "repo: "+m.repoLabelOf(m.picker.filter))
 	}
 	if n := len(m.marked); n > 0 {
 		parts = append(parts, fmt.Sprintf("%d selected", n))
@@ -1174,17 +1256,23 @@ func (m Model) headerFacts() []string {
 			parts = append(parts, plural(n, "draft"))
 		}
 	}
+	if m.ws.Multi && m.ws.SpentUSD > 0 {
+		parts = append(parts, spentText(m.ws.SpentUSD))
+	}
 	if m.logNote != "" {
 		parts = append(parts, m.logNote)
 	}
 	return parts
 }
 
-// viewStatus is the bottom line: the checkout prompt, the form hint, the
-// command line or a note when there is one, else the key hint bar.
+// viewStatus is the bottom line: a resize drag's width, the checkout
+// prompt, the form hint, the command line or a note when there is one, else
+// the key hint bar.
 func (m Model) viewStatus() string {
 	var s string
 	switch {
+	case m.sideDrag || m.code.Dragging():
+		s = m.dragStatus()
 	case m.confirm != nil:
 		s = m.st.prompt.Render("work tree dirty — checkout " + orDash(m.confirm.ref) + " anyway? y/N")
 	case m.form != nil:

@@ -159,7 +159,7 @@ func (m *Model) openSubmit(ev proto.ReviewEvent) tea.Cmd {
 		return nil
 	}
 	if m.detail == nil || m.detail.Item.ID != it.ID {
-		m.note = "loading " + itemLabel(it) + " — try again in a moment"
+		m.note = "loading " + m.itemTitle(it) + " — try again in a moment"
 		return nil
 	}
 	d := m.draftsFor(it.ID)

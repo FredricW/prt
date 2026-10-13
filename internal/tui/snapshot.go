@@ -41,6 +41,12 @@ func Snapshot(ctx context.Context, c daemon.Client, w io.Writer, width, height, 
 // error) and one help-overlay screen. Screens are separated by "===
 // screen: … ===" headers. Output has no colour; pass o.Now for
 // deterministic ages.
+//
+// In a workspace (M5.3, Workspace().Multi) the picker is grouped by repo,
+// the item screens are drawn for up to maxItems items of each repo in
+// picker order, followed by "workspace · folded" (the first repo folded,
+// the cursor on its header) and "workspace · filter <key>" (the filter on
+// the workspace's second repo).
 func SnapshotWithOptions(ctx context.Context, c daemon.Client, w io.Writer, width, height, maxItems int, o Options) error {
 	if err := c.Discover(ctx); err != nil {
 		_, _ = fmt.Fprintf(w, "# discover failed: %v\n", err)
@@ -65,9 +71,13 @@ func SnapshotWithOptions(ctx context.Context, c daemon.Client, w io.Writer, widt
 	tm, _ = tm.Update(tea.WindowSizeMsg{Width: width, Height: height})
 	tm, _ = tm.Update(itemsMsg{items: items})
 	m = tm.(Model)
-	// The strategy line of a not-analysed or stopped item's Overview (M5.1);
-	// a client without settings leaves it out.
-	if info, err := c.Settings(ctx, proto.SettingsParams{}); err == nil {
+	ws, wsErr := c.Workspace(ctx)
+	multi := wsErr == nil && ws.Multi
+	if multi {
+		snapshotWorkspace(ctx, &m, c, ws)
+	} else if info, err := c.Settings(ctx, proto.SettingsParams{}); err == nil {
+		// The strategy line of a not-analysed or stopped item's Overview
+		// (M5.1); a client without settings leaves it out.
 		m.setStrategy(info.Values.AutoReview)
 	}
 	n := len(m.picker.items)
@@ -75,14 +85,27 @@ func SnapshotWithOptions(ctx context.Context, c daemon.Client, w io.Writer, widt
 		_, err := fmt.Fprintf(w, "=== screen: picker (empty) ===\n%s\n", m.View())
 		return err
 	}
-	for i := 0; i < n && i < maxItems; i++ {
-		if err := itemScreens(ctx, w, &m, c, i); err != nil {
+	if multi {
+		for _, g := range m.picker.groups() {
+			for i := g.first; i < g.first+g.n && i < g.first+maxItems; i++ {
+				if err := itemScreens(ctx, w, &m, c, i); err != nil {
+					return err
+				}
+			}
+		}
+		if err := workspaceScreens(ctx, w, &m, c); err != nil {
 			return err
+		}
+	} else {
+		for i := 0; i < n && i < maxItems; i++ {
+			if err := itemScreens(ctx, w, &m, c, i); err != nil {
+				return err
+			}
 		}
 	}
 	// Back on the first item, with its detail, so the main pane matches the
 	// picker cursor on the search and help screens.
-	m.picker.moveTo(0)
+	m.picker.first()
 	if it, ok := m.picker.selected(); ok {
 		if d, err := c.Detail(ctx, it.ID); err == nil {
 			m.applyDetail(d)
@@ -93,6 +116,54 @@ func SnapshotWithOptions(ctx context.Context, c daemon.Client, w io.Writer, widt
 	}
 	m.tab, m.focus, m.showHelp = TabOverview, FocusPicker, true
 	_, err = fmt.Fprintf(w, "=== screen: help · picker ===\n%s\n", m.View())
+	return err
+}
+
+// snapshotWorkspace groups the snapshot's picker by repo (the cursor at the
+// top) and reads every repo's settings for the Overview's strategy line
+// (M5.3).
+func snapshotWorkspace(ctx context.Context, m *Model, c daemon.Client, ws proto.WorkspaceInfo) {
+	m.applyWorkspace(ws)
+	m.picker.first()
+	for _, r := range ws.Repos {
+		if info, err := c.Settings(ctx, proto.SettingsParams{Repo: r.Key}); err == nil {
+			m.repos.live[r.Key] = info.Values
+		}
+	}
+}
+
+// workspaceScreens writes the workspace screens (M5.3): "workspace ·
+// folded", the first repo folded with the cursor on its header (the repo
+// card), and "workspace · filter <key>", the picker filtered to the
+// workspace's second repo with its first item shown.
+func workspaceScreens(ctx context.Context, w io.Writer, m *Model, c daemon.Client) error {
+	gs := m.picker.groups()
+	if len(gs) == 0 {
+		return nil
+	}
+	m.tab, m.focus = TabOverview, FocusPicker
+	saved := m.picker.folded
+	m.picker.folded = withFold(saved, gs[0].key, true)
+	m.picker.header = gs[0].key
+	m.picker.normalize()
+	m.picker.ensureVisible()
+	m.clearDetail()
+	_, err := fmt.Fprintf(w, "=== screen: workspace · folded ===\n%s\n\n", m.View())
+	m.picker.folded, m.picker.header = saved, ""
+	m.picker.normalize()
+	if err != nil || len(m.ws.Repos) < 2 {
+		return err
+	}
+	key := m.ws.Repos[1].Key
+	m.picker.setFilter(key)
+	m.clearDetail()
+	if it, ok := m.picker.selected(); ok {
+		if d, err := c.Detail(ctx, it.ID); err == nil {
+			m.applyDetail(d)
+		}
+	}
+	_, err = fmt.Fprintf(w, "=== screen: workspace · filter %s ===\n%s\n\n", key, m.View())
+	m.picker.setFilter("")
 	return err
 }
 

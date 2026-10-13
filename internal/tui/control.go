@@ -68,7 +68,7 @@ func (m *Model) stopCmd(all bool) tea.Cmd {
 			m.note = "no item selected"
 			return nil
 		}
-		p.ItemID, label = it.ID, itemShort(it)
+		p.ItemID, label = it.ID, m.itemName(it)
 		m.note = "stopping " + label + "…"
 	} else {
 		m.note = "stopping every analysis…"
@@ -91,14 +91,14 @@ func (m *Model) resumeCmd(all bool) tea.Cmd {
 		m.note = "no item selected"
 		return nil
 	}
-	m.note = "resuming " + itemShort(it) + "…"
-	return m.sendResume(proto.ResumeParams{ItemID: it.ID}, itemShort(it), "resumed")
+	m.note = "resuming " + m.itemName(it) + "…"
+	return m.sendResume(proto.ResumeParams{ItemID: it.ID}, m.itemName(it), "resumed")
 }
 
 // resumeSelected is `r` on a stopped item ("resuming #482…") or a
 // not-analysed one ("running feat/x…"): an explicit, non-forced run.
 func (m *Model) resumeSelected(it model.Item) tea.Cmd {
-	label := itemShort(it)
+	label := m.itemName(it)
 	if it.State == model.StateNotAnalysed {
 		m.note = "running " + label + "…"
 		return m.sendResume(proto.ResumeParams{ItemID: it.ID}, label, "started")
@@ -236,9 +236,14 @@ type ovOpts struct {
 	focus                          string
 }
 
-// ovOpts returns the Overview options from the model (no focused block).
-func (m Model) ovOpts() ovOpts {
-	return ovOpts{strategy: m.strategy, runKey: m.keys.Refresh.Help().Key, resumeKey: m.keys.Resume.Help().Key,
+// ovOpts returns the Overview options from the model (no focused block)
+// for the shown item.
+func (m Model) ovOpts() ovOpts { return m.ovOptsFor(m.shownRepo()) }
+
+// ovOptsFor returns the Overview options for an item of repo: in a
+// workspace the strategy is that repo's (M5.3).
+func (m Model) ovOptsFor(repo string) ovOpts {
+	return ovOpts{strategy: m.strategyFor(repo), runKey: m.keys.Refresh.Help().Key, resumeKey: m.keys.Resume.Help().Key,
 		settingsKey: m.keys.Settings.Help().Key}
 }
 

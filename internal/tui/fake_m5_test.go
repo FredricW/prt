@@ -109,15 +109,17 @@ type fakeCmd struct {
 	width   int
 	next    map[string]cmdline.Submitted
 	pending *cmdline.Submitted
+	repos   []string // the last SetRepos (M5.3)
 }
 
 var _ cmdPane = (*fakeCmd)(nil)
 
-func (c *fakeCmd) SetWidth(w int) { c.width = w }
-func (c *fakeCmd) Close()         { c.active = false }
-func (c *fakeCmd) Active() bool   { return c.active }
-func (c *fakeCmd) View() string   { return ":" + c.typed }
-func (c *fakeCmd) Open() tea.Cmd  { c.active, c.typed = true, ""; return nil }
+func (c *fakeCmd) SetWidth(w int)          { c.width = w }
+func (c *fakeCmd) SetRepos(names []string) { c.repos = names }
+func (c *fakeCmd) Close()                  { c.active = false }
+func (c *fakeCmd) Active() bool            { return c.active }
+func (c *fakeCmd) View() string            { return ":" + c.typed }
+func (c *fakeCmd) Open() tea.Cmd           { c.active, c.typed = true, ""; return nil }
 func (c *fakeCmd) PendingCommand() (cmdline.Submitted, bool) {
 	if c.pending == nil {
 		return cmdline.Submitted{}, false

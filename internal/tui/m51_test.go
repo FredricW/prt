@@ -634,8 +634,9 @@ func TestHelpListsControlKeysAndCommands(t *testing.T) {
 			}
 		}
 		for _, e := range cmdline.Help() {
-			if !strings.Contains(v, e.Usage) {
-				t.Errorf("%v: help lacks command %q", ks, e.Usage)
+			// A single repo's overlay leaves out the workspace forms (M5.3).
+			if got := strings.Contains(v, e.Usage); got == e.Workspace {
+				t.Errorf("%v: help shows command %q: %v, want %v", ks, e.Usage, got, !e.Workspace)
 			}
 		}
 	}

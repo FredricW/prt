@@ -1,0 +1,24 @@
+prt · ~/work · 3 repos · 3 PRs · 3 branches · role: backend                              $0.12 spent
+┏━ Queue · ranked ━━━━━━━━━━━━━━━━━━┓   [1 Overview]  2 Code   3 Architecture      @bob · 3h · – ← –
+┃ ▾ acme/portal 3              gh ✓ ┃ #7 Retry invoice sync · bob · 3h · – ← –                      
+┃ ── NEEDS YOU (1) ──────────────── ┃ TL;DR: not generated — pending                                
+┃   ▮▮▮▮ #7 Add JWT session         ┃ Composition: analysing…                                       
+┃        ⚠1 breaking · 3 eyes · ~1… ┃                                                               
+┃ ── YOURS (1) ──────────────────── ┃ ┌─ Headlines · contract surface ─────────────────────────────┐
+┃   ▮▮▯▯ #12 Session rework         ┃ │ analysing…                                                 │
+┃        5h                         ┃ └────────────────────────────────────────────────────────────┘
+┃ ── BRANCHES (1) ───────────────── ┃ ┌─ Check before approving · hot spots ───────────────────────┐
+┃   ▮▯▯▯ feat/session               ┃ │ analysing…                                                 │
+┃        superseded by #12 .77 · 2… ┃ └────────────────────────────────────────────────────────────┘
+┃ ▾ acme/billing-svc 3       gh off ┃ ┌─ API endpoints ────────────────────────────────────────────┐
+┃ ── NEEDS YOU (1) ──────────────── ┃ │ analysing…                                                 │
+┃ ▸ ▮▮▮▯ #7 Retry invoice sync      ┃ └────────────────────────────────────────────────────────────┘
+┃        2 eyes · ~8m               ┃ ┌─ Database ─────────────────────────────────────────────────┐
+┃        why: asked you · age       ┃ │ analysing…                                                 │
+┃ ── BRANCHES (2) ───────────────── ┃ └────────────────────────────────────────────────────────────┘
+┃   ▮▯▯▯ feat/session               ┃ ┌─ Feature flags & config ───────────────────────────────────┐
+┃        superseded .66 · 2d        ┃ │ analysing…                                                 │
+┃   ▯▯▯▯ wip/x                      ┃ └────────────────────────────────────────────────────────────┘
+┃ / search  s sort: urgency ▾       ┃ ┌─ Risk ─────────────────────────────────────────────────────┐
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ │ analysing…                                                 │
+j/k move  space select  / search and add  enter focus main pane  1 2 3 tabs  ctrl+x stop …

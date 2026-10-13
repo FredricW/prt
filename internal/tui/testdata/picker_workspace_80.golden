@@ -1,0 +1,24 @@
+prt · ~/work · 3 repos · 3 PRs · 3 branches · role: frontend         $0.12 spent
+┏━ Queue · ranked ━━━━━━━━━━━━━━┓   [1 Overview]  2 Code   3 Architecture   @al…
+┃ ▾ acme/portal 3          gh ✓ ┃ #7 Add JWT session · alice · 1d · – ← –       
+┃ ── NEEDS YOU (1) ──────────── ┃ TL;DR: not generated — pending                
+┃ ▸ ▮▮▮▮ #7 Add JWT session     ┃ Composition: analysing…                       
+┃        ⚠1 breaking · 3 eyes … ┃                                               
+┃        why: asked you · CI r… ┃ ┌─ Headlines · contract surface ─────────────┐
+┃ ── YOURS (1) ──────────────── ┃ │ analysing…                                 │
+┃   ▮▮▯▯ #12 Session rework     ┃ └────────────────────────────────────────────┘
+┃        5h                     ┃ ┌─ Check before approving · hot spots ───────┐
+┃ ── BRANCHES (1) ───────────── ┃ │ analysing…                                 │
+┃   ▮▯▯▯ feat/session           ┃ └────────────────────────────────────────────┘
+┃        superseded by #12 .77… ┃ ┌─ API endpoints ────────────────────────────┐
+┃ ▾ acme/billing-svc 3   gh off ┃ │ analysing…                                 │
+┃ ── NEEDS YOU (1) ──────────── ┃ └────────────────────────────────────────────┘
+┃   ▮▮▮▯ #7 Retry invoice sync  ┃ ┌─ Database ─────────────────────────────────┐
+┃        2 eyes · ~8m           ┃ │ analysing…                                 │
+┃ ── BRANCHES (2) ───────────── ┃ └────────────────────────────────────────────┘
+┃   ▮▯▯▯ feat/session           ┃ ┌─ Feature flags & config ───────────────────┐
+┃        superseded .66 · 2d    ┃ │ analysing…                                 │
+┃   ▯▯▯▯ wip/x                  ┃ └────────────────────────────────────────────┘
+┃ / search  s sort: urgency ▾   ┃ ┌─ Risk ─────────────────────────────────────┐
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛ │ analysing…                                 │
+j/k move  space select  / search and add  enter focus main pane  1 2 3 tabs …

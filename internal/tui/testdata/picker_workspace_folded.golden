@@ -1,0 +1,24 @@
+prt · ~/work · 3 repos · 3 PRs · 3 branches · role: frontend                             $0.12 spent
+┏━ Queue · ranked ━━━━━━━━━━━━━━━━━━┓   [1 Overview]  2 Code   3 Architecture                      
+┃ ▸ [acme/portal 3]            gh ✓ ┃ acme/portal                                                  
+┃ ▾ acme/billing-svc 3       gh off ┃ ~/work/portal                                                
+┃ ── NEEDS YOU (1) ──────────────── ┃                                                              
+┃   ▮▮▮▯ #7 Retry invoice sync      ┃ status  gh ✓                                                 
+┃        2 eyes · ~8m               ┃ items   2 PRs · 1 branch — Needs you 1 · Yours 1 · Branches 1
+┃ ── BRANCHES (2) ───────────────── ┃         · Added 0                                            
+┃   ▮▯▯▯ feat/session               ┃ role    frontend                                             
+┃        superseded .66 · 2d        ┃ spent   $0.12 this session                                   
+┃   ▯▯▯▯ wip/x                      ┃                                                              
+┃        not analysed · r to run ·  ┃ enter or z unfolds · F filters by repo                       
+┃ ▸ tools 0               no remote ┃                                                              
+┃                                   ┃                                                              
+┃                                   ┃                                                              
+┃                                   ┃                                                              
+┃                                   ┃                                                              
+┃                                   ┃                                                              
+┃                                   ┃                                                              
+┃                                   ┃                                                              
+┃                                   ┃                                                              
+┃ / search  s sort: urgency ▾       ┃                                                              
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛                                                              
+j/k move  space select  / search and add  enter focus main pane  1 2 3 tabs  ctrl+x stop …

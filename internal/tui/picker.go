@@ -10,6 +10,7 @@ import (
 
 	"github.com/fredricw/prt/internal/codeview"
 	"github.com/fredricw/prt/internal/model"
+	"github.com/fredricw/prt/internal/proto"
 	"github.com/fredricw/prt/internal/theme"
 )
 
@@ -51,13 +52,30 @@ const pickerTitle = "Queue · ranked"
 // picker is the sidebar list: items grouped by section, a cursor over items
 // (dividers are never selectable) and a line offset for scrolling. width
 // and height are the list's own cells inside the sidebar box.
+//
+// In a workspace (M5.3, multi) the items are grouped by repo first: each
+// repo group starts with a header row and holds its section dividers and
+// rows (pickerws.go). The cursor then stops on items and on the headers of
+// folded or empty repos.
 type picker struct {
-	items  []model.Item // section order, then the sort mode's key
+	items  []model.Item // (multi: repo group order, then) section order, then the sort mode's key
 	sort   sortMode
 	cursor int
 	offset int // first visible line
 	width  int
 	height int
+
+	// multi turns the repo grouping on; repos are the workspace's repos in
+	// workspace order. folded holds the folds the user chose (a repo absent
+	// from it is folded when it has no items); it is replaced, never changed
+	// in place, so copies of the model keep their own folds. filter is the
+	// repo key shown alone ("" every repo); header is the repo key of the
+	// header row under the cursor ("" while the cursor is on an item).
+	multi  bool
+	repos  []proto.RepoInfo
+	folded map[string]bool
+	filter string
+	header string
 }
 
 // cycleSort moves to the next sort mode and re-sorts, keeping the cursor
@@ -126,23 +144,40 @@ func createdAt(it model.Item) time.Time {
 }
 
 // setItems replaces the items, keeping the cursor on the same item id when
-// it still exists. It reports whether the selected id changed.
+// it still exists (a list that was empty starts at its top). It reports
+// whether the selection (item or repo header) changed.
 func (p *picker) setItems(items []model.Item) bool {
+	before := p.selKey()
 	prev, hadPrev := p.selected()
-	p.items = sortItems(items, p.sort)
+	wasEmpty := len(p.items) == 0
+	p.items = p.arrange(items)
+	placed := false
 	if hadPrev {
-		for i, it := range p.items {
-			if it.ID == prev.ID {
-				p.cursor = i
-				p.ensureVisible()
-				return false
-			}
+		if i := p.indexOf(prev.ID); i >= 0 {
+			p.cursor, placed = i, true
 		}
 	}
-	p.cursor = min(p.cursor, max(0, len(p.items)-1))
+	if !placed {
+		p.cursor = min(p.cursor, max(0, len(p.items)-1))
+	}
+	if wasEmpty && len(p.items) > 0 && p.multi {
+		p.toStop(0)
+	}
+	p.normalize()
 	p.ensureVisible()
-	cur, ok := p.selected()
-	return ok != hadPrev || cur.ID != prev.ID
+	return p.selKey() != before
+}
+
+// selKey identifies the selection: the selected item's id, "\x00" plus the
+// repo key on a header, "" for none.
+func (p picker) selKey() string {
+	if p.header != "" {
+		return "\x00" + p.header
+	}
+	if it, ok := p.selected(); ok {
+		return it.ID
+	}
+	return ""
 }
 
 // patch updates one item's state in place (from an item event) so the
@@ -156,8 +191,10 @@ func (p *picker) patch(it model.Item) {
 	}
 }
 
+// selected is the item under the cursor; ok is false on a repo header (M5.3)
+// and in an empty list.
 func (p *picker) selected() (model.Item, bool) {
-	if p.cursor < 0 || p.cursor >= len(p.items) {
+	if p.header != "" || p.cursor < 0 || p.cursor >= len(p.items) {
 		return model.Item{}, false
 	}
 	return p.items[p.cursor], true
@@ -173,17 +210,42 @@ func (p *picker) indexOf(id string) int {
 	return -1
 }
 
-// move shifts the cursor by delta items (clamped); reports whether it moved.
+// move shifts the cursor by delta items (in a workspace: cursor stops,
+// clamped); reports whether it moved.
 func (p *picker) move(delta int) bool {
+	if p.multi {
+		return p.moveStops(delta)
+	}
 	return p.moveTo(p.cursor + delta)
 }
 
-// moveTo puts the cursor on item i (clamped); reports whether it moved.
+// moveTo puts the cursor on item i (clamped); reports whether it moved. In
+// a workspace a hidden item is revealed first (its repo unfolded, a filter
+// on another repo cleared).
 func (p *picker) moveTo(i int) bool {
+	if p.multi {
+		return p.moveToItem(i)
+	}
 	prev := p.cursor
 	p.cursor = max(0, min(i, len(p.items)-1))
 	p.ensureVisible()
 	return p.cursor != prev
+}
+
+// first and last put the cursor on the first or last row the cursor can
+// stop on (g and G); they report whether it moved.
+func (p *picker) first() bool {
+	if p.multi {
+		return p.toStop(0)
+	}
+	return p.moveTo(0)
+}
+
+func (p *picker) last() bool {
+	if p.multi {
+		return p.toStop(len(p.stops()) - 1)
+	}
+	return p.moveTo(len(p.items) - 1)
 }
 
 func (p *picker) setSize(w, h int) {
@@ -207,20 +269,34 @@ func (p picker) busyCount() int {
 	return n
 }
 
-// pickerLine is one rendered line; item is the item index or -1.
+// pickerLine is one rendered line; item is the item index or -1. A repo
+// header (M5.3) has header set and repo its key.
 type pickerLine struct {
-	text string
-	item int
+	text   string
+	item   int
+	repo   string
+	header bool
 }
 
-// lines lays out the whole list (section dividers and rows) unscrolled.
+// lines lays out the whole list (section dividers and rows; in a workspace
+// the repo headers with their groups) unscrolled.
 func (p picker) lines(st styles, rc rowCtx) []pickerLine {
 	w := max(4, p.width)
+	if p.multi {
+		return p.workspaceLines(st, rc, w)
+	}
+	return p.sectionLines(st, rc, w, 0, len(p.items), false)
+}
+
+// sectionLines lays out items lo..hi-1 under their section dividers. With
+// onlyFilled the sections without items get no "(0)" divider (inside a
+// workspace repo group, M5.3).
+func (p picker) sectionLines(st styles, rc rowCtx, w, lo, hi int, onlyFilled bool) []pickerLine {
 	var out []pickerLine
 	bySection := map[model.Section][]int{}
 	var order []model.Section
-	for i, it := range p.items {
-		s := it.Section
+	for i := lo; i < hi; i++ {
+		s := p.items[i].Section
 		if sectionRank(s) == len(sections) {
 			s = "other"
 		}
@@ -231,7 +307,7 @@ func (p picker) lines(st styles, rc rowCtx) []pickerLine {
 	}
 	for _, s := range append(append([]model.Section(nil), sections...), order...) {
 		idx := bySection[s]
-		if len(idx) == 0 && hideWhenEmpty[s] {
+		if len(idx) == 0 && (hideWhenEmpty[s] || onlyFilled) {
 			continue
 		}
 		label := fmt.Sprintf("%s (%d)", strings.ToUpper(sectionTitle(s)), len(idx))
@@ -263,7 +339,7 @@ func plural(n int, noun string) string {
 func (p picker) row(i int, st styles, rc rowCtx, w int) []string {
 	it := p.items[i]
 	th := st.th
-	sel := i == p.cursor
+	sel := i == p.cursor && p.header == ""
 	var bg lipgloss.TerminalColor
 	marker := "  "
 	if sel {
@@ -350,21 +426,36 @@ func stageIndex(s model.Stage) int {
 }
 
 // itemAt returns the item index drawn on row y of the list (0 is its first
-// visible line), or -1 for a divider, blank or out-of-range row.
+// visible line), or -1 for a divider, repo header, blank or out-of-range
+// row.
 func (p picker) itemAt(y int) int {
+	l, ok := p.lineAt(y)
+	if !ok {
+		return -1
+	}
+	return l.item
+}
+
+// lineAt returns the line drawn on row y of the list; ok is false for a
+// blank or out-of-range row.
+func (p picker) lineAt(y int) (pickerLine, bool) {
 	ls := p.lines(layoutStyles(), rowCtx{})
 	n := p.offset + y
 	if y < 0 || y >= max(1, p.height) || n < 0 || n >= len(ls) {
-		return -1
+		return pickerLine{}, false
 	}
-	return ls[n].item
+	return ls[n], true
 }
 
-// cursorLines returns the first and last line of the cursor's row.
+// cursorLines returns the first and last line of the cursor's row (a repo
+// header's line while the cursor is on it).
 func (p picker) cursorLines(ls []pickerLine) (int, int) {
 	first, last := -1, -1
 	for n, l := range ls {
-		if l.item == p.cursor {
+		if p.header != "" && l.header && l.repo == p.header {
+			return n, n
+		}
+		if p.header == "" && l.item == p.cursor {
 			if first < 0 {
 				first = n
 			}
@@ -415,7 +506,7 @@ func renderSidebar(st styles, p picker, rc rowCtx, bottom []string, w, h int, fo
 		body = append(body, "")
 	}
 	body = append(body[:p.height], bottom...)
-	return st.th.Box(pickerTitle, strings.Join(body, "\n"), w, theme.BoxOpt{Height: h, Focused: focused})
+	return st.th.Box(p.title(), strings.Join(body, "\n"), w, theme.BoxOpt{Height: h, Focused: focused})
 }
 
 func sectionTitle(s model.Section) string {
@@ -623,7 +714,8 @@ func branchFacts(st styles, it model.Item, rc rowCtx, items []model.Item) []fact
 }
 
 // supersededBy is the PR number superseding a branch: from its loaded
-// detail, else an open PR item in the list with the branch as its head.
+// detail, else an open PR item of the same repo (M5.3) in the list with the
+// branch as its head.
 func supersededBy(it model.Item, rc rowCtx, items []model.Item) int {
 	if n := rc.superseded[it.ID]; n > 0 {
 		return n
@@ -632,7 +724,7 @@ func supersededBy(it model.Item, rc rowCtx, items []model.Item) int {
 		return 0
 	}
 	for _, o := range items {
-		if o.Kind == model.KindPR && o.Ref != "" && o.Ref == it.Ref {
+		if o.Kind == model.KindPR && o.Ref != "" && o.Ref == it.Ref && o.Repo == it.Repo {
 			return o.Number
 		}
 	}

@@ -79,6 +79,17 @@ type codePane interface {
 	SetLabels(itemID string, unitIDs []string, labels []model.Label)
 	LabelsFailed(itemID string, unitIDs []string, err error)
 	LabelsStale(itemID string, unitIDs []string)
+
+	// M5.3, the resizable file/group list (codeview/m53_api.go):
+	// SetListWidth sets the list's width (0 automatic, clamped by the page);
+	// ListWidth is its width now (0 while hidden); Dragging reports a drag
+	// of its border in progress (the root then routes every mouse message to
+	// the page); PendingListWidth returns, once, the width a finished drag
+	// left (the root saves it).
+	SetListWidth(w int)
+	ListWidth() int
+	Dragging() bool
+	PendingListWidth() (int, bool)
 }
 
 // originSetter is implemented by components that map mouse coordinates
@@ -137,6 +148,11 @@ func (p *codeviewPane) LabelsFailed(itemID string, units []string, err error) {
 
 func (p *codeviewPane) LabelsStale(itemID string, units []string) { p.m.LabelsStale(itemID, units) }
 
+func (p *codeviewPane) SetListWidth(w int)            { p.m.SetListWidth(w) }
+func (p *codeviewPane) ListWidth() int                { return p.m.ListWidth() }
+func (p *codeviewPane) Dragging() bool                { return p.m.Dragging() }
+func (p *codeviewPane) PendingListWidth() (int, bool) { return p.m.PendingListWidth() }
+
 // ContextLine forwards the page's tab-bar context ("#482 · showing 7 of 19
 // chunks") when codeview provides one; "" otherwise.
 func (p *codeviewPane) ContextLine() string {
@@ -181,7 +197,8 @@ func execEditFile(path string, line int) tea.Cmd {
 
 // codeOpenCmd acts on the Code page's pending e/o request: o opens the
 // item's files on GitHub (the item URL when it is not a PR), e opens the
-// file at the line in $EDITOR (Options.EditFile), under Options.Root.
+// file at the line in $EDITOR (Options.EditFile), under Options.Root (in a
+// workspace under the shown item's repo root, M5.3).
 func (m *Model) codeOpenCmd() tea.Cmd {
 	req, ok := m.code.PendingOpen()
 	if !ok {
@@ -195,8 +212,8 @@ func (m *Model) codeOpenCmd() tea.Cmd {
 		return m.openOnGitHub(where)
 	}
 	path := req.Path
-	if m.opts.Root != "" && !filepath.IsAbs(path) {
-		path = filepath.Join(m.opts.Root, path)
+	if root := m.repoRoot(); root != "" && !filepath.IsAbs(path) {
+		path = filepath.Join(root, path)
 	}
 	edit := m.opts.EditFile
 	if edit == nil {
@@ -214,7 +231,7 @@ func (m *Model) openOnGitHub(where string) tea.Cmd {
 		m.note = "no item selected"
 		return nil
 	case it.URL == "":
-		m.note = "no GitHub URL for " + itemLabel(it)
+		m.note = "no GitHub URL for " + m.itemTitle(it)
 		return nil
 	case m.opts.Open == nil:
 		m.note = "no opener configured"
@@ -239,7 +256,9 @@ func (m Model) shownItem() (model.Item, bool) {
 
 // layoutNote says which diff layout `u` left in effect; a side-by-side
 // request below codeview.SplitMinWidth columns renders unified and says so
-// (the page's own note wins when it has one).
+// (the page's own note wins when it has one). With a user-sized picker
+// (M5.3) the note asks for a wider pane, since narrowing the picker is the
+// way back.
 func (m *Model) layoutNote() {
 	if n := m.code.Note(); n != "" {
 		m.note = n
@@ -248,6 +267,10 @@ func (m *Model) layoutNote() {
 	l := m.code.DiffLayout()
 	if _, mw, _ := m.dims(); l == codeview.LayoutSplit && mw < codeview.SplitMinWidth {
 		m.note = fmt.Sprintf("side-by-side needs a %d-column terminal (pane has %d) — showing unified", codeview.SplitMinTerminal, mw)
+		if m.sideUser > 0 && m.width >= codeview.SplitMinTerminal {
+			m.note = fmt.Sprintf("side-by-side needs a %d-column pane (pane has %d; %s narrows the picker) — showing unified",
+				codeview.SplitMinWidth, mw, m.keys.Narrower.Help().Key)
+		}
 		return
 	}
 	m.note = "diff: " + l.String()

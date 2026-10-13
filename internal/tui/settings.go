@@ -64,6 +64,7 @@ type (
 	}
 	autoSavedMsg struct {
 		strategy model.AutoReview
+		repo     string // the workspace repo saved to (M5.3; "" single repo)
 		info     proto.SettingsInfo
 		err      error
 	}
@@ -75,15 +76,17 @@ type (
 const questionsNote = "question changes apply after the daemon restarts"
 
 // openSettings shows the settings page over the main pane (remembering the
-// tab to return to) and loads it.
+// tab to return to) and loads it; in a workspace the page is the active
+// repo's (M5.3).
 func (m *Model) openSettings() tea.Cmd {
 	if m.tab == TabSettings {
 		return nil
 	}
 	m.settingsPrev, m.tab, m.focus = m.tab, TabSettings, FocusMain
+	m.settingsRepo = m.activeRepo()
 	m.settings.SetError(nil)
 	m.settings.SetNote("")
-	return m.loadSettings(proto.SettingsParams{})
+	return m.loadSettings(proto.SettingsParams{Repo: m.settingsRepo})
 }
 
 // closeSettings returns to the tab the page was opened from.
@@ -145,7 +148,7 @@ func (m *Model) settingsAction() tea.Cmd {
 	switch a.Kind {
 	case settingsview.ActSave:
 		m.note = "saving settings…"
-		c, p := m.client, proto.SaveSettingsParams{Scope: a.Scope, Values: a.Values}
+		c, p := m.client, proto.SaveSettingsParams{Scope: a.Scope, Values: a.Values, Repo: m.settingsRepo}
 		return func() tea.Msg {
 			info, err := c.SaveSettings(context.Background(), p)
 			return settingsSavedMsg{scope: p.Scope, info: info, err: err}
@@ -153,19 +156,24 @@ func (m *Model) settingsAction() tea.Cmd {
 	case settingsview.ActCancel:
 		m.closeSettings()
 	case settingsview.ActEditRouting:
-		return m.loadSettings(proto.SettingsParams{Ensure: "routing"})
+		return m.loadSettings(proto.SettingsParams{Ensure: "routing", Repo: m.settingsRepo})
 	case settingsview.ActEditQuestions:
-		return m.loadSettings(proto.SettingsParams{Ensure: "questions"})
+		return m.loadSettings(proto.SettingsParams{Ensure: "questions", Repo: m.settingsRepo})
 	}
 	return nil
 }
 
 // onSettingsEvent re-reads the strategy and, while the page is open with
-// no unsaved edits, the page (the daemon reloaded its configuration).
-func (m Model) onSettingsEvent() tea.Cmd {
+// no unsaved edits, the page (the daemon reloaded its configuration). In a
+// workspace (M5.3) it re-reads the event's repo's settings (every cached
+// repo's after a global change) and the workspace (roles, statuses).
+func (m Model) onSettingsEvent(e proto.Event) tea.Cmd {
 	cmd := m.loadStrategy()
+	if m.ws.Multi {
+		cmd = batch(m.loadWorkspace(), m.reloadRepoSettings(e.Repo))
+	}
 	if m.tab == TabSettings && !m.settings.Dirty() {
-		cmd = batch(cmd, m.loadSettings(proto.SettingsParams{}))
+		cmd = batch(cmd, m.loadSettings(proto.SettingsParams{Repo: m.settingsRepo}))
 	}
 	return cmd
 }
@@ -197,22 +205,26 @@ func (m Model) onSettingsMsg(msg tea.Msg) (Model, tea.Cmd, bool) {
 			m.note = "auto-review: " + msg.err.Error()
 			return m, nil, true
 		}
-		m.setLiveSettings(msg.info.Values)
-		m.note = "auto-review: " + string(msg.strategy) + " (saved to " + settingsFile(proto.ScopeRepo, msg.info) + ")"
+		m.takeSettings(msg.repo, msg.info.Values)
+		where := settingsFile(proto.ScopeRepo, msg.info)
+		if m.ws.Multi && msg.repo != "" {
+			where = m.repoLabelOf(msg.repo)
+		}
+		m.note = "auto-review: " + string(msg.strategy) + " (saved to " + where + ")"
 		return m, nil, true
 	}
 	return m, nil, false
 }
 
 // applySettings loads a Settings answer into the page (or shows its error)
-// and records the strategy.
+// and records the strategy (in a workspace, the page's repo's).
 func (m *Model) applySettings(info proto.SettingsInfo, err error) tea.Cmd {
 	if err != nil {
 		m.settings.SetError(err)
 		return nil
 	}
 	m.settings.SetError(nil)
-	m.setLiveSettings(info.Values)
+	m.takeSettings(m.settingsRepo, info.Values)
 	return m.settings.SetInfo(info)
 }
 
@@ -221,7 +233,7 @@ func (m Model) reloadSettings() tea.Cmd {
 	if m.tab != TabSettings || m.settings.Dirty() {
 		return nil
 	}
-	return m.loadSettings(proto.SettingsParams{})
+	return m.loadSettings(proto.SettingsParams{Repo: m.settingsRepo})
 }
 
 // editSettingsFile opens the ensured routing or questions file in the
@@ -261,28 +273,29 @@ func (m *Model) afterSettingsEdit(msg settingsEditedMsg) tea.Cmd {
 		m.note = questionsNote
 		return m.reloadSettings()
 	}
-	c := m.client
+	c, repo := m.client, m.settingsRepo
 	return func() tea.Msg {
-		info, err := c.Routing(context.Background(), proto.RoutingParams{Reload: true})
+		info, err := c.Routing(context.Background(), proto.RoutingParams{Reload: true, Repo: repo})
 		return settingsRoutingMsg{info: info, err: err}
 	}
 }
 
 // autoCmd is `:auto <strategy>`: it reads the settings, sets the strategy
-// and saves them to the repo prt.toml (the daemon applies it live).
+// and saves them to the repo prt.toml (the daemon applies it live); in a
+// workspace to the active repo's (M5.3).
 func (m *Model) autoCmd(s model.AutoReview) tea.Cmd {
 	m.note = "auto-review: " + string(s) + "…"
-	c := m.client
+	c, repo := m.client, m.activeRepo()
 	return func() tea.Msg {
 		ctx := context.Background()
-		info, err := c.Settings(ctx, proto.SettingsParams{})
+		info, err := c.Settings(ctx, proto.SettingsParams{Repo: repo})
 		if err != nil {
-			return autoSavedMsg{strategy: s, err: err}
+			return autoSavedMsg{strategy: s, repo: repo, err: err}
 		}
 		v := info.Values
 		v.AutoReview = string(s)
-		saved, err := c.SaveSettings(ctx, proto.SaveSettingsParams{Scope: proto.ScopeRepo, Values: v})
-		return autoSavedMsg{strategy: s, info: saved, err: err}
+		saved, err := c.SaveSettings(ctx, proto.SaveSettingsParams{Scope: proto.ScopeRepo, Values: v, Repo: repo})
+		return autoSavedMsg{strategy: s, repo: repo, info: saved, err: err}
 	}
 }
 

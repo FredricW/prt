@@ -78,6 +78,14 @@ type KeyMap struct {
 	// full list. Without a focused block enter jumps to the unit at the top
 	// and space pages down as before.
 	NextBlock, PrevBlock, OpenBlock key.Binding
+	// Resizing (M5.3, any focus): Narrower (<) and Wider (>) move the
+	// focused pane's right border by 2 columns: the Code page's list while
+	// the Code tab has focus, else the picker.
+	Narrower, Wider key.Binding
+	// Workspace picker (M5.3, picker scope, multi-repo only): FoldRepo (z)
+	// folds or unfolds the selected item's repo, FoldAll (Z) every repo,
+	// RepoFilter (F) cycles the repo filter.
+	FoldRepo, FoldAll, RepoFilter key.Binding
 	// Confirm prompts.
 	Yes, No key.Binding
 }
@@ -158,6 +166,11 @@ func DefaultKeyMap() KeyMap {
 		NextBlock:      b("next block", "J", "]"),
 		PrevBlock:      b("previous block", "K", "["),
 		OpenBlock:      b("open block list", "enter", " "),
+		Narrower:       b("narrower pane", "<"),
+		Wider:          b("wider pane", ">"),
+		FoldRepo:       b("fold repo", "z"),
+		FoldAll:        b("fold all repos", "Z"),
+		RepoFilter:     b("filter by repo", "F"),
 		Yes:            b("yes", "y", "Y"),
 		No:             b("no", "n", "N", "esc"),
 	}
@@ -198,6 +211,8 @@ func (k *KeyMap) actions() map[string]*key.Binding {
 		"dismiss": &k.Dismiss, "override": &k.OverrideLabel, "thread": &k.Thread, "resolve": &k.Resolve,
 		"stop": &k.Stop, "stop_all": &k.StopAll, "resume": &k.Resume, "settings": &k.Settings,
 		"next_block": &k.NextBlock, "prev_block": &k.PrevBlock, "open_block": &k.OpenBlock,
+		"narrower": &k.Narrower, "wider": &k.Wider,
+		"fold_repo": &k.FoldRepo, "fold_all": &k.FoldAll, "repo_filter": &k.RepoFilter,
 	}
 }
 
@@ -337,18 +352,33 @@ func (k KeyMap) tabKeys() []key.Binding { return []key.Binding{k.Overview, k.Cod
 // clearMarks is Back in the picker: it clears the multi-select marks.
 func (k KeyMap) clearMarks() key.Binding { return relabel(k.Back, "clear selection") }
 
-// pickerHelp is the help shown when the picker has focus.
-func (k KeyMap) pickerHelp() [][]key.Binding {
-	return [][]key.Binding{
+// pickerHelp is the help shown when the picker has focus; in a workspace
+// (multi, M5.3) it lists the repo fold and filter keys too.
+func (k KeyMap) pickerHelp(multi bool) [][]key.Binding {
+	out := [][]key.Binding{
 		{k.Down, k.Up, k.Top, k.Bottom, k.Sort},
 		{k.Search, k.Remove, k.Select, k.clearMarks()},
+	}
+	if multi {
+		out = append(out, k.workspaceKeys())
+	}
+	return append(out,
 		append([]key.Binding{k.Focus, k.NextFocus, k.PrevFocus}, append(k.tabKeys(), k.Pipeline)...),
-		{k.Refresh, k.Open, k.Checkout},
+		[]key.Binding{k.Refresh, k.Open, k.Checkout},
 		k.reviewKeys(),
 		k.controlKeys(),
-		{k.Command, k.Help, k.Quit},
-	}
+		k.resizeKeys(),
+		[]key.Binding{k.Command, k.Help, k.Quit},
+	)
 }
+
+// workspaceKeys are the workspace picker's bindings (M5.3).
+func (k KeyMap) workspaceKeys() []key.Binding {
+	return []key.Binding{k.FoldRepo, k.FoldAll, k.RepoFilter}
+}
+
+// resizeKeys are the M5.3 resize bindings, live in every focus.
+func (k KeyMap) resizeKeys() []key.Binding { return []key.Binding{k.Narrower, k.Wider} }
 
 // controlKeys are the M5.1 analysis-control and settings bindings, live in
 // every focus.
@@ -387,6 +417,7 @@ func (k KeyMap) codeHelp(component [][]key.Binding) [][]key.Binding {
 		k.reviewKeys(),
 		k.navKeys(),
 		k.controlKeys(),
+		k.resizeKeys(),
 		[]key.Binding{k.Refresh, k.Checkout, k.Command, k.Help, k.Quit},
 	)
 }
@@ -400,6 +431,7 @@ func (k KeyMap) overviewHelp() [][]key.Binding {
 		k.reviewKeys(),
 		k.navKeys(),
 		k.controlKeys(),
+		k.resizeKeys(),
 		{k.Refresh, k.Open, k.Checkout, k.Command, k.Help, k.Quit},
 	}
 }
@@ -417,6 +449,7 @@ func (k KeyMap) pipelineHelp(component [][]key.Binding) [][]key.Binding {
 		append([]key.Binding{k.closePipeline(), k.NextFocus, k.PrevFocus}, k.tabKeys()...),
 		k.reviewKeys(),
 		k.controlKeys(),
+		k.resizeKeys(),
 		[]key.Binding{k.Open, k.Command, k.Help, k.Quit},
 	)
 }
@@ -432,6 +465,7 @@ func (k KeyMap) archHelp(component [][]key.Binding) [][]key.Binding {
 		k.reviewKeys(),
 		k.navKeys(),
 		k.controlKeys(),
+		k.resizeKeys(),
 		[]key.Binding{k.Refresh, k.Open, k.Checkout, k.Command, k.Help, k.Quit},
 	)
 }

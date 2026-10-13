@@ -1,0 +1,30 @@
+prt · ~/work · 3 repos · 3 PRs · 3 branches · role: frontend                                                                                         $0.12 spent
+┏━ Queue · ranked ━━━━━━━━━━━━━━━━━━┓   [1 Overview]  2 Code   3 Architecture                                                                @alice · 1d · – ← –
+┃ ▾ acme/portal 3              gh ✓ ┃ #7 Add JWT session · alice · 1d · – ← –                                                                                   
+┃ ── NEEDS YOU (1) ──────────────── ┃ TL;DR: not generated — pending                                                                                            
+┃ ▸ ▮▮▮▮ #7 Add JWT session         ┃ Composition: analysing…                                                                                                   
+┃        ⚠1 breaking · 3 eyes · ~1… ┃                                                                                                                           
+┃        why: asked you · CI red    ┃ ┌─ Headlines · contract surface ───────────────────────────┐  ┌─ Check before approving · hot spots ─────────────────────┐
+┃ ── YOURS (1) ──────────────────── ┃ │ analysing…                                               │  │ analysing…                                               │
+┃   ▮▮▯▯ #12 Session rework         ┃ └──────────────────────────────────────────────────────────┘  └──────────────────────────────────────────────────────────┘
+┃        5h                         ┃ ┌─ API endpoints ──────────────────────────────────────────┐  ┌─ Risk ───────────────────────────────────────────────────┐
+┃ ── BRANCHES (1) ───────────────── ┃ │ analysing…                                               │  │ analysing…                                               │
+┃   ▮▯▯▯ feat/session               ┃ └──────────────────────────────────────────────────────────┘  └──────────────────────────────────────────────────────────┘
+┃        superseded by #12 .77 · 2… ┃ ┌─ Database ───────────────────────────────────────────────┐  ┌─ Description fidelity ───────────────────────────────────┐
+┃ ▾ acme/billing-svc 3       gh off ┃ │ analysing…                                               │  │ analysing…                                               │
+┃ ── NEEDS YOU (1) ──────────────── ┃ └──────────────────────────────────────────────────────────┘  │                                                          │
+┃   ▮▮▮▯ #7 Retry invoice sync      ┃ ┌─ Feature flags & config ─────────────────────────────────┐  │                                                          │
+┃        2 eyes · ~8m               ┃ │ analysing…                                               │  │                                                          │
+┃ ── BRANCHES (2) ───────────────── ┃ └──────────────────────────────────────────────────────────┘  └──────────────────────────────────────────────────────────┘
+┃   ▮▯▯▯ feat/session               ┃ ┌─ Minimap · attention per chunk ──────────────────────────┐  ┌─ Your slice ─────────────────────────────────────────────┐
+┃        superseded .66 · 2d        ┃ │ analysing…                                               │  │ analysing…                                               │
+┃   ▯▯▯▯ wip/x                      ┃ │                                                          │  └──────────────────────────────────────────────────────────┘
+┃        not analysed · r to run ·  ┃ │                                                          │  ┌─ Since you looked ───────────────────────────────────────┐
+┃ ▸ tools 0               no remote ┃ │                                                          │  │ analysing…                                               │
+┃                                   ┃ └──────────────────────────────────────────────────────────┘  └──────────────────────────────────────────────────────────┘
+┃                                   ┃ Confidence: analysing…                                                                                                    
+┃                                   ┃ ┌─ Description ──────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+┃                                   ┃ │ no description                                                                                                         │
+┃ / search  s sort: urgency ▾       ┃ └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛                                                                                                                           
+j/k move  space select  / search and add  enter focus main pane  1 2 3 tabs  ctrl+x stop  P pipeline page  r refresh item  c git checkout  o open on GitHub …

@@ -75,11 +75,17 @@ type (
 		stage model.Stage
 		err   error
 	}
+	// rulesEnsuredMsg and editorDoneMsg carry the workspace repo whose
+	// routing file is edited (M5.3; "" single repo).
 	rulesEnsuredMsg struct {
+		repo string
 		info proto.RoutingInfo
 		err  error
 	}
-	editorDoneMsg    struct{ err error }
+	editorDoneMsg struct {
+		repo string
+		err  error
+	}
 	rulesReloadedMsg struct {
 		info proto.RoutingInfo
 		err  error
@@ -163,9 +169,10 @@ func (m *Model) pipeActionCmd() tea.Cmd {
 		}
 	case pipeview.ActEditRules:
 		m.note = "opening routing rules…"
+		repo := m.shownRepo()
 		return func() tea.Msg {
-			info, err := c.Routing(context.Background(), proto.RoutingParams{Ensure: true})
-			return rulesEnsuredMsg{info: info, err: err}
+			info, err := c.Routing(context.Background(), proto.RoutingParams{Ensure: true, Repo: repo})
+			return rulesEnsuredMsg{repo: repo, info: info, err: err}
 		}
 	case pipeview.ActCallLog:
 		return func() tea.Msg {
@@ -223,14 +230,15 @@ func (m Model) onPipeMsg(msg tea.Msg) (Model, tea.Cmd, bool) {
 		if edit == nil {
 			edit = execEditor
 		}
-		return m, edit(msg.info.Path, func(err error) tea.Msg { return editorDoneMsg{err: err} }), true
+		repo := msg.repo
+		return m, edit(msg.info.Path, func(err error) tea.Msg { return editorDoneMsg{repo: repo, err: err} }), true
 	case editorDoneMsg:
 		if msg.err != nil {
 			m.note = "editor: " + msg.err.Error()
 		}
-		c := m.client
+		c, repo := m.client, msg.repo
 		return m, func() tea.Msg {
-			info, err := c.Routing(context.Background(), proto.RoutingParams{Reload: true})
+			info, err := c.Routing(context.Background(), proto.RoutingParams{Reload: true, Repo: repo})
 			return rulesReloadedMsg{info: info, err: err}
 		}, true
 	case rulesReloadedMsg:
