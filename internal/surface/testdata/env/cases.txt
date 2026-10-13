@@ -1,0 +1,82 @@
+=== added
+diff --git a/server/cmd/api/main.go b/server/cmd/api/main.go
+--- a/server/cmd/api/main.go
++++ b/server/cmd/api/main.go
+@@ -10,2 +10,5 @@ func main() {
+ 	logger := slog.Default()
++	opsAddr := os.Getenv("PORTAL_OPS_ADDR")
++	v, ok := os.LookupEnv("FEATURE_X")
++	_ = v
+ }
+diff --git a/server/config.go b/server/config.go
+--- a/server/config.go
++++ b/server/config.go
+@@ -1,3 +1,4 @@
+ type Config struct {
+ 	Addr string `env:"ADDR"`
++	Port int    `env:"PORT" envDefault:"8080"`
+ }
+diff --git a/web/src/config.ts b/web/src/config.ts
+--- a/web/src/config.ts
++++ b/web/src/config.ts
+@@ -1,1 +1,4 @@
+ export const config = {
++  key: process.env.API_KEY,
++  timeout: process.env["TIMEOUT_MS"],
++  url: import.meta.env.VITE_API_URL,
+ };
+diff --git a/scripts/report.py b/scripts/report.py
+--- a/scripts/report.py
++++ b/scripts/report.py
+@@ -1,1 +1,4 @@
+ import os
++TOKEN = os.environ["PORTAL_TOKEN"]
++API = os.environ.get("PORTAL_API", "http://localhost")
++DEBUG = os.getenv("DEBUG")
+diff --git a/config/initializers/keys.rb b/config/initializers/keys.rb
+--- a/config/initializers/keys.rb
++++ b/config/initializers/keys.rb
+@@ -1,1 +1,2 @@
+ Rails.application.configure do
++  config.secret = ENV["SECRET_KEY"]
+diff --git a/.env.example b/.env.example
+--- a/.env.example
++++ b/.env.example
+@@ -1,1 +1,2 @@
+ PORTAL_ADDR=:8080
++NEW_VAR=1
+=== removed
+diff --git a/server/cmd/api/main.go b/server/cmd/api/main.go
+--- a/server/cmd/api/main.go
++++ b/server/cmd/api/main.go
+@@ -10,3 +10,2 @@ func main() {
+ 	logger := slog.Default()
+-	legacy := os.Getenv("PORTAL_LEGACY_MODE")
+ }
+=== changed
+diff --git a/server/cmd/api/main.go b/server/cmd/api/main.go
+--- a/server/cmd/api/main.go
++++ b/server/cmd/api/main.go
+@@ -10,3 +10,3 @@ func main() {
+ 	logger := slog.Default()
+-	addr := os.Getenv("OLD_NAME")
++	addr := os.Getenv("NEW_NAME")
+ }
+=== negative
+diff --git a/server/cmd/api/main.go b/server/cmd/api/main.go
+--- a/server/cmd/api/main.go
++++ b/server/cmd/api/main.go
+@@ -10,3 +10,6 @@ func main() {
+ 	logger := slog.Default()
+-	addr := os.Getenv("PORTAL_ADDR")
++	// os.Getenv("COMMENTED")
++	s := "os.Getenv(\"IN_STRING\")"
++	os.Setenv("WRITTEN", "1")
+ }
+diff --git a/server/config.go b/server/config.go
+--- a/server/config.go
++++ b/server/config.go
+@@ -1,2 +1,3 @@
+ func load() {
++	addr := os.Getenv("PORTAL_ADDR")
+ }

@@ -1,0 +1,52 @@
+=== added
+diff --git a/cmd/api/main.go b/cmd/api/main.go
+--- a/cmd/api/main.go
++++ b/cmd/api/main.go
+@@ -20,6 +20,10 @@ func main() {
+ 	r := chi.NewRouter()
+ 	r.Route("/api/v1", func(r chi.Router) {
+ 		r.Get("/users", listUsers)
++		r.Post("/users", createUser)
++		r.With(auth).Delete("/users/{id}", deleteUser)
++		r.Method("PATCH", "/users/{id}", http.HandlerFunc(patchUser))
++		r.Mount("/billing", billing.Routes(svc))
+ 	})
+ 	http.ListenAndServe(":8080", r)
+=== removed
+diff --git a/cmd/api/main.go b/cmd/api/main.go
+--- a/cmd/api/main.go
++++ b/cmd/api/main.go
+@@ -20,7 +20,4 @@ func main() {
+ 	r.Route("/api/v1", func(r chi.Router) {
+-		r.Get("/health", func(w http.ResponseWriter, _ *http.Request) {
+-			w.WriteHeader(http.StatusOK)
+-		})
+ 		r.Get("/users", listUsers)
+ 	})
+=== changed
+diff --git a/cmd/api/main.go b/cmd/api/main.go
+--- a/cmd/api/main.go
++++ b/cmd/api/main.go
+@@ -20,6 +20,6 @@ func main() {
+ 	r.Route("/api/v1", func(r chi.Router) {
+-		r.Get("/users", listUsers)
+-		r.Put("/users/{id}", saveUser)
+-		r.Get("/me", meV1)
++		r.Get("/accounts", listUsers)
++		r.Patch("/users/{id}", saveUser)
++		r.Get("/me", meV2)
+ 	})
+=== negative
+diff --git a/cmd/api/main.go b/cmd/api/main.go
+--- a/cmd/api/main.go
++++ b/cmd/api/main.go
+@@ -30,2 +30,7 @@ func main() {
+ 	r.Route("/api/v1", func(r chi.Router) {
++		// r.Get("/legacy", legacy)
++		/* r.Post("/old", old) */
++		u := "/api/v1/users"
++		resp, _ := client.Get("/api/v1/users")
++		v := req.URL.Query().Get("filter")
++		users, _ := api.Get("/users")
++		cached := m.Get("/key")
+ 	})

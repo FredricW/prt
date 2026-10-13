@@ -1,0 +1,59 @@
+=== added
+diff --git a/users/migrations/0002_profile.py b/users/migrations/0002_profile.py
+new file mode 100644
+--- /dev/null
++++ b/users/migrations/0002_profile.py
+@@ -0,0 +1,19 @@
++from django.db import migrations, models
++
++class Migration(migrations.Migration):
++    operations = [
++        migrations.AddField(
++            model_name="user",
++            name="avatar_url",
++            field=models.URLField(blank=True),
++        ),
++        migrations.CreateModel(
++            name="Preference",
++            fields=[("id", models.AutoField(primary_key=True))],
++        ),
++        migrations.AddIndex(
++            model_name="user",
++            index=models.Index(fields=["email"], name="user_email_idx"),
++        ),
++    ]
+=== removed
+diff --git a/users/migrations/0003_cleanup.py b/users/migrations/0003_cleanup.py
+new file mode 100644
+--- /dev/null
++++ b/users/migrations/0003_cleanup.py
+@@ -0,0 +1,7 @@
++from django.db import migrations
++
++class Migration(migrations.Migration):
++    operations = [
++        migrations.RemoveField(model_name="user", name="legacy_theme"),
++        migrations.DeleteModel(name="Session"),
++    ]
+=== changed
+diff --git a/users/migrations/0004_rename.py b/users/migrations/0004_rename.py
+new file mode 100644
+--- /dev/null
++++ b/users/migrations/0004_rename.py
+@@ -0,0 +1,7 @@
++from django.db import migrations, models
++
++class Migration(migrations.Migration):
++    operations = [
++        migrations.RenameField(model_name="user", old_name="name", new_name="display_name"),
++        migrations.AlterField(model_name="user", name="email", field=models.EmailField(unique=True)),
++    ]
+=== negative
+diff --git a/users/migrations/0005_data.py b/users/migrations/0005_data.py
+--- a/users/migrations/0005_data.py
++++ b/users/migrations/0005_data.py
+@@ -5,2 +5,4 @@ class Migration(migrations.Migration):
+     operations = [
++        # migrations.AddField(model_name="x", name="y"),
++        migrations.RunPython(forwards),
+     ]

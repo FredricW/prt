@@ -1,0 +1,4 @@
+diff --git a/web/app/api/user/route.ts b/web/app/api/users/route.ts
+similarity index 100%
+rename from web/app/api/user/route.ts
+rename to web/app/api/users/route.ts

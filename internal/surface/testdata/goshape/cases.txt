@@ -1,0 +1,54 @@
+=== added
+diff --git a/server/users.go b/server/users.go
+--- a/server/users.go
++++ b/server/users.go
+@@ -10,4 +10,5 @@ package users
+ type userResponse struct {
+ 	ID string `json:"id"`
++	AvatarURL *string `json:"avatarUrl,omitempty"`
+ }
+@@ -20,3 +21,4 @@ type userResponse struct {
+ type createUserRequest struct {
+ 	Name string `json:"name"`
++	Email string `json:"email"`
+ }
+=== removed
+diff --git a/server/users.go b/server/users.go
+--- a/server/users.go
++++ b/server/users.go
+@@ -10,5 +10,4 @@ package users
+ type userResponse struct {
+ 	ID string `json:"id"`
+-	Legacy string `json:"legacy"`
+ }
+=== changed
+diff --git a/server/users.go b/server/users.go
+--- a/server/users.go
++++ b/server/users.go
+@@ -10,5 +10,5 @@ package users
+ type userResponse struct {
+-	Count int    `json:"count"`
+-	Name  string `json:"name"`
++	Count int64  `json:"count"`
++	Name  string `json:"displayName"`
+ }
+=== negative
+diff --git a/server/users.go b/server/users.go
+--- a/server/users.go
++++ b/server/users.go
+@@ -10,4 +10,11 @@ package users
+ type userResponse struct {
+-	ID   string `json:"id"`
++	ID        string `json:"id"`
++	Internal  string `json:"-"`
++	Untagged  string
+ }
++
++type thingResponse struct {
++	A string `json:"a"`
++}
+@@ -30,3 +37,4 @@ type config struct {
+ type config struct {
+ 	Path string `json:"path"`
++	Mode string `json:"mode"`
+ }

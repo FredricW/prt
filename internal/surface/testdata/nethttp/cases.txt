@@ -1,0 +1,52 @@
+=== added
+diff --git a/cmd/api/main.go b/cmd/api/main.go
+--- a/cmd/api/main.go
++++ b/cmd/api/main.go
+@@ -10,3 +10,6 @@ func main() {
+ 	mux := http.NewServeMux()
++	mux.HandleFunc("GET /healthz", healthz)
++	mux.Handle("POST /api/v1/items/{id}", itemHandler)
++	http.HandleFunc("/metrics", metrics)
+ 	log.Fatal(http.ListenAndServe(":8080", mux))
+=== removed
+diff --git a/cmd/api/main.go b/cmd/api/main.go
+--- a/cmd/api/main.go
++++ b/cmd/api/main.go
+@@ -10,4 +10,3 @@ func main() {
+ 	mux := http.NewServeMux()
+-	mux.HandleFunc("GET /healthz", healthz)
+ 	log.Fatal(http.ListenAndServe(":8080", mux))
+=== changed
+diff --git a/cmd/api/main.go b/cmd/api/main.go
+--- a/cmd/api/main.go
++++ b/cmd/api/main.go
+@@ -10,5 +10,5 @@ func main() {
+ 	mux := http.NewServeMux()
+-	mux.HandleFunc("GET /items", listItems)
+-	mux.HandleFunc("POST /orders", createOrder)
++	mux.HandleFunc("GET /v2/items", listItems)
++	mux.HandleFunc("PUT /orders", createOrder)
+ 	log.Fatal(http.ListenAndServe(":8080", mux))
+=== gorilla
+diff --git a/cmd/api/main.go b/cmd/api/main.go
+--- a/cmd/api/main.go
++++ b/cmd/api/main.go
+@@ -10,3 +10,5 @@ func main() {
+ 	r := mux.NewRouter()
++	s := r.PathPrefix("/api").Subrouter()
++	s.HandleFunc("/users/{id}", getUser).Methods("GET")
+ 	http.ListenAndServe(":8080", r)
+=== negative
+diff --git a/cmd/api/main.go b/cmd/api/main.go
+--- a/cmd/api/main.go
++++ b/cmd/api/main.go
+@@ -10,4 +10,10 @@ func main() {
+ 	mux := http.NewServeMux()
+-	mux.HandleFunc("GET /same", same)
++	mux.HandleFunc("GET /same", same) // reformatted
++	// mux.HandleFunc("GET /old", old)
++	resp, err := http.Get("/api/v1/users")
++	msg := "mux.HandleFunc(\"GET /x\", h)"
++	other, _ := client.Get("/api/v1/users")
++	q := req.URL.Query().Get("include")
+ 	log.Fatal(http.ListenAndServe(":8080", mux))

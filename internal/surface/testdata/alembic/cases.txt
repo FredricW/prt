@@ -1,0 +1,58 @@
+=== added
+diff --git a/alembic/versions/abc123_add.py b/alembic/versions/abc123_add.py
+new file mode 100644
+--- /dev/null
++++ b/alembic/versions/abc123_add.py
+@@ -0,0 +1,16 @@
++from alembic import op
++import sqlalchemy as sa
++
++def upgrade():
++    op.create_table(
++        "audit",
++        sa.Column("id", sa.Integer(), primary_key=True),
++    )
++    op.add_column("users", sa.Column("avatar_url", sa.String(), nullable=True))
++    op.create_index(op.f("ix_users_email"), "users", ["email"])
++
++
++def downgrade():
++    op.drop_index(op.f("ix_users_email"), table_name="users")
++    op.drop_column("users", "avatar_url")
++    op.drop_table("audit")
+=== removed
+diff --git a/alembic/versions/def456_drop.py b/alembic/versions/def456_drop.py
+new file mode 100644
+--- /dev/null
++++ b/alembic/versions/def456_drop.py
+@@ -0,0 +1,10 @@
++from alembic import op
++
++def upgrade():
++    op.drop_column("users", "legacy")
++    op.drop_table("sessions")
++
++
++def downgrade():
++    op.create_table("sessions")
++    op.add_column("users", sa.Column("legacy", sa.Text()))
+=== changed
+diff --git a/alembic/versions/ghi789_rename.py b/alembic/versions/ghi789_rename.py
+new file mode 100644
+--- /dev/null
++++ b/alembic/versions/ghi789_rename.py
+@@ -0,0 +1,5 @@
++from alembic import op
++
++def upgrade():
++    op.alter_column("users", "name", new_column_name="display_name")
++    op.rename_table("accounts", "orgs")
+=== negative
+diff --git a/alembic/versions/jkl000_noop.py b/alembic/versions/jkl000_noop.py
+--- a/alembic/versions/jkl000_noop.py
++++ b/alembic/versions/jkl000_noop.py
+@@ -3,2 +3,4 @@ from alembic import op
+ def upgrade():
++    op.execute("SELECT 1")
++    # op.drop_table("x")
+     pass

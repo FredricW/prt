@@ -1,0 +1,18 @@
+{
+  "api": [
+    {
+      "area": "api",
+      "change": "added",
+      "what": "response shape",
+      "name": "userResponse.avatarUrl",
+      "path": "server/internal/users/users.go",
+      "line": 69,
+      "unitId": "d923ff4a9f4010985bb1cc62c776c6dd6849f7eb95d14a7e217ccfc3f074c3b4",
+      "confidence": 0.7,
+      "source": "code",
+      "framework": "go"
+    }
+  ],
+  "db": [],
+  "flags": []
+}

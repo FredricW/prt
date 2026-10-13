@@ -1,0 +1,44 @@
+=== added
+diff --git a/main.go b/main.go
+--- a/main.go
++++ b/main.go
+@@ -10,4 +10,8 @@ func main() {
+ 	r := gin.Default()
+ 	api := r.Group("/api")
++	v2 := api.Group("/v2")
++	v2.GET("/items", listItems)
++	v2.POST("/items", createItem)
++	api.Any("/ping", ping)
+ 	r.Run()
+=== removed
+diff --git a/main.go b/main.go
+--- a/main.go
++++ b/main.go
+@@ -10,5 +10,4 @@ func main() {
+ 	r := gin.Default()
+ 	api := r.Group("/api")
+-	api.DELETE("/items/:id", deleteItem)
+ 	r.Run()
+=== changed
+diff --git a/main.go b/main.go
+--- a/main.go
++++ b/main.go
+@@ -10,6 +10,6 @@ func main() {
+ 	r := gin.Default()
+ 	api := r.Group("/api")
+-	api.GET("/item/:id", getItem)
+-	api.GET("/things/:id", getThing)
++	api.GET("/items/:id", getItem)
++	api.GET("/things/:thingID", getThing)
+ 	r.Run()
+=== negative
+diff --git a/main.go b/main.go
+--- a/main.go
++++ b/main.go
+@@ -20,2 +20,6 @@ func handler(c *gin.Context) {
+ 	id := c.Param("id")
++	c.JSON(200, gin.H{"path": "/api/x"})
++	// v2.GET("/x", h)
++	resp, _ := http.Post("/api/items", "application/json", nil)
++	c.Redirect(http.StatusFound, "/login")
+ }

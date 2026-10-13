@@ -1,0 +1,38 @@
+=== added
+diff --git a/server.go b/server.go
+--- a/server.go
++++ b/server.go
+@@ -12,4 +12,7 @@ func main() {
+ 	e := echo.New()
+ 	g := e.Group("/admin")
++	g.GET("/users", listUsers)
++	e.PUT("/users/:id", updateUser)
++	e.Add("PATCH", "/users/:id/role", setRole)
+ 	e.Logger.Fatal(e.Start(":1323"))
+=== removed
+diff --git a/server.go b/server.go
+--- a/server.go
++++ b/server.go
+@@ -12,4 +12,3 @@ func main() {
+ 	e := echo.New()
+-	e.DELETE("/users/:id", deleteUser)
+ 	e.Logger.Fatal(e.Start(":1323"))
+=== changed
+diff --git a/server.go b/server.go
+--- a/server.go
++++ b/server.go
+@@ -12,4 +12,4 @@ func main() {
+ 	e := echo.New()
+-	e.GET("/user/:id", getUser)
++	e.GET("/users/:id", getUser)
+ 	e.Logger.Fatal(e.Start(":1323"))
+=== negative
+diff --git a/server.go b/server.go
+--- a/server.go
++++ b/server.go
+@@ -30,2 +30,5 @@ func getUser(c echo.Context) error {
+ 	id := c.Param("id")
++	e.Logger.Info("GET /users")
++	// e.GET("/x", h)
++	return c.String(http.StatusOK, "/users/"+id)
+ }

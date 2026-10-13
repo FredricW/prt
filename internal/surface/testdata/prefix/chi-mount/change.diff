@@ -1,0 +1,14 @@
+diff --git a/cmd/api/main.go b/cmd/api/main.go
+--- a/cmd/api/main.go
++++ b/cmd/api/main.go
+@@ -16,2 +16,2 @@
+-	http.ListenAndServe(":8080", r)
++	_ = http.ListenAndServe(":8080", r)
+ }
+diff --git a/internal/users/users.go b/internal/users/users.go
+--- a/internal/users/users.go
++++ b/internal/users/users.go
+@@ -12,2 +12,3 @@
+ 	r.Get("/{id}", get)
++	r.Get("/{id}/avatar", avatar)
+ 	return r

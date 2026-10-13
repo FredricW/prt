@@ -1,0 +1,54 @@
+=== added
+diff --git a/db/migrate/20240101000000_add_avatar.rb b/db/migrate/20240101000000_add_avatar.rb
+new file mode 100644
+--- /dev/null
++++ b/db/migrate/20240101000000_add_avatar.rb
+@@ -0,0 +1,10 @@
++class AddAvatar < ActiveRecord::Migration[7.1]
++  def change
++    add_column :users, :avatar_url, :string
++    create_table :preferences do |t|
++      t.string :theme
++    end
++    add_index :users, :email, unique: true
++    add_reference :posts, :author
++  end
++end
+=== removed
+diff --git a/db/migrate/20240102000000_cleanup.rb b/db/migrate/20240102000000_cleanup.rb
+new file mode 100644
+--- /dev/null
++++ b/db/migrate/20240102000000_cleanup.rb
+@@ -0,0 +1,10 @@
++class Cleanup < ActiveRecord::Migration[7.1]
++  def up
++    remove_column :users, :legacy_theme
++    drop_table :sessions
++  end
++
++  def down
++    add_column :users, :legacy_theme, :string
++  end
++end
+=== changed
+diff --git a/db/migrate/20240103000000_rename.rb b/db/migrate/20240103000000_rename.rb
+new file mode 100644
+--- /dev/null
++++ b/db/migrate/20240103000000_rename.rb
+@@ -0,0 +1,6 @@
++class Rename < ActiveRecord::Migration[7.1]
++  def change
++    rename_column :users, :name, :display_name
++    change_column :users, :email, :text
++  end
++end
+=== negative
+diff --git a/db/migrate/20240104000000_noop.rb b/db/migrate/20240104000000_noop.rb
+--- a/db/migrate/20240104000000_noop.rb
++++ b/db/migrate/20240104000000_noop.rb
+@@ -1,3 +1,5 @@
+ class Noop < ActiveRecord::Migration[7.1]
+   def change
++    # add_column :users, :x, :string
++    puts "drop_table :y"
+   end

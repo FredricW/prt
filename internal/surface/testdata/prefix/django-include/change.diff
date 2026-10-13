@@ -1,0 +1,14 @@
+diff --git a/mysite/urls.py b/mysite/urls.py
+--- a/mysite/urls.py
++++ b/mysite/urls.py
+@@ -2,2 +2,3 @@
+
++# API routes
+ urlpatterns = [
+diff --git a/users/urls.py b/users/urls.py
+--- a/users/urls.py
++++ b/users/urls.py
+@@ -6,2 +6,3 @@
+     path("users/<int:pk>/", views.detail),
++    path("users/<int:pk>/avatar/", views.avatar),
+ ]

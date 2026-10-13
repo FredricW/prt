@@ -1,0 +1,142 @@
+{
+  "api": [
+    {
+      "area": "api",
+      "change": "removed",
+      "what": "route",
+      "name": "GET /api/v1/health",
+      "path": "server/cmd/api/main.go",
+      "line": 25,
+      "side": "old",
+      "unitId": "0bd7a0b39de1e9c6047e10657e9999c9bcb113e10538db79d0dbacd2231fc9f0",
+      "confidence": 0.97,
+      "source": "code",
+      "framework": "chi"
+    },
+    {
+      "area": "api",
+      "change": "added",
+      "what": "route",
+      "name": "GET /healthz",
+      "path": "server/cmd/api/main.go",
+      "line": 33,
+      "unitId": "0bd7a0b39de1e9c6047e10657e9999c9bcb113e10538db79d0dbacd2231fc9f0",
+      "confidence": 0.97,
+      "source": "code",
+      "framework": "net/http"
+    },
+    {
+      "area": "api",
+      "change": "added",
+      "what": "route",
+      "name": "GET /api/v1/users/{id}/preferences",
+      "path": "server/internal/users/users.go",
+      "line": 101,
+      "unitId": "9a316f3b63abf7093442263459bcb0aabd1d5e7a68bfce19ef30580229f35834",
+      "confidence": 0.97,
+      "source": "code",
+      "framework": "chi"
+    },
+    {
+      "area": "api",
+      "change": "added",
+      "what": "route",
+      "name": "PUT /api/v1/users/{id}/preferences",
+      "path": "server/internal/users/users.go",
+      "line": 102,
+      "unitId": "9a316f3b63abf7093442263459bcb0aabd1d5e7a68bfce19ef30580229f35834",
+      "confidence": 0.97,
+      "source": "code",
+      "framework": "chi"
+    }
+  ],
+  "db": [
+    {
+      "area": "db",
+      "change": "removed",
+      "what": "column",
+      "name": "users.legacy_theme",
+      "path": "server/migrations/20261010_user_preferences.sql",
+      "line": 14,
+      "unitId": "7834abbe565cbb58e608d3ac022b841d3aa3fd7bf2a8cd05b7785e5a9b61c65d",
+      "confidence": 0.97,
+      "source": "code",
+      "framework": "sql",
+      "detail": "one-way"
+    },
+    {
+      "area": "db",
+      "change": "added",
+      "what": "table",
+      "name": "table user_preferences",
+      "path": "server/migrations/20261010_user_preferences.sql",
+      "line": 4,
+      "unitId": "7834abbe565cbb58e608d3ac022b841d3aa3fd7bf2a8cd05b7785e5a9b61c65d",
+      "confidence": 0.97,
+      "source": "code",
+      "framework": "sql"
+    },
+    {
+      "area": "db",
+      "change": "added",
+      "what": "index",
+      "name": "index user_preferences_theme_idx",
+      "path": "server/migrations/20261010_user_preferences.sql",
+      "line": 11,
+      "unitId": "7834abbe565cbb58e608d3ac022b841d3aa3fd7bf2a8cd05b7785e5a9b61c65d",
+      "confidence": 0.97,
+      "source": "code",
+      "framework": "sql"
+    },
+    {
+      "area": "db",
+      "change": "added",
+      "what": "column",
+      "name": "users.avatar_url",
+      "path": "server/migrations/20261010_user_preferences.sql",
+      "line": 13,
+      "unitId": "7834abbe565cbb58e608d3ac022b841d3aa3fd7bf2a8cd05b7785e5a9b61c65d",
+      "confidence": 0.97,
+      "source": "code",
+      "framework": "sql"
+    }
+  ],
+  "flags": [
+    {
+      "area": "flag",
+      "change": "added",
+      "what": "env",
+      "name": "PORTAL_PREFERENCES_API",
+      "path": "server/cmd/api/main.go",
+      "line": 26,
+      "unitId": "0bd7a0b39de1e9c6047e10657e9999c9bcb113e10538db79d0dbacd2231fc9f0",
+      "confidence": 0.97,
+      "source": "code",
+      "framework": "env"
+    },
+    {
+      "area": "flag",
+      "change": "added",
+      "what": "env",
+      "name": "PORTAL_OPS_ADDR",
+      "path": "server/cmd/api/main.go",
+      "line": 36,
+      "unitId": "0bd7a0b39de1e9c6047e10657e9999c9bcb113e10538db79d0dbacd2231fc9f0",
+      "confidence": 0.97,
+      "source": "code",
+      "framework": "env"
+    },
+    {
+      "area": "flag",
+      "change": "added",
+      "what": "flag",
+      "name": "user-preferences-v2",
+      "path": "web/src/components/SettingsForm.tsx",
+      "line": 12,
+      "unitId": "59ac2ba2af9b7ddd7ff96915a6c84cbad49de014583c5fc780b00726f8af8b00",
+      "confidence": 0.95,
+      "source": "code",
+      "framework": "custom"
+    }
+  ]
+}

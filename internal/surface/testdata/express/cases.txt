@@ -1,0 +1,76 @@
+=== added
+diff --git a/server/app.js b/server/app.js
+--- a/server/app.js
++++ b/server/app.js
+@@ -1,5 +1,9 @@
+ const express = require("express");
+ const app = express();
+ const router = express.Router();
++router.get("/users/:id", getUser);
++router.post("/users", auth, createUser);
++app.use("/api", router);
++app.delete("/sessions/:id", (req, res) => res.sendStatus(204));
+ app.listen(3000);
+=== removed
+diff --git a/server/app.js b/server/app.js
+--- a/server/app.js
++++ b/server/app.js
+@@ -1,6 +1,5 @@
+ const express = require("express");
+ const app = express();
+ const router = express.Router();
+-router.put("/users/:id", updateUser);
+ app.use("/api", router);
+ app.listen(3000);
+=== changed
+diff --git a/server/app.js b/server/app.js
+--- a/server/app.js
++++ b/server/app.js
+@@ -1,6 +1,6 @@
+ const express = require("express");
+ const app = express();
+ const router = express.Router();
+-router.get("/user/:id", getUser);
++router.get("/users/:id", getUser);
+ app.use("/api", router);
+ app.listen(3000);
+=== crossfile
+diff --git a/server/app.ts b/server/app.ts
+--- a/server/app.ts
++++ b/server/app.ts
+@@ -1,4 +1,6 @@
+ import express from "express";
++import usersRouter from "./routes/users";
+ const app = express();
++app.use("/api/users", usersRouter);
+ app.listen(3000);
+diff --git a/server/routes/users.ts b/server/routes/users.ts
+new file mode 100644
+--- /dev/null
++++ b/server/routes/users.ts
+@@ -0,0 +1,5 @@
++import { Router } from "express";
++const router = Router();
++router.get("/:id", getUser);
++router.patch("/:id", updateUser);
++export default router;
+=== negative
+diff --git a/web/src/api/users.ts b/web/src/api/users.ts
+--- a/web/src/api/users.ts
++++ b/web/src/api/users.ts
+@@ -1,2 +1,6 @@
+ import axios from "axios";
++export const getUser = (id: string) => axios.get(`/api/users/${id}`);
++export const list = () => fetch("/api/users");
++const api = axios.create({ baseURL: "/api" });
++api.post("/users", body);
+ export {};
+diff --git a/server/app.js b/server/app.js
+--- a/server/app.js
++++ b/server/app.js
+@@ -1,2 +1,5 @@
+ const express = require("express");
++// app.get("/legacy", legacy);
++const msg = "app.get('/x', h)";
++const cached = cache.get("/users");
+ const app = express();

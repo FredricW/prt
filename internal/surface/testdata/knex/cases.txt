@@ -1,0 +1,55 @@
+=== added
+diff --git a/migrations/20240101_audit.js b/migrations/20240101_audit.js
+new file mode 100644
+--- /dev/null
++++ b/migrations/20240101_audit.js
+@@ -0,0 +1,14 @@
++exports.up = function (knex) {
++  return knex.schema
++    .createTable("audit", (t) => {
++      t.increments("id");
++    })
++    .alterTable("users", (t) => {
++      t.string("avatar_url");
++      t.index(["email"], "users_email_idx");
++    });
++};
++
++exports.down = function (knex) {
++  return knex.schema.dropTable("audit");
++};
+=== removed
+diff --git a/migrations/20240102_cleanup.js b/migrations/20240102_cleanup.js
+new file mode 100644
+--- /dev/null
++++ b/migrations/20240102_cleanup.js
+@@ -0,0 +1,8 @@
++exports.up = async function (knex) {
++  await knex.schema.table("users", (t) => {
++    t.dropColumn("legacy");
++  });
++  await knex.schema.dropTableIfExists("sessions");
++};
++
++exports.down = async function () {};
+=== changed
+diff --git a/migrations/20240103_rename.js b/migrations/20240103_rename.js
+new file mode 100644
+--- /dev/null
++++ b/migrations/20240103_rename.js
+@@ -0,0 +1,6 @@
++exports.up = async function (knex) {
++  await knex.schema.table("users", (t) => {
++    t.renameColumn("name", "display_name");
++  });
++  await knex.schema.renameTable("accounts", "orgs");
++};
+=== negative
+diff --git a/server/repo.js b/server/repo.js
+--- a/server/repo.js
++++ b/server/repo.js
+@@ -1,2 +1,4 @@
+ module.exports.find = async (knex, id) => {
++  const exists = await knex.schema.hasTable("users");
++  return knex("users").where({ id }).first();
+ };

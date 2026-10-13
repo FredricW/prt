@@ -1,0 +1,14 @@
+diff --git a/main.go b/main.go
+--- a/main.go
++++ b/main.go
+@@ -13,2 +13,2 @@
+-	r.Run()
++	_ = r.Run()
+ }
+diff --git a/internal/users/routes.go b/internal/users/routes.go
+--- a/internal/users/routes.go
++++ b/internal/users/routes.go
+@@ -7,2 +7,3 @@
+ 	g.GET("/:id", get)
++	g.DELETE("/:id", del)
+ }

@@ -1,0 +1,48 @@
+=== added
+diff --git a/web/src/flow.ts b/web/src/flow.ts
+--- a/web/src/flow.ts
++++ b/web/src/flow.ts
+@@ -1,2 +1,3 @@
+ export async function flow() {
++  const v = await client.getBooleanValue("new-flow", false);
+ }
+diff --git a/server/flow.go b/server/flow.go
+--- a/server/flow.go
++++ b/server/flow.go
+@@ -1,2 +1,3 @@
+ func flow(ctx context.Context) {
++	v, _ := client.BooleanValue(ctx, "go-flow", false, openfeature.EvaluationContext{})
+ }
+diff --git a/app/flow.py b/app/flow.py
+--- a/app/flow.py
++++ b/app/flow.py
+@@ -1,2 +1,3 @@
+ def flow():
++    v = client.get_string_value("py-flow", "a")
+     pass
+=== removed
+diff --git a/web/src/theme.ts b/web/src/theme.ts
+--- a/web/src/theme.ts
++++ b/web/src/theme.ts
+@@ -1,3 +1,2 @@
+ export async function theme() {
+-  return client.getStringValue("theme", "light");
+ }
+=== changed
+diff --git a/web/src/flow.ts b/web/src/flow.ts
+--- a/web/src/flow.ts
++++ b/web/src/flow.ts
+@@ -1,3 +1,3 @@
+ export async function flow() {
+-  const v = await client.getBooleanValue("flow-a", false);
++  const v = await client.getBooleanValue("flow-b", false);
+ }
+=== negative
+diff --git a/web/src/flow.ts b/web/src/flow.ts
+--- a/web/src/flow.ts
++++ b/web/src/flow.ts
+@@ -1,2 +1,4 @@
+ export async function flow() {
++  // client.getBooleanValue("commented", false)
++  const doc = "client.getBooleanValue('in-string', false)";
+ }

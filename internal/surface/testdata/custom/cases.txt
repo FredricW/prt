@@ -1,0 +1,51 @@
+=== added
+diff --git a/web/src/components/SettingsForm.tsx b/web/src/components/SettingsForm.tsx
+--- a/web/src/components/SettingsForm.tsx
++++ b/web/src/components/SettingsForm.tsx
+@@ -1,2 +1,6 @@
+ export function SettingsForm() {
++  const showTheme = isEnabled("user-preferences-v2");
++  const newUI = flags["new-ui"];
++  if (features.isEnabled("beta")) return null;
++  const compact = flags.compactMode;
+ }
+diff --git a/app/views.py b/app/views.py
+--- a/app/views.py
++++ b/app/views.py
+@@ -1,2 +1,4 @@
+ def index(request):
++    if flag("py-flag"):
++        pass
+     return None
+=== removed
+diff --git a/web/src/export.ts b/web/src/export.ts
+--- a/web/src/export.ts
++++ b/web/src/export.ts
+@@ -1,3 +1,2 @@
+ export function exportAll() {
+-  if (featureFlag("legacy-export")) return legacy();
+ }
+=== changed
+diff --git a/web/src/components/SettingsForm.tsx b/web/src/components/SettingsForm.tsx
+--- a/web/src/components/SettingsForm.tsx
++++ b/web/src/components/SettingsForm.tsx
+@@ -1,3 +1,3 @@
+ export function SettingsForm() {
+-  const showTheme = isEnabled("user-preferences");
++  const showTheme = isEnabled("user-preferences-v2");
+ }
+=== negative
+diff --git a/web/src/utils/flags.ts b/web/src/utils/flags.ts
+--- a/web/src/utils/flags.ts
++++ b/web/src/utils/flags.ts
+@@ -1,2 +1,10 @@
+ const flags = loadFlags();
++export function isEnabled(name: string): boolean {
++  return flags[name] === true;
++}
++const n = flags.length;
++flags.forEach((f) => f);
++flags.debug = true;
++// isEnabled("old")
++const s = "isEnabled('in-string')";
++if (logger.isEnabled("x")) {}

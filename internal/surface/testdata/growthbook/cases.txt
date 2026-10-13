@@ -1,0 +1,36 @@
+=== added
+diff --git a/web/src/nav.tsx b/web/src/nav.tsx
+--- a/web/src/nav.tsx
++++ b/web/src/nav.tsx
+@@ -1,2 +1,5 @@
+ export function Nav() {
++  if (gb.isOn("new-nav")) return null;
++  const color = useFeatureValue("button-color", "blue");
++  const promo = useFeatureIsOn("promo");
+ }
+=== removed
+diff --git a/web/src/limits.ts b/web/src/limits.ts
+--- a/web/src/limits.ts
++++ b/web/src/limits.ts
+@@ -1,3 +1,2 @@
+ export function limit() {
+-  return gb.getFeatureValue("upload-limit", 10);
+ }
+=== changed
+diff --git a/web/src/nav.tsx b/web/src/nav.tsx
+--- a/web/src/nav.tsx
++++ b/web/src/nav.tsx
+@@ -1,3 +1,3 @@
+ export function Nav() {
+-  if (gb.isOn("nav-v1")) return null;
++  if (gb.isOn("nav-v2")) return null;
+ }
+=== negative
+diff --git a/web/src/nav.tsx b/web/src/nav.tsx
+--- a/web/src/nav.tsx
++++ b/web/src/nav.tsx
+@@ -1,2 +1,4 @@
+ export function Nav() {
++  // gb.isOn("commented")
++  const s = "gb.isOn('in-string')";
+ }

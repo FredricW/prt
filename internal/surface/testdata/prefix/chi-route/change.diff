@@ -1,0 +1,8 @@
+diff --git a/main.go b/main.go
+--- a/main.go
++++ b/main.go
+@@ -10,3 +10,3 @@
+ 			r.Get("/b", b)
++			r.Get("/d", d)
+ 		})
+-		r.Get("/c", c)

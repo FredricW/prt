@@ -97,6 +97,7 @@ import (
 	"github.com/fredricw/prt/internal/review"
 	"github.com/fredricw/prt/internal/route"
 	"github.com/fredricw/prt/internal/store"
+	"github.com/fredricw/prt/internal/surface"
 )
 
 // Deps are the pipeline's collaborators. GH, Jev, Embedder and the
@@ -553,10 +554,26 @@ func (p *Pipeline) buildAgg(ctx context.Context, r *run, a analysis, rows []mode
 	}
 	agg := p.fn.aggregate(in)
 	agg.Grouping, agg.Split = a.gro.stats, a.gro.split
+	// The structured change record (M5.2) is code detection plus the
+	// contract labels; no model call, and the TL;DR request does not read
+	// it, so it changes no recording key.
+	agg.Surface = p.fn.surface(ctx, surface.Input{
+		Units: a.parsed.units, Files: a.parsed.files, Aggs: agg.Units, Labels: in.Labels,
+		BaseSHA: r.f.BaseSHA, HeadSHA: r.f.HeadSHA, Src: p.surfaceSource(),
+	})
 	rl.Note = p.tldr(ctx, r, &agg, rl)
 	agg.Calibration = p.calibrationStats(ctx)
 	rl.In, rl.Out = len(a.parsed.units), len(in.Labels)
 	return agg, nil
+}
+
+// surfaceSource is the file reader surface.Build resolves mount prefixes
+// with (nil without a repository).
+func (p *Pipeline) surfaceSource() surface.Source {
+	if p.d.Git == nil {
+		return nil
+	}
+	return p.d.Git
 }
 
 // finishAgg adds the Architecture graph (built after the record, so it

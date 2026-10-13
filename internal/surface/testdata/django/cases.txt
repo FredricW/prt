@@ -1,0 +1,43 @@
+=== added
+diff --git a/users/urls.py b/users/urls.py
+--- a/users/urls.py
++++ b/users/urls.py
+@@ -1,4 +1,6 @@
+ from django.urls import path, re_path
+ urlpatterns = [
++    path("users/<int:pk>/", views.user_detail, name="user-detail"),
++    re_path(r"^legacy/(?P<slug>[\w-]+)/$", views.legacy),
+ ]
+=== removed
+diff --git a/users/urls.py b/users/urls.py
+--- a/users/urls.py
++++ b/users/urls.py
+@@ -1,4 +1,3 @@
+ urlpatterns = [
+-    path("users/<int:pk>/avatar/", views.avatar),
+ ]
+=== changed
+diff --git a/users/urls.py b/users/urls.py
+--- a/users/urls.py
++++ b/users/urls.py
+@@ -1,4 +1,4 @@
+ urlpatterns = [
+-    path("profile/", views.profile),
++    path("me/", views.profile),
+ ]
+=== negative
+diff --git a/users/urls.py b/users/urls.py
+--- a/users/urls.py
++++ b/users/urls.py
+@@ -1,3 +1,5 @@
+ urlpatterns = [
++    # path("old/", views.old),
++    # redirect_to = "users/1/"
+ ]
+diff --git a/users/views.py b/users/views.py
+--- a/users/views.py
++++ b/users/views.py
+@@ -1,2 +1,3 @@
+ def go(request):
++    return redirect(path("x/"))
+     pass

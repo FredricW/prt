@@ -1,0 +1,54 @@
+diff --git a/server/cmd/api/main.go b/server/cmd/api/main.go
+--- a/server/cmd/api/main.go
++++ b/server/cmd/api/main.go
+@@ -20,8 +20,9 @@ func main() {
+ 	r := chi.NewRouter()
+ 	r.Route("/api/v2", func(r chi.Router) {
+-		r.Get("/orders", listOrders)
++		r.Get("/orders", listOrdersV2)
+-		r.Post("/orders/{id}/cancel", cancelOrder)
++		r.Post("/orders/{id}/refund", refundOrder)
++		r.Mount("/admin", admin.Routes())
+ 	})
+-	timeout := os.Getenv("ORDER_TIMEOUT")
++	timeout := viper.GetDuration("orders.timeout")
+diff --git a/server/internal/orders/types.go b/server/internal/orders/types.go
+--- a/server/internal/orders/types.go
++++ b/server/internal/orders/types.go
+@@ -5,5 +5,6 @@ package orders
+ type orderResponse struct {
+ 	ID     string `json:"id"`
+-	Total  int    `json:"total"`
++	Total  int64  `json:"total"`
++	Refund *int64 `json:"refund,omitempty"`
+ }
+diff --git a/server/migrations/0042_refunds.sql b/server/migrations/0042_refunds.sql
+new file mode 100644
+--- /dev/null
++++ b/server/migrations/0042_refunds.sql
+@@ -0,0 +1,7 @@
++-- +migrate Up
++CREATE TABLE refunds (id BIGSERIAL PRIMARY KEY, order_id TEXT NOT NULL);
++ALTER TABLE orders RENAME COLUMN cancelled_at TO closed_at;
++DROP INDEX orders_cancelled_idx;
++
++-- +migrate Down
++DROP TABLE refunds;
+diff --git a/web/src/orders/Refund.tsx b/web/src/orders/Refund.tsx
+new file mode 100644
+--- /dev/null
++++ b/web/src/orders/Refund.tsx
+@@ -0,0 +1,5 @@
++export function Refund() {
++  const on = useFeatureIsOn("refunds");
++  const api = process.env.NEXT_PUBLIC_REFUND_API;
++  return on ? <button>Refund</button> : null;
++}
+diff --git a/gateway/server.js b/gateway/server.js
+--- a/gateway/server.js
++++ b/gateway/server.js
+@@ -3,4 +3,4 @@ const app = express();
+ const app = express();
+-app.get("/v1/orders", proxy);
++app.all("/v1/orders", proxy);
+ app.listen(8080);

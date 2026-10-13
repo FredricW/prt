@@ -1,0 +1,43 @@
+=== added
+diff --git a/web/src/checkout.ts b/web/src/checkout.ts
+--- a/web/src/checkout.ts
++++ b/web/src/checkout.ts
+@@ -1,2 +1,4 @@
+ export async function checkout(ctx: Context) {
++  const on = ldClient.variation("new-checkout", ctx, false);
++  const dark = await client.boolVariation("dark-mode", ctx, false);
+ }
+diff --git a/server/billing.go b/server/billing.go
+--- a/server/billing.go
++++ b/server/billing.go
+@@ -5,2 +5,3 @@ func charge(ctx ldcontext.Context) {
+ 	amount := 10
++	enabled, _ := ld.BoolVariation("billing-v2", ctx, false)
+ }
+=== removed
+diff --git a/web/src/banner.ts b/web/src/banner.ts
+--- a/web/src/banner.ts
++++ b/web/src/banner.ts
+@@ -1,4 +1,3 @@
+ export function banner() {
+-  if (ldClient.variation("old-banner", false)) {
+   return null;
+=== changed
+diff --git a/web/src/checkout.ts b/web/src/checkout.ts
+--- a/web/src/checkout.ts
++++ b/web/src/checkout.ts
+@@ -1,3 +1,3 @@
+ export async function checkout(ctx: Context) {
+-  const on = ldClient.variation("checkout-v1", ctx, false);
++  const on = ldClient.variation("checkout-v2", ctx, false);
+ }
+=== negative
+diff --git a/web/src/shop.ts b/web/src/shop.ts
+--- a/web/src/shop.ts
++++ b/web/src/shop.ts
+@@ -1,2 +1,5 @@
+ export function shop() {
++  const color = product.variation("red");
++  // ldClient.variation("commented", false)
++  const s = "ldClient.variation('in-string', false)";
+ }

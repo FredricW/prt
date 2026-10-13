@@ -1,0 +1,184 @@
+{
+  "api": [
+    {
+      "area": "api",
+      "change": "removed",
+      "what": "route",
+      "name": "POST /api/v2/orders/{id}/cancel",
+      "path": "server/cmd/api/main.go",
+      "line": 23,
+      "side": "old",
+      "unitId": "dd52ab63023e2a6b793f906557e288c0daa953512e76c9f381edff034942f3b8",
+      "confidence": 0.97,
+      "source": "code",
+      "framework": "chi"
+    },
+    {
+      "area": "api",
+      "change": "changed",
+      "what": "route",
+      "name": "ANY /v1/orders",
+      "path": "gateway/server.js",
+      "line": 4,
+      "unitId": "e450fcf41406f14955e8d2e19e93a421e55331e1a1f848e34db4b5ce6f7af5d0",
+      "confidence": 0.97,
+      "source": "code",
+      "framework": "express",
+      "detail": "was GET /v1/orders"
+    },
+    {
+      "area": "api",
+      "change": "changed",
+      "what": "handler",
+      "name": "GET /api/v2/orders",
+      "path": "server/cmd/api/main.go",
+      "line": 22,
+      "unitId": "dd52ab63023e2a6b793f906557e288c0daa953512e76c9f381edff034942f3b8",
+      "confidence": 0.97,
+      "source": "code",
+      "framework": "chi",
+      "detail": "was listOrders"
+    },
+    {
+      "area": "api",
+      "change": "changed",
+      "what": "response shape",
+      "name": "orderResponse.total",
+      "path": "server/internal/orders/types.go",
+      "line": 7,
+      "unitId": "77336f275149c2919ef06c5ec6db582597cee1daf1a38e8dc5740527b4c8a4cb",
+      "confidence": 0.7,
+      "source": "code",
+      "framework": "go",
+      "detail": "was int `json:\"total\"`"
+    },
+    {
+      "area": "api",
+      "change": "added",
+      "what": "route",
+      "name": "POST /api/v2/orders/{id}/refund",
+      "path": "server/cmd/api/main.go",
+      "line": 23,
+      "unitId": "dd52ab63023e2a6b793f906557e288c0daa953512e76c9f381edff034942f3b8",
+      "confidence": 0.97,
+      "source": "code",
+      "framework": "chi"
+    },
+    {
+      "area": "api",
+      "change": "added",
+      "what": "mount",
+      "name": "/api/v2/admin",
+      "path": "server/cmd/api/main.go",
+      "line": 24,
+      "unitId": "dd52ab63023e2a6b793f906557e288c0daa953512e76c9f381edff034942f3b8",
+      "confidence": 0.9,
+      "source": "code",
+      "framework": "chi",
+      "detail": "→ admin.Routes"
+    },
+    {
+      "area": "api",
+      "change": "added",
+      "what": "response shape",
+      "name": "orderResponse.refund",
+      "path": "server/internal/orders/types.go",
+      "line": 8,
+      "unitId": "77336f275149c2919ef06c5ec6db582597cee1daf1a38e8dc5740527b4c8a4cb",
+      "confidence": 0.7,
+      "source": "code",
+      "framework": "go"
+    }
+  ],
+  "db": [
+    {
+      "area": "db",
+      "change": "removed",
+      "what": "index",
+      "name": "index orders_cancelled_idx",
+      "path": "server/migrations/0042_refunds.sql",
+      "line": 4,
+      "unitId": "e064e3d1d890bd83bba349db26f4ca6f9a75d228aea23b7e1604ff708e692031",
+      "confidence": 0.97,
+      "source": "code",
+      "framework": "sql"
+    },
+    {
+      "area": "db",
+      "change": "changed",
+      "what": "column",
+      "name": "orders.closed_at",
+      "path": "server/migrations/0042_refunds.sql",
+      "line": 3,
+      "unitId": "e064e3d1d890bd83bba349db26f4ca6f9a75d228aea23b7e1604ff708e692031",
+      "confidence": 0.97,
+      "source": "code",
+      "framework": "sql",
+      "detail": "was orders.cancelled_at · one-way"
+    },
+    {
+      "area": "db",
+      "change": "added",
+      "what": "table",
+      "name": "table refunds",
+      "path": "server/migrations/0042_refunds.sql",
+      "line": 2,
+      "unitId": "e064e3d1d890bd83bba349db26f4ca6f9a75d228aea23b7e1604ff708e692031",
+      "confidence": 0.97,
+      "source": "code",
+      "framework": "sql"
+    }
+  ],
+  "flags": [
+    {
+      "area": "flag",
+      "change": "removed",
+      "what": "env",
+      "name": "ORDER_TIMEOUT",
+      "path": "server/cmd/api/main.go",
+      "line": 25,
+      "side": "old",
+      "unitId": "dd52ab63023e2a6b793f906557e288c0daa953512e76c9f381edff034942f3b8",
+      "confidence": 0.97,
+      "source": "code",
+      "framework": "env"
+    },
+    {
+      "area": "flag",
+      "change": "added",
+      "what": "env",
+      "name": "NEXT_PUBLIC_REFUND_API",
+      "path": "web/src/orders/Refund.tsx",
+      "line": 3,
+      "unitId": "c7e4747250ae2ba57797e6d0875628a7da57dba405a72c08517ef298b32fe65e",
+      "confidence": 0.97,
+      "source": "code",
+      "framework": "env"
+    },
+    {
+      "area": "flag",
+      "change": "added",
+      "what": "config key",
+      "name": "orders.timeout",
+      "path": "server/cmd/api/main.go",
+      "line": 26,
+      "unitId": "dd52ab63023e2a6b793f906557e288c0daa953512e76c9f381edff034942f3b8",
+      "confidence": 0.95,
+      "source": "code",
+      "framework": "viper"
+    },
+    {
+      "area": "flag",
+      "change": "added",
+      "what": "flag",
+      "name": "refunds",
+      "path": "web/src/orders/Refund.tsx",
+      "line": 2,
+      "unitId": "c7e4747250ae2ba57797e6d0875628a7da57dba405a72c08517ef298b32fe65e",
+      "confidence": 0.95,
+      "source": "code",
+      "framework": "growthbook"
+    }
+  ],
+  "note": "file contents unavailable: router prefixes and enclosing types from the diff only"
+}

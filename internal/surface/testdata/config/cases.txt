@@ -1,0 +1,65 @@
+=== added
+diff --git a/server/cmd/api/main.go b/server/cmd/api/main.go
+--- a/server/cmd/api/main.go
++++ b/server/cmd/api/main.go
+@@ -10,2 +10,6 @@ func main() {
+ 	logger := slog.Default()
++	addr := viper.GetString("server.addr")
++	port := flag.Int("port", 8080, "listen port")
++	flag.StringVar(&mode, "mode", "dev", "run mode")
++	cmd.Flags().StringVar(&cfg, "config", "", "config file")
+ }
+diff --git a/web/src/db.js b/web/src/db.js
+--- a/web/src/db.js
++++ b/web/src/db.js
+@@ -1,1 +1,2 @@
+ const config = require("config");
++const pool = config.get("db.pool");
+diff --git a/app/views.py b/app/views.py
+--- a/app/views.py
++++ b/app/views.py
+@@ -1,2 +1,4 @@
+ def index(request):
++    if settings.FEATURE_X:
++        parser.add_argument("--dry-run", action="store_true")
+     return None
+diff --git a/mysite/settings.py b/mysite/settings.py
+--- a/mysite/settings.py
++++ b/mysite/settings.py
+@@ -1,1 +1,2 @@
+ DEBUG = False
++NEW_SETTING = True
+=== removed
+diff --git a/server/cmd/api/main.go b/server/cmd/api/main.go
+--- a/server/cmd/api/main.go
++++ b/server/cmd/api/main.go
+@@ -10,3 +10,2 @@ func main() {
+ 	logger := slog.Default()
+-	workers := viper.GetInt("workers")
+ }
+=== changed
+diff --git a/server/cmd/api/main.go b/server/cmd/api/main.go
+--- a/server/cmd/api/main.go
++++ b/server/cmd/api/main.go
+@@ -10,3 +10,3 @@ func main() {
+ 	logger := slog.Default()
+-	addr := viper.GetString("http.addr")
++	addr := viper.GetString("server.addr")
+ }
+=== negative
+diff --git a/app/views.py b/app/views.py
+--- a/app/views.py
++++ b/app/views.py
+@@ -1,2 +1,5 @@
+ def index(request):
++    s = settings.lower_case
++    # viper.GetString("x")
++    msg = "settings.DEBUG is on"
+     return None
+diff --git a/mysite/settings.py b/mysite/settings.py
+--- a/mysite/settings.py
++++ b/mysite/settings.py
+@@ -1,2 +1,2 @@
+-DEBUG = False
++DEBUG = True
+ ALLOWED_HOSTS = []

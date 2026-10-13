@@ -13,6 +13,7 @@ import (
 	"github.com/fredricw/prt/internal/model"
 	"github.com/fredricw/prt/internal/review"
 	"github.com/fredricw/prt/internal/route"
+	"github.com/fredricw/prt/internal/surface"
 )
 
 // stageFuncs are the pure stage implementations the pipeline wires (link,
@@ -58,6 +59,8 @@ type stageFuncs struct {
 	cleanPRTitle func(string) string
 	branchState  func(context.Context, jev.Client, judge.BranchStateInput) (judge.Result, error)
 	archBuild    func(context.Context, arch.Input) (*model.ArchGraph, error)
+	// surface builds the Overview's structured change record (M5.2).
+	surface func(context.Context, surface.Input) *model.ChangeSurface
 
 	aggregate func(aggregate.Input) model.ItemAgg
 }
@@ -95,6 +98,7 @@ func defaultStages() stageFuncs {
 		cleanPRTitle: review.CleanPRTitle,
 		branchState:  judge.BranchState,
 		archBuild:    arch.Build,
+		surface:      surface.Build,
 
 		aggregate: aggregate.Item,
 	}

@@ -1,0 +1,44 @@
+=== added
+diff --git a/users/models.py b/users/models.py
+--- a/users/models.py
++++ b/users/models.py
+@@ -3,3 +3,7 @@ from django.db import models
+ class User(models.Model):
+     email = models.EmailField(unique=True)
++    avatar_url = models.URLField(blank=True)
++
++class Preference(models.Model):
++    theme = models.CharField(max_length=10)
+diff --git a/app/models.py b/app/models.py
+--- a/app/models.py
++++ b/app/models.py
+@@ -5,2 +5,3 @@ class Base(DeclarativeBase):
+ class Account(Base):
+     id: Mapped[int] = mapped_column(primary_key=True)
++    bio: Mapped[str] = mapped_column(Text)
+=== removed
+diff --git a/users/models.py b/users/models.py
+--- a/users/models.py
++++ b/users/models.py
+@@ -3,4 +3,3 @@ from django.db import models
+ class User(models.Model):
+     email = models.EmailField(unique=True)
+-    legacy_theme = models.CharField(max_length=10)
+=== changed
+diff --git a/users/models.py b/users/models.py
+--- a/users/models.py
++++ b/users/models.py
+@@ -3,3 +3,3 @@ from django.db import models
+ class User(models.Model):
+-    name = models.CharField(max_length=50)
++    name = models.CharField(max_length=100)
+=== negative
+diff --git a/users/models.py b/users/models.py
+--- a/users/models.py
++++ b/users/models.py
+@@ -3,2 +3,6 @@ from django.db import models
+ class User(models.Model):
++    objects = UserManager()
++    # nickname = models.CharField(max_length=10)
++    def full_name(self):
++        return self.name
