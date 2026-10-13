@@ -303,5 +303,6 @@ func (c *InProcess) removePreview(ctx context.Context, id string) error {
 		return fmt.Errorf("daemon: remove preview %s: %w", id, err)
 	}
 	c.cancelRun(id)
+	c.forgetItem(ctx, id)
 	return nil
 }

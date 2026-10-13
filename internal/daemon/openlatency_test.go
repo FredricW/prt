@@ -5,7 +5,7 @@ package daemon
 // bar and sometimes takes quite some time"). Everything is offline: the
 // generated fixture repo, the GitHub fixture and the recorded Jev, embedding
 // and review answers, over a file-backed store opened exactly as `prt` opens
-// it (WAL, one connection).
+// it (WAL; one write connection and, since the M5.2 fixes, a read pool).
 //
 // Nothing here asserts a time budget (timings depend on the machine), so the
 // report test only runs when asked (the -perf test flag or PRT_PERF=1):
@@ -13,7 +13,8 @@ package daemon
 //	go test ./internal/daemon -run TestOpenLatency -count=1 -v -args -perf
 //	go test ./internal/daemon -run '^$' -bench Detail -benchtime 100x
 //
-// The numbers are logged as "perf:" lines.
+// The numbers are logged as "perf:" lines. "full" is Detail (every part),
+// "lean" is DetailOf with NoLabels (what screens load on open since M5.2).
 
 import (
 	"context"
@@ -74,12 +75,73 @@ func (c *perfClock) advance(d time.Duration) {
 	c.mu.Unlock()
 }
 
+// perfGate holds review calls while armed, so a run can be measured
+// mid-flight (the snapshot section).
+type perfGate struct {
+	mu      sync.Mutex
+	ch      chan struct{}
+	entered chan struct{}
+}
+
+// arm makes review calls block until the returned release is called.
+func (g *perfGate) arm() (release func()) {
+	ch := make(chan struct{})
+	g.mu.Lock()
+	g.ch = ch
+	g.mu.Unlock()
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			g.mu.Lock()
+			g.ch = nil
+			g.mu.Unlock()
+			close(ch)
+		})
+	}
+}
+
+// wait blocks a review call while the gate is armed.
+func (g *perfGate) wait(ctx context.Context) error {
+	g.mu.Lock()
+	ch := g.ch
+	g.mu.Unlock()
+	if ch == nil {
+		return nil
+	}
+	select {
+	case g.entered <- struct{}{}:
+	default:
+	}
+	select {
+	case <-ch:
+		return nil
+	case <-ctx.Done():
+		return context.Cause(ctx)
+	}
+}
+
+// gatedTier is a reviewer whose review calls pass a perfGate.
+type gatedTier struct {
+	review.Reviewer
+	gate *perfGate
+}
+
+func (r gatedTier) Review(ctx context.Context, req review.Request) (review.Result, error) {
+	if req.Task == review.TaskReview {
+		if err := r.gate.wait(ctx); err != nil {
+			return review.Result{}, err
+		}
+	}
+	return r.Reviewer.Review(ctx, req)
+}
+
 // perfEnv is a daemon over the fixture repo with every item analysed.
 type perfEnv struct {
 	c     *InProcess
 	deps  pipeline.Deps
 	path  string // the store file
 	clock *perfClock
+	gate  *perfGate
 	ids   []string
 }
 
@@ -116,13 +178,14 @@ func newPerfEnv(tb testing.TB) *perfEnv {
 	tb.Cleanup(func() { _ = st.Close() })
 	rec := testutil.Testdata(tb, "recordings")
 	clock := &perfClock{t: testNow}
+	gate := &perfGate{entered: make(chan struct{}, 1)}
 	d := pipeline.Deps{
 		Git: g, GH: fake, Store: st, Config: cfg, Questions: questions.Default(), Now: clock.now,
 		Jev:      &jev.Replay{Dir: filepath.Join(rec, "jev"), MissUnavailable: true},
 		Embedder: &embed.Replay{Dir: filepath.Join(rec, "embed")},
 		Reviewers: review.Tiers{
-			Fast: &review.Replay{Name: cfg.Models.Fast, Dir: filepath.Join(rec, "review"), MissUnavailable: true},
-			Deep: &review.Replay{Name: cfg.Models.Deep, Dir: filepath.Join(rec, "review"), MissUnavailable: true},
+			Fast: gatedTier{&review.Replay{Name: cfg.Models.Fast, Dir: filepath.Join(rec, "review"), MissUnavailable: true}, gate},
+			Deep: gatedTier{&review.Replay{Name: cfg.Models.Deep, Dir: filepath.Join(rec, "review"), MissUnavailable: true}, gate},
 		},
 	}
 	c := NewInProcess(d)
@@ -134,7 +197,7 @@ func newPerfEnv(tb testing.TB) *perfEnv {
 	if err != nil {
 		tb.Fatal(err)
 	}
-	e := &perfEnv{c: c, deps: d, path: path, clock: clock}
+	e := &perfEnv{c: c, deps: d, path: path, clock: clock, gate: gate}
 	for _, it := range items {
 		if err := c.RunSync(ctx, it.ID); err != nil {
 			tb.Fatalf("analyse %s: %v", it.ID, err)
@@ -218,14 +281,19 @@ func ms(d time.Duration) string { return strconv.FormatFloat(float64(d)/1e6, 'f'
 
 func kb(n int) string { return strconv.FormatFloat(float64(n)/1024, 'f', 1, 64) + " KB" }
 
-// timeDetail times n sequential Detail calls.
+// timeDetail times n sequential full Detail calls.
 func timeDetail(tb testing.TB, c Client, id string, n int) []time.Duration {
+	return timeDetailOf(tb, c, id, false, n)
+}
+
+// timeDetailOf times n sequential DetailOf calls (lean: NoLabels).
+func timeDetailOf(tb testing.TB, c Client, id string, lean bool, n int) []time.Duration {
 	tb.Helper()
 	ctx := context.Background()
 	out := make([]time.Duration, 0, n)
 	for range n {
 		t := time.Now()
-		if _, err := c.Detail(ctx, id); err != nil {
+		if _, err := c.DetailOf(ctx, proto.DetailParams{ItemID: id, NoLabels: lean}); err != nil {
 			tb.Fatalf("detail %s: %v", id, err)
 		}
 		out = append(out, time.Since(t))
@@ -233,11 +301,49 @@ func timeDetail(tb testing.TB, c Client, id string, n int) []time.Duration {
 	return out
 }
 
-// burst issues n concurrent Detail calls, as the TUI does when n events for
-// the selected item arrive while earlier loads are in flight (each event
-// starts a load; none is cancelled), and returns how long the last-issued
-// one (the only one the TUI applies) took and how long all took.
-func burst(tb testing.TB, c Client, id string, n int) (last, all time.Duration) {
+// timeLabels times n sequential Labels calls.
+func timeLabels(tb testing.TB, c Client, id string, units []string, n int) []time.Duration {
+	tb.Helper()
+	ctx := context.Background()
+	out := make([]time.Duration, 0, n)
+	for range n {
+		t := time.Now()
+		if _, err := c.Labels(ctx, proto.LabelsParams{ItemID: id, UnitIDs: units}); err != nil {
+			tb.Fatalf("labels %s: %v", id, err)
+		}
+		out = append(out, time.Since(t))
+	}
+	return out
+}
+
+// detailJSON is the JSON size of a DetailOf and its encode+decode time.
+func detailJSON(tb testing.TB, c Client, id string, lean bool) (proto.Detail, int, time.Duration) {
+	tb.Helper()
+	d, err := c.DetailOf(context.Background(), proto.DetailParams{ItemID: id, NoLabels: lean})
+	if err != nil {
+		tb.Fatal(err)
+	}
+	b, err := json.Marshal(d)
+	if err != nil {
+		tb.Fatal(err)
+	}
+	t := time.Now()
+	for range 20 {
+		bb, _ := json.Marshal(d)
+		var back proto.Detail
+		if err := json.Unmarshal(bb, &back); err != nil {
+			tb.Fatal(err)
+		}
+	}
+	return d, len(b), time.Since(t) / 20
+}
+
+// burst issues n concurrent DetailOf calls, as the TUI did before M5.2 when
+// n events for the selected item arrived while earlier loads were in
+// flight (each event started a load; none was cancelled), and returns how
+// long the last-issued one (the only one the TUI applies) took and how
+// long all took.
+func burst(tb testing.TB, c Client, id string, lean bool, n int) (last, all time.Duration) {
 	tb.Helper()
 	ctx := context.Background()
 	var wg sync.WaitGroup
@@ -248,7 +354,7 @@ func burst(tb testing.TB, c Client, id string, n int) (last, all time.Duration) 
 		go func() {
 			defer wg.Done()
 			t := time.Now()
-			if _, err := c.Detail(ctx, id); err != nil {
+			if _, err := c.DetailOf(ctx, proto.DetailParams{ItemID: id, NoLabels: lean}); err != nil {
 				tb.Errorf("detail %s: %v", id, err)
 			}
 			if i == n-1 {
@@ -263,27 +369,29 @@ func burst(tb testing.TB, c Client, id string, n int) (last, all time.Duration) 
 
 // step is one store read of Detail.
 type step struct {
-	name string
-	rows int
-	d    time.Duration
+	name  string
+	rows  int
+	d     time.Duration
+	label bool // a label or override read (left out by the lean Detail)
 }
 
-// detailSteps replays InProcess.Detail's store reads in its order, timing
-// each (the routing info and the branch ageing are in-memory and left out).
+// detailSteps replays InProcess.DetailOf's store reads of the live path in
+// its order, timing each (the routing info and the branch ageing are
+// in-memory and left out).
 func detailSteps(ctx context.Context, s store.Store, id string) ([]step, error) {
 	var out []step
 	t := time.Now()
-	lap := func(name string, rows int) {
-		out = append(out, step{name, rows, time.Since(t)})
+	lap := func(name string, rows int, label bool) {
+		out = append(out, step{name, rows, time.Since(t), label})
 		t = time.Now()
 	}
 	it, err := s.Item(ctx, id)
 	if err != nil {
 		return nil, err
 	}
-	lap("Item", 1)
+	lap("Item", 1, false)
 	diff := 0
-	for _, sha := range []string{it.AnalysedSHA, it.HeadSHA} {
+	for _, sha := range []string{it.UnitsSHA, it.AnalysedSHA, it.HeadSHA} {
 		if sha == "" {
 			continue
 		}
@@ -292,62 +400,62 @@ func detailSteps(ctx context.Context, s store.Store, id string) ([]step, error) 
 			break
 		}
 	}
-	lap("Fetch (diff "+kb(diff)+")", 1)
+	lap("Fetch (diff "+kb(diff)+")", 1, false)
 	files, err := s.Files(ctx, id)
 	if err != nil {
 		return nil, err
 	}
-	lap("Files", len(files))
+	lap("Files", len(files), false)
 	units, err := s.Units(ctx, id)
 	if err != nil {
 		return nil, err
 	}
-	lap("Units", len(units))
+	lap("Units", len(units), false)
 	subjects := labelSubjects(id, files, units)
 	ls, err := s.Labels(ctx, subjects)
 	if err != nil {
 		return nil, err
 	}
-	lap(fmt.Sprintf("Labels (IN over %d subjects)", len(subjects)), len(ls))
+	lap(fmt.Sprintf("Labels (IN over %d subjects)", len(subjects)), len(ls), true)
 	ovs, err := s.Overrides(ctx, subjects)
 	if err != nil {
 		return nil, err
 	}
-	lap("Overrides", len(ovs))
+	lap("Overrides", len(ovs), true)
 	links, err := s.Links(ctx, id)
 	if err != nil {
 		return nil, err
 	}
-	lap("Links", len(links))
+	lap("Links", len(links), false)
 	groups, err := s.Groups(ctx, id)
 	if err != nil {
 		return nil, err
 	}
-	lap("Groups", len(groups))
+	lap("Groups", len(groups), false)
 	rs, err := s.ItemReviews(ctx, id)
 	if err != nil {
 		return nil, err
 	}
-	lap("ItemReviews", len(rs))
+	lap("ItemReviews", len(rs), false)
+	if _, _, err := s.Agg(ctx, id); err != nil {
+		return nil, err
+	}
+	lap("Agg", 1, false)
 	cs, err := s.Comments(ctx, id)
 	if err != nil {
 		return nil, err
 	}
-	lap("Comments", len(cs))
+	lap("Comments", len(cs), false)
 	fm, err := s.FindingMarks(ctx, id)
 	if err != nil {
 		return nil, err
 	}
-	lap("FindingMarks", len(fm))
-	if _, _, err := s.Agg(ctx, id); err != nil {
-		return nil, err
-	}
-	lap("Agg", 1)
-	rls, err := s.RunLogs(ctx, id)
+	lap("FindingMarks", len(fm), false)
+	rls, err := s.CurrentRunLogs(ctx, id)
 	if err != nil {
 		return nil, err
 	}
-	lap("RunLogs", len(rls))
+	lap("RunLogs (current run)", len(rls), false)
 	return out, nil
 }
 
@@ -373,13 +481,26 @@ func medianSteps(tb testing.TB, s store.Store, id string, n int) []step {
 	return out
 }
 
+// stepTime is the median time of the step whose name starts with prefix.
+func stepTime(steps []step, prefix string) time.Duration {
+	for _, s := range steps {
+		if strings.HasPrefix(s.name, prefix) {
+			return s.d
+		}
+	}
+	return 0
+}
+
 func logSteps(tb testing.TB, label string, steps []step) {
 	tb.Helper()
-	var total time.Duration
+	var total, lean time.Duration
 	for _, s := range steps {
 		total += s.d
+		if !s.label {
+			lean += s.d
+		}
 	}
-	tb.Logf("perf: %s: store reads, median per step (sum %s)", label, ms(total))
+	tb.Logf("perf: %s: store reads, median per step (sum %s; lean, without labels and overrides, %s)", label, ms(total), ms(lean))
 	for _, s := range steps {
 		tb.Logf("perf:   %-34s %6d rows  %s", s.name, s.rows, ms(s.d))
 	}
@@ -492,10 +613,10 @@ func (r *evRec) waitSettled(tb testing.TB, id string) {
 	tb.Fatalf("%s did not settle", id)
 }
 
-// reloadCounts applies the TUI's rules to an event stream for a selected
-// item: every event naming it except a remove starts a full Detail load
-// (tui.Model.onEvent), and every item/remove event asks for a list reload
-// (queueReload, coalesced while one is in flight).
+// reloadCounts applies the pre-M5.2 TUI's rules to an event stream for a
+// selected item: every event naming it except a remove starts a full
+// Detail load (tui.Model.onEvent), and every item/remove event asks for a
+// list reload (queueReload, coalesced while one is in flight).
 func reloadCounts(evs []proto.Event, selected string) (detail, list int, byType map[proto.EventType]int) {
 	byType = map[proto.EventType]int{}
 	for _, e := range evs {
@@ -669,118 +790,167 @@ func TestOpenLatency(t *testing.T) {
 	if !*perfFlag && os.Getenv(perfEnvVar) == "" {
 		t.Skip("measurement only: pass -args -perf or set " + perfEnvVar + "=1 (see docs/m52-open-latency.md)")
 	}
-	ctx := context.Background()
 	t0 := time.Now()
 	e := newPerfEnv(t)
 	t.Logf("perf: setup (fixture repo, discovery, %d analyses): %s", len(e.ids), time.Since(t0).Round(time.Millisecond))
-	st := e.deps.Store
-	const n = 60
+	largest := perfIdle(t, e)
+	perfSocketIdle(t, e)
+	perfBusy(t, e)
+	perfBursts(t, e)
+	perfSnapshot(t, e)
+	perfEvents(t, e)
+	perfSizes(t, e, largest)
+	perfRunLog(t, e)
+}
 
-	// 1. Idle: one Detail per item, nothing else running.
-	t.Log("perf: == 1. idle Detail, in-process (file store, WAL, 1 connection) ==")
+// perfN is the number of calls per latency figure.
+const perfN = 60
+
+// perfIdle is section 1: one Detail per item, nothing else running. It
+// returns the item with the most units.
+func perfIdle(t *testing.T, e *perfEnv) string {
+	ctx := context.Background()
+	t.Log("perf: == 1. idle Detail, in-process (file store, WAL, one write connection + read pool) ==")
 	largest, largestUnits := "", -1
 	for _, id := range e.ids {
-		d, err := e.c.Detail(ctx, id)
-		if err != nil {
-			t.Fatal(err)
+		d, size, enc := detailJSON(t, e.c, id, false)
+		_, leanSize, leanEnc := detailJSON(t, e.c, id, true)
+		full := summarise(timeDetail(t, e.c, id, perfN))
+		lean := summarise(timeDetailOf(t, e.c, id, true, perfN))
+		t.Logf("perf: %-26s files %3d units %3d labels %5d runlogs %3d", id, len(d.Files), len(d.Units), len(d.Labels), len(d.RunLogs))
+		t.Logf("perf:   full json %9s (encode+decode %s) | %s", kb(size), ms(enc), full)
+		t.Logf("perf:   lean json %9s (encode+decode %s) | %s", kb(leanSize), ms(leanEnc), lean)
+		if len(d.Units) > 0 {
+			one := summarise(timeLabels(t, e.c, id, []string{d.Units[0].ID}, perfN))
+			all := summarise(timeLabels(t, e.c, id, nil, perfN))
+			t.Logf("perf:   Labels: one unit %s | all subjects %s", one, all)
 		}
-		b, err := json.Marshal(d)
-		if err != nil {
-			t.Fatal(err)
-		}
-		tEnc := time.Now()
-		for range 20 {
-			bb, _ := json.Marshal(d)
-			var back proto.Detail
-			if err := json.Unmarshal(bb, &back); err != nil {
-				t.Fatal(err)
-			}
-		}
-		enc := time.Since(tEnc) / 20
-		l := summarise(timeDetail(t, e.c, id, n))
-		t.Logf("perf: %-26s files %3d units %3d labels %5d runlogs %3d json %9s (encode+decode %s) | %s",
-			id, len(d.Files), len(d.Units), len(d.Labels), len(d.RunLogs), kb(len(b)), ms(enc), l)
 		if len(d.Units) > largestUnits {
 			largest, largestUnits = id, len(d.Units)
 		}
 	}
-	logSteps(t, "idle "+largest, medianSteps(t, st, largest, 30))
-	itemsLat := make([]time.Duration, 0, n)
-	for range n {
+	logSteps(t, "idle "+largest, medianSteps(t, e.deps.Store, largest, 30))
+	itemsLat := make([]time.Duration, 0, perfN)
+	routing := make([]time.Duration, 0, perfN)
+	for range perfN {
 		tt := time.Now()
 		if _, err := e.c.Items(ctx); err != nil {
 			t.Fatal(err)
 		}
 		itemsLat = append(itemsLat, time.Since(tt))
+		tt = time.Now()
+		_ = e.c.routingInfo()
+		routing = append(routing, time.Since(tt))
 	}
 	t.Logf("perf: Items() (list reload after each item event): %s", summarise(itemsLat))
+	t.Logf("perf: routing info built per Detail: %s", summarise(routing))
+	return largest
+}
 
-	// 2. Idle over the daemon socket (what `prt` with a running daemon does).
+// perfSocketIdle is section 2: idle Detail over the daemon socket.
+func perfSocketIdle(t *testing.T, e *perfEnv) {
 	t.Log("perf: == 2. idle Detail over the Unix socket (NDJSON) ==")
-	sock, stopSock := perfSocket(t, e.c)
+	sock, stop := perfSocket(t, e.c)
+	defer stop()
 	for _, id := range e.ids {
-		t.Logf("perf: socket %-26s %s", id, summarise(timeDetail(t, sock, id, n)))
+		t.Logf("perf: socket %-26s full %s", id, summarise(timeDetail(t, sock, id, perfN)))
+		t.Logf("perf: socket %-26s lean %s", id, summarise(timeDetailOf(t, sock, id, true, perfN)))
 	}
-	stopSock()
+}
 
-	// 3. Busy: other items analysing (the worker pool runs 4 at once).
-	idle := summarise(timeDetail(t, e.c, perfSelected, n))
-	t.Logf("perf: == 3. Detail(%s) while other items' analyses write ==", perfSelected)
-	t.Logf("perf: idle in-process            %s", idle)
+// perfBusy is section 3: Detail of the selected item while the other items
+// re-analyse (the worker pool runs 4 at once).
+func perfBusy(t *testing.T, e *perfEnv) {
+	idle := summarise(timeDetail(t, e.c, perfSelected, perfN))
+	idleLean := summarise(timeDetailOf(t, e.c, perfSelected, true, perfN))
+	t.Logf("perf: == 3. Detail(%s) while other items' analyses write (reads on the read pool) ==", perfSelected)
+	t.Logf("perf: idle in-process full %s", idle)
+	t.Logf("perf: idle in-process lean %s", idleLean)
 	for _, writers := range []int{1, len(e.others())} {
-		ids := e.others()[:writers]
-		stop := e.churn(ids)
+		stop := e.churn(e.others()[:writers])
 		time.Sleep(200 * time.Millisecond)
 		tb := time.Now()
-		busy := summarise(timeDetail(t, e.c, perfSelected, n))
+		busy := summarise(timeDetail(t, e.c, perfSelected, perfN))
+		busyLean := summarise(timeDetailOf(t, e.c, perfSelected, true, perfN))
 		el := time.Since(tb)
 		runs := stop()
-		t.Logf("perf: %d writer(s) in-process      %s  (×%.1f p50, ×%.1f p95; %d runs in %s)",
-			writers, busy, ratio(busy.p50, idle.p50), ratio(busy.p95, idle.p95), runs, el.Round(time.Millisecond))
+		t.Logf("perf: %d writer(s) in-process full %s (×%.1f p50, ×%.1f p95)", writers, busy, ratio(busy.p50, idle.p50), ratio(busy.p95, idle.p95))
+		t.Logf("perf: %d writer(s) in-process lean %s (%d runs in %s)", writers, busyLean, runs, el.Round(time.Millisecond))
 	}
 	stop := e.churn(e.others())
 	time.Sleep(200 * time.Millisecond)
-	sock, stopSock = perfSocket(t, e.c)
-	busySock := summarise(timeDetail(t, sock, perfSelected, n))
+	sock, stopSock := perfSocket(t, e.c)
+	busySock := summarise(timeDetail(t, sock, perfSelected, perfN))
+	busySockLean := summarise(timeDetailOf(t, sock, perfSelected, true, perfN))
 	stopSock()
 	stop()
-	t.Logf("perf: %d writers over the socket  %s", len(e.others()), busySock)
+	t.Logf("perf: %d writers over the socket full %s", len(e.others()), busySock)
+	t.Logf("perf: %d writers over the socket lean %s", len(e.others()), busySockLean)
+}
 
-	// The proposal: reads on their own connection (a second handle on the
-	// same WAL file; readers never wait for the pipeline's connection).
-	st2, err := store.Open(ctx, e.path)
+// perfBursts is section 4: concurrent loads, as the pre-M5.2 TUI started
+// one per event and cancelled none.
+func perfBursts(t *testing.T, e *perfEnv) {
+	t.Log("perf: == 4. concurrent Detail bursts (one load per event, none cancelled) ==")
+	logBursts := func(state string) {
+		for _, b := range []int{1, 10, 30} {
+			last, all := burst(t, e.c, perfSelected, false, b)
+			lastLean, allLean := burst(t, e.c, perfSelected, true, b)
+			t.Logf("perf: burst %2d %s: full last-issued %s, all done %s | lean last-issued %s, all done %s",
+				b, state, ms(last), ms(all), ms(lastLean), ms(allLean))
+		}
+	}
+	logBursts("idle")
+	stop := e.churn(e.others())
+	time.Sleep(200 * time.Millisecond)
+	logBursts("busy")
+	stop()
+}
+
+// perfSnapshot measures Detail of the selected item while its own re-run
+// is in flight (held in review), when the analysis parts come from the
+// snapshot (M5.2).
+func perfSnapshot(t *testing.T, e *perfEnv) {
+	ctx := context.Background()
+	t.Logf("perf: == S. Detail(%s) while its own re-run is in flight (stale-while-revalidate) ==", perfSelected)
+	idle := summarise(timeDetail(t, e.c, perfSelected, perfN))
+	idleLean := summarise(timeDetailOf(t, e.c, perfSelected, true, perfN))
+	release := e.gate.arm()
+	defer release()
+	if err := e.c.Refresh(ctx, proto.ItemParams{ItemID: perfSelected, FromStage: model.StageReview, User: true}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-e.gate.entered:
+	case <-time.After(30 * time.Second):
+		t.Fatal("the re-run never reached review")
+	}
+	d, err := e.c.Detail(ctx, perfSelected)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = st2.Close() }()
-	d2 := e.deps
-	d2.Store, d2.Emit = st2, nil
-	reader := NewInProcess(d2)
-	defer func() { _ = reader.Close() }()
-	readerIdle := summarise(timeDetail(t, reader, perfSelected, n))
-	stop = e.churn(e.others())
-	time.Sleep(200 * time.Millisecond)
-	readerBusy := summarise(timeDetail(t, reader, perfSelected, n))
-	runs := stop()
-	t.Logf("perf: separate read handle, idle %s", readerIdle)
-	t.Logf("perf: separate read handle, %d writers %s (×%.1f p50 vs its idle; %d runs)",
-		len(e.others()), readerBusy, ratio(readerBusy.p50, readerIdle.p50), runs)
-
-	// Bursts: the TUI starts one Detail per event and cancels none.
-	t.Log("perf: == 4. concurrent Detail bursts (one load per event, none cancelled) ==")
-	for _, b := range []int{1, 10, 30} {
-		last, all := burst(t, e.c, perfSelected, b)
-		t.Logf("perf: burst %2d idle: last-issued load %s, all done %s", b, ms(last), ms(all))
+	if d.Run == nil || !d.Run.Snapshot {
+		t.Fatalf("no snapshot served during the re-run: run %+v", d.Run)
 	}
-	stop = e.churn(e.others())
-	time.Sleep(200 * time.Millisecond)
-	for _, b := range []int{1, 10, 30} {
-		last, all := burst(t, e.c, perfSelected, b)
-		t.Logf("perf: burst %2d busy: last-issued load %s, all done %s", b, ms(last), ms(all))
+	full := summarise(timeDetail(t, e.c, perfSelected, perfN))
+	lean := summarise(timeDetailOf(t, e.c, perfSelected, true, perfN))
+	sock, stopSock := perfSocket(t, e.c)
+	sockLean := summarise(timeDetailOf(t, sock, perfSelected, true, perfN))
+	stopSock()
+	t.Logf("perf: idle (store):          full %s | lean %s", idle, idleLean)
+	t.Logf("perf: during the re-run:     full %s | lean %s (Run.Snapshot, stage %s)", full, lean, d.Run.Stage)
+	t.Logf("perf: during, over the socket lean %s", sockLean)
+	release()
+	e.c.wg.Wait()
+	if d, err := e.c.Detail(ctx, perfSelected); err != nil || d.Run != nil {
+		t.Fatalf("after the re-run: run %+v, %v", d.Run, err)
 	}
-	stop()
+}
 
-	// 5. What re-loads the selected item: events per trigger.
+// perfEvents is section 5: the events (and so pre-M5.2 TUI reloads) each
+// trigger sends with the selected item open.
+func perfEvents(t *testing.T, e *perfEnv) {
+	ctx := context.Background()
 	t.Logf("perf: == 5. events and TUI reloads per trigger (selected %s) ==", perfSelected)
 	busyLat := summarise(timeDetail(t, e.c, perfSelected, 20)).p50
 	rec := record(e.c)
@@ -806,84 +976,120 @@ func TestOpenLatency(t *testing.T) {
 	evs, at = rec.stop()
 	logTrigger(t, "r of another item ("+other+")", evs, at, busyLat)
 
-	rec = record(e.c)
-	if err := e.c.Discover(ctx); err != nil {
-		t.Fatal(err)
+	for _, step := range []struct {
+		name    string
+		advance time.Duration
+	}{
+		{"discovery pass, clock unchanged", 0},
+		{"discovery pass, clock +60 s (one refresh tick)", 60 * time.Second},
+		{"discovery pass, clock +1 h", time.Hour},
+		{"discovery pass, clock +1 day", 24 * time.Hour},
+	} {
+		e.clock.advance(step.advance)
+		rec = record(e.c)
+		if err := e.c.Discover(ctx); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(100 * time.Millisecond)
+		evs, at = rec.stop()
+		logTrigger(t, step.name, evs, at, busyLat)
 	}
-	time.Sleep(100 * time.Millisecond)
-	evs, at = rec.stop()
-	logTrigger(t, "discovery pass, clock unchanged", evs, at, busyLat)
-	e.clock.advance(60 * time.Second)
-	rec = record(e.c)
-	if err := e.c.Discover(ctx); err != nil {
-		t.Fatal(err)
-	}
-	time.Sleep(100 * time.Millisecond)
-	evs, at = rec.stop()
-	logTrigger(t, "discovery pass, clock +60 s (one refresh tick)", evs, at, busyLat)
+}
 
-	// 6. Size: Detail of a PR k times a fixture PR, and what the other
-	// items' labels in the store do to a small item's Detail.
+// perfSizes is section 6: the label query plan, the selected item's Labels
+// read as the store grows, Details of PRs k times a fixture PR, and the
+// label pruning.
+func perfSizes(t *testing.T, e *perfEnv, largest string) {
+	ctx := context.Background()
+	st := e.deps.Store
 	t.Log("perf: == 6. Detail of larger PRs (fixture item copied k times) ==")
 	for _, n := range []int{1, 63, 2801} {
 		t.Logf("perf: listDocs query plan, parent IN %d value(s): %s", n, labelsPlan(t, e.path, n))
 	}
 	logStoreLabels(t, e, "before the copies")
+	var copies []string
 	for _, k := range []int{10, 40} {
 		id := scaled(t, st, largest, k)
+		copies = append(copies, id)
 		logStoreLabels(t, e, fmt.Sprintf("after the ×%d copy", k))
-		d, err := e.c.Detail(ctx, id)
-		if err != nil {
-			t.Fatal(err)
-		}
-		b, _ := json.Marshal(d)
-		l := summarise(timeDetail(t, e.c, id, 20))
-		t.Logf("perf: ×%-3d files %4d units %5d labels %6d json %9s | in-process %s", k, len(d.Files), len(d.Units), len(d.Labels), kb(len(b)), l)
+		d, size, _ := detailJSON(t, e.c, id, false)
+		_, leanSize, _ := detailJSON(t, e.c, id, true)
+		full := summarise(timeDetail(t, e.c, id, 20))
+		lean := summarise(timeDetailOf(t, e.c, id, true, 20))
+		one := summarise(timeLabels(t, e.c, id, []string{d.Units[0].ID}, 20))
+		t.Logf("perf: ×%-3d files %4d units %5d labels %6d", k, len(d.Files), len(d.Units), len(d.Labels))
+		t.Logf("perf:   full json %9s in-process %s", kb(size), full)
+		t.Logf("perf:   lean json %9s in-process %s | Labels of one unit %s", kb(leanSize), lean, one)
 		logSteps(t, fmt.Sprintf("×%d", k), medianSteps(t, st, id, 10))
-		sock, stopSock = perfSocket(t, e.c)
-		t.Logf("perf: ×%-3d over the socket %s", k, summarise(timeDetail(t, sock, id, 20)))
+		sock, stopSock := perfSocket(t, e.c)
+		t.Logf("perf: ×%-3d over the socket full %s", k, summarise(timeDetail(t, sock, id, 20)))
+		t.Logf("perf: ×%-3d over the socket lean %s", k, summarise(timeDetailOf(t, sock, id, true, 20)))
 		stopSock()
 		for _, b := range []int{10, 30} {
-			last, all := burst(t, e.c, id, b)
-			t.Logf("perf: ×%-3d burst %2d idle: last-issued load %s, all done %s", k, b, ms(last), ms(all))
+			last, all := burst(t, e.c, id, false, b)
+			lastLean, allLean := burst(t, e.c, id, true, b)
+			t.Logf("perf: ×%-3d burst %2d idle: full last-issued %s, all done %s | lean last-issued %s, all done %s",
+				k, b, ms(last), ms(all), ms(lastLean), ms(allLean))
 		}
-		stop = e.churn(e.others())
+		stop := e.churn(e.others())
 		time.Sleep(200 * time.Millisecond)
-		t.Logf("perf: ×%-3d with %d writers %s", k, len(e.others()), summarise(timeDetail(t, e.c, id, 20)))
+		t.Logf("perf: ×%-3d with %d writers full %s | lean %s", k, len(e.others()),
+			summarise(timeDetail(t, e.c, id, 20)), summarise(timeDetailOf(t, e.c, id, true, 20)))
 		stop()
 	}
-
-	// 7. Run-log growth: rows are appended on every run and never pruned,
-	// and Detail returns all of them.
-	t.Log("perf: == 7. run-log growth (9 rows per run, all returned by Detail) ==")
-	rls, err := st.RunLogs(ctx, perfSelected)
+	tt := time.Now()
+	n, err := st.PruneLabels(ctx, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	tmpl := rls[max(0, len(rls)-9):] // the last run's rows
+	t.Logf("perf: start-up label sweep over the grown store: %d pruned in %s", n, ms(time.Since(tt)))
+	for i := len(copies) - 1; i >= 0; i-- {
+		tt = time.Now()
+		if err := e.c.Remove(ctx, copies[i]); err != nil {
+			t.Fatal(err)
+		}
+		el := time.Since(tt)
+		logStoreLabels(t, e, fmt.Sprintf("after removing %s (Remove with label pruning %s)", copies[i], ms(el)))
+	}
+}
+
+// perfRunLog is section 7: run-log growth. Detail returns only the current
+// run; finishing a run prunes the log to keepRuns runs.
+func perfRunLog(t *testing.T, e *perfEnv) {
+	ctx := context.Background()
+	st := e.deps.Store
+	rls, err := st.CurrentRunLogs(ctx, perfSelected)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("perf: == 7. run-log growth (%d rows per run; Detail returns the current run, finish keeps %d runs) ==", len(rls), keepRuns)
 	added := 0
 	for _, runs := range []int{100, 1000} {
 		for ; added < runs; added++ {
-			for _, rl := range tmpl {
+			for _, rl := range rls {
 				if err := st.AppendRunLog(ctx, rl); err != nil {
 					t.Fatal(err)
 				}
 			}
 		}
+		_, size, _ := detailJSON(t, e.c, perfSelected, false)
 		d, err := e.c.Detail(ctx, perfSelected)
 		if err != nil {
 			t.Fatal(err)
 		}
-		b, _ := json.Marshal(d)
-		var rlStep time.Duration
-		for _, s := range medianSteps(t, st, perfSelected, 10) {
-			if s.name == "RunLogs" {
-				rlStep = s.d
-			}
-		}
-		t.Logf("perf: +%4d runs: %5d run-log rows, json %9s | %s; RunLogs read %s", runs, len(d.RunLogs), kb(len(b)),
-			summarise(timeDetail(t, e.c, perfSelected, 20)), ms(rlStep))
+		t.Logf("perf: +%4d runs unpruned: Detail run-log rows %d, json %9s | %s; current-run read %s", runs, len(d.RunLogs), kb(size),
+			summarise(timeDetail(t, e.c, perfSelected, 20)), ms(stepTime(medianSteps(t, st, perfSelected, 10), "RunLogs")))
 	}
+	tt := time.Now()
+	n, err := st.PruneRunLogs(ctx, perfSelected, keepRuns)
+	if err != nil {
+		t.Fatal(err)
+	}
+	left, err := st.RunLogs(ctx, perfSelected)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("perf: prune to %d runs: %d rows deleted in %s, %d left", keepRuns, n, ms(time.Since(tt)), len(left))
 }
 
 // logStoreLabels logs how many labels the store holds and the selected
@@ -899,18 +1105,13 @@ func logStoreLabels(tb testing.TB, e *perfEnv, when string) {
 	for _, n := range counts {
 		total += n
 	}
-	labels := time.Duration(0)
-	for _, s := range medianSteps(tb, e.deps.Store, perfSelected, 10) {
-		if strings.HasPrefix(s.name, "Labels") {
-			labels = s.d
-		}
-	}
+	labels := stepTime(medianSteps(tb, e.deps.Store, perfSelected, 10), "Labels")
 	tb.Logf("perf: %s: %6d labels in the store → Detail(%s) %s, its Labels read %s",
 		when, total, perfSelected, summarise(timeDetail(tb, e.c, perfSelected, 20)), ms(labels))
 }
 
 // labelsPlan is SQLite's plan for Store.Labels' query (listDocs: kind
-// "label", parent IN n subjects, ORDER BY id) on the store file.
+// "label", parent IN n subjects; no ORDER BY since M5.2) on the store file.
 func labelsPlan(tb testing.TB, path string, n int) string {
 	tb.Helper()
 	ctx := context.Background()
@@ -919,8 +1120,8 @@ func labelsPlan(tb testing.TB, path string, n int) string {
 		tb.Fatal(err)
 	}
 	defer func() { _ = db.Close() }()
-	q := `EXPLAIN QUERY PLAN SELECT body FROM docs WHERE kind=? AND parent IN (` +
-		strings.TrimSuffix(strings.Repeat("?,", n), ",") + `) ORDER BY id`
+	q := `EXPLAIN QUERY PLAN SELECT id, body FROM docs WHERE kind=? AND parent IN (` +
+		strings.TrimSuffix(strings.Repeat("?,", n), ",") + `)`
 	args := []any{"label"}
 	for i := range n {
 		args = append(args, "subject"+strconv.Itoa(i))
@@ -952,7 +1153,8 @@ func ratio(a, b time.Duration) float64 {
 	return float64(a) / float64(b)
 }
 
-// logTrigger logs one trigger's events and what the TUI would do with them.
+// logTrigger logs one trigger's events and what the pre-M5.2 TUI would do
+// with them.
 func logTrigger(tb testing.TB, name string, evs []proto.Event, at []time.Time, detailLat time.Duration) {
 	tb.Helper()
 	detail, list, byType := reloadCounts(evs, perfSelected)
@@ -971,8 +1173,9 @@ func logTrigger(tb testing.TB, name string, evs []proto.Event, at []time.Time, d
 
 // ---- benchmarks ------------------------------------------------------------------
 
-// BenchmarkDetail times Detail of each analysed fixture item, idle and with
-// the other items re-analysing.
+// BenchmarkDetail times Detail (full) and DetailOf with NoLabels (lean) of
+// each analysed fixture item, Labels of one unit, and the selected item
+// with the other items re-analysing and over the socket.
 func BenchmarkDetail(b *testing.B) {
 	e := newPerfEnv(b)
 	ctx := context.Background()
@@ -984,7 +1187,25 @@ func BenchmarkDetail(b *testing.B) {
 				}
 			}
 		})
+		b.Run("lean/"+id, func(b *testing.B) {
+			for b.Loop() {
+				if _, err := e.c.DetailOf(ctx, proto.DetailParams{ItemID: id, NoLabels: true}); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
 	}
+	d, err := e.c.Detail(ctx, perfSelected)
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.Run("labels1/"+perfSelected, func(b *testing.B) {
+		for b.Loop() {
+			if _, err := e.c.Labels(ctx, proto.LabelsParams{ItemID: perfSelected, UnitIDs: []string{d.Units[0].ID}}); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
 	b.Run("busy/"+perfSelected, func(b *testing.B) {
 		stop := e.churn(e.others())
 		defer stop()
@@ -995,11 +1216,30 @@ func BenchmarkDetail(b *testing.B) {
 			}
 		}
 	})
+	b.Run("busy-lean/"+perfSelected, func(b *testing.B) {
+		stop := e.churn(e.others())
+		defer stop()
+		time.Sleep(200 * time.Millisecond)
+		for b.Loop() {
+			if _, err := e.c.DetailOf(ctx, proto.DetailParams{ItemID: perfSelected, NoLabels: true}); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
 	b.Run("socket/"+perfSelected, func(b *testing.B) {
 		sock, stop := perfSocket(b, e.c)
 		defer stop()
 		for b.Loop() {
 			if _, err := sock.Detail(ctx, perfSelected); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+	b.Run("socket-lean/"+perfSelected, func(b *testing.B) {
+		sock, stop := perfSocket(b, e.c)
+		defer stop()
+		for b.Loop() {
+			if _, err := sock.DetailOf(ctx, proto.DetailParams{ItemID: perfSelected, NoLabels: true}); err != nil {
 				b.Fatal(err)
 			}
 		}

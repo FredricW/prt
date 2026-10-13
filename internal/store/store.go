@@ -54,6 +54,20 @@ type Store interface {
 	// Labels are keyed by unit id (+ question + line), so they follow the code.
 	PutLabels(ctx context.Context, labels []model.Label) error
 	Labels(ctx context.Context, unitIDs []string) ([]model.Label, error)
+	// ItemSubjects lists the label subjects of the item's stored analysis
+	// that Detail serves labels for: its unit ids, its files
+	// (model.FileSubject) and the item itself (model.ItemSubject), read from
+	// document ids without decoding a body (M5.2).
+	ItemSubjects(ctx context.Context, itemID string) ([]string, error)
+	// PruneLabels deletes the labels whose subject no stored item references
+	// any more and returns how many it deleted (M5.2: the label cache is
+	// bounded by what the store holds). With subjects nil it sweeps every
+	// label in the store; otherwise it considers only those subjects and the
+	// pair subjects naming one of them. A subject stays referenced while any
+	// item holds it (a unit shared by a branch and its PR keeps its labels
+	// until both are gone); comment subjects stay while their comment is
+	// stored. Overrides are user data and are never deleted.
+	PruneLabels(ctx context.Context, subjects []string) (int, error)
 	// LabelCounts counts every stored label by question id (all subjects,
 	// lines and items; unknown answers included). Labels carry no time, so
 	// this is the denominator of the calibration panel's override rate.
@@ -69,6 +83,9 @@ type Store interface {
 	PutReview(ctx context.Context, r model.Review) error
 	Review(ctx context.Context, groupID string, tier model.Tier) (model.Review, bool, error)
 	Reviews(ctx context.Context, itemID string) ([]model.Review, error)
+	// DeleteReview removes one cache row (a resumed run that must review
+	// the group again; M5.2). Removing a row that is not stored is no error.
+	DeleteReview(ctx context.Context, groupID string, tier model.Tier) error
 	// Routing table: exactly one row per current group of the item, in its
 	// final state (replaces the item's previous set; removed with the
 	// item). proto.Detail.Reviews serves these rows.
@@ -103,14 +120,25 @@ type Store interface {
 	Overrides(ctx context.Context, unitIDs []string) ([]model.Override, error)
 	AllOverrides(ctx context.Context) ([]model.Override, error)
 
-	// Run log, append-only, in insertion order.
+	// Run log, in insertion order. RunLogs returns every stored row.
 	AppendRunLog(ctx context.Context, r model.RunLog) error
 	RunLogs(ctx context.Context, itemID string) ([]model.RunLog, error)
+	// CurrentRunLogs returns the item's current run: the rows from its last
+	// fetch row on (every row when it has none), as the Pipeline page and
+	// the picker strip read them. A run starts with its fetch row; the rows
+	// of an aggregate-only run belong to the run they follow (M5.2).
+	CurrentRunLogs(ctx context.Context, itemID string) ([]model.RunLog, error)
+	// PruneRunLogs deletes the item's rows older than its last keep runs
+	// (runs delimited as for CurrentRunLogs) and returns how many it
+	// deleted (M5.2).
+	PruneRunLogs(ctx context.Context, itemID string, keep int) (int, error)
 
 	// Generic content-hash cache for anything else (Jev responses, symbol
 	// indexes per base SHA, TL;DR text, ...). ns is a namespace like "jev".
 	CacheGet(ctx context.Context, ns, key string) ([]byte, bool, error)
 	CachePut(ctx context.Context, ns, key string, val []byte) error
+	// CacheDelete removes one entry (no error when it is not stored).
+	CacheDelete(ctx context.Context, ns, key string) error
 
 	Close() error
 }

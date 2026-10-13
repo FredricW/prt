@@ -58,6 +58,13 @@ type fakeClient struct {
 	searchErr               error
 	// ctl records the M5.1 stop/resume/settings calls.
 	ctl controlCalls
+	// M5.2: detailParams records every DetailOf call, detailCtxs their
+	// contexts (cancellation checks); labelCalls records Labels calls and
+	// labelsErr fails them.
+	detailParams []proto.DetailParams
+	detailCtxs   []context.Context
+	labelCalls   []proto.LabelsParams
+	labelsErr    error
 }
 
 var _ daemon.Client = (*fakeClient)(nil)
@@ -92,6 +99,42 @@ func (f *fakeClient) Detail(_ context.Context, id string) (proto.Detail, error) 
 		}
 	}
 	return proto.Detail{}, errors.New("not found")
+}
+
+// DetailOf records the id like Detail (and the params and context) and
+// answers the same canned detail, labels dropped when p.NoLabels.
+func (f *fakeClient) DetailOf(ctx context.Context, p proto.DetailParams) (proto.Detail, error) {
+	f.mu.Lock()
+	f.detailParams = append(f.detailParams, p)
+	f.detailCtxs = append(f.detailCtxs, ctx)
+	f.mu.Unlock()
+	d, err := f.Detail(ctx, p.ItemID)
+	if err == nil && p.NoLabels {
+		d.Labels, d.LabelsOmitted = nil, true
+	}
+	return d, err
+}
+
+// Labels records the call and answers the canned detail's labels of
+// p.UnitIDs (all of them when none are named); labelsErr fails it.
+func (f *fakeClient) Labels(_ context.Context, p proto.LabelsParams) ([]model.Label, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.labelCalls = append(f.labelCalls, p)
+	if f.labelsErr != nil {
+		return nil, f.labelsErr
+	}
+	want := map[string]bool{}
+	for _, id := range p.UnitIDs {
+		want[id] = true
+	}
+	var out []model.Label
+	for _, l := range f.details[p.ItemID].Labels {
+		if len(want) == 0 || want[l.UnitID] {
+			out = append(out, l)
+		}
+	}
+	return out, nil
 }
 
 func (f *fakeClient) Refresh(_ context.Context, p proto.ItemParams) error {
@@ -374,6 +417,34 @@ type fakePane struct {
 	unitOK     bool
 	pendingReq *codeview.OpenRequest
 	note       string
+	// M5.2: wantLabels is handed out (once) by PendingLabels for the item
+	// last passed to SetDetail; setLabels and failedLabels record the
+	// answers.
+	itemID       string
+	wantLabels   []string
+	setLabels    [][]string
+	gotLabels    []model.Label
+	failedLabels [][]string
+	// updates counts the non-key messages (mouse) the pane was given.
+	updates int
+}
+
+func (p *fakePane) PendingLabels() (string, []string, bool) {
+	if len(p.wantLabels) == 0 {
+		return "", nil, false
+	}
+	ids := p.wantLabels
+	p.wantLabels = nil
+	return p.itemID, ids, true
+}
+
+func (p *fakePane) SetLabels(_ string, units []string, ls []model.Label) {
+	p.setLabels = append(p.setLabels, units)
+	p.gotLabels = append(p.gotLabels, ls...)
+}
+
+func (p *fakePane) LabelsFailed(_ string, units []string, _ error) {
+	p.failedLabels = append(p.failedLabels, units)
 }
 
 func (p *fakePane) PendingOpen() (codeview.OpenRequest, bool) {
@@ -432,11 +503,17 @@ func (p *fakePane) PendingReview() (string, bool) {
 
 var _ codePane = (*fakePane)(nil)
 
-func (p *fakePane) SetKeys(k codeview.Keys)       { p.keys = k }
-func (p *fakePane) SetSize(int, int)              {}
-func (p *fakePane) SetDetail(d proto.Detail)      { p.details = append(p.details, d.Item.ID) }
-func (p *fakePane) Clear()                        { p.clears++ }
-func (p *fakePane) Update(tea.Msg) tea.Cmd        { return nil }
+func (p *fakePane) SetKeys(k codeview.Keys) { p.keys = k }
+func (p *fakePane) SetSize(int, int)        {}
+func (p *fakePane) SetDetail(d proto.Detail) {
+	p.details = append(p.details, d.Item.ID)
+	p.itemID = d.Item.ID
+}
+func (p *fakePane) Clear() { p.clears++ }
+func (p *fakePane) Update(tea.Msg) tea.Cmd {
+	p.updates++
+	return nil
+}
 func (p *fakePane) Capturing() bool               { return p.capturing }
 func (p *fakePane) HelpBindings() [][]key.Binding { return [][]key.Binding{{p.keys.NextUnit}} }
 func (p *fakePane) ShortBindings() []key.Binding  { return []key.Binding{p.keys.NextUnit} }

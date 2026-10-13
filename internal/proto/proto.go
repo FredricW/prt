@@ -33,10 +33,14 @@ const (
 
 // Methods.
 const (
-	MethodDiscover  = "discover"  // {} → {}; refresh picker sources
-	MethodItems     = "items"     // → []model.Item
-	MethodCheckout  = "checkout"  // CheckoutParams → CheckoutResult
-	MethodDetail    = "detail"    // {itemId} → Detail
+	MethodDiscover = "discover" // {} → {}; refresh picker sources
+	MethodItems    = "items"    // → []model.Item
+	MethodCheckout = "checkout" // CheckoutParams → CheckoutResult
+	MethodDetail   = "detail"   // DetailParams ({itemId} = everything) → Detail
+	// MethodLabels returns an item's labels, overrides applied, without the
+	// rest of its Detail (M5.2): LabelsParams → []model.Label. The TUI loads
+	// Details without labels and fetches them when `L` or `!` need them.
+	MethodLabels    = "labels"
 	MethodRefresh   = "refresh"   // {itemId, fromStage?, force?} → {}
 	MethodAdd       = "add"       // {query} → model.Item
 	MethodRemove    = "remove"    // {itemId} → {}
@@ -529,6 +533,46 @@ type AddParams struct {
 	Query string `json:"query"`
 }
 
+// DetailParams is the params of MethodDetail (M5.2). A plain {itemId}
+// (the pre-M5.2 ItemParams shape) is the full Detail.
+type DetailParams struct {
+	ItemID string `json:"itemId"`
+	// NoLabels leaves Detail.Labels out and sets Detail.LabelsOmitted.
+	// Labels are most of a Detail's store time and payload (docs/
+	// m52-open-latency.md) and only the `L` and `!` overlays read them;
+	// fetch them with MethodLabels.
+	NoLabels bool `json:"noLabels,omitempty"`
+}
+
+// LabelsParams is the params of MethodLabels. UnitIDs limits the result
+// to those label subjects (unit ids, model.FileSubject or
+// model.ItemSubject ids); empty means every subject of the analysis the
+// item's Detail serves (the snapshot during a re-run, see RunStatus).
+type LabelsParams struct {
+	ItemID  string   `json:"itemId"`
+	UnitIDs []string `json:"unitIds,omitempty"`
+}
+
+// RunStatus is Detail.Run: an analysis of the item is in flight (M5.2,
+// stale-while-revalidate). The TUI shows "↻ updating review · <stage>"
+// over the analysis it already has instead of blanking the page.
+type RunStatus struct {
+	// Stage is the stage the run is in ("" before its first stage row);
+	// the same value as the item's StateNote while analysing.
+	Stage model.Stage `json:"stage,omitempty"`
+	// Snapshot is set when Detail's analysis parts (Diff, Files, Units,
+	// Labels, Links, Groups, Reviews, Agg) are the item's last complete
+	// analysis, served unchanged until the run's aggregate lands; the
+	// item, comments, finding marks and run log are live. SnapshotSHA is
+	// the head that analysis is of.
+	Snapshot    bool   `json:"snapshot,omitempty"`
+	SnapshotSHA string `json:"snapshotSha,omitempty"`
+	// Reviews is the run's live routing table while Snapshot is set (the
+	// Pipeline page's rows during the review stage); nil otherwise, when
+	// Detail.Reviews is live.
+	Reviews []model.Review `json:"reviews,omitempty"`
+}
+
 // Detail is everything the item screens render.
 type Detail struct {
 	Item   model.Item         `json:"item"`
@@ -536,8 +580,12 @@ type Detail struct {
 	Files  []model.File       `json:"files,omitempty"`
 	Units  []model.ChangeUnit `json:"units,omitempty"`
 	Labels []model.Label      `json:"labels,omitempty"`
-	Links  []model.Link       `json:"links,omitempty"`
-	Groups []model.Group      `json:"groups,omitempty"`
+	// LabelsOmitted is set when the Detail was loaded with
+	// DetailParams.NoLabels: Labels is empty because it was not asked for,
+	// not because the item has none (M5.2).
+	LabelsOmitted bool          `json:"labelsOmitted,omitempty"`
+	Links         []model.Link  `json:"links,omitempty"`
+	Groups        []model.Group `json:"groups,omitempty"`
 	// Reviews is the routing table: one row per current group, final state
 	// (Store.ItemReviews).
 	Reviews  []model.Review  `json:"reviews,omitempty"`
@@ -549,6 +597,9 @@ type Detail struct {
 	RunLogs      []model.RunLog      `json:"runLogs,omitempty"`
 	// Routing is the active routing configuration (rules panel).
 	Routing *RoutingInfo `json:"routing,omitempty"`
+	// Run is set while an analysis of the item is in flight (M5.2); nil
+	// when none is.
+	Run *RunStatus `json:"run,omitempty"`
 }
 
 // Encoder writes messages, one per line; safe for concurrent use.

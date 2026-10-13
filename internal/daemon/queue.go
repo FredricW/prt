@@ -40,7 +40,11 @@ type job struct {
 	// user, which is only queue priority (a tab preview is user but not
 	// explicit). A merged job keeps it when either job had it.
 	explicit bool
-	seq      int // enqueue order, breaks urgency ties
+	// resume is the stop record of the stopped run a Resume continues
+	// (M5.2): when the job starts, resumeOptions serves the stages that run
+	// redid from their caches. A merged job keeps the first non-nil one.
+	resume *stopRecord
+	seq    int // enqueue order, breaks urgency ties
 }
 
 // options are the pipeline run options of the job.
@@ -139,6 +143,9 @@ func (q *queue) push(jobs ...job) {
 			q.waiting[i].aggOnly = q.waiting[i].aggOnly && j.aggOnly
 			q.waiting[i].user = q.waiting[i].user || j.user
 			q.waiting[i].explicit = q.waiting[i].explicit || j.explicit
+			if q.waiting[i].resume == nil {
+				q.waiting[i].resume = j.resume
+			}
 			continue
 		}
 		if q.coveredLocked(j) {
@@ -202,43 +209,39 @@ func (q *queue) exec(j job) {
 }
 
 // drop removes id's waiting job (a user stop) and marks every job of id
-// queued so far as stopped (see stoppedBefore). It reports whether a job
-// was waiting and whether one is running.
-func (q *queue) drop(id string) (waiting, busy bool) {
+// queued so far as stopped (see stoppedBefore). It returns the job that
+// was waiting (nil when none was) and whether one is running.
+func (q *queue) drop(id string) (dropped *job, busy bool) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	q.stopSeq[id] = q.seq
 	_, busy = q.inflight[id]
 	i, waiting := q.queued[id]
 	if !waiting {
-		return false, busy
+		return nil, busy
 	}
+	j := q.waiting[i]
 	q.waiting = append(q.waiting[:i], q.waiting[i+1:]...)
 	delete(q.queued, id)
 	q.reindexLocked()
-	return true, busy
+	return &j, busy
 }
 
 // dropAll removes every waiting job (stop all) and marks every job queued
-// so far as stopped. It returns the items that were waiting and not
-// running, and the items running.
-func (q *queue) dropAll() (waiting, busy []string) {
+// so far as stopped. It returns the jobs that were waiting and the items
+// running (sorted).
+func (q *queue) dropAll() (dropped []job, busy []string) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	q.stopAllSeq = q.seq
 	for id := range q.inflight {
 		busy = append(busy, id)
 	}
-	for _, j := range q.waiting {
-		if _, ok := q.inflight[j.itemID]; !ok {
-			waiting = append(waiting, j.itemID)
-		}
-	}
+	dropped = q.waiting
 	q.waiting = nil
 	q.queued = map[string]int{}
 	sort.Strings(busy)
-	sort.Strings(waiting)
-	return waiting, busy
+	return dropped, busy
 }
 
 // stoppedBefore reports whether j was queued before a stop of its item (or

@@ -24,11 +24,23 @@ import (
 // SQLite implements Store. Entities are stored as JSON documents in a single
 // "docs" table keyed by (kind, id) with a "parent" column for listing; this
 // keeps migrations trivial while the model evolves.
+//
+// Writes go through db, which has one connection (SQLite serialises writes
+// anyway, and :memory: databases are per-connection). Reads go through rd:
+// for a file store in WAL mode a separate read-only pool, so a read never
+// waits for the pipeline's write connection (M5.2; WAL readers see every
+// committed write); for an in-memory store the writer itself.
 type SQLite struct {
 	db *sql.DB
+	rd *sql.DB
 }
 
 var _ Store = (*SQLite)(nil)
+
+// readPoolSize is the number of read-only connections of a file store
+// (M5.2): enough for a Detail, a list reload and a search to read at once
+// while analyses write.
+const readPoolSize = 4
 
 // migrations are applied in order; PRAGMA user_version records progress.
 var migrations = []string{
@@ -58,17 +70,36 @@ var migrations = []string{
 	// unit, and context-dependent labels gained an input hash; drop the old
 	// label cache so it is re-asked (DECISIONS "M1 review fixes").
 	`DELETE FROM docs WHERE kind = 'label';`,
+	// 3 (M5.2): listing a kind's docs by parent searched the primary key
+	// (kind, id) for ORDER BY id and filtered every doc of the kind, so an
+	// item's labels cost a scan of every label in the store
+	// (docs/m52-open-latency.md). (kind, parent, id) serves parent lists
+	// and covers the id-only reads (ItemSubjects, pruning); it replaces
+	// docs_parent, whose columns it starts with.
+	`DROP INDEX IF EXISTS docs_parent;
+	CREATE INDEX docs_kind_parent_id ON docs(kind, parent, id);`,
 }
 
-// Open opens (creating if needed) the store at path.
+// Open opens (creating if needed) the store at path. In WAL mode (the
+// default) reads use a pool of read-only connections next to the single
+// write connection.
 func Open(ctx context.Context, path string) (*SQLite, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, err
 	}
-	return open(ctx, "file:"+path+"?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)")
+	s, err := open(ctx, "file:"+path+"?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)")
+	if err != nil {
+		return nil, err
+	}
+	if err := s.openReadPool(ctx, "file:"+path+"?mode=ro&_pragma=busy_timeout(5000)"); err != nil {
+		_ = s.Close()
+		return nil, err
+	}
+	return s, nil
 }
 
 // OpenMemory opens a private in-memory store (tests, --no-daemon dry runs).
+// It has one connection for reads and writes.
 func OpenMemory(ctx context.Context) (*SQLite, error) { return open(ctx, ":memory:") }
 
 func open(ctx context.Context, dsn string) (*SQLite, error) {
@@ -76,15 +107,38 @@ func open(ctx context.Context, dsn string) (*SQLite, error) {
 	if err != nil {
 		return nil, err
 	}
-	// One connection: SQLite serialises writes anyway, and :memory: databases
-	// are per-connection.
 	db.SetMaxOpenConns(1)
-	s := &SQLite{db: db}
+	s := &SQLite{db: db, rd: db}
 	if err := s.migrate(ctx); err != nil {
 		_ = db.Close()
 		return nil, err
 	}
 	return s, nil
+}
+
+// openReadPool opens the read-only pool when the store runs in WAL mode;
+// otherwise (a file system without WAL support) reads keep sharing the
+// write connection, because rollback-journal readers would block writers.
+func (s *SQLite) openReadPool(ctx context.Context, dsn string) error {
+	var mode string
+	if err := s.db.QueryRowContext(ctx, "PRAGMA journal_mode").Scan(&mode); err != nil {
+		return fmt.Errorf("store: journal mode: %w", err)
+	}
+	if !strings.EqualFold(mode, "wal") {
+		return nil
+	}
+	rd, err := sql.Open("sqlite", dsn)
+	if err != nil {
+		return fmt.Errorf("store: open read pool: %w", err)
+	}
+	rd.SetMaxOpenConns(readPoolSize)
+	rd.SetMaxIdleConns(readPoolSize)
+	if err := rd.PingContext(ctx); err != nil {
+		_ = rd.Close()
+		return fmt.Errorf("store: open read pool: %w", err)
+	}
+	s.rd = rd
+	return nil
 }
 
 func (s *SQLite) migrate(ctx context.Context) error {
@@ -113,7 +167,13 @@ func (s *SQLite) migrate(ctx context.Context) error {
 }
 
 // Close implements Store.
-func (s *SQLite) Close() error { return s.db.Close() }
+func (s *SQLite) Close() error {
+	var err error
+	if s.rd != s.db {
+		err = s.rd.Close()
+	}
+	return errors.Join(err, s.db.Close())
+}
 
 // Document kinds.
 const (
@@ -163,7 +223,7 @@ func putDoc(ctx context.Context, e execer, kind, id, parent string, v any) error
 func getDoc[T any](ctx context.Context, s *SQLite, kind, id string) (T, bool, error) {
 	var zero T
 	var b []byte
-	err := s.db.QueryRowContext(ctx, `SELECT body FROM docs WHERE kind=? AND id=?`, kind, id).Scan(&b)
+	err := s.rd.QueryRowContext(ctx, `SELECT body FROM docs WHERE kind=? AND id=?`, kind, id).Scan(&b)
 	if errors.Is(err, sql.ErrNoRows) {
 		return zero, false, nil
 	}
@@ -180,35 +240,66 @@ func getDoc[T any](ctx context.Context, s *SQLite, kind, id string) (T, bool, er
 // listDocs returns docs of kind whose parent is one of parents (all docs of
 // kind when parents is nil), ordered by id.
 func listDocs[T any](ctx context.Context, s *SQLite, kind string, parents []string) ([]T, error) {
-	q := `SELECT body FROM docs WHERE kind=?`
-	args := []any{kind}
-	if parents != nil {
-		if len(parents) == 0 {
-			return nil, nil
-		}
-		q += ` AND parent IN (` + strings.TrimSuffix(strings.Repeat("?,", len(parents)), ",") + `)`
-		for _, p := range parents {
-			args = append(args, p)
-		}
+	if parents != nil && len(parents) == 0 {
+		return nil, nil
 	}
-	rows, err := s.db.QueryContext(ctx, q+` ORDER BY id`, args...)
+	q, args := listQuery(kind, parents)
+	rows, err := s.rd.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = rows.Close() }()
-	var out []T
+	type rawDoc struct {
+		id   string
+		body []byte
+	}
+	var raw []rawDoc
 	for rows.Next() {
-		var b []byte
-		if err := rows.Scan(&b); err != nil {
+		var d rawDoc
+		if err := rows.Scan(&d.id, &d.body); err != nil {
 			return nil, err
 		}
+		raw = append(raw, d)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if parents != nil {
+		slices.SortFunc(raw, func(a, b rawDoc) int { return strings.Compare(a.id, b.id) })
+	}
+	out := make([]T, 0, len(raw))
+	for _, d := range raw {
 		var v T
-		if err := json.Unmarshal(b, &v); err != nil {
-			return nil, fmt.Errorf("store: decode %s: %w", kind, err)
+		if err := json.Unmarshal(d.body, &v); err != nil {
+			return nil, fmt.Errorf("store: decode %s/%s: %w", kind, d.id, err)
 		}
 		out = append(out, v)
 	}
-	return out, rows.Err()
+	if len(out) == 0 {
+		return nil, nil
+	}
+	return out, nil
+}
+
+// listQuery is listDocs' query. Every doc of a kind comes in id order from
+// the primary key. A parent list has no ORDER BY, so SQLite searches
+// docs_kind_parent_id for each parent instead of walking the whole kind in
+// primary-key order and filtering (it did that to avoid a sort; M5.2);
+// listDocs sorts those rows by id itself.
+func listQuery(kind string, parents []string) (string, []any) {
+	args := []any{kind}
+	if parents == nil {
+		return `SELECT id, body FROM docs WHERE kind=? ORDER BY id`, args
+	}
+	for _, p := range parents {
+		args = append(args, p)
+	}
+	return `SELECT id, body FROM docs WHERE kind=? AND parent IN (` + placeholders(len(parents)) + `)`, args
+}
+
+// placeholders is n comma-separated "?".
+func placeholders(n int) string {
+	return strings.TrimSuffix(strings.Repeat("?,", n), ",")
 }
 
 // replaceDocs deletes all docs of kind under parent and inserts the new set.
@@ -256,7 +347,8 @@ func (s *SQLite) Items(ctx context.Context) ([]model.Item, error) {
 }
 
 // RemoveItem implements Store. It removes the item and its per-item outputs;
-// unit-keyed data (labels, embeddings, overrides) stays as a cache.
+// unit-keyed data (labels, embeddings, overrides) stays as a cache until
+// PruneLabels drops the labels no stored item references.
 func (s *SQLite) RemoveItem(ctx context.Context, id string) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -402,7 +494,7 @@ func (s *SQLite) Labels(ctx context.Context, unitIDs []string) ([]model.Label, e
 // ("<subject>|<question>|<line>", see labelID), not the bodies; question
 // ids never contain "|", so the question is the second field from the end.
 func (s *SQLite) LabelCounts(ctx context.Context) (map[string]int, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id FROM docs WHERE kind=?`, kLabel)
+	rows, err := s.rd.QueryContext(ctx, `SELECT id FROM docs WHERE kind=?`, kLabel)
 	if err != nil {
 		return nil, fmt.Errorf("store: label counts: %w", err)
 	}
@@ -460,6 +552,12 @@ func (s *SQLite) Review(ctx context.Context, groupID string, tier model.Tier) (m
 // Reviews implements Store.
 func (s *SQLite) Reviews(ctx context.Context, itemID string) ([]model.Review, error) {
 	return listDocs[model.Review](ctx, s, kReview, []string{itemID})
+}
+
+// DeleteReview implements Store.
+func (s *SQLite) DeleteReview(ctx context.Context, groupID string, tier model.Tier) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM docs WHERE kind=? AND id=?`, kReview, groupID+"|"+string(tier))
+	return err
 }
 
 // PutItemReviews implements Store.
@@ -563,7 +661,7 @@ func (s *SQLite) AppendRunLog(ctx context.Context, r model.RunLog) error {
 
 // RunLogs implements Store.
 func (s *SQLite) RunLogs(ctx context.Context, itemID string) ([]model.RunLog, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT body FROM runlog WHERE item_id=? ORDER BY seq`, itemID)
+	rows, err := s.rd.QueryContext(ctx, `SELECT body FROM runlog WHERE item_id=? ORDER BY seq`, itemID)
 	if err != nil {
 		return nil, err
 	}
@@ -586,7 +684,7 @@ func (s *SQLite) RunLogs(ctx context.Context, itemID string) ([]model.RunLog, er
 // CacheGet implements Store.
 func (s *SQLite) CacheGet(ctx context.Context, ns, key string) ([]byte, bool, error) {
 	var b []byte
-	err := s.db.QueryRowContext(ctx, `SELECT val FROM cache WHERE ns=? AND key=?`, ns, key).Scan(&b)
+	err := s.rd.QueryRowContext(ctx, `SELECT val FROM cache WHERE ns=? AND key=?`, ns, key).Scan(&b)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, false, nil
 	}
@@ -602,6 +700,12 @@ func (s *SQLite) CachePut(ctx context.Context, ns, key string, val []byte) error
 		`INSERT INTO cache(ns, key, val, updated_at) VALUES(?,?,?,?)
 		 ON CONFLICT(ns, key) DO UPDATE SET val=excluded.val, updated_at=excluded.updated_at`,
 		ns, key, val, time.Now().UnixMilli())
+	return err
+}
+
+// CacheDelete implements Store.
+func (s *SQLite) CacheDelete(ctx context.Context, ns, key string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM cache WHERE ns=? AND key=?`, ns, key)
 	return err
 }
 

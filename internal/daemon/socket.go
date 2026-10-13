@@ -194,9 +194,21 @@ func (s *Socket) Items(ctx context.Context) ([]model.Item, error) {
 
 // Detail implements Client.
 func (s *Socket) Detail(ctx context.Context, itemID string) (proto.Detail, error) {
+	return s.DetailOf(ctx, proto.DetailParams{ItemID: itemID})
+}
+
+// DetailOf implements Client.
+func (s *Socket) DetailOf(ctx context.Context, p proto.DetailParams) (proto.Detail, error) {
 	var d proto.Detail
-	err := s.call(ctx, proto.MethodDetail, proto.ItemParams{ItemID: itemID}, &d)
+	err := s.call(ctx, proto.MethodDetail, p, &d)
 	return d, err
+}
+
+// Labels implements Client.
+func (s *Socket) Labels(ctx context.Context, p proto.LabelsParams) ([]model.Label, error) {
+	var ls []model.Label
+	err := s.call(ctx, proto.MethodLabels, p, &ls)
+	return ls, err
 }
 
 // Refresh implements Client.

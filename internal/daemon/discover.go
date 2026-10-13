@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 	"time"
@@ -277,12 +278,13 @@ func (c *InProcess) upsertPR(ctx context.Context, pr gh.PR, viewer string) error
 }
 
 // upsertDiscovered loads (or creates as ranked) an item, applies fill,
-// recomputes the urgency estimate and stores it, emitting EventItem.
+// recomputes the urgency estimate and stores it, emitting EventItem. An
+// item where only the age-driven urgency moved within the same whole days
+// is not written (see changedByDiscovery).
 func (c *InProcess) upsertDiscovered(ctx context.Context, id string, fill func(*model.Item)) error {
 	c.itemMu.Lock()
 	it, err := c.d.Store.Item(ctx, id)
-	var before []byte
-	prevHead := ""
+	var prev *model.Item
 	switch {
 	case errors.Is(err, store.ErrNotFound):
 		it = model.Item{ID: id, Source: model.SourceRanked}
@@ -290,24 +292,67 @@ func (c *InProcess) upsertDiscovered(ctx context.Context, id string, fill func(*
 		c.itemMu.Unlock()
 		return fmt.Errorf("daemon: load %s: %w", id, err)
 	default:
-		before = itemKey(it)
-		prevHead = it.HeadSHA
+		stored := it
+		prev = &stored
 	}
 	fill(&it)
-	c.setUrgency(ctx, &it, before != nil && prevHead == it.HeadSHA)
-	if before != nil && bytes.Equal(before, itemKey(it)) {
+	days := c.setUrgency(ctx, &it, prev != nil && prev.HeadSHA == it.HeadSHA)
+	if prev != nil && !c.changedByDiscovery(*prev, it, days) {
 		// Unchanged: no write and no event (a discovery pass would
 		// otherwise make every client reload the list once per item).
 		c.itemMu.Unlock()
 		return nil
 	}
 	err = c.d.Store.UpsertItem(ctx, it)
+	if err == nil {
+		c.urgencyDays[id] = days
+	}
 	c.itemMu.Unlock()
 	if err != nil {
 		return fmt.Errorf("daemon: store %s: %w", id, err)
 	}
 	c.send(proto.Event{Type: proto.EventItem, ItemID: id, Item: &it})
 	return nil
+}
+
+// ageDays are the whole days of age and idle time (aggregate.Input AgeDays
+// and IdleDays) an urgency was computed with: the only urgency inputs that
+// move with the clock alone.
+type ageDays struct{ age, idle int }
+
+// changedByDiscovery reports whether a discovery pass must store cur over
+// prev (M5.2). Any change but the urgency fields (Urgency, Why,
+// UrgencyQuartile) counts. When only those moved, the item is rewritten
+// only when its age or idle time crossed a whole day since discovery last
+// wrote it in this process (or it never did), so an idle refresh tick
+// writes nothing and sends no event, and the stored urgency, hence the
+// picker order, lags the clock by less than a day. A settings save forgets
+// the days (resetUrgencyDays), because weights move urgency too. Call with
+// itemMu held.
+func (c *InProcess) changedByDiscovery(prev, cur model.Item, days ageDays) bool {
+	if !bytes.Equal(itemKey(withoutUrgency(prev)), itemKey(withoutUrgency(cur))) {
+		return true
+	}
+	if prev.Urgency == cur.Urgency && prev.Why == cur.Why {
+		return false
+	}
+	last, ok := c.urgencyDays[cur.ID]
+	return !ok || last != days
+}
+
+// resetUrgencyDays forgets when discovery last wrote each item's urgency,
+// so the next pass stores every urgency that moved (a settings save may
+// have changed the weights).
+func (c *InProcess) resetUrgencyDays() {
+	c.itemMu.Lock()
+	defer c.itemMu.Unlock()
+	clear(c.urgencyDays)
+}
+
+// withoutUrgency is it without the urgency fields the clock moves.
+func withoutUrgency(it model.Item) model.Item {
+	it.Urgency, it.Why, it.UrgencyQuartile = 0, "", 0
+	return it
 }
 
 // itemKey is the item's stored form, for change detection. Times are
@@ -327,9 +372,10 @@ func itemKey(it model.Item) []byte {
 // item's current head: sameHead (discovery did not move the head in this
 // pass), not stale, and analysed at this head or on its first analysis.
 // Otherwise minutes are the stand-in from the line counts and the label
-// terms 0.
-func (c *InProcess) setUrgency(ctx context.Context, it *model.Item, sameHead bool) {
+// terms 0. It returns the whole days of age and idle time it used.
+func (c *InProcess) setUrgency(ctx context.Context, it *model.Item, sameHead bool) ageDays {
 	in := c.urgencyInput(*it)
+	days := ageDays{age: int(math.Floor(in.AgeDays)), idle: int(math.Floor(in.IdleDays))}
 	it.Minutes = aggregate.StandInMinutes(it.Additions + it.Deletions)
 	if sameHead && it.State != model.StateStale && (it.AnalysedSHA == "" || it.AnalysedSHA == it.HeadSHA) {
 		if agg, ok, err := c.d.Store.Agg(ctx, it.ID); err == nil && ok {
@@ -346,6 +392,7 @@ func (c *InProcess) setUrgency(ctx context.Context, it *model.Item, sameHead boo
 		}
 	}
 	_, it.Urgency, it.Why = aggregate.Urgency(in, it.Minutes)
+	return days
 }
 
 // urgencyInput is the metadata part of the urgency input for it at the

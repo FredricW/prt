@@ -287,11 +287,17 @@ func (s *server) call(ctx context.Context, sc *serverConn, m proto.Message) (any
 	case proto.MethodItems:
 		return c.Items(ctx)
 	case proto.MethodDetail:
-		p, err := params[proto.ItemParams](m)
+		p, err := params[proto.DetailParams](m)
 		if err != nil {
 			return nil, err
 		}
-		return c.Detail(ctx, p.ItemID)
+		return c.DetailOf(ctx, p)
+	case proto.MethodLabels:
+		p, err := params[proto.LabelsParams](m)
+		if err != nil {
+			return nil, err
+		}
+		return c.Labels(ctx, p)
 	case proto.MethodRefresh:
 		p, err := params[proto.ItemParams](m)
 		if err != nil {

@@ -45,8 +45,18 @@ type Client interface {
 	Discover(ctx context.Context) error
 	// Items returns all picker items.
 	Items(ctx context.Context) ([]model.Item, error)
-	// Detail returns everything stored for one item.
+	// Detail returns everything stored for one item (DetailOf with every
+	// part).
 	Detail(ctx context.Context, itemID string) (proto.Detail, error)
+	// DetailOf returns an item's Detail with the parts p asks for: with
+	// p.NoLabels the labels are left out (Detail.LabelsOmitted), which is
+	// what screens load on open (M5.2). While a run of the item is in
+	// flight, Detail.Run says so and the analysis parts may be the last
+	// complete analysis (RunStatus.Snapshot).
+	DetailOf(ctx context.Context, p proto.DetailParams) (proto.Detail, error)
+	// Labels returns an item's labels with the user's overrides applied
+	// (M5.2), for screens that loaded the Detail without them.
+	Labels(ctx context.Context, p proto.LabelsParams) ([]model.Label, error)
 	// Refresh (re-)runs the pipeline for an item in the background.
 	Refresh(ctx context.Context, p proto.ItemParams) error
 	// Add resolves a query ("#482", "482", a ref) and adds it as an Added item.

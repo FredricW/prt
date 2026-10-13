@@ -75,6 +75,17 @@ type InProcess struct {
 	// see the options each job gets).
 	run func(ctx context.Context, it model.Item, opt pipeline.RunOptions) (string, error)
 
+	// snaps holds the last complete analysis of items being re-run
+	// (stale-while-revalidate, M5.2; snapshot.go).
+	snaps *snapshots
+	// stopMu serialises read-modify-writes of stop records (resume.go).
+	stopMu sync.Mutex
+	// urgencyDays is, per item, the whole days of age and idle time its
+	// stored urgency was last written for by discovery (guarded by itemMu;
+	// discover.go): a pass where only the age moved within those days
+	// writes nothing (M5.2).
+	urgencyDays map[string]ageDays
+
 	// settingsMu guards sdeps (M5.1, control.go).
 	settingsMu sync.Mutex
 	sdeps      SettingsDeps
@@ -98,7 +109,7 @@ func NewInProcess(d pipeline.Deps) *InProcess {
 	c := &InProcess{
 		events: make(chan proto.Event, 256), ctx: ctx, cancel: cancel,
 		itemMu: &sync.Mutex{}, commentLock: pipeline.NewKeyedLock(),
-		runs: map[string]*runEntry{},
+		runs: map[string]*runEntry{}, snaps: newSnapshots(maxSnapshots), urgencyDays: map[string]ageDays{},
 	}
 	// A random start keeps draft ids unique across processes too: with a
 	// fixed clock (--now) every process would otherwise count from 1 and
@@ -112,6 +123,11 @@ func NewInProcess(d pipeline.Deps) *InProcess {
 	}
 	userEmit := d.Emit
 	d.Emit = func(rl model.RunLog) {
+		if aggregateLanded(rl) {
+			// Before any event of the row: the reloads it triggers must see
+			// the new analysis, not the snapshot.
+			c.snaps.drop(rl.ItemID)
+		}
 		c.send(proto.Event{Type: proto.EventStage, ItemID: rl.ItemID, Stage: rl.Stage, RunLog: &rl})
 		c.onStage(rl)
 		if userEmit != nil {
@@ -125,6 +141,7 @@ func NewInProcess(d pipeline.Deps) *InProcess {
 	c.run = c.p.RunHead
 	c.q = newQueue(slotsFor(d.Config), &c.wg, c.analyse)
 	c.recoverStates(ctx)
+	c.sweepLabels(ctx)
 	return c
 }
 
@@ -331,86 +348,6 @@ func sortItems(items []model.Item) {
 	})
 }
 
-// Detail implements Client.
-func (c *InProcess) Detail(ctx context.Context, itemID string) (proto.Detail, error) {
-	s := c.d.Store
-	it, err := s.Item(ctx, itemID)
-	if err != nil {
-		return proto.Detail{}, fmt.Errorf("daemon: detail %s: %w", itemID, err)
-	}
-	det := proto.Detail{Item: it}
-	// The diff must match the stored files and units, which describe the
-	// analysed head; a Stale item's new head has no analysis (or fetch) yet.
-	for _, sha := range []string{it.AnalysedSHA, it.HeadSHA} {
-		if sha == "" {
-			continue
-		}
-		if f, ok, err := s.Fetch(ctx, itemID, sha); err == nil && ok {
-			det.Diff = f.Diff
-			break
-		}
-	}
-	if det.Files, err = s.Files(ctx, itemID); err != nil {
-		return det, err
-	}
-	if det.Units, err = s.Units(ctx, itemID); err != nil {
-		return det, err
-	}
-	subjects := labelSubjects(itemID, det.Files, det.Units)
-	if det.Labels, err = s.Labels(ctx, subjects); err != nil {
-		return det, err
-	}
-	// The Code page shows labels as the aggregate uses them: the user's
-	// overrides applied (Overridden set, Jev's answer in Original).
-	ovs, err := s.Overrides(ctx, subjects)
-	if err != nil {
-		return det, err
-	}
-	det.Labels = pipeline.ApplyOverrides(det.Labels, ovs)
-	if det.Links, err = s.Links(ctx, itemID); err != nil {
-		return det, err
-	}
-	if det.Groups, err = s.Groups(ctx, itemID); err != nil {
-		return det, err
-	}
-	if det.Reviews, err = s.ItemReviews(ctx, itemID); err != nil {
-		return det, err
-	}
-	if det.Comments, err = s.Comments(ctx, itemID); err != nil {
-		return det, err
-	}
-	sortComments(det.Comments)
-	if det.FindingMarks, err = s.FindingMarks(ctx, itemID); err != nil {
-		return det, err
-	}
-	if agg, ok, err := s.Agg(ctx, itemID); err == nil && ok {
-		if agg.Branch != nil && it.Kind == model.KindBranch && (it.AnalysedSHA == "" || it.AnalysedSHA == it.HeadSHA) {
-			// The Branch state box ages like the picker line (setUrgency).
-			b := pipeline.AgeBranchInfo(*agg.Branch, idleDays(it, c.now()), c.cfg().Pipeline.AbandonedDays)
-			agg.Branch = &b
-		}
-		det.Agg = &agg
-	}
-	info := c.routingInfo()
-	det.Routing = &info
-	det.RunLogs, err = s.RunLogs(ctx, itemID)
-	return det, err
-}
-
-// labelSubjects lists every Label.UnitID an item's labels can carry: its
-// units, its files (model.FileSubject) and the item itself
-// (model.ItemSubject).
-func labelSubjects(itemID string, files []model.File, units []model.ChangeUnit) []string {
-	ids := make([]string, 0, len(units)+len(files)+1)
-	for _, u := range units {
-		ids = append(ids, u.ID)
-	}
-	for _, f := range files {
-		ids = append(ids, model.FileSubject(itemID, f.Path))
-	}
-	return append(ids, model.ItemSubject(itemID))
-}
-
 // Refresh implements Client: queues the item for analysis (deduplicated).
 // With p.Force (key `r`) the head is re-resolved first (local ref for
 // branches, GitHub for PRs) and the fetch cache is bypassed, so new commits
@@ -597,22 +534,20 @@ const stopQueued = "queued"
 
 // analyse runs one queued job on a worker. The run is registered in runs
 // before anything else, so a user stop (Stop) either cancels it or is seen
-// by the stop-mark check below.
+// by the stop-mark check below. It is unregistered before the final state
+// is written, so the reload that state's item event triggers sees no run in
+// flight (Detail.Run nil).
 func (c *InProcess) analyse(j job) {
 	runCtx, cancel := context.WithCancelCause(c.ctx)
 	entry := &runEntry{cancel: cancel}
-	c.runMu.Lock()
-	c.runs[j.itemID] = entry
-	c.runMu.Unlock()
+	c.register(j.itemID, entry)
 	defer func() {
-		c.runMu.Lock()
-		if c.runs[j.itemID] == entry {
-			delete(c.runs, j.itemID)
-		}
-		c.runMu.Unlock()
+		c.unregister(j.itemID, entry)
 		cancel(nil)
 	}()
 	if c.q.stoppedBefore(j) {
+		c.unregister(j.itemID, entry)
+		c.rememberDropped(c.ctx, j)
 		c.setStoppedUnlessAnalysed(j.itemID, stopQueued)
 		return
 	}
@@ -626,10 +561,36 @@ func (c *InProcess) analyse(j job) {
 		c.log.Debug("analyse: automatic job for a stopped item skipped", "item", it.ID)
 		return
 	}
+	if !pl.opts.AggregateOnly {
+		if j.resume != nil {
+			pl.opts = c.resumeOptions(c.ctx, it.ID, *j.resume, pl.opts)
+		}
+		// Before the pipeline writes anything, and before the item event
+		// below makes screens reload.
+		c.captureSnapshot(c.ctx, it)
+	}
 	c.setState(it.ID, model.StateFetching, "")
 	head, err := c.run(runCtx, it, pl.opts)
+	stage := c.runStage(entry)
+	c.unregister(j.itemID, entry)
 	c.finish(runCtx, it.ID, outcome{head: head, err: err, explicit: j.explicit, notAnalysed: pl.notAnalysed,
-		aggOnly: pl.opts.AggregateOnly, stage: c.runStage(entry)})
+		opts: pl.opts, stage: stage})
+}
+
+// register records the item's running analysis.
+func (c *InProcess) register(id string, e *runEntry) {
+	c.runMu.Lock()
+	defer c.runMu.Unlock()
+	c.runs[id] = e
+}
+
+// unregister forgets the item's running analysis if it is still e.
+func (c *InProcess) unregister(id string, e *runEntry) {
+	c.runMu.Lock()
+	defer c.runMu.Unlock()
+	if c.runs[id] == e {
+		delete(c.runs, id)
+	}
 }
 
 // plan is how a job runs once the strategy has been applied (gate).
@@ -719,8 +680,10 @@ type outcome struct {
 	explicit bool
 	// notAnalysed: a free-only run of an item without an analysis (plan).
 	notAnalysed bool
-	// aggOnly: the run only re-aggregated (a stop keeps a stored analysis).
-	aggOnly bool
+	// opts are the options the run had: an aggregate-only run that is
+	// stopped keeps a stored analysis; a stopped run's FromStage and Force
+	// are remembered for Resume (M5.2).
+	opts pipeline.RunOptions
 	// stage is the stage in flight when the run ended (for a user stop).
 	stage model.Stage
 }
@@ -734,22 +697,32 @@ func stoppedByUser(runCtx context.Context, err error) bool {
 // finish records the outcome of a run that analysed o.head. If discovery
 // moved the item's head while the run was in flight, the result describes
 // an old commit: the item becomes Stale instead of Ready. A run the user
-// stopped leaves the item StateStopped at the stage in flight. A run that
-// failed because runCtx was cancelled otherwise (quit, daemon stop, the
-// item removed) was interrupted, not broken: the item goes back to "not
-// analysed" so it is queued again. A free-only run of an unanalysed item
-// leaves it StateNotAnalysed (and AnalysedSHA unset).
+// stopped leaves the item StateStopped at the stage in flight (its options
+// remembered for Resume). A run that failed because runCtx was cancelled
+// otherwise (quit, daemon stop, the item removed) was interrupted, not
+// broken: the item goes back to "not analysed" so it is queued again. A
+// free-only run of an unanalysed item leaves it StateNotAnalysed (and
+// AnalysedSHA unset). A completed run drops the item's snapshot; the run
+// log keeps the item's last keepRuns runs whatever the outcome.
 func (c *InProcess) finish(runCtx context.Context, id string, o outcome) {
+	c.pruneRunLog(id)
 	// A run that returned without error completed, even if a stop arrived
 	// after it (before this point): its result is recorded.
 	if o.err != nil && stoppedByUser(runCtx, o.err) {
 		c.log.Info("analysis stopped", "item", id, "stage", o.stage)
-		if o.aggOnly {
+		c.rememberStoppedRun(id, o.opts, o.stage)
+		if o.opts.AggregateOnly {
 			c.setStoppedUnlessAnalysed(id, string(o.stage))
 		} else {
 			c.setStopped(id, string(o.stage))
 		}
 		return
+	}
+	if o.err == nil {
+		c.snaps.drop(id)
+		if !o.opts.AggregateOnly {
+			c.forgetStop(context.Background(), id)
+		}
 	}
 	if o.err != nil && runCtx.Err() != nil {
 		c.log.Info("analysis interrupted", "item", id, "err", o.err)
@@ -1083,8 +1056,11 @@ func (c *InProcess) addItem(ctx context.Context, id string, src model.ItemSource
 		it.Section = model.SectionAdded
 	}
 	fill(&it)
-	c.setUrgency(ctx, &it, false)
+	days := c.setUrgency(ctx, &it, false)
 	err = c.d.Store.UpsertItem(ctx, it)
+	if err == nil {
+		c.urgencyDays[id] = days
+	}
 	c.itemMu.Unlock()
 	if err != nil {
 		return it, fmt.Errorf("daemon: add %s: %w", id, err)
@@ -1112,21 +1088,36 @@ func (c *InProcess) promotePreview(ctx context.Context, id string) (model.Item, 
 }
 
 // Remove implements Client. Removing a preview deletes it silently (no
-// remove event: it was never listed).
+// remove event: it was never listed). The labels of the removed item that
+// no other stored item references are pruned (a preview's are kept until
+// the start-up sweep, so tabbing back to it is free; see sweepLabels).
 func (c *InProcess) Remove(ctx context.Context, itemID string) error {
 	c.itemMu.Lock()
 	it, err := c.d.Store.Item(ctx, itemID)
 	preview := err == nil && it.Source == model.SourcePreview
+	var subjects []string
+	if !preview {
+		subjects = c.removalSubjects(ctx, itemID)
+	}
 	err = c.d.Store.RemoveItem(ctx, itemID)
 	c.itemMu.Unlock()
 	if err != nil {
 		return fmt.Errorf("daemon: remove %s: %w", itemID, err)
 	}
 	c.cancelRun(itemID)
+	c.forgetItem(ctx, itemID)
 	if !preview {
 		c.send(proto.Event{Type: proto.EventRemove, ItemID: itemID})
+		c.pruneLabels(ctx, itemID, subjects)
 	}
 	return nil
+}
+
+// forgetItem drops what the daemon keeps about a removed item: its
+// snapshot and its stop record.
+func (c *InProcess) forgetItem(ctx context.Context, itemID string) {
+	c.snaps.drop(itemID)
+	c.forgetStop(ctx, itemID)
 }
 
 // Checkout implements Client.

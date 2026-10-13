@@ -63,10 +63,12 @@ const (
 // pipeline.ErrStopped (finish then marks it StateStopped at the stage in
 // flight); an item that was only queued becomes StateStopped ("queued")
 // here. p.All does that for every running and waiting item; it changes
-// neither the strategy nor discovery. Nothing to stop is not an error.
+// neither the strategy nor discovery. Nothing to stop is not an error. The
+// FromStage and Force of every job it catches are remembered for Resume
+// (M5.2; a running run's when it ends, in finish).
 func (c *InProcess) Stop(ctx context.Context, p proto.StopParams) (proto.StopResult, error) {
 	if p.All {
-		return c.stopAll(), nil
+		return c.stopAll(ctx), nil
 	}
 	if p.ItemID == "" {
 		return proto.StopResult{}, errors.New("daemon: stop: no item")
@@ -74,12 +76,15 @@ func (c *InProcess) Stop(ctx context.Context, p proto.StopParams) (proto.StopRes
 	if _, err := c.d.Store.Item(ctx, p.ItemID); err != nil {
 		return proto.StopResult{}, fmt.Errorf("daemon: stop %s: %w", p.ItemID, err)
 	}
-	waiting, busy := c.q.drop(p.ItemID)
+	dropped, busy := c.q.drop(p.ItemID)
+	if dropped != nil {
+		c.rememberDropped(ctx, *dropped)
+	}
 	cancelled := c.cancelRunCause(p.ItemID, pipeline.ErrStopped)
 	switch {
 	case busy || cancelled:
 		// finish (or analyse's stop-mark check) records the stage.
-	case waiting:
+	case dropped != nil:
 		c.setStoppedUnlessAnalysed(p.ItemID, stopQueued)
 	default:
 		return proto.StopResult{}, nil
@@ -88,11 +93,19 @@ func (c *InProcess) Stop(ctx context.Context, p proto.StopParams) (proto.StopRes
 }
 
 // stopAll stops every running and waiting item.
-func (c *InProcess) stopAll() proto.StopResult {
-	waiting, busy := c.q.dropAll()
+func (c *InProcess) stopAll(ctx context.Context) proto.StopResult {
+	dropped, busy := c.q.dropAll()
 	for _, id := range busy {
 		c.cancelRunCause(id, pipeline.ErrStopped)
 	}
+	var waiting []string
+	for _, j := range dropped {
+		c.rememberDropped(ctx, j)
+		if !slices.Contains(busy, j.itemID) {
+			waiting = append(waiting, j.itemID)
+		}
+	}
+	slices.Sort(waiting)
 	for _, id := range waiting {
 		c.setStoppedUnlessAnalysed(id, stopQueued)
 	}
@@ -104,9 +117,11 @@ func (c *InProcess) stopAll() proto.StopResult {
 // Resume implements Client: p.ItemID (in any state; a no-op while an
 // explicit run of it is going; behind an automatic or stopped run it is
 // queued to start after that run)
-// or, with p.All, every StateStopped item is queued again as an explicit,
-// non-forced request with user priority, its head recorded as requested.
-// Finished stages hit their caches. An unknown item is an error.
+// or, with p.All, every StateStopped item is queued again as an explicit
+// request with user priority, its head recorded as requested. The job
+// carries the FromStage and Force of the jobs the stop caught (M5.2; none:
+// a plain run); finished stages hit their caches. An unknown item is an
+// error.
 func (c *InProcess) Resume(ctx context.Context, p proto.ResumeParams) (proto.ResumeResult, error) {
 	var items []model.Item
 	if p.All {
@@ -131,10 +146,13 @@ func (c *InProcess) Resume(ctx context.Context, p proto.ResumeParams) (proto.Res
 	}
 	var res proto.ResumeResult
 	for _, it := range items {
-		j := job{itemID: it.ID, urgency: it.Urgency, user: true, explicit: true}
-		if c.q.covers(j) {
+		if c.q.covers(job{itemID: it.ID, explicit: true}) {
 			continue // an explicit run of it is already going
 		}
+		// The job carries the record; it is forgotten before the job can
+		// start (and be stopped again, writing a new one).
+		j := c.resumeJob(ctx, it)
+		c.forgetStop(ctx, it.ID)
 		if err := c.pushExplicit(ctx, it, j); err != nil {
 			return res, err
 		}
@@ -319,6 +337,9 @@ func (c *InProcess) shadowWarnings(scope proto.SettingsScope) []string {
 func (c *InProcess) apply(ctx context.Context, ch settings.Changes, cfg config.Config, rt config.Routing) (string, []string, error) {
 	var parts, warns []string
 	c.p.SetConfig(cfg)
+	// Weights, release branches and the abandoned threshold move urgency:
+	// the next discovery pass stores every urgency that changed.
+	c.resetUrgencyDays()
 	if ch.Models {
 		if f := c.settingsDeps().Models; f != nil {
 			m, notes := f(cfg)
