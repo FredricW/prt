@@ -98,7 +98,7 @@ func (m Model) View() string {
 }
 
 // topLine is the bar line: a one-shot note, the filters bar, or the
-// labels-unavailable note.
+// standing notes (labels unavailable, embeddings skipped).
 func (m Model) topLine() string {
 	switch {
 	case m.note != "":
@@ -106,7 +106,7 @@ func (m Model) topLine() string {
 	case m.barOpen:
 		return ansi.Truncate(m.barText(), m.w, ellipsis)
 	default:
-		return m.st.note.Render(fit("labels unavailable — filters off", m.w))
+		return m.st.note.Render(fit(m.standingNote(), m.w))
 	}
 }
 
@@ -391,6 +391,9 @@ func (m Model) collapsedText(pu paneUnit) string {
 	}
 	if pu.u.MovedFrom != "" {
 		reason = m.movedText(pu.u)
+	}
+	if ge := m.c.repeatGroup(pu.u.ID); ge != nil && !m.byChange() {
+		reason = "mechanical repeat of " + m.c.unitLabel(ge.example()) + " (×" + strconv.Itoa(ge.count()) + ")"
 	}
 	parts := []string{reason}
 	if s := pu.u.Symbol; s != "" {

@@ -45,7 +45,20 @@ func (m *Model) layout() layout {
 
 // barVisible reports whether the top line is drawn.
 func (m *Model) barVisible() bool {
-	return !m.c.plain() && (m.barOpen || m.note != "" || m.c.labelsMissing)
+	return !m.c.plain() && (m.barOpen || m.note != "" || m.standingNote() != "")
+}
+
+// standingNote is the bar line when no one-shot note or filters bar shows:
+// labels unavailable, and by change why grouping ran without embeddings.
+func (m *Model) standingNote() string {
+	var parts []string
+	if m.c.labelsMissing {
+		parts = append(parts, "labels unavailable — filters off")
+	}
+	if m.mode == ModeChange && m.c.embedNote != "" {
+		parts = append(parts, m.c.embedNote)
+	}
+	return strings.Join(parts, " · ")
 }
 
 func (m *Model) maxOffset() int {

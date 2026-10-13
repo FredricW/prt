@@ -81,6 +81,15 @@ func TestGoldenByChange(t *testing.T) {
 			d.Agg.LabelsMissing = true
 			return byChangeModel(t, d, 120, 30, false)
 		},
+		"by_change_no_embedder": func(t *testing.T) Model {
+			return byChangeModel(t, noEmbedder(loadGroups(t)), 120, 30, false)
+		},
+		"by_file_mechanical_repeat": func(t *testing.T) Model {
+			m := newModel(t, loadGroups(t), 120, 30)
+			allOff(&m)
+			selectFile(t, &m, "web/src/pages/b.tsx")
+			return m
+		},
 		"by_change_no_groups": func(t *testing.T) Model {
 			d := loadGroups(t)
 			d.Groups = nil
@@ -94,6 +103,64 @@ func TestGoldenByChange(t *testing.T) {
 			m := build(t)
 			checkGolden(t, name, m.View()+"\n")
 		})
+	}
+}
+
+// selectFile presses J (by file) until path is selected.
+func selectFile(t *testing.T, m *Model, path string) {
+	t.Helper()
+	for range m.c.files {
+		if m.SelectedFile() == path {
+			return
+		}
+		press(t, m, "J")
+	}
+	if m.SelectedFile() != path {
+		t.Fatalf("file %q not reached (at %q)", path, m.SelectedFile())
+	}
+}
+
+// Spec Code page mode A: mechanical repeats are collapsed by default and
+// `z` expands them; the example unit stays expanded.
+func TestByFileCollapsesMechanicalRepeats(t *testing.T) {
+	m := newModel(t, loadGroups(t), 120, 30)
+	allOff(&m)
+	selectFile(t, &m, "web/src/pages/a.tsx")
+	lacks(t, ansi.Strip(m.View()), "mechanical repeat")
+	selectFile(t, &m, "web/src/pages/b.tsx")
+	contains(t, ansi.Strip(m.View()), "mechanical repeat of a.tsx")
+	contains(t, ansi.Strip(m.View()), "(×5)")
+	press(t, &m, "z")
+	lacks(t, ansi.Strip(m.View()), "mechanical repeat")
+}
+
+const testEmbedNote = "no embedding model: groups from structural links only"
+
+// noEmbedder marks d as grouped without embeddings (stage 3 skipped).
+func noEmbedder(d proto.Detail) proto.Detail {
+	g := model.GroupingStats{}
+	if d.Agg.Grouping != nil {
+		g = *d.Agg.Grouping
+	}
+	g.EmbedNote = testEmbedNote
+	d.Agg.Grouping = &g
+	return d
+}
+
+// The spec's "skip stage 3 … with a status note" is shown by change (where
+// the groups are) and not by file.
+func TestEmbedNoteShownByChange(t *testing.T) {
+	m := newModel(t, noEmbedder(loadGroups(t)), 120, 30)
+	if strings.Contains(ansi.Strip(m.View()), testEmbedNote) {
+		t.Error("embed note shown by file")
+	}
+	press(t, &m, "g")
+	if !strings.Contains(ansi.Strip(m.View()), testEmbedNote) {
+		t.Errorf("embed note missing by change:\n%s", ansi.Strip(m.View()))
+	}
+	m = byChangeModel(t, loadGroups(t), 120, 30, false)
+	if strings.Contains(ansi.Strip(m.View()), "structural links only") {
+		t.Error("embed note shown when stage 3 ran")
 	}
 }
 

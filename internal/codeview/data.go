@@ -41,6 +41,9 @@ type content struct {
 	groupOf map[string]int
 	// split is the split suggestion (Agg.Split), nil when none.
 	split []model.SplitFile
+	// embedNote says why grouping ran without embeddings
+	// (Agg.Grouping.EmbedNote); shown by change.
+	embedNote string
 }
 
 // plain reports whether there are no units to lay out, so the component
@@ -85,6 +88,9 @@ func buildContent(d proto.Detail) content {
 	buildGroups(&c, d)
 	if len(c.groups) > 0 && d.Agg != nil && d.Agg.Split != nil {
 		c.split = d.Agg.Split.Files
+	}
+	if len(c.groups) > 0 && d.Agg != nil && d.Agg.Grouping != nil {
+		c.embedNote = d.Agg.Grouping.EmbedNote
 	}
 	return c
 }

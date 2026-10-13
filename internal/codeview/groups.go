@@ -219,6 +219,20 @@ func (c *content) splitTarget(sf model.SplitFile) int {
 }
 
 // unitLabel names a unit in link lines: path base, then the symbol.
+// repeatGroup returns the mechanical group that unit id repeats (it is a
+// member but not the example), or nil. By file such units collapse.
+func (c *content) repeatGroup(id string) *groupEntry {
+	gi, ok := c.groupOf[id]
+	if !ok {
+		return nil
+	}
+	ge := &c.groups[gi]
+	if !ge.mechanical() || ge.example() == id {
+		return nil
+	}
+	return ge
+}
+
 func (c *content) unitLabel(id string) string {
 	u := c.units[id]
 	if u == nil {

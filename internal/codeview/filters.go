@@ -90,17 +90,25 @@ func (m *Model) filterActive(f Filter) bool {
 	return hasData(f) && (f != FilterMine || m.c.anyOwned)
 }
 
-// collapsed reports whether a unit is drawn as a one-line noise summary:
-// noise per the aggregate, not unsure, and not expanded by `z` (on its file
-// by file, on its group by change) or FocusUnit.
+// collapsed reports whether a unit is drawn as a one-line summary: noise
+// per the aggregate (or, by file, a mechanical repeat: a non-example member
+// of a mechanical group), not unsure, and not expanded by `z` (on its file
+// by file, on its group by change) or FocusUnit. By change a mechanical
+// group already shows only its example.
 func (m *Model) collapsed(id string) bool {
 	a := m.c.aggs[id]
-	if !m.c.hasAgg || a == nil || !a.Noise || a.Unsure || m.expandedUnits[id] {
+	if !m.c.hasAgg || a == nil || a.Unsure || m.expandedUnits[id] {
 		return false
 	}
 	if m.byChange() {
+		if !a.Noise {
+			return false
+		}
 		gi, ok := m.c.groupOf[id]
 		return !ok || !m.expandedGroups[m.c.groups[gi].g.ID]
+	}
+	if !a.Noise && m.c.repeatGroup(id) == nil {
+		return false
 	}
 	return !m.expandedFiles[m.c.units[id].Path]
 }
