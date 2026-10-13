@@ -112,13 +112,14 @@ func TestSuggestion(t *testing.T) {
 		}
 		return model.Label{UnitID: model.FileSubject("pr:1", path), Question: model.QSeparatePR, Value: v, P: p, Ctx: c}
 	}
+	fc := FileCtxs(ctx, units)
 	labels := []model.Label{
-		fl("a.go", 0.7, ctx),
-		fl("b.go", 0.9, ctx),
-		fl("c.go", 0.7, ctx),
-		fl("d.go", 0.49, ctx),
+		fl("a.go", 0.7, fc["a.go"]),
+		fl("b.go", 0.9, fc["b.go"]),
+		fl("c.go", 0.7, fc["c.go"]),
+		fl("d.go", 0.49, fc["d.go"]),
 		fl("e.go", 0.99, "stale"),
-		{UnitID: model.FileSubject("pr:2", "x.go"), Question: model.QSeparatePR, Value: model.LabelYes, P: 1, Ctx: ctx},
+		{UnitID: model.FileSubject("pr:2", "x.go"), Question: model.QSeparatePR, Value: model.LabelYes, P: 1, Ctx: fc["a.go"]},
 	}
 	got := Suggestion("pr:1", units, groups, labels, ctx)
 	want := &model.SplitSuggestion{Files: []model.SplitFile{
@@ -134,5 +135,22 @@ func TestSuggestion(t *testing.T) {
 	}
 	if s := Suggestion("pr:1", units, groups, nil, ctx); s != nil {
 		t.Errorf("want nil, got %+v", s)
+	}
+	// A push rewrote a.go (new unit id), group list unchanged: its old
+	// answer is not current.
+	pushed := append([]model.ChangeUnit{{ID: "u1-new", Path: "a.go"}}, units[1:]...)
+	if s := Suggestion("pr:1", pushed, groups, labels[:1], ctx); s != nil {
+		t.Errorf("stale a.go answer reused after its content changed: %+v", s)
+	}
+}
+
+func TestFileCtx(t *testing.T) {
+	a := []model.ChangeUnit{{ID: "u1"}, {ID: "u2"}}
+	b := []model.ChangeUnit{{ID: "u2"}, {ID: "u1"}}
+	if FileCtx("s", a) != FileCtx("s", b) {
+		t.Error("FileCtx depends on unit order")
+	}
+	if FileCtx("s", a) == FileCtx("s", a[:1]) || FileCtx("s", a) == FileCtx("t", a) {
+		t.Error("FileCtx ignores units or the group list")
 	}
 }

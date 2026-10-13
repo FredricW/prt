@@ -237,7 +237,7 @@ func (f *fakeM2) separatePR(_ context.Context, _ jev.Client, in judge.SplitInput
 	}
 	var res judge.Result
 	for _, ft := range in.Files {
-		l := model.Label{UnitID: model.FileSubject(in.ItemID, ft.Path), Question: model.QSeparatePR, Value: model.LabelNo, P: 0.1, Confidence: 0.9, Ctx: strings.Join(ids, ",")}
+		l := model.Label{UnitID: model.FileSubject(in.ItemID, ft.Path), Question: model.QSeparatePR, Value: model.LabelNo, P: 0.1, Confidence: 0.9, Ctx: judge.FileCtx(strings.Join(ids, ","), ft.Units)}
 		if ft.Path == pClient {
 			l.Value, l.P, l.Confidence = model.LabelYes, 0.7, 0.7
 		}
@@ -247,11 +247,13 @@ func (f *fakeM2) separatePR(_ context.Context, _ jev.Client, in judge.SplitInput
 	return res, nil
 }
 
-func suggestFiles(itemID string, _ []model.ChangeUnit, _ []model.Group, ls []model.Label, ctx string) *model.SplitSuggestion {
+func suggestFiles(itemID string, units []model.ChangeUnit, _ []model.Group, ls []model.Label, ctx string) *model.SplitSuggestion {
 	var s model.SplitSuggestion
+	ctxs := judge.FileCtxs(ctx, units)
 	for _, l := range ls {
-		if l.Ctx == ctx && l.P >= 0.5 {
-			s.Files = append(s.Files, model.SplitFile{Path: strings.TrimPrefix(l.UnitID, "file:"+itemID+":"), P: l.P})
+		path := strings.TrimPrefix(l.UnitID, "file:"+itemID+":")
+		if l.Ctx == ctxs[path] && l.P >= 0.5 {
+			s.Files = append(s.Files, model.SplitFile{Path: path, P: l.P})
 		}
 	}
 	if len(s.Files) == 0 {
@@ -492,6 +494,10 @@ func TestStructuralErrorIsSoft(t *testing.T) {
 	}
 	if in := f.aggIn[0]; in.Links != nil {
 		t.Errorf("aggregate links = %+v, want nil when stage 2 failed", in.Links)
+	}
+	// Clustering still gets the Jev-confirmed and mechanical links.
+	if in := f.clusterIn[0]; len(in.Links) == 0 {
+		t.Errorf("cluster links empty after a stage 2 failure; confirmed and mechanical links dropped")
 	}
 	// Without structural links the client/test pair is judged too.
 	if got := pairPaths(f.pairCalls[0]); len(got) != 4 {

@@ -272,7 +272,7 @@ type SplitInput struct {
 
 // SeparatePR asks "separate_pr" for every file: one request per file.
 // Labels have UnitID model.FileSubject(itemID, path), Question
-// model.QSeparatePR, Ctx = SplitCtx(groups).
+// model.QSeparatePR, Ctx = FileCtx(SplitCtx(groups), file units).
 func SeparatePR(ctx context.Context, c jev.Client, in SplitInput) (Result, error) {
 	return separatePR(ctx, c, in, jevLimits())
 }
@@ -304,29 +304,56 @@ func separatePR(ctx context.Context, c jev.Client, in SplitInput, lim limits) (R
 		if err != nil {
 			return Result{}, fmt.Errorf("judge: file %s: %w", f.Path, err)
 		}
-		jobs = append(jobs, job{subject: subj, ctx: sctx, req: req, binds: binds})
+		jobs = append(jobs, job{subject: subj, ctx: FileCtx(sctx, f.Units), req: req, binds: binds})
 	}
 	return run(ctx, c, jobs, nil, in.Concurrency)
 }
 
-// SplitCtx is the Ctx of separate_pr labels: a hash of the group list
-// (names, sorted paths and unit counts, in the given order; ids excluded).
+// SplitCtx hashes the group list (names, sorted paths and unit counts, in
+// the given order; ids excluded) that every separate_pr request carries.
+// A label's Ctx is FileCtx of it and the file's units.
 func SplitCtx(groups []GroupSummary) string {
 	// Marshalling strings, string slices and ints cannot fail.
 	b, _ := json.Marshal(groupStates(groups))
 	return model.ContentHash(model.QSeparatePR, string(b))[:16]
 }
 
-// Suggestion builds the split suggestion from current (Ctx == ctx)
-// separate_pr labels: files with P(yes) ≥ 0.5, highest P first (ties by
-// path), each with the ids of the groups that have units in it (units give
-// each unit's path). Nil when no file qualifies.
-func Suggestion(itemID string, units []model.ChangeUnit, groups []model.Group, labels []model.Label, ctx string) *model.SplitSuggestion {
+// FileCtx is the Ctx of one file's separate_pr label: sctx (SplitCtx)
+// plus the file's sorted unit ids, which are content hashes, so a new push
+// that rewrites the file asks again even when the group list is unchanged.
+func FileCtx(sctx string, units []model.ChangeUnit) string {
+	ids := make([]string, len(units))
+	for i, u := range units {
+		ids[i] = u.ID
+	}
+	sort.Strings(ids)
+	return model.ContentHash(model.QSeparatePR, sctx, strings.Join(ids, ","))[:16]
+}
+
+// FileCtxs returns FileCtx(sctx, units of path) for every path in units.
+func FileCtxs(sctx string, units []model.ChangeUnit) map[string]string {
+	byPath := map[string][]model.ChangeUnit{}
+	for _, u := range units {
+		byPath[u.Path] = append(byPath[u.Path], u)
+	}
+	out := make(map[string]string, len(byPath))
+	for p, us := range byPath {
+		out[p] = FileCtx(sctx, us)
+	}
+	return out
+}
+
+// Suggestion builds the split suggestion from current separate_pr labels
+// (Ctx == FileCtx(sctx, the file's units)): files with P(yes) ≥ 0.5,
+// highest P first (ties by path), each with the ids of the groups that have
+// units in it (units give each unit's path). Nil when no file qualifies.
+func Suggestion(itemID string, units []model.ChangeUnit, groups []model.Group, labels []model.Label, sctx string) *model.SplitSuggestion {
 	prefix := model.FileSubject(itemID, "")
+	ctxs := FileCtxs(sctx, units)
 	ps := map[string]float64{}
 	for _, l := range labels {
 		path, ok := strings.CutPrefix(l.UnitID, prefix)
-		if !ok || l.Question != model.QSeparatePR || l.Ctx != ctx || model.IsUnknown(l) {
+		if !ok || l.Question != model.QSeparatePR || l.Ctx != ctxs[path] || model.IsUnknown(l) {
 			continue
 		}
 		if l.P >= 0.5 {

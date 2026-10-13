@@ -16,10 +16,23 @@ import (
 type groupOut struct {
 	groups []model.Group
 	// links are the item's kept links (structural + Jev-confirmed +
-	// mechanical candidates); nil only when stage 2 failed.
+	// mechanical candidates), never nil.
 	links []model.Link
-	stats *model.GroupingStats
-	split *model.SplitSuggestion
+	// noStructural is set when stage 2 failed: aggregate then gets nil
+	// links (wiring fidelity unknown) although clustering still used the
+	// embed and mechanical links.
+	noStructural bool
+	stats        *model.GroupingStats
+	split        *model.SplitSuggestion
+}
+
+// aggLinks are the links aggregate sees: nil when stage 2 failed, so the
+// fidelity rule does not count every unit as unwired.
+func (g groupOut) aggLinks() []model.Link {
+	if g.noStructural {
+		return nil
+	}
+	return g.links
 }
 
 // clusterIn is what stage 5 reads from the earlier stages.
@@ -31,11 +44,9 @@ type clusterIn struct {
 }
 
 // keptLinks are the links clustering uses and the store keeps: structural,
-// Jev-confirmed and mechanical candidates. Nil only when stage 2 failed.
+// Jev-confirmed and mechanical candidates. Never nil: when stage 2 failed
+// the Jev-confirmed and mechanical links still group units.
 func (c clusterIn) keptLinks() []model.Link {
-	if c.structural == nil {
-		return nil
-	}
 	out := make([]model.Link, 0, len(c.structural)+len(c.pairs.confirmed)+len(c.em.mech))
 	out = append(out, c.structural...)
 	out = append(out, c.pairs.confirmed...)
@@ -79,7 +90,7 @@ func (p *Pipeline) clusterStage(ctx context.Context, it model.Item, in clusterIn
 	stats := groupingStats(res.Stats, in, units)
 	rl.In, rl.Out = len(units), len(groups)
 	rl.Note = joinNotes(fmt.Sprintf("%d groups · %d mechanical · %d ungrouped", stats.Groups, stats.Mechanical, stats.Ungrouped), nameNote, splitNote)
-	return groupOut{groups: groups, links: links, stats: &stats, split: split}, nil
+	return groupOut{groups: groups, links: links, noStructural: in.structural == nil, stats: &stats, split: split}, nil
 }
 
 // groupingStats completes cluster's stats with the link and Jev counts.
@@ -166,7 +177,8 @@ func (p *Pipeline) askNames(ctx context.Context, title string, bullets []string,
 }
 
 // splitSuggestion asks separate_pr for each changed file without a current
-// label (Ctx = judge.SplitCtx of the group list) and builds the split
+// label (Ctx = judge.FileCtx of the group list hash and the file's units)
+// and builds the split
 // suggestion. It runs only when the item has at least two real groups; a
 // single group has nothing to split off.
 func (p *Pipeline) splitSuggestion(ctx context.Context, it model.Item, units []model.ChangeUnit, groups []model.Group, rl *model.RunLog) (*model.SplitSuggestion, string, error) {
@@ -184,7 +196,16 @@ func (p *Pipeline) splitSuggestion(ctx context.Context, it model.Item, units []m
 	if err != nil {
 		return nil, "", err
 	}
-	cur := knownSubjects(stored, &sctx)
+	want := make(map[string]string, len(files))
+	for i, f := range files {
+		want[subjects[i]] = judge.FileCtx(sctx, f.Units)
+	}
+	cur := map[string]bool{}
+	for _, l := range stored {
+		if !model.IsUnknown(l) && l.Ctx == want[l.UnitID] {
+			cur[l.UnitID] = true
+		}
+	}
 	var need []judge.FileText
 	for i, f := range files {
 		if !cur[subjects[i]] {

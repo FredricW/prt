@@ -241,7 +241,7 @@ func TestDecodeBoolean(t *testing.T) {
 				t.Fatal(err)
 			}
 			want := tc.want
-			want.UnitID, want.Question, want.Ctx = model.FileSubject("pr:7", "a.go"), model.QSeparatePR, sctx
+			want.UnitID, want.Question, want.Ctx = model.FileSubject("pr:7", "a.go"), model.QSeparatePR, FileCtx(sctx, []model.ChangeUnit{unitA})
 			if len(res.Labels) != 1 || !reflect.DeepEqual(res.Labels[0], want) {
 				t.Errorf("labels\n got %+v\nwant %+v", res.Labels, want)
 			}

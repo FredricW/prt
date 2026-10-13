@@ -179,7 +179,7 @@ func (p *Pipeline) runAfterFetch(ctx context.Context, it model.Item, f model.Fet
 			return err
 		}
 		p.d.Log.Warn("clustering failed; no groups", "item", it.ID, "err", err)
-		gro = groupOut{links: in.keptLinks()}
+		gro = groupOut{links: in.keptLinks(), noStructural: in.structural == nil}
 	}
 	p.skip(it.ID, "M3", model.StageRoute, model.StageReview)
 	_, err = runStage(ctx, p, it.ID, model.StageAggregate, func(rl *model.RunLog) (model.ItemAgg, error) {
@@ -234,7 +234,7 @@ func (p *Pipeline) aggregate(ctx context.Context, it model.Item, f model.Fetch, 
 	age, release, ciRed := aggregate.Facts(cur, p.d.Config.GitHub.ReleaseBranches, p.d.Now())
 	agg := p.fn.aggregate(aggregate.Input{
 		Item: cur, Files: in.files, Units: in.units, Labels: ls,
-		Groups: gro.groups, Links: gro.links,
+		Groups: gro.groups, Links: gro.aggLinks(),
 		Weights: p.d.Config.Rank, Pipeline: p.d.Config.Pipeline,
 		AgeDays: age, Release: release, CIRedAfterApproval: ciRed,
 		Owns: p.d.Config.User.Owns, LabelsMissing: jo.missing,
