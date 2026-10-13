@@ -185,14 +185,16 @@ func (g *Exec) Show(ctx context.Context, rev, path string) ([]byte, error) {
 	return []byte(out), nil
 }
 
-// ListFiles implements Git.
+// ListFiles implements Git. Names are NUL-separated (-z): core.quotepath=off
+// stops quoting non-ASCII bytes, but git still C-quotes names with a quote,
+// backslash, tab or newline in line mode.
 func (g *Exec) ListFiles(ctx context.Context, rev string) ([]string, error) {
-	out, err := g.run(ctx, "ls-tree", "-r", "--name-only", rev)
+	out, err := g.run(ctx, "ls-tree", "-r", "-z", "--name-only", rev)
 	if err != nil {
 		return nil, err
 	}
 	var files []string
-	for _, l := range strings.Split(strings.TrimSpace(out), "\n") {
+	for _, l := range strings.Split(out, "\x00") {
 		if l != "" {
 			files = append(files, l)
 		}

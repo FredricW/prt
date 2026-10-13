@@ -84,6 +84,53 @@ func TestExecBasics(t *testing.T) {
 	}
 }
 
+// ListFiles returns names git would C-quote in line mode (quote, backslash,
+// tab) and non-ASCII names verbatim, and each can be read back with Show.
+func TestExecListFilesSpecialNames(t *testing.T) {
+	dir := gitInit(t)
+	ctx := context.Background()
+	names := []string{"web/café.ts", "web/a\"b.ts", "web/back\\slash.ts", "web/tab\there.ts", " lead.ts"}
+	if err := os.MkdirAll(filepath.Join(dir, "web"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range names {
+		if err := os.WriteFile(filepath.Join(dir, n), []byte("x\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, args := range [][]string{{"add", "."}, {"commit", "-q", "-m", "names"}} {
+		cmd := exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...)
+		cmd.Env = append(os.Environ(),
+			"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@example.com",
+			"GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@example.com",
+			"GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	g, err := Open(ctx, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	files, err := g.ListFiles(ctx, "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	have := map[string]bool{}
+	for _, f := range files {
+		have[f] = true
+	}
+	for _, n := range append(names, "a.txt") {
+		if !have[n] {
+			t.Errorf("ListFiles misses %q (got %q)", n, files)
+			continue
+		}
+		if _, err := g.Show(ctx, "HEAD", n); err != nil {
+			t.Errorf("Show %q: %v", n, err)
+		}
+	}
+}
+
 // A ref that names a tracked file must never be read as a pathspec, which
 // would discard the user's unstaged edits to that file.
 func TestExecCheckoutNeverPathspec(t *testing.T) {
