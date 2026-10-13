@@ -7,6 +7,9 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
+
+	"github.com/fredricw/prt/internal/model"
 )
 
 func TestParse(t *testing.T) {
@@ -38,9 +41,25 @@ func TestParse(t *testing.T) {
 		{line: ":quit", want: Command{Kind: Quit}},
 		{line: "q!", want: Command{Kind: Quit}},
 		{line: "q now", wantErr: ":q takes no argument"},
-		{line: "foo", wantErr: "unknown command :foo — try :add, :tier, :cap, :q"},
-		{line: ":", wantErr: "empty command"},
+		{line: "foo", wantErr: "unknown command :foo — try :add, :auto, :cap, :resume, :settings, :stop, :tier, :q"},
+		{line: ":", wantErr: "empty command — try :add, :auto, :cap, :resume, :settings, :stop, :tier, :q"},
 		{line: "", wantErr: "empty command"},
+		// M5.1
+		{line: "auto manual", want: Command{Kind: Auto, Strategy: model.AutoManual}},
+		{line: "auto needs-you", want: Command{Kind: Auto, Strategy: model.AutoNeedsYou}},
+		{line: ":auto Needs-You+Yours", want: Command{Kind: Auto, Strategy: model.AutoNeedsYouYours}},
+		{line: "auto ALL", want: Command{Kind: Auto, Strategy: model.AutoAll}},
+		{line: "auto", wantErr: ":auto takes manual, needs-you, needs-you+yours or all"},
+		{line: "auto some", wantErr: ":auto takes manual, needs-you, needs-you+yours or all"},
+		{line: "stop", want: Command{Kind: Stop}},
+		{line: "stop all", want: Command{Kind: Stop, All: true}},
+		{line: ":stop ALL", want: Command{Kind: Stop, All: true}},
+		{line: "stop now", wantErr: ":stop takes no argument or all"},
+		{line: "resume", want: Command{Kind: Resume}},
+		{line: "resume all", want: Command{Kind: Resume, All: true}},
+		{line: "resume #4", wantErr: ":resume takes no argument or all"},
+		{line: "settings", want: Command{Kind: Settings}},
+		{line: "settings repo", wantErr: ":settings takes no argument"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.line, func(t *testing.T) {
@@ -172,6 +191,172 @@ func TestHistoryCap(t *testing.T) {
 	}
 	if len(m.history) != maxHistory || m.history[0] != strings.Repeat("x", 11) {
 		t.Errorf("history len %d, first %q", len(m.history), m.history[0])
+	}
+}
+
+func TestComplete(t *testing.T) {
+	all := []string{"add", "auto", "tier", "cap", "stop", "resume", "settings", "q"}
+	cases := []struct {
+		line, want string
+		cands      []string
+	}{
+		{"", "", all},
+		{"a", "a", []string{"add", "auto"}},
+		{"au", "auto ", []string{"auto"}},
+		{":au", ":auto ", []string{"auto"}},
+		{"s", "s", []string{"stop", "settings"}},
+		{"se", "settings ", []string{"settings"}},
+		{"auto ", "auto ", []string{"manual", "needs-you", "needs-you+yours", "all"}},
+		{"auto n", "auto needs-you", []string{"needs-you", "needs-you+yours"}},
+		{"auto needs-you+", "auto needs-you+yours", []string{"needs-you+yours"}},
+		{"auto M", "auto manual", []string{"manual"}},
+		{"stop a", "stop all", []string{"all"}},
+		{"resume ", "resume all", []string{"all"}},
+		{"tier d", "tier deep", []string{"deep"}},
+		{"tier ", "tier ", []string{"deep", "none", "rules"}},
+		{"cap d", "cap default", []string{"default"}},
+		{"cap 1", "cap 1", nil},
+		{"add #4", "add #4", nil},
+		{"settings x", "settings x", nil},
+		{"zz", "zz", nil},
+		{"zz a", "zz a", nil},
+	}
+	for _, tc := range cases {
+		t.Run(tc.line, func(t *testing.T) {
+			got, cands := Complete(tc.line)
+			if got != tc.want || strings.Join(cands, ",") != strings.Join(tc.cands, ",") {
+				t.Errorf("Complete(%q) = %q, %v; want %q, %v", tc.line, got, cands, tc.want, tc.cands)
+			}
+		})
+	}
+}
+
+func TestHelpCoversEveryCommand(t *testing.T) {
+	h := Help()
+	var usages []string
+	for _, e := range h {
+		if e.Usage == "" || e.Desc == "" {
+			t.Errorf("incomplete entry %+v", e)
+		}
+		usages = append(usages, e.Usage)
+	}
+	joined := strings.Join(usages, "\n")
+	for _, c := range commands() {
+		if !strings.Contains(joined, ":"+c.name) {
+			t.Errorf("Help misses :%s", c.name)
+		}
+		if _, ok := lookup(c.name); !ok {
+			t.Errorf("lookup(%q) failed", c.name)
+		}
+	}
+	want := []HelpEntry{
+		{":auto manual|needs-you|needs-you+yours|all", "set the auto-review strategy (saved to .git/prt/prt.toml)"},
+		{":stop [all]", "stop the selected item's analysis (all: every item)"},
+		{":resume [all]", "resume the selected item from its last finished stage (all: every stopped item)"},
+		{":settings", "open the settings page (also ,)"},
+	}
+	for _, w := range want {
+		found := false
+		for _, e := range h {
+			found = found || e == w
+		}
+		if !found {
+			t.Errorf("Help lacks %+v", w)
+		}
+	}
+}
+
+func TestModelTabCompletes(t *testing.T) {
+	m := New(plain())
+	m.Open()
+	typeLine(&m, "au")
+	m.Update(press(tea.KeyTab))
+	if got := m.View(); got != ":auto █" {
+		t.Fatalf("after :au<tab> view = %q", got)
+	}
+	typeLine(&m, "a")
+	m.Update(press(tea.KeyTab))
+	if got := m.View(); got != ":auto all█" {
+		t.Fatalf("after a<tab> view = %q", got)
+	}
+	m.Update(press(tea.KeyEnter))
+	s, ok := m.PendingCommand()
+	if !ok || s.Cmd != (Command{Kind: Auto, Strategy: model.AutoAll}) {
+		t.Errorf("submitted %+v", s)
+	}
+}
+
+func TestModelTabCycles(t *testing.T) {
+	m := New(plain())
+	m.SetWidth(40)
+	m.Open()
+	typeLine(&m, "a")
+	m.Update(press(tea.KeyTab))
+	v := m.View()
+	if !strings.HasPrefix(v, ":a█") || !strings.HasSuffix(v, "add · auto") {
+		t.Fatalf("ambiguous view = %q", v)
+	}
+	if w := ansi.StringWidth(v); w != 40 {
+		t.Errorf("view width %d, want 40", w)
+	}
+	steps := []struct {
+		k    tea.KeyType
+		want string
+	}{
+		{tea.KeyTab, ":add█"},
+		{tea.KeyTab, ":auto█"},
+		{tea.KeyTab, ":add█"}, // wraps
+		{tea.KeyShiftTab, ":auto█"},
+		{tea.KeyShiftTab, ":add█"},
+	}
+	for i, s := range steps {
+		m.Update(press(s.k))
+		if got := m.View(); !strings.HasPrefix(got, s.want) || !strings.Contains(got, "add · auto") {
+			t.Fatalf("step %d: view = %q, want prefix %q and candidates", i, got, s.want)
+		}
+	}
+	// Typing ends the cycle and hides the candidates.
+	typeLine(&m, " ")
+	if got := m.View(); got != ":add █" {
+		t.Errorf("after typing view = %q", got)
+	}
+	// Shift+tab first walks back from the common prefix.
+	m.SetWidth(80)
+	m.Open()
+	typeLine(&m, "auto n")
+	m.Update(press(tea.KeyTab))
+	if got := m.View(); !strings.HasPrefix(got, ":auto needs-you█") || !strings.Contains(got, "needs-you · needs-you+yours") {
+		t.Fatalf("auto n<tab> view = %q", got)
+	}
+	m.Update(press(tea.KeyShiftTab))
+	if got := m.View(); !strings.HasPrefix(got, ":auto needs-you+yours█") {
+		t.Errorf("shift+tab view = %q", got)
+	}
+	// No candidates: tab does nothing.
+	m.Open()
+	typeLine(&m, "zz")
+	m.Update(press(tea.KeyTab))
+	if got := m.View(); got != ":zz█" {
+		t.Errorf("zz<tab> view = %q", got)
+	}
+}
+
+func TestCandidatesCutToWidth(t *testing.T) {
+	m := New(plain())
+	m.SetWidth(20)
+	m.Open()
+	m.Update(press(tea.KeyTab)) // every command
+	v := m.View()
+	if w := ansi.StringWidth(v); w > 20 {
+		t.Errorf("view %q is %d wide", v, w)
+	}
+	if !strings.HasPrefix(v, ":█") || !strings.Contains(v, "add · auto") || !strings.HasSuffix(v, "…") {
+		t.Errorf("view %q", v)
+	}
+	// Too narrow: candidates dropped, prompt kept.
+	m.SetWidth(5)
+	if v := m.View(); v != ":█" {
+		t.Errorf("narrow view %q", v)
 	}
 }
 
