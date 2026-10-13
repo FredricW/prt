@@ -112,6 +112,9 @@ func Default() Palette {
 		SynType:     colour("#a8d1ff", "153", "14", "#953800", "130", "3"),
 		SynFunction: colour("#f2f2ec", "255", "15", "#8250df", "98", "5"),
 
+		// Every kind has its own colour in each variant (the coloured bar has
+		// no letters): light 16-colour perf is bright yellow (11), since
+		// yellow (3) is the feature accent there.
 		KindRefactor:   colour("#79b8ff", "111", "12", "#0969da", "26", "4"),
 		KindFeature:    colour("#f0a63a", "214", "11", "#b35900", "130", "3"),
 		KindBugfix:     colour("#ff9b9b", "210", "9", "#cf222e", "160", "1"),
@@ -119,7 +122,7 @@ func Default() Palette {
 		KindConfig:     colour("#c4a7ff", "183", "13", "#8250df", "98", "5"),
 		KindDocs:       colour("#b4b8bf", "250", "7", "#57606a", "241", "8"),
 		KindDependency: colour("#56d4dd", "80", "14", "#1b7c83", "30", "6"),
-		KindPerf:       colour("#e6c07b", "180", "3", "#9a6700", "136", "3"),
+		KindPerf:       colour("#e6c07b", "180", "3", "#9a6700", "136", "11"),
 		KindNoise:      colour("#3a414d", "238", "8", "#d0d7de", "252", "7"),
 	}
 }

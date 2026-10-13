@@ -48,6 +48,33 @@ func TestPlainHasNoEscapes(t *testing.T) {
 	}
 }
 
+// Every composition kind renders in its own colour in each of the six
+// variants (dark and light background × true colour, 256 and 16 colours):
+// the coloured bar draws plain █ cells, so two kinds sharing a colour
+// cannot be told apart.
+func TestKindColoursDistinct(t *testing.T) {
+	kinds := []string{"refactor", "feature", "bugfix", "test", "config", "docs", "dependency", "perf", KindNameNoise}
+	for _, dark := range []bool{true, false} {
+		for _, p := range []termenv.Profile{termenv.TrueColor, termenv.ANSI256, termenv.ANSI} {
+			r := lipgloss.NewRenderer(io.Discard)
+			r.SetColorProfile(p)
+			r.SetHasDarkBackground(dark)
+			th := New(r)
+			seen := map[string]string{}
+			for _, k := range kinds {
+				s := th.Kind(k).Render("█")
+				if !strings.Contains(s, "\x1b[") {
+					t.Errorf("dark=%v profile %v: %s has no colour", dark, p, k)
+				}
+				if prev, dup := seen[s]; dup {
+					t.Errorf("dark=%v profile %v: %s and %s share a colour", dark, p, prev, k)
+				}
+				seen[s] = k
+			}
+		}
+	}
+}
+
 func TestColourProfilesEmitEscapes(t *testing.T) {
 	for _, p := range []termenv.Profile{termenv.TrueColor, termenv.ANSI256, termenv.ANSI} {
 		th := coloured(p)
