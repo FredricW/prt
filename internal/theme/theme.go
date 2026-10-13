@@ -60,6 +60,10 @@ type Palette struct {
 	KeyBg, KeyFg lipgloss.TerminalColor
 	// Syntax roles (tree-sitter capture classes).
 	SynKeyword, SynString, SynComment, SynNumber, SynType, SynFunction lipgloss.TerminalColor
+	// Composition kinds (M5.2, design v2/Overview: refactor blue, feature
+	// accent, test green, noise #3a414d; the other kinds chosen to stay
+	// distinct from those). Read through Theme.Kind.
+	KindRefactor, KindFeature, KindBugfix, KindTest, KindConfig, KindDocs, KindDependency, KindPerf, KindNoise lipgloss.TerminalColor
 }
 
 // Default returns the design palette.
@@ -107,7 +111,58 @@ func Default() Palette {
 		SynNumber:   colour("#f0a63a", "214", "11", "#0550ae", "25", "4"),
 		SynType:     colour("#a8d1ff", "153", "14", "#953800", "130", "3"),
 		SynFunction: colour("#f2f2ec", "255", "15", "#8250df", "98", "5"),
+
+		KindRefactor:   colour("#79b8ff", "111", "12", "#0969da", "26", "4"),
+		KindFeature:    colour("#f0a63a", "214", "11", "#b35900", "130", "3"),
+		KindBugfix:     colour("#ff9b9b", "210", "9", "#cf222e", "160", "1"),
+		KindTest:       colour("#7ee2a8", "115", "10", "#1a7f37", "28", "2"),
+		KindConfig:     colour("#c4a7ff", "183", "13", "#8250df", "98", "5"),
+		KindDocs:       colour("#b4b8bf", "250", "7", "#57606a", "241", "8"),
+		KindDependency: colour("#56d4dd", "80", "14", "#1b7c83", "30", "6"),
+		KindPerf:       colour("#e6c07b", "180", "3", "#9a6700", "136", "3"),
+		KindNoise:      colour("#3a414d", "238", "8", "#d0d7de", "252", "7"),
 	}
+}
+
+// Composition kind names beyond the catalogue's unit kinds (Theme.Kind).
+const (
+	// KindNameNoise is the composition bar's noise segment (formatting,
+	// generated and moved-verified lines).
+	KindNameNoise = "noise"
+)
+
+// KindColour returns the composition colour of a unit kind (the catalogue's
+// `kind` values plus KindNameNoise; formatting and generated count as
+// noise); any other kind ("unknown", "mixed") is the dim colour.
+func (t Theme) KindColour(kind string) lipgloss.TerminalColor {
+	switch kind {
+	case "refactor":
+		return t.P.KindRefactor
+	case "feature":
+		return t.P.KindFeature
+	case "bugfix":
+		return t.P.KindBugfix
+	case "test":
+		return t.P.KindTest
+	case "config":
+		return t.P.KindConfig
+	case "docs":
+		return t.P.KindDocs
+	case "dependency":
+		return t.P.KindDependency
+	case "perf":
+		return t.P.KindPerf
+	case KindNameNoise, "formatting", "generated":
+		return t.P.KindNoise
+	}
+	return t.P.Dim
+}
+
+// Kind returns the foreground style of a unit kind (composition bar cells,
+// legend squares). Without colour it renders plain text, so callers keep a
+// glyph or letter per kind (the bar must read without colour).
+func (t Theme) Kind(kind string) lipgloss.Style {
+	return t.R.NewStyle().Foreground(t.KindColour(kind))
 }
 
 // Theme is the palette bound to a renderer, with the common styles.

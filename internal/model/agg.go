@@ -370,21 +370,25 @@ type ItemAgg struct {
 	UnitsSkim      int                `json:"unitsSkim"`
 	UnitsSkip      int                `json:"unitsSkip"`
 	Headlines      []Headline         `json:"headlines"`
-	HotSpots       []HotSpot          `json:"hotSpots"` // top 3
-	RiskMax        float64            `json:"riskMax"`  // max unit risk level (1..5), 0 unknown
-	RiskAny        float64            `json:"riskAny"`
-	RiskTags       map[string]int     `json:"riskTags"` // sub-id → unit count
-	TestGap        int                `json:"testGap"`
-	RiskyUnits     int                `json:"riskyUnits"` // units with risk >= 3 (denominator of test gap)
-	Bullets        []BulletAgg        `json:"bullets,omitempty"`
-	Fidelity       float64            `json:"fidelity"`
-	Undocumented   []string           `json:"undocumented"`    // unit ids
-	Shape          string             `json:"shape,omitempty"` // item "shape" label, when answered
-	ShapeP         float64            `json:"shapeP,omitempty"`
-	Unsure         int                `json:"unsure"`                // labels with confidence < unsure_below
-	UnsureUnits    []string           `json:"unsureUnits,omitempty"` // unit ids kept expanded
-	Files          []FileAgg          `json:"files,omitempty"`       // owned first, then by attention
-	Slice          []SliceRow         `json:"slice,omitempty"`       // owned modules first, then the rest
+	// HeadlinesUnsure counts headline candidates left out of Headlines
+	// because their probability is below the headline threshold (M5.2:
+	// only P ≥ 0.60 claims are listed); the Overview says how many.
+	HeadlinesUnsure int            `json:"headlinesUnsure,omitempty"`
+	HotSpots        []HotSpot      `json:"hotSpots"` // top 3
+	RiskMax         float64        `json:"riskMax"`  // max unit risk level (1..5), 0 unknown
+	RiskAny         float64        `json:"riskAny"`
+	RiskTags        map[string]int `json:"riskTags"` // sub-id → unit count
+	TestGap         int            `json:"testGap"`
+	RiskyUnits      int            `json:"riskyUnits"` // units with risk >= 3 (denominator of test gap)
+	Bullets         []BulletAgg    `json:"bullets,omitempty"`
+	Fidelity        float64        `json:"fidelity"`
+	Undocumented    []string       `json:"undocumented"`    // unit ids
+	Shape           string         `json:"shape,omitempty"` // item "shape" label, when answered
+	ShapeP          float64        `json:"shapeP,omitempty"`
+	Unsure          int            `json:"unsure"`                // labels with confidence < unsure_below
+	UnsureUnits     []string       `json:"unsureUnits,omitempty"` // unit ids kept expanded
+	Files           []FileAgg      `json:"files,omitempty"`       // owned first, then by attention
+	Slice           []SliceRow     `json:"slice,omitempty"`       // owned modules first, then the rest
 	// TLDR is the fast tier's one sentence (≤160 chars) written from this
 	// record only (shown "ai·from labels"); TLDRKey is the key of the
 	// request it came from, so it is regenerated only when the record's
@@ -414,6 +418,10 @@ type ItemAgg struct {
 	// (M5), nil before.
 	Branch *BranchInfo `json:"branch,omitempty"`
 	Arch   *ArchGraph  `json:"arch,omitempty"`
+	// Surface is the structured change record (API endpoints, database,
+	// feature flags and config) set by the pipeline in stage 8 from code
+	// detection plus contract labels (M5.2); nil before.
+	Surface *ChangeSurface `json:"surface,omitempty"`
 }
 
 // Since-you-looked base sources (SinceLooked.Source).
