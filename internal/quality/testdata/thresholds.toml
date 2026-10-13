@@ -8,6 +8,11 @@
 # that can only rise, are left out. After a deliberate change (new
 # recordings, a tuning rule), run `go run ./tools/quality` and update the
 # values with the reason in docs/QUALITY.md.
+#
+# Re-baselined by the M5.2 review fixes: headline precision and recall
+# match a row's kind as well as its lines, and unsure_labels divides by the
+# labels its count can include (unsure_labels_all is the spec's
+# all-labels share).
 
 tolerance = 0.02
 
@@ -18,7 +23,8 @@ eyes_precision = 0.42
 headline_precision = 0.50
 headline_recall = 1.00
 fidelity = 1.00
-unsure_labels = 0.02
+unsure_labels = 0.18
+unsure_labels_all = 0.08
 unsure_units = 0.77
 lines_to_read = 0.56
 file_kind = 1.00
@@ -29,7 +35,8 @@ eyes_precision = 0.67
 headline_precision = 0.67
 headline_recall = 1.00
 fidelity = 1.00
-unsure_labels = 0.03
+unsure_labels = 0.15
+unsure_labels_all = 0.08
 unsure_units = 0.90
 lines_to_read = 0.05
 must_read = 1.00
@@ -37,9 +44,9 @@ file_kind = 1.00
 
 [items."pr:103"]
 headlines = 1
-headline_precision = 1.00
 fidelity = 1.00
-unsure_labels = 0.01
+unsure_labels = 0.05
+unsure_labels_all = 0.09
 unsure_units = 0.29
 lines_to_read = 0.26
 file_kind = 1.00
@@ -48,7 +55,8 @@ file_kind = 1.00
 headlines = 0
 hot_spots_top3 = 0.50
 fidelity = 0.75
-unsure_labels = 0.01
+unsure_labels = 0.08
+unsure_labels_all = 0.06
 unsure_units = 0.50
 lines_to_read = 0.00
 file_kind = 1.00
@@ -57,10 +65,11 @@ file_kind = 1.00
 headlines = 5
 eyes_recall = 1.00
 eyes_precision = 0.80
-headline_precision = 1.00
-headline_recall = 0.86
+headline_precision = 0.60
+headline_recall = 0.43
 fidelity = 1.00
-unsure_labels = 0.01
+unsure_labels = 0.10
+unsure_labels_all = 0.08
 unsure_units = 0.48
 lines_to_read = 0.51
 file_kind = 1.00
@@ -70,7 +79,8 @@ headlines = 0
 eyes_recall = 1.00
 eyes_precision = 1.00
 hot_spots_top3 = 0.67
-unsure_labels = 0.01
+unsure_labels = 0.10
+unsure_labels_all = 0.06
 unsure_units = 0.60
 lines_to_read = 0.50
 must_read = 1.00

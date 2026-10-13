@@ -119,6 +119,11 @@ func riskTags(ul *unitLabels) []string {
 // every fixture unit unsure and never skip.
 var unsureQuestions = [...]string{model.QDepth, model.QKind, model.QBehaviour, model.QBreaking, model.QRisk, model.QCovered}
 
+// UnsureQuestions returns the unit-scope questions Unsure, MinConfidence
+// and ItemAgg.Unsure read (unsureQuestions), so a share of unsure labels
+// can divide by the same labels.
+func UnsureQuestions() []string { return append([]string(nil), unsureQuestions[:]...) }
+
 // confidence returns the lowest decision confidence (decisionConfidence)
 // over the unit's unsureQuestions labels (an unknown answer counts as 0)
 // and whether the unit is unsure (lowest below unsureBelow). A unit with

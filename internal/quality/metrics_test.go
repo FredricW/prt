@@ -159,9 +159,9 @@ func TestHeadlines(t *testing.T) {
 	ix := newIndex(o)
 	tr := Truth{
 		Headlines: []TruthHeadline{
-			{Loc: loc("a.go", 1, 1), Certainty: Firm},
-			{Loc: oldLoc("b.go", 6, 6), Certainty: Soft},
-			{Loc: loc("z.go", 1, 1), Certainty: Firm}, // never matched
+			{Loc: loc("a.go", 1, 1), Contract: "signature", Breaking: true, Certainty: Firm},
+			{Loc: oldLoc("b.go", 6, 6), Contract: "signature", Certainty: Soft},
+			{Loc: loc("z.go", 1, 1), Contract: "api shape", Certainty: Firm}, // never matched
 		},
 		NotHeadlines: []NotHeadline{{Loc: loc("a.go", 1, 30)}, {Loc: loc("a_test.go", 1, 9)}},
 	}
@@ -183,9 +183,52 @@ func TestHeadlines(t *testing.T) {
 		t.Errorf("precision without headlines = %+v, want n/a", got)
 	}
 	// A headline whose unit is unknown is matched by its own path and line.
-	tr.Headlines = append(tr.Headlines, TruthHeadline{Loc: loc("q.go", 3, 3), Certainty: Firm})
+	tr.Headlines = append(tr.Headlines, TruthHeadline{Loc: loc("q.go", 3, 3), Breaking: true, Certainty: Firm})
 	if got := headlineRecall(tr, hs, ix); got != (Ratio{2, 3}) {
 		t.Errorf("recall with path:line match = %+v, want 2/3", got)
+	}
+}
+
+// A headline row matches an entry only when its kind claims what the entry
+// says: breaking needs breaking = true, a contract row the same contract,
+// a weakened-test or pii row an entry without a contract change. One row
+// recalls only the entries whose claim it makes.
+func TestHeadlineKinds(t *testing.T) {
+	o, _ := fixture()
+	ix := newIndex(o)
+	tr := Truth{Headlines: []TruthHeadline{ // u1 (a.go new 1-3) overlaps all three
+		{Loc: loc("a.go", 1, 1), Contract: "schema/migration", Certainty: Firm},
+		{Loc: loc("a.go", 2, 2), Contract: "env/flag", Certainty: Firm},
+		{Loc: loc("a.go", 3, 3), Contract: "api shape", Breaking: true, Certainty: Firm},
+	}}
+	for name, tc := range map[string]struct {
+		kinds             []string
+		precision, recall Ratio
+	}{
+		"breaking recalls only the breaking entry": {[]string{"breaking"}, Ratio{1, 1}, Ratio{1, 3}},
+		"a contract row recalls its contract":      {[]string{"env/flag"}, Ratio{1, 1}, Ratio{1, 3}},
+		"a breaking entry's contract also fits":    {[]string{"api shape"}, Ratio{1, 1}, Ratio{1, 3}},
+		"wrong claim on the right lines is a FP":   {[]string{"signature", "event format"}, Ratio{0, 2}, Ratio{0, 3}},
+		"pii needs an entry without a contract":    {[]string{"pii or secret", "test weakened"}, Ratio{0, 2}, Ratio{0, 3}},
+		"each claim recalls its own entry":         {[]string{"breaking", "env/flag", "schema/migration"}, Ratio{3, 3}, Ratio{3, 3}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			hs := make([]model.Headline, len(tc.kinds))
+			for i, k := range tc.kinds {
+				hs[i] = model.Headline{UnitID: "u1", Kind: k}
+			}
+			if got := headlinePrecision(tr, hs, ix); got != tc.precision {
+				t.Errorf("precision = %+v, want %+v", got, tc.precision)
+			}
+			if got := headlineRecall(tr, hs, ix); got != tc.recall {
+				t.Errorf("recall = %+v, want %+v", got, tc.recall)
+			}
+		})
+	}
+	// A weakened-test row fits an entry without a contract change.
+	none := Truth{Headlines: []TruthHeadline{{Loc: loc("a.go", 1, 1), Contract: "none", Certainty: Firm}}}
+	if got := headlineRecall(none, []model.Headline{{UnitID: "u1", Kind: "test weakened"}}, ix); got != (Ratio{1, 1}) {
+		t.Errorf("test weakened on a no-contract entry: %+v", got)
 	}
 }
 
@@ -264,15 +307,30 @@ func TestUndocumentedRecall(t *testing.T) {
 
 func TestLinesUnsureAndMustRead(t *testing.T) {
 	o, _ := fixture()
-	o.Labels = []model.Label{{UnitID: "u1"}, {UnitID: "u1", Line: 1}, {UnitID: "u2"}, {UnitID: "item:pr:1"}}
+	o.Labels = []model.Label{
+		{UnitID: "u1", Question: model.QDepth, Confidence: 0.9},
+		{UnitID: "u1", Question: model.QKind, Confidence: 0.5},
+		{UnitID: "u1", Question: model.QSuspicious, Line: 1, Confidence: 0.3},
+		{UnitID: "u2", Question: model.QRisk, Confidence: 0.7},
+		{UnitID: "u2", Question: model.QRelevance, Confidence: 0.2},
+		{UnitID: "item:pr:1", Question: model.QShape, Confidence: 0.1},
+	}
 	o.Agg.Unsure = 2
 	row := Score(Truth{LinesThatMatter: LinesThatMatter{MustRead: 8, Tolerance: 0.25}}, o)
 	// Eyes units u1 (3), u3 (4), u4 (4) = 11 of 13 changed lines.
 	if got := row.Ratios[MLinesToRead]; got != (Ratio{11, 13}) {
 		t.Errorf("lines to read = %+v", got)
 	}
+	// The footer's count over the labels it reads: the unit-scope labels
+	// of the attention and risk questions (depth, kind, risk here), not the
+	// line, relevance or item labels.
 	if got := row.Ratios[MUnsureLabels]; got != (Ratio{2, 3}) {
-		t.Errorf("unsure labels = %+v, want 2/3 (item labels not counted)", got)
+		t.Errorf("unsure labels = %+v, want 2/3", got)
+	}
+	// Every unit-scope and line label below .60 (kind, the line, relevance)
+	// over every unit-scope and line label; item labels not counted.
+	if got := row.Ratios[MUnsureLabelsAll]; got != (Ratio{3, 5}) {
+		t.Errorf("unsure labels (all) = %+v, want 3/5", got)
 	}
 	if got := row.Ratios[MUnsureUnits]; got != (Ratio{2, 4}) {
 		t.Errorf("unsure units = %+v", got)

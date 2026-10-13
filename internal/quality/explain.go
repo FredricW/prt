@@ -25,6 +25,15 @@ func Explain(t Truth, o Outcome) string {
 	return b.String()
 }
 
+// truthClaim names what a headline entry claims: "breaking, <contract>" or
+// the contract alone.
+func truthClaim(e TruthHeadline) string {
+	if e.Breaking {
+		return "breaking, " + e.Contract
+	}
+	return e.Contract
+}
+
 // unitLabelIndex maps unit id → question → unit-scope label.
 func unitLabelIndex(ls []model.Label) map[string]map[string]model.Label {
 	out := map[string]map[string]model.Label{}
@@ -88,6 +97,10 @@ func explainUnits(b *strings.Builder, t Truth, o Outcome, ix index, labels map[s
 	b.WriteString("\n")
 }
 
+// explainHeadlines lists the headline rows tagged ok (matches an entry),
+// FP(kind) (on an entry's lines with another claim), FP(not) (on a
+// not_headlines entry) or FP, then the candidates left out below the
+// threshold.
 func explainHeadlines(b *strings.Builder, t Truth, o Outcome, ix index) {
 	regions := make([]region, len(t.Headlines))
 	for i, e := range t.Headlines {
@@ -102,12 +115,17 @@ func explainHeadlines(b *strings.Builder, t Truth, o Outcome, ix index) {
 		s := headlineSpans(h, ix)
 		tag := "FP"
 		switch {
-		case overlapsAny(s, regions):
+		case matchesAnyHeadline(h, s, t.Headlines):
 			tag = "ok"
+		case overlapsAny(s, regions):
+			tag = "FP(kind)"
 		case overlapsAny(s, nots):
 			tag = "FP(not)"
 		}
-		fmt.Fprintf(b, "  %-7s %-16s %s:%d %s P %.2f\n", tag, h.Kind, h.Path, h.Line, h.Text, h.P)
+		fmt.Fprintf(b, "  %-8s %-16s %s:%d %s P %.2f\n", tag, h.Kind, h.Path, h.Line, h.Text, h.P)
+	}
+	for _, h := range o.Agg.HeadlineCandidates {
+		fmt.Fprintf(b, "  %-8s %-16s %s:%d %s P %.2f\n", "unsure", h.Kind, h.Path, h.Line, h.Text, h.P)
 	}
 	b.WriteString("\n")
 }
@@ -139,13 +157,19 @@ func explainMissed(b *strings.Builder, t Truth, o Outcome, ix index) {
 			fmt.Fprintf(b, "  needs_eyes %s %v %s\n", e.Path, e.Lines, e.Symbol)
 		}
 	}
-	hs := make([]unitSpans, len(o.Agg.Headlines))
-	for i, h := range o.Agg.Headlines {
-		hs[i] = headlineSpans(h, ix)
-	}
 	for _, e := range t.Headlines {
-		if e.Certainty == Firm && !anyOverlap(hs, regionOf(e.Loc)) {
-			fmt.Fprintf(b, "  headline %s %v %s\n", e.Path, e.Lines, e.Symbol)
+		if e.Certainty != Firm {
+			continue
+		}
+		found := false
+		for _, h := range o.Agg.Headlines {
+			if headlineMatches(h, headlineSpans(h, ix), e) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			fmt.Fprintf(b, "  headline %s %v %s (%s)\n", e.Path, e.Lines, e.Symbol, truthClaim(e))
 		}
 	}
 	und := ix.spansFor(o.Agg.Undocumented)

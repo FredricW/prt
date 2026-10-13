@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/fredricw/prt/internal/aggregate"
 	"github.com/fredricw/prt/internal/model"
 )
 
@@ -55,6 +56,7 @@ const (
 	MFidelity          = "fidelity"
 	MUndocumented      = "undocumented_recall"
 	MUnsureLabels      = "unsure_labels"
+	MUnsureLabelsAll   = "unsure_labels_all"
 	MUnsureUnits       = "unsure_units"
 	MLinesToRead       = "lines_to_read"
 	MMustRead          = "must_read"
@@ -83,6 +85,7 @@ var Metrics = []MetricInfo{
 	{MFidelity, "Fidelity bullets", true, true},
 	{MUndocumented, "Undocumented recall (firm)", true, true},
 	{MUnsureLabels, "Unsure labels", false, false},
+	{MUnsureLabelsAll, "Unsure labels (all)", false, false},
 	{MUnsureUnits, "Unsure units", false, false},
 	{MLinesToRead, "Lines to read", false, false},
 	{MMustRead, "Eyes lines in must_read ± tol", true, false},
@@ -170,6 +173,7 @@ func Score(t Truth, o Outcome) Row {
 	r.Ratios[MFidelity] = fidelity(t, o.Agg.Bullets)
 	r.Ratios[MUndocumented] = undocumentedRecall(t, o.Agg.Undocumented, ix)
 	r.Ratios[MUnsureLabels] = unsureLabels(o, ix)
+	r.Ratios[MUnsureLabelsAll] = unsureLabelsAll(o, ix)
 	r.Ratios[MUnsureUnits] = Ratio{Num: len(o.Agg.UnsureUnits), Den: len(o.Agg.Units)}
 	lines := linesToRead(o.Agg, ix)
 	r.Ratios[MLinesToRead] = lines
@@ -243,20 +247,59 @@ func headlineSpans(h model.Headline, ix index) unitSpans {
 	return unitSpans{path: h.Path, new: pt, old: pt, hasNew: true, hasOld: true}
 }
 
-// headlinePrecision is the share of pipeline headline rows that match a
-// headline entry (firm or soft; its unit overlaps the entry). A row that
-// matches no headline entry is a false positive, whether it overlaps a
-// not_headlines entry or nothing at all; matching a headline entry wins
-// over overlapping a not_headlines entry. Not applicable when the Overview
-// lists no headline.
-func headlinePrecision(t Truth, hs []model.Headline, ix index) Ratio {
-	regions := make([]region, len(t.Headlines))
-	for i, e := range t.Headlines {
-		regions[i] = regionOf(e.Loc)
+// Pipeline headline kinds that are not contract values (aggregate's
+// headline rows).
+const (
+	headlineBreaking     = "breaking"
+	headlineTestWeakened = "test weakened"
+	headlinePII          = "pii or secret"
+)
+
+// headlineFits reports whether a pipeline headline row of kind claims what
+// truth entry e says: a breaking row needs breaking = true; a contract row
+// (api shape, schema/migration, env/flag, event format, signature) needs
+// the same contract; a weakened-test or pii row, which the ground truth
+// has no field for, needs an entry without a contract change. So a row on
+// the right lines with the wrong claim (a migration called breaking) is a
+// false positive, and one row can recall only the entries whose claim it
+// makes.
+func headlineFits(kind string, e TruthHeadline) bool {
+	switch kind {
+	case headlineBreaking:
+		return e.Breaking
+	case headlineTestWeakened, headlinePII:
+		return e.Contract == "" || e.Contract == "none"
 	}
+	return e.Contract == kind
+}
+
+// headlineMatches reports whether pipeline headline h, matched through its
+// spans s, matches truth entry e: s overlaps e and h's kind fits e.
+func headlineMatches(h model.Headline, s unitSpans, e TruthHeadline) bool {
+	return headlineFits(h.Kind, e) && s.overlaps(regionOf(e.Loc))
+}
+
+// matchesAnyHeadline reports whether h matches any of the truth entries.
+func matchesAnyHeadline(h model.Headline, s unitSpans, es []TruthHeadline) bool {
+	for _, e := range es {
+		if headlineMatches(h, s, e) {
+			return true
+		}
+	}
+	return false
+}
+
+// headlinePrecision is the share of pipeline headline rows that match a
+// headline entry (firm or soft): its unit overlaps the entry and its kind
+// claims what the entry says (headlineFits). A row that matches no headline
+// entry is a false positive, whether it overlaps a not_headlines entry, an
+// entry with another claim, or nothing at all; matching a headline entry
+// wins over overlapping a not_headlines entry. Not applicable when the
+// Overview lists no headline.
+func headlinePrecision(t Truth, hs []model.Headline, ix index) Ratio {
 	r := Ratio{Den: len(hs)}
 	for _, h := range hs {
-		if overlapsAny(headlineSpans(h, ix), regions) {
+		if matchesAnyHeadline(h, headlineSpans(h, ix), t.Headlines) {
 			r.Num++
 		}
 	}
@@ -264,7 +307,7 @@ func headlinePrecision(t Truth, hs []model.Headline, ix index) Ratio {
 }
 
 // headlineRecall is the share of firm headline entries matched by at least
-// one pipeline headline row.
+// one pipeline headline row whose kind fits the entry.
 func headlineRecall(t Truth, hs []model.Headline, ix index) Ratio {
 	spans := make([]unitSpans, len(hs))
 	for i, h := range hs {
@@ -276,8 +319,11 @@ func headlineRecall(t Truth, hs []model.Headline, ix index) Ratio {
 			continue
 		}
 		r.Den++
-		if anyOverlap(spans, regionOf(e.Loc)) {
-			r.Num++
+		for i, h := range hs {
+			if headlineMatches(h, spans[i], e) {
+				r.Num++
+				break
+			}
 		}
 	}
 	return r
@@ -376,13 +422,43 @@ func undocumentedRecall(t Truth, undocumented []string, ix index) Ratio {
 }
 
 // unsureLabels is the aggregate's unsure label count (ItemAgg.Unsure, the
-// number the Overview's confidence footer shows) over every unit-scope
-// and line label of the item's units.
+// number the Overview's confidence footer shows) over the labels that
+// count can include: the unit-scope labels of the item's units for the
+// questions aggregate reads for "unsure" (aggregate.UnsureQuestions). Both
+// sides cover the same labels, so the share can range from 0 to 1.
 func unsureLabels(o Outcome, ix index) Ratio {
+	qs := map[string]bool{}
+	for _, q := range aggregate.UnsureQuestions() {
+		qs[q] = true
+	}
 	r := Ratio{Num: o.Agg.Unsure}
 	for _, l := range o.Labels {
-		if _, ok := ix.units[l.UnitID]; ok {
+		if _, ok := ix.units[l.UnitID]; ok && l.Line <= 0 && qs[l.Question] {
 			r.Den++
+		}
+	}
+	return r
+}
+
+// unsureBelow is the confidence below which unsureLabelsAll counts a label
+// (config pipeline.unsure_below's default; the fixture config keeps it).
+const unsureBelow = 0.60
+
+// unsureLabelsAll is the share of every unit-scope and line label of the
+// item's units whose confidence is below unsureBelow (unknown answers
+// included): the spec's "count of labels with confidence < 0.60", the
+// definition the M5.2 baseline's unsure count used, kept so before and
+// after compare on the same labels. It reads the labels only, not the
+// aggregate.
+func unsureLabelsAll(o Outcome, ix index) Ratio {
+	var r Ratio
+	for _, l := range o.Labels {
+		if _, ok := ix.units[l.UnitID]; !ok {
+			continue
+		}
+		r.Den++
+		if l.Confidence < unsureBelow {
+			r.Num++
 		}
 	}
 	return r
