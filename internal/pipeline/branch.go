@@ -98,8 +98,13 @@ func (p *Pipeline) branchLog(ctx context.Context, base, head string, limit int) 
 
 // unpushed returns the commits not on the branch's upstream (all commits
 // ahead of the merge base when it has none), newest first and at most
-// branchCommits, and their count (CountAhead, else the listed commits).
+// branchCommits, and their count (CountAhead, else the listed commits). A
+// remote-tracking ref (Item.RemoteRef) has none: its commits are on the
+// remote by definition.
 func (p *Pipeline) unpushed(ctx context.Context, it model.Item, f model.Fetch) ([]model.BranchCommit, int) {
+	if it.RemoteRef || strings.HasPrefix(it.Ref, "refs/remotes/") {
+		return nil, 0
+	}
 	base := it.Upstream
 	if base == "" {
 		base = f.BaseSHA

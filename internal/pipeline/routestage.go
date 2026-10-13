@@ -89,6 +89,8 @@ func (p *Pipeline) SetGroupOverride(ctx context.Context, itemID, groupID string,
 	if itemID == "" || groupID == "" {
 		return errors.New("pipeline: override: item and group ids required")
 	}
+	p.overrideMu.Lock()
+	defer p.overrideMu.Unlock()
 	return p.putOverride(ctx, itemID, groupID, groupOverride{Tier: tier, At: p.d.Now(), Fresh: tier == model.TierDeep})
 }
 
@@ -104,10 +106,14 @@ func (p *Pipeline) putOverride(ctx context.Context, itemID, groupID string, o gr
 }
 
 // clearFresh marks a group's deep override as served: later runs use the
-// review cache again.
+// review cache again. It is a compare-and-set under overrideMu: only a
+// deep override that still asks for a fresh review is rewritten, so a skip
+// or reset stored meanwhile (s, :tier) survives.
 func (p *Pipeline) clearFresh(ctx context.Context, itemID, groupID string) {
+	p.overrideMu.Lock()
+	defer p.overrideMu.Unlock()
 	o, ok := p.loadOverride(ctx, itemID, groupID)
-	if !ok || !o.Fresh {
+	if !ok || o.Tier != model.TierDeep || !o.Fresh {
 		return
 	}
 	o.Fresh = false

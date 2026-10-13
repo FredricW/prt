@@ -182,6 +182,11 @@ type Pipeline struct {
 
 	rulesMu sync.RWMutex
 	rules   route.Rules // compiled Deps.Routing (see SetRouting)
+
+	// overrideMu serialises writes of group overrides (SetGroupOverride
+	// and clearFresh's read-modify-write), so a user's s or :tier is never
+	// overwritten by a run clearing its fresh flag.
+	overrideMu sync.Mutex
 }
 
 // New builds a Pipeline. The routing rules are compiled once here; when
@@ -475,6 +480,11 @@ func (p *Pipeline) buildAgg(ctx context.Context, r *run, a analysis, rows []mode
 		return model.ItemAgg{}, err
 	}
 	in.Reviews, in.Branch = rows, branch
+	if branch != nil {
+		// The branch block's count is this run's: urgency's w_unpushed term
+		// reads it now, not the stored count applyAgg updates afterwards.
+		in.Item.Unpushed = branch.Unpushed
+	}
 	agg := p.fn.aggregate(in)
 	agg.Grouping, agg.Split = a.gro.stats, a.gro.split
 	rl.Note = p.tldr(ctx, r, &agg, rl)

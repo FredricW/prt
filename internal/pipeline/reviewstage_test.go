@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 	"unicode/utf8"
 
 	"github.com/fredricw/prt/internal/config"
@@ -13,6 +14,7 @@ import (
 	"github.com/fredricw/prt/internal/model"
 	"github.com/fredricw/prt/internal/review"
 	"github.com/fredricw/prt/internal/route"
+	"github.com/fredricw/prt/internal/store"
 )
 
 // m3Env is m2Env with fake reviewers, a routing that sends every group
@@ -177,6 +179,50 @@ func TestZeroRoutingMeansBuiltin(t *testing.T) {
 	e := newLabelEnv(t)
 	if got := e.pipeline(nil).Routing(); got.Config.Source != "builtin" || len(got.Rules) != len(config.DefaultRouting().Rules) {
 		t.Errorf("zero Deps.Routing compiled to %+v", got.Config)
+	}
+}
+
+// raceStore runs hook once, inside the first override CacheGet after it is
+// armed (between clearFresh's read and its write).
+type raceStore struct {
+	store.Store
+	hook func()
+}
+
+func (s *raceStore) CacheGet(ctx context.Context, ns, key string) ([]byte, bool, error) {
+	if h := s.hook; h != nil && ns == nsOverride {
+		s.hook = nil
+		h()
+	}
+	return s.Store.CacheGet(ctx, ns, key)
+}
+
+// A skip (s) stored while a run clears its fresh deep flag survives: the
+// clear is a compare-and-set under the override lock (M5 review finding).
+func TestClearFreshKeepsConcurrentSkip(t *testing.T) {
+	e := newLabelEnv(t)
+	rs := &raceStore{Store: e.st}
+	p := e.pipeline(nil, func(d *Deps) { d.Store = rs })
+	ctx := context.Background()
+	if err := p.SetGroupOverride(ctx, e.item.ID, "g", model.TierDeep); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	rs.hook = func() {
+		go func() { done <- p.SetGroupOverride(ctx, e.item.ID, "g", model.TierNone) }()
+		time.Sleep(20 * time.Millisecond) // let the skip reach its write
+	}
+	p.clearFresh(ctx, e.item.ID, "g")
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if ovs, _, _ := p.groupOverrides(ctx, e.item.ID, []model.Group{{ID: "g"}}); ovs["g"] != model.TierNone {
+		t.Errorf("override after concurrent skip = %v, want none", ovs)
+	}
+	// A skip already stored is never turned back into deep.
+	p.clearFresh(ctx, e.item.ID, "g")
+	if ovs, _, _ := p.groupOverrides(ctx, e.item.ID, []model.Group{{ID: "g"}}); ovs["g"] != model.TierNone {
+		t.Errorf("override after clearFresh on a skip = %v", ovs)
 	}
 }
 

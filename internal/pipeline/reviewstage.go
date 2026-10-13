@@ -329,6 +329,11 @@ func (rr *reviewRun) runRouted(ctx context.Context, j reviewJob) {
 		rr.update(context.WithoutCancel(ctx), i, func(row *model.Review) { row.Status = model.ReviewQueued })
 		return
 	}
+	// The fresh flag is cleared before the done row is published, so a
+	// user acting on that row (s, :tier) acts after the clear.
+	if res.err == nil && j.tier == model.TierDeep && rr.ro.fresh[j.groupID] {
+		rr.p.clearFresh(ctx, rr.r.it.ID, j.groupID)
+	}
 	rr.update(ctx, i, func(row *model.Review) {
 		row.Attempts = res.attempts
 		if res.err != nil {
@@ -339,9 +344,6 @@ func (rr *reviewRun) runRouted(ctx context.Context, j reviewJob) {
 	})
 	if res.err == nil {
 		rr.cache(ctx, j, res)
-		if j.tier == model.TierDeep && rr.ro.fresh[j.groupID] {
-			rr.p.clearFresh(ctx, rr.r.it.ID, j.groupID)
-		}
 	}
 }
 

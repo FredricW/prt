@@ -210,6 +210,29 @@ func prTitleCalls(f *review.Fake) int {
 	return n
 }
 
+// A remote-tracking ref added from search has no unpushed commits: the
+// commits ahead of the merge base are already on the remote (M5 review
+// finding).
+func TestBranchBlockRemoteRefHasNoUnpushed(t *testing.T) {
+	e := newBranchEnv(t, model.BranchReady, time.Hour)
+	e.item.RemoteRef = true
+	if err := e.st.UpsertItem(context.Background(), e.item); err != nil {
+		t.Fatal(err)
+	}
+	agg := e.run(t, e.pipeline())
+	if b := agg.Branch; b == nil || b.Unpushed != 0 || len(b.Commits) != 0 {
+		t.Fatalf("remote ref block %+v", b)
+	}
+	if c, ok := contribOf(agg.UrgencyTerms, "w_unpushed"); ok && c != 0 {
+		t.Errorf("w_unpushed = %v for a remote ref", c)
+	}
+	for _, r := range e.jev.Calls {
+		if _, ok := r.Questions[model.QState]; ok && !strings.Contains(stateJSON(r.State), `"unpushedCommits":0`) {
+			t.Errorf("state sent unpushed commits: %s", stateJSON(r.State))
+		}
+	}
+}
+
 func TestBranchBlockReadyForPR(t *testing.T) {
 	e := newBranchEnv(t, model.BranchReady, 3*24*time.Hour+time.Hour)
 	p := e.pipeline()
@@ -233,6 +256,11 @@ func TestBranchBlockReadyForPR(t *testing.T) {
 	}
 	if c, ok := contribOf(agg.UrgencyTerms, "w_ready_stale"); !ok || c <= 0 {
 		t.Errorf("w_ready_stale missing: %+v", agg.UrgencyTerms)
+	}
+	// The first run's urgency counts the unpushed commits it found, though
+	// the stored item had none yet (M5 review finding).
+	if c, ok := contribOf(agg.UrgencyTerms, "w_unpushed"); !ok || c <= 0 {
+		t.Errorf("w_unpushed missing on the first run: %+v", agg.UrgencyTerms)
 	}
 	if e.stateCalls() != 1 || prTitleCalls(e.fast) != 1 {
 		t.Fatalf("state calls %d, title calls %d", e.stateCalls(), prTitleCalls(e.fast))

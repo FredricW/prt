@@ -172,7 +172,10 @@ type Item struct {
 	// BranchState and BranchStateP are copied from ItemAgg.Branch by the
 	// pipeline for the picker's Branches line ("ready for PR .81"); the
 	// state is one of the Branch* constants, "" before analysis.
-	Upstream     string    `json:"upstream,omitempty"`
+	Upstream string `json:"upstream,omitempty"`
+	// RemoteRef marks a remote-tracking ref added from search
+	// ("origin/feat/y"): its commits are on the remote, so none is unpushed.
+	RemoteRef    bool      `json:"remoteRef,omitempty"`
 	LastCommitAt time.Time `json:"lastCommitAt,omitzero"`
 	BranchState  string    `json:"branchState,omitempty"`
 	BranchStateP float64   `json:"branchStateP,omitempty"`
