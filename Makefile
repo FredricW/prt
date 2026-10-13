@@ -4,6 +4,8 @@ export CGO_ENABLED := 1
 FIXTURE_SRC  := testdata/fixtures
 FIXTURE_REPO := testdata/fixture-repo
 FIXTURE_PRS  := testdata/fixtures/prs.json
+# Local draft comments the demo and snapshot start with (kept once stored).
+FIXTURE_DRAFTS := testdata/fixtures/drafts.json
 # Fixed clock for snapshots so ages are byte-stable.
 SNAPSHOT_NOW := 2026-10-13T12:00:00Z
 
@@ -45,7 +47,7 @@ REPLAY := --jev-replay $(RECORDINGS)/jev --embed-replay $(RECORDINGS)/embed --re
 
 # Interactive TUI against the fixture repo, fully offline.
 demo: build $(FIXTURE_REPO)/.git
-	./bin/prt --no-daemon --offline $(REPLAY) --repo $(FIXTURE_REPO) --fixtures $(FIXTURE_PRS)
+	./bin/prt --no-daemon --offline $(REPLAY) --repo $(FIXTURE_REPO) --fixtures $(FIXTURE_PRS) --drafts $(FIXTURE_DRAFTS)
 
 # Record real Jev answers for the fixture PRs into testdata/recordings/jev
 # (needs JEV_API_KEY; spend capped at $1.00, ledger in testdata/recordings/SPEND.md).
@@ -75,4 +77,4 @@ record-embed:
 
 # Non-interactive: render a few screens to stdout (for agents and CI).
 snapshot: build $(FIXTURE_REPO)/.git
-	./bin/prt --no-daemon --offline $(REPLAY) --snapshot --width 120 --height 30 --now $(SNAPSHOT_NOW) --repo $(FIXTURE_REPO) --fixtures $(FIXTURE_PRS)
+	./bin/prt --no-daemon --offline $(REPLAY) --snapshot --width 120 --height 30 --now $(SNAPSHOT_NOW) --repo $(FIXTURE_REPO) --fixtures $(FIXTURE_PRS) --drafts $(FIXTURE_DRAFTS)

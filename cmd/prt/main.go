@@ -2,12 +2,13 @@
 //
 // Usage:
 //
-//	prt [--repo DIR] [--no-daemon] [--offline] [--fixtures FILE] [--jev-replay DIR] [--embed-replay DIR] [--review-replay DIR] [--snapshot [--width N --height N --now TIME]]
-//	prt daemon [--repo DIR] [--offline] [--fixtures FILE] [--jev-replay DIR] [--embed-replay DIR] [--review-replay DIR]
+//	prt [--repo DIR] [--no-daemon] [--offline] [--fixtures FILE] [--jev-replay DIR] [--embed-replay DIR] [--review-replay DIR] [--drafts FILE] [--snapshot [--width N --height N --now TIME]]
+//	prt daemon [--repo DIR] [--offline] [--fixtures FILE] [--jev-replay DIR] [--embed-replay DIR] [--review-replay DIR] [--drafts FILE]
 package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -30,6 +31,7 @@ import (
 	"github.com/fredricw/prt/internal/gh"
 	"github.com/fredricw/prt/internal/gitx"
 	"github.com/fredricw/prt/internal/jev"
+	"github.com/fredricw/prt/internal/model"
 	"github.com/fredricw/prt/internal/pipeline"
 	"github.com/fredricw/prt/internal/questions"
 	"github.com/fredricw/prt/internal/review"
@@ -59,6 +61,9 @@ type options struct {
 	jevReplay    string
 	embedReplay  string
 	reviewReplay string
+	// drafts seeds local user drafts (testdata/fixtures/drafts.json) into
+	// the store before anything renders; see seedDrafts.
+	drafts string
 	// nowFn is the parsed --now clock (nil: wall clock). setup hands it to
 	// the pipeline too, so urgency (age term), quartiles and order use the
 	// same clock as the TUI and snapshots do not drift.
@@ -86,6 +91,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	fs.StringVar(&o.jevReplay, "jev-replay", "", "answer Jev from recordings in this directory (works with --offline; a miss means labels unavailable)")
 	fs.StringVar(&o.embedReplay, "embed-replay", "", "embed from recordings in this directory (works with --offline; a miss skips embeddings)")
 	fs.StringVar(&o.reviewReplay, "review-replay", "", "answer the fast/deep reviewers from recordings in this directory (works with --offline; a miss leaves the group unreviewed)")
+	fs.StringVar(&o.drafts, "drafts", "", "seed local draft comments from this JSON file (demo and snapshot); drafts already stored are kept as they are")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
@@ -117,6 +123,14 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	defer env.close()
+	if o.drafts != "" {
+		n, err := seedDrafts(ctx, env.deps.Store, o.drafts)
+		if err != nil {
+			_, _ = fmt.Fprintln(stderr, "prt: --drafts:", err)
+			return 1
+		}
+		env.deps.Log.Info("seeded drafts", "path", o.drafts, "new", n)
+	}
 	newInProcess := func() *daemon.InProcess {
 		c := daemon.NewInProcess(env.deps)
 		c.SetGitHubNote(env.ghNote)
@@ -332,6 +346,53 @@ func replayDeps(d *pipeline.Deps, o options) string {
 		note += " (offline)"
 	}
 	return note
+}
+
+// seedDrafts stores the user drafts in the JSON file at path ([]model.Comment)
+// and returns how many were new. A draft whose id is already stored for its
+// item is left alone, so edits made in the demo survive the next start (a
+// deleted fixture draft does come back). Only local user drafts are
+// accepted; the pipeline anchors them to units on the next analysis.
+func seedDrafts(ctx context.Context, st store.Store, path string) (int, error) {
+	raw, err := os.ReadFile(path) //nolint:gosec // path is a CLI flag
+	if err != nil {
+		return 0, err
+	}
+	var drafts []model.Comment
+	if err := json.Unmarshal(raw, &drafts); err != nil {
+		return 0, fmt.Errorf("%s: %w", path, err)
+	}
+	have := map[string]map[string]bool{}
+	n := 0
+	for _, c := range drafts {
+		if c.ID == "" || c.ItemID == "" || c.Path == "" || c.Line <= 0 {
+			return n, fmt.Errorf("%s: draft %q needs id, itemId, path and line", path, c.ID)
+		}
+		if c.Source != model.CommentUser || c.State != model.CommentDraft {
+			return n, fmt.Errorf("%s: %s is not a user draft (source %q, state %q)", path, c.ID, c.Source, c.State)
+		}
+		ids, ok := have[c.ItemID]
+		if !ok {
+			stored, err := st.Comments(ctx, c.ItemID)
+			if err != nil {
+				return n, err
+			}
+			ids = map[string]bool{}
+			for _, s := range stored {
+				ids[s.ID] = true
+			}
+			have[c.ItemID] = ids
+		}
+		if ids[c.ID] {
+			continue
+		}
+		if err := st.PutComment(ctx, c); err != nil {
+			return n, err
+		}
+		ids[c.ID] = true
+		n++
+	}
+	return n, nil
 }
 
 // daemonWork is what the daemon loop drives: discovery, then analysis of

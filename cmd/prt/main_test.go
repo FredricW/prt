@@ -231,6 +231,63 @@ func TestSnapshotReplay(t *testing.T) {
 	}
 }
 
+// The M4 demo data: --drafts seeds the fixture drafts, and the replay
+// snapshot shows them, an ai-draft, an open thread's ❱ marker and the
+// "Since you looked" block with the recorded comment_addressed answers.
+func TestSnapshotComments(t *testing.T) {
+	isolate(t)
+	repo := testutil.FixtureRepo(t)
+	rec := filepath.Join("..", "..", "testdata", "recordings")
+	args := []string{"--offline", "--snapshot", "--now", "2026-10-13T12:00:00Z",
+		"--jev-replay", filepath.Join(rec, "jev"), "--embed-replay", filepath.Join(rec, "embed"),
+		"--review-replay", filepath.Join(rec, "review"),
+		"--repo", repo, "--fixtures", testutil.FixturePRs(t), "--max-items", "1",
+		"--drafts", filepath.Join("..", "..", "testdata", "fixtures", "drafts.json")}
+	code, out, errOut := runPrt(args...)
+	if code != 0 {
+		t.Fatalf("code %d err %q", code, errOut)
+	}
+	screen := func(name string) string {
+		_, s, ok := strings.Cut(out, "=== screen: picker + "+name+" · pr:101 ===")
+		if !ok {
+			t.Fatalf("snapshot lacks #101's %s screen:\n%s", name, out)
+		}
+		s, _, _ = strings.Cut(s, "=== screen:")
+		return s
+	}
+	since := screen("overview-since")
+	for _, want := range []string{"Since you looked", "since e661461 (your last review)", "✓ addressed", "✗ not addressed"} {
+		if !strings.Contains(since, want) {
+			t.Errorf("overview-since lacks %q:\n%s", want, since)
+		}
+	}
+	if s := screen("code-draft"); !strings.Contains(s, "✎ draft · you") || !strings.Contains(s, "2 drafts") {
+		t.Errorf("code-draft screen lacks the seeded draft:\n%s", s)
+	}
+	if s := screen("code-ai-draft"); !strings.Contains(s, "╭─ ai-draft · ") || strings.Contains(s, "! [") {
+		t.Errorf("code-ai-draft screen lacks the ai-draft or still draws its finding inline:\n%s", s)
+	}
+	if s := screen("code-thread"); !strings.Contains(s, "❱") {
+		t.Errorf("code-thread screen lacks the thread marker:\n%s", s)
+	}
+	// Seeding again keeps what is stored: still two drafts, not four.
+	if code, out, errOut = runPrt(args...); code != 0 || !strings.Contains(screen("code-draft"), " · 2 drafts · 0 pending") {
+		t.Errorf("second seeding: code %d err %q, want 2 drafts kept", code, errOut)
+	}
+}
+
+func TestSeedDraftsRefusesNonDrafts(t *testing.T) {
+	isolate(t)
+	repo := gitRepo(t, "")
+	bad := filepath.Join(t.TempDir(), "d.json")
+	if err := os.WriteFile(bad, []byte(`[{"id":"x","itemId":"pr:1","path":"a.go","line":1,"side":"new","body":"b","source":"github","state":"posted"}]`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if code, _, errOut := runPrt("--offline", "--snapshot", "--repo", repo, "--drafts", bad); code != 1 || !strings.Contains(errOut, "not a user draft") {
+		t.Errorf("code %d err %q, want a refusal", code, errOut)
+	}
+}
+
 // --now must reach the pipeline (urgency age term), not just the TUI.
 func TestNowReachesPipeline(t *testing.T) {
 	isolate(t)
