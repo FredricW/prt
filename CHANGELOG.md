@@ -429,6 +429,45 @@ exercised against `gh.Fake`.
   demo/snapshot shows it as "labels unavailable" (replay miss degrades, by
   design).
 
+### M5.1 — user-requested changes (released 2026-10-13)
+
+Release gate: `make check` (vet, tests, lint: 0 issues) and `make snapshot`
+green. No model calls were made for this milestone (no spend) and nothing
+was written to GitHub. These changes are the user's direct instructions and
+override the spec's "analysis runs in urgency order" (see DECISIONS).
+
+#### Added
+
+- Auto-review strategy: `[pipeline] auto_review = "manual" | "needs-you" |
+  "needs-you+yours" | "all"` (default `needs-you`) gates every model-backed
+  stage. Uncovered items get only the free stages and show
+  `not analysed · r to run`; branches are auto-reviewed only under `all`.
+  `r`, `:resume`, `/` and `:add` are explicit requests and always run. Every
+  automatic path (daemon start, the discovery tick, first load, tab preview,
+  stale-on-push, routing reload, override follow-ups, settings jobs,
+  calibration sampling) is tested with fakes that fail when called.
+- Stop and resume: `ctrl+x` stops the selected item, `ctrl+k` stops all,
+  `ctrl+o` (or `r`) resumes; also `:stop [all]`, `:resume [all]` and the
+  `stop`/`resume` socket methods. A stop marks the stage `stopped`, the item
+  `stopped at <stage>` and in-flight reviews `stopped` (not failed, not
+  cached); resume re-uses every finished stage from the caches.
+- Settings page (`,` or `:settings`): strategy, role and owned globs, cost
+  cap and deep slots, models and embedder, urgency weights and thresholds.
+  Saves to the repo or global `prt.toml` (and `prt.routing.toml`) with a
+  comment-preserving line editor, applies live (re-rank, re-route, queue
+  resize, model swap), shows key/Ollama/gh presence (never values) and opens
+  the routing and questions files in `$EDITOR`.
+- Command line: `:auto <strategy>`, `:stop`, `:stop all`, `:resume`,
+  `:resume all`, `:settings`; tab completion of names and arguments with
+  cycling; one-line errors for unknown commands and arguments; the `?`
+  overlay lists every command.
+- Pipeline page and picker show `■ stopped` stages and reviews.
+
+#### Known limits
+
+- In the 36-column picker, `stopped at <stage> · r to resume` is cut short.
+- Changes to `prt.questions.toml` apply at the next daemon start.
+
 ### M5 — polish (released 2026-10-13)
 
 Release gate: `go build ./...`, `go vet ./...`, `make lint` (0 issues),

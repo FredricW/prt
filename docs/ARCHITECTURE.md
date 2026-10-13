@@ -43,7 +43,7 @@ Nothing outside those five packages makes a network call or runs `git`.
 
 | Package | Owner | Purpose | Status |
 | --- | --- | --- | --- |
-| `cmd/prt` | M0 | flags (`--repo --no-daemon --offline --fixtures --snapshot --now --jev-replay --embed-replay --review-replay --drafts`), `daemon` subcommand (socket + periodic discovery), wiring from env (reviewers, `Deps.ConfigDirs`), browser opener | M4 (`--drafts` snapshot seeding) |
+| `cmd/prt` | M0 | flags (`--repo --no-daemon --offline --fixtures --snapshot --now --jev-replay --embed-replay --review-replay --drafts`), `daemon` subcommand (socket + periodic discovery), wiring from env (reviewers, `Deps.ConfigDirs`), browser opener; M5.1 `buildModels` (startup clients and the daemon's settings `ModelFactory`), `SetSettingsDeps` | M5.1 |
 | `internal/model` | M0 | domain types (spec "Data model"), `UnitID`, `GroupID`, `ContentHash`, aggregates | done |
 | `internal/config` | M0 | `prt.toml`, `prt.routing.toml` (+ raw `prt.questions.toml`), lookup `.git/prt` → XDG → builtin, unknown keys warned about (`Config.Warnings`) | done |
 | `internal/gitx` | M0 | `Git` interface, `Exec` (git CLI), `Fake` | done |
@@ -51,17 +51,19 @@ Nothing outside those five packages makes a network call or runs `git`.
 | `internal/store` | M0 | `Store` interface, `SQLite` (JSON docs table + cache + runlog, `PRAGMA user_version` migrations), `OpenMemory` for tests | done |
 | `internal/diff` | M0 | unified diff parser, hunk/line numbering, `IntraLine` char diff, `Pair` | done |
 | `internal/proto` | M0 | NDJSON `Message`, `Event`, `Detail`, encoder/decoder | done |
-| `internal/daemon` | M0 | `Client` interface, `InProcess` (discovery, worker pool, checkout, group edits, review actions, routing ensure/reload, call log, per-item cap; M4 `SaveComment`, `CommentAction` (accept/dismiss/reply/resolve), `SubmitReview` on the units' head, `CreatePR` with draft attachment, `MarkViewed`, pending-draft recovery), `Serve`/`Dial` over the socket; M5 `Search` (local/open/closed), `Preview`/`RemovePreview`, aggregate-only `Override`, Detail with overrides applied and the branch block aged | M5 |
+| `internal/daemon` | M0 | `Client` interface, `InProcess` (discovery, worker pool, checkout, group edits, review actions, routing ensure/reload, call log, per-item cap; M4 `SaveComment`, `CommentAction` (accept/dismiss/reply/resolve), `SubmitReview` on the units' head, `CreatePR` with draft attachment, `MarkViewed`, pending-draft recovery), `Serve`/`Dial` over the socket; M5 `Search` (local/open/closed), `Preview`/`RemovePreview`, aggregate-only `Override`, Detail with overrides applied and the branch block aged; M5.1 auto-review gate (explicit vs automatic jobs, FreeOnly runs, `RequestedSHA`), `Stop`/`Resume` (cancel cause `pipeline.ErrStopped`), `Settings`/`SaveSettings` with live reload | M5.1 |
 | `internal/diffview` | M0 | plain unified diff viewer component (lazy row rendering, file navigation, intra-line highlight) | done |
-| `internal/tui` | M0→M5 | root model, picker (stage strip while analysing), Overview (TL;DR line, `w` weights overlay)/Code tabs, Pipeline page (`P`, via `pipePane`), help overlay, rebindable keys, `$EDITOR` hook, `Snapshot` (no-TTY render); M4 Overview "Since you looked" block, submit-review / create-PR forms (Huh), comment ops to the client, draft count in the status bar; M5 design shell (header, Queue box, tabs, hints), `/` search-and-add with `tab` preview (discarded through `RemovePreview`), `x` remove, `space` marks, `:` command line, Architecture tab (`3`), branch-state picker lines and Overview box, `u`/`e`/`o` wiring | M5 |
+| `internal/tui` | M0→M5 | root model, picker (stage strip while analysing), Overview (TL;DR line, `w` weights overlay)/Code tabs, Pipeline page (`P`, via `pipePane`), help overlay, rebindable keys, `$EDITOR` hook, `Snapshot` (no-TTY render); M4 Overview "Since you looked" block, submit-review / create-PR forms (Huh), comment ops to the client, draft count in the status bar; M5 design shell (header, Queue box, tabs, hints), `/` search-and-add with `tab` preview (discarded through `RemovePreview`), `x` remove, `space` marks, `:` command line, Architecture tab (`3`), branch-state picker lines and Overview box, `u`/`e`/`o` wiring; M5.1 stop/resume keys, not-analysed/stopped states, settings page (`,`, `TabSettings`) | M5.1 |
+| `internal/settings` | M5.1 | settings page backend: `FromConfig`, `Diff`, `Validate`, comment-preserving `Save` of prt.toml / prt.routing.toml, `EnsureQuestions`, environment presence (`Env`, `HTTPProber` for Ollama) | M5.1 |
+| `internal/settingsview` | M5.1 | settings page component (Huh form over `proto.SettingsValues`, scope choice, env lines, edit-file actions) | M5.1 |
 | `internal/searchview` | M5 | the `/` prompt component: per-source `Searcher` calls merged as they land, 250 ms debounce for GitHub sources, result rows, `PendingChoice` (enter add / tab preview) | M5 |
-| `internal/cmdline` | M5 | `:` command line: `Parse` (`:add`, `:tier`, `:cap`, `:q`), input with history, `PendingCommand` | M5 |
+| `internal/cmdline` | M5 | `:` command line: `Parse` (`:add`, `:tier`, `:cap`, `:q`; M5.1 `:auto`, `:stop`, `:resume`, `:settings`), `Complete` (tab), `Help`, input with history, `PendingCommand` | M5.1 |
 | `internal/archview` | M5 | Architecture tab component: layered module graph (or hop list), Contracts and net-effect boxes, depth `+`/`-`, diff-only `d`, file list and `PendingJump` | M5 |
 | `internal/arch` | M5 | `Build`: module graph (modules = source directories) from `link.ImportGraph` at base and head, hop distance, contracts, code-written net effect | M5 |
 | `internal/highlight` | M5 | tree-sitter syntax classes for one line (`Line`, LRU-cached) or a whole file (`Lines`) | M5 |
 | `internal/theme` | M5 | palette roles from the design canvas (adaptive colours, 256/16-colour fallbacks), `Box`, `Divider`, `UrgencyBar`, `Chips`, `Tab`, `Hints` | M5 |
 | `internal/pipeview` | M3 | Pipeline page component: stage strip + per-stage log, routing table, totals/rules/grouping/calibration panels, call log and cap prompt overlays; actions D s r e c $ via `PendingAction`; `StageStrip` for the picker | M3 |
-| `internal/pipeline` | M0→M4 | stage orchestration, caching, RunLog events, degradation; stages 6–8 (route with user overrides, planned review dispatch per tier with retry, escalation and calibration, AI group titles, TL;DR, review totals); M4 thread loading and merge, re-anchoring (with `Item.UnitsSHA`), ai-draft sync, "Since you looked" (changed units, `comment_addressed`); M5 branch block (`branch.state`, abandoned? default, `AgeBranchInfo`, SupersededBy, suggested PR title), aggregate-only runs, calibration rates, module graph | M5 |
+| `internal/pipeline` | M0→M4 | stage orchestration, caching, RunLog events, degradation; stages 6–8 (route with user overrides, planned review dispatch per tier with retry, escalation and calibration, AI group titles, TL;DR, review totals); M4 thread loading and merge, re-anchoring (with `Item.UnitsSHA`), ai-draft sync, "Since you looked" (changed units, `comment_addressed`); M5 branch block (`branch.state`, abandoned? default, `AgeBranchInfo`, SupersededBy, suggested PR title), aggregate-only runs, calibration rates, module graph; M5.1 per-run config/model snapshot (`SetConfig`/`SetModels`), `FreeOnly` runs with guard models, user stop (`ErrStopped` → `StageStopped`/`ReviewStopped`) | M5.1 |
 | `internal/parse` | M1 | tree-sitter split at function boundaries, symbol/signature, shape hash, format detection, `Lang` | hunk fallback only |
 | `internal/questions` | M1 | catalogue types, validation, `Wire()` to `jev.Question`, embedded `default.toml` | types done; catalogue partial |
 | `internal/jev` | M1 | `Client`, `HTTP` (AI Gateway `/v1/evaluate`), `Fake`, `Replay`, `Recorder`, `RequestKey` | done (batching lives in `labels`) |
@@ -158,6 +160,10 @@ type Client interface {
     Search(ctx, proto.SearchParams) (proto.SearchResult, error)
     Preview(ctx, query string) (model.Item, error)
     RemovePreview(ctx, itemID string) error
+    Stop(ctx, proto.StopParams) (proto.StopResult, error)        // M5.1
+    Resume(ctx, proto.ResumeParams) (proto.ResumeResult, error)  // M5.1
+    Settings(ctx, proto.SettingsParams) (proto.SettingsInfo, error)        // M5.1
+    SaveSettings(ctx, proto.SaveSettingsParams) (proto.SettingsInfo, error) // M5.1
     Events() <-chan proto.Event
     Close() error
 }

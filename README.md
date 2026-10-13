@@ -12,7 +12,8 @@ every number on screen traces back to a label, a rule or a git fact.
 > ranking, Pipeline page) and M4 (review comments, AI drafts, review
 > submission, create PR, "Since you looked") and M5 (search-and-add,
 > command line, branch states, Architecture tab, side-by-side diffs, syntax
-> colour, the design canvas look) are done; M6 (overlap view) is not
+> colour, the design canvas look) and M5.1 (auto-review strategy, stop and
+> resume, settings page, command-line completion) are done; M6 (overlap view) is not
 > started. See
 > [`docs/spec.md`](docs/spec.md) for the design and
 > [`CHANGELOG.md`](CHANGELOG.md) for what works today.
@@ -66,7 +67,8 @@ prt                 # picker on the left, the selected PR/branch on the right
   shows one example and "×N verified identical". `M` on two groups merges
   them, `X` splits the group at the cursor; prt remembers your edits.
 - Keys are rebindable under `[keys]` in `prt.toml` (actions as in the
-  spec's keyboard table, plus `mode`, `merge_groups`, `split_group`).
+  spec's keyboard table, plus `mode`, `merge_groups`, `split_group`, `stop`,
+  `stop_all`, `resume`, `settings`; write the comma key as `comma`).
 - Labels need `JEV_API_KEY`. Without it (or when Jev is unreachable) items
   show `labels unavailable`: the Overview shows git facts only and the Code
   page shows every unit with its diff, filters off.
@@ -98,8 +100,19 @@ prt                 # picker on the left, the selected PR/branch on the right
   Added section (or jumps to it when it is already listed), `tab` previews
   its Overview without adding it; closing the prompt drops the preview. `x`
   removes an added item; `space` marks items for the overlap view (M6).
-- `:` opens the command line: `:add <query>`, `:tier deep|none|rules`,
-  `:cap 1.00` / `:cap default`, `:q`.
+- `:` opens the command line (`tab` completes command names and arguments,
+  pressing it again cycles; an unknown command prints a one-line hint):
+
+  | Command | Does |
+  | --- | --- |
+  | `:add #482` / `:add feat/x` | add a PR or branch and analyse it now |
+  | `:auto manual\|needs-you\|needs-you+yours\|all` | set the auto-review strategy (saved to `.git/prt/prt.toml`) |
+  | `:tier deep\|none\|rules` | set the review tier of the focused group (or every group) |
+  | `:cap 1.00` / `:cap default` | set the selected item's review cost cap |
+  | `:stop` / `:stop all` | stop the selected item's analysis / every analysis |
+  | `:resume` / `:resume all` | resume the selected item / every stopped item |
+  | `:settings` | open the settings page (also `,`) |
+  | `:q` | quit (drafts are saved) |
 - `3` opens the Architecture tab: the module graph around the diff (`h`/`j`/
   `k`/`l` move, `+`/`-` depth, `d` changed modules only, `enter` lists a
   module's files and jumps to one), with the contracts it crosses and its
@@ -111,7 +124,41 @@ prt                 # picker on the left, the selected PR/branch on the right
   `ready for PR`, `spike`, `superseded by #N` (from Jev, with its
   probability) or `abandoned?` after 14 days without commits
   (`pipeline.abandoned_days`), plus unpushed commits and a suggested PR title.
-- `r` re-runs analysis for the selected item; `?` shows every key; `q` quits.
+- `r` re-runs analysis for the selected item; `?` shows every key and
+  command; `q` quits.
+- **Auto-review strategy.** Model calls (Jev labels, embeddings, LLM reviews,
+  TL;DR, branch state and PR title) cost money, so prt only spends on its own
+  for the items `[pipeline] auto_review` in `prt.toml` covers:
+
+  | Strategy | Analysed without asking |
+  | --- | --- |
+  | `manual` | nothing |
+  | `needs-you` (default) | PRs in Needs you |
+  | `needs-you+yours` | PRs in Needs you or Yours |
+  | `all` | everything, including branches |
+
+  Everything else still gets the free stages (fetch, parse, structural
+  links, the plain diff) and shows `not analysed · r to run`. Branches are
+  never auto-reviewed unless the strategy is `all`. Asking explicitly always
+  runs: `r`, `:resume`, adding with `/` or `:add`. Change it with `:auto` or
+  on the settings page; it applies at once, even to queued work.
+- **Stop and resume.** `ctrl+x` stops the selected item's analysis, `ctrl+k`
+  stops all, `ctrl+o` (or `r` on a stopped item) resumes. A stopped item
+  shows `stopped at <stage> · r to resume`; in-flight reviews show as
+  stopped, not failed. Resume picks up from the last finished stage: work
+  already done is read from the content-hash caches, so nothing is paid
+  twice. Works in-process and through the daemon.
+- **Settings page** (`,` or `:settings`): auto-review strategy, your role
+  and owned globs, cost cap and deep slots, fast/deep models and embedder,
+  urgency weights and thresholds. It saves to `.git/prt/prt.toml` (default)
+  or the global `$XDG_CONFIG_HOME/prt/prt.toml`, keeping your comments and
+  unrelated keys, and applies the change without a restart (re-ranking or
+  re-routing as needed). It shows whether `JEV_API_KEY` and
+  `PRT_ANTHROPIC_API_KEY` are set (never their values), whether Ollama is
+  reachable and whether `gh` is logged in, and opens `prt.routing.toml` or
+  `prt.questions.toml` in `$EDITOR` (question changes apply at the next
+  daemon start). `tab`/`enter` move between fields, `pgdown`/`pgup` between
+  sections, `esc` cancels.
 - `prt daemon` keeps analysis warm in the background (one per repo); `prt`
   connects to it automatically, or runs everything in-process with `--no-daemon`.
 - `prt --offline` never touches the network; `prt --snapshot` prints a few
@@ -130,7 +177,10 @@ so no model is called but the fixture PRs show real labels, groups, reviews
 and TL;DRs. They also pass `--drafts testdata/fixtures/drafts.json`, which
 seeds a few local draft comments (drafts you already have are kept). Anything not recorded (the local branch) shows the `labels
 unavailable` mode; most deep groups of the larger PRs stay queued over the
-default $0.40 per-item cost cap.
+default $0.40 per-item cost cap. `make demo` uses the default `needs-you`
+strategy, so in a fixture store nothing has analysed yet (`make snapshot`
+analyses every item regardless of strategy) #102 and the branch show
+`not analysed` until you press `r`.
 
 Configuration is optional: `prt.toml`, `prt.routing.toml` and
 `prt.questions.toml` are looked up in `.git/prt/`, then `$XDG_CONFIG_HOME/prt/`.
