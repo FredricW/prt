@@ -31,6 +31,9 @@ type content struct {
 	// and filters apply only then.
 	labelled      bool
 	labelsMissing bool
+	// anyOwned is true when at least one file is owned; without owned files
+	// the "mine" filter is ignored (it would hide everything).
+	anyOwned bool
 }
 
 // plain reports whether there are no units to lay out, so the component
@@ -68,6 +71,9 @@ func buildContent(d proto.Detail) content {
 		c.files = filesFromAgg(d.Agg.Files, c.units, stats)
 	} else {
 		c.files = filesFromUnits(d.Units, d.Files)
+	}
+	for _, f := range c.files {
+		c.anyOwned = c.anyOwned || f.owned
 	}
 	return c
 }

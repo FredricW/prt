@@ -162,8 +162,12 @@ func unitChips(u *model.ChangeUnit, a *model.UnitAgg, labelled bool) []chip {
 	if a.Kind != "" && a.Kind != model.LabelUnknown {
 		cs = append(cs, chip{text: a.Kind})
 	}
-	cs = append(cs, boolChip("behaviour", a.Behaviour, a.BehaviourP))
-	if a.Breaking {
+	if a.BehaviourUnknown {
+		cs = append(cs, chip{text: "behaviour ?"})
+	} else {
+		cs = append(cs, boolChip("behaviour", a.Behaviour, a.BehaviourP))
+	}
+	if a.Breaking { // an unknown breaking label makes no claim: no chip
 		cs = append(cs, chip{text: UnsurePrefix(a.BreakingP) + "breaking", prob: ProbText(a.BreakingP), warn: true})
 	}
 	switch {
@@ -173,7 +177,10 @@ func unitChips(u *model.ChangeUnit, a *model.UnitAgg, labelled bool) []chip {
 		cs = append(cs, chip{text: "undocumented"})
 	}
 	tests := chip{text: "tests ✓"}
-	if !a.Covered {
+	switch {
+	case a.CoveredUnknown:
+		tests = chip{text: "tests ?"}
+	case !a.Covered:
 		tests = chip{text: "tests ✗", warn: a.Untested}
 	}
 	cs = append(cs, tests)

@@ -43,7 +43,7 @@ func unitAgg(u model.ChangeUnit, ul *unitLabels, owned, counted bool, unsureBelo
 	}
 	a.Attention = attention(ul.value(model.QDepth), a.Noise, a.Unsure)
 	a.Minutes = minutes(a.Attention, a.EffectiveLines)
-	a.Untested = a.RiskLevel >= 3 && a.CoveredP < 0.5
+	a.Untested = a.RiskLevel >= 3 && !a.CoveredUnknown && a.CoveredP < 0.5
 	a.Undocumented = ul.value(model.QDescBullet) == model.BulletNone && a.BehaviourP >= 0.5
 	return a
 }
@@ -56,6 +56,12 @@ func labelFacts(a *model.UnitAgg, ul *unitLabels) {
 	a.Breaking = a.BreakingP >= 0.5
 	a.CoveredP = ul.yesP(model.QCovered)
 	a.Covered = a.CoveredP >= 0.5
+	_, ok := ul.known(model.QBehaviour)
+	a.BehaviourUnknown = !ok
+	_, ok = ul.known(model.QBreaking)
+	a.BreakingUnknown = !ok
+	_, ok = ul.known(model.QCovered)
+	a.CoveredUnknown = !ok
 	if l, ok := ul.known(model.QContract); ok {
 		a.Contract = l.Value
 	}

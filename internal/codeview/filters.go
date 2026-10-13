@@ -16,7 +16,7 @@ const RiskMin = 3
 func defaultFilters() [numFilters]bool { return [numFilters]bool{true, true, true} }
 
 // numFilters is len(AllFilters), the number of toggle keys.
-const numFilters = 9
+const numFilters = 10
 
 // filterIndex returns f's position in AllFilters, or -1.
 func filterIndex(f Filter) int {
@@ -28,9 +28,9 @@ func filterIndex(f Filter) int {
 	return -1
 }
 
-// hasData reports whether a filter can be evaluated in M1; comments and
-// findings arrive with later milestones.
-func hasData(f Filter) bool { return f != FilterComments && f != FilterFindings }
+// hasData reports whether a filter can be evaluated in M1; comments,
+// findings and last-look marks arrive with later milestones.
+func hasData(f Filter) bool { return f != FilterComments && f != FilterFindings && f != FilterSince }
 
 // filterLabel is the bar text of f ("risk ≥ 3" for FilterRisk).
 func filterLabel(f Filter) string {
@@ -46,7 +46,8 @@ func matches(f Filter, a *model.UnitAgg) bool {
 	case FilterNeedsEyes:
 		return a.Attention == model.AttnEyes
 	case FilterBehaviour:
-		return a.Behaviour
+		// An unanswered behaviour label is no claim either way: keep the unit.
+		return a.Behaviour || a.BehaviourUnknown
 	case FilterMine:
 		return a.Owned
 	case FilterRisk:
@@ -75,11 +76,18 @@ func (m *Model) visible(id string) bool {
 		return true
 	}
 	for i, f := range AllFilters {
-		if m.filters[i] && hasData(f) && !matches(f, a) {
+		if m.filters[i] && m.filterActive(f) && !matches(f, a) {
 			return false
 		}
 	}
 	return true
+}
+
+// filterActive reports whether an enabled filter takes effect: it has data,
+// and for "mine" the item has at least one owned file (with none, "mine"
+// would hide every unit, so it is ignored and the bar says so).
+func (m *Model) filterActive(f Filter) bool {
+	return hasData(f) && (f != FilterMine || m.c.anyOwned)
 }
 
 // collapsed reports whether a unit is drawn as a one-line noise summary:

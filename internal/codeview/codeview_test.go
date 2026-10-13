@@ -236,6 +236,44 @@ func TestChipsAndMarks(t *testing.T) {
 	contains(t, v, "·    41 + export function retryDelay")
 }
 
+// Regression: an unanswered behaviour label was read as a confident "no",
+// so the default behaviour filter hid the unit and the chip said ✗ 1.0.
+func TestUnknownBooleans(t *testing.T) {
+	d := loadDetail(t)
+	for i := range d.Agg.Units {
+		if a := &d.Agg.Units[i]; a.UnitID == "u1" {
+			a.Behaviour, a.BehaviourP, a.BehaviourUnknown = false, 0, true
+			a.Covered, a.CoveredP, a.CoveredUnknown, a.Untested = false, 0, true, false
+		}
+	}
+	m := newModel(t, d, 160, 40) // default filters: needs eyes, behaviour, mine
+	v := m.View()
+	contains(t, v, "┌ modified · feature · behaviour ? · breaking .86 · b2 · tests ? · auth")
+	lacks(t, v, "behaviour ✗")
+}
+
+// Regression: with no owned files (no user.owns, no CODEOWNERS match) the
+// default "mine" filter hid every unit of every PR.
+func TestMineIgnoredWithoutOwnedFiles(t *testing.T) {
+	d := loadDetail(t)
+	for i := range d.Files {
+		d.Files[i].Owned = false
+	}
+	for i := range d.Agg.Files {
+		d.Agg.Files[i].Owned = false
+	}
+	for i := range d.Agg.Units {
+		d.Agg.Units[i].Owned = false
+	}
+	m := newModel(t, d, 120, 30)
+	if !m.FilterOn(FilterMine) {
+		t.Fatal("mine should stay on (it is a default)")
+	}
+	contains(t, m.View(), "┌ modified · feature · behaviour ✓") // u1: eyes, behaviour
+	press(t, &m, "f")
+	contains(t, lines(m)[0], "[3 mine ✓ (no owned files, ignored)]")
+}
+
 func TestNoiseCollapseAndExpand(t *testing.T) {
 	m := newModel(t, loadDetail(t), 120, 30)
 	allOff(&m)
@@ -308,6 +346,11 @@ func TestDefaultFiltersAndToggle(t *testing.T) {
 		t.Errorf("has comments: note %q on %v", m.Note(), m.FilterOn(FilterComments))
 	}
 	contains(t, lines(m)[0], "has comments: no data yet")
+	press(t, &m, "0")
+	if m.FilterOn(FilterSince) {
+		t.Error("changed since last look turned on without data")
+	}
+	contains(t, lines(m)[0], "changed since last look: no data yet")
 }
 
 func TestCapturing(t *testing.T) {

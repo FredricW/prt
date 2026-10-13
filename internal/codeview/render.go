@@ -112,6 +112,9 @@ func (m Model) barText() string {
 		switch {
 		case !hasData(f):
 			st = m.st.barDim
+		case m.filters[i] && !m.filterActive(f):
+			s += " ✓ (no owned files, ignored)"
+			st = m.st.barDim
 		case m.filters[i]:
 			s += " ✓"
 			st = m.st.barOn

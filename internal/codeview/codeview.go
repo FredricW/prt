@@ -3,7 +3,7 @@
 // divider) with minimap cells, and a right pane with the selected file's
 // units in line order, each under a header strip of label chips, with
 // per-line gutter marks (◆ ~ ⋯ ·), noise collapsed by default (`z`
-// expands), a filters bar (`f`, `1`–`9`), unit/file navigation (`n`/`p`,
+// expands), a filters bar (`f`, `1`–`9`, `0`), unit/file navigation (`n`/`p`,
 // `J`/`K`) and a raw-labels overlay (`L`).
 //
 // It renders only what proto.Detail carries (Units, Labels, Files, Agg,
@@ -27,6 +27,8 @@
 package codeview
 
 import (
+	"strconv"
+
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/lipgloss"
 
@@ -38,9 +40,11 @@ import (
 // Filter is one toggle of the filters bar.
 type Filter string
 
-// Filters in bar order; number keys 1–9 toggle them in this order. The
-// first three are on by default (spec: needs eyes, behaviour changes, mine).
-// FilterRisk means risk ≥ RiskMin. Filters hide units, never files.
+// Filters in bar order; number keys 1–9 and 0 toggle them in this order.
+// The first three are on by default (spec: needs eyes, behaviour changes,
+// mine). FilterRisk means risk ≥ RiskMin. Filters hide units, never files.
+// Comments, findings and changed-since-last-look are placeholders until
+// their data exists (M4, M3, M4).
 const (
 	FilterNeedsEyes    Filter = "needs eyes"
 	FilterBehaviour    Filter = "behaviour"
@@ -51,12 +55,13 @@ const (
 	FilterUnsure       Filter = "unsure"
 	FilterComments     Filter = "has comments"
 	FilterFindings     Filter = "has findings"
+	FilterSince        Filter = "changed since last look"
 )
 
 // AllFilters lists the filters in bar order.
 var AllFilters = []Filter{
 	FilterNeedsEyes, FilterBehaviour, FilterMine, FilterRisk, FilterUntested,
-	FilterUndocumented, FilterUnsure, FilterComments, FilterFindings,
+	FilterUndocumented, FilterUnsure, FilterComments, FilterFindings, FilterSince,
 }
 
 // Keys are the Code page bindings the component handles. The tui KeyMap
@@ -65,16 +70,16 @@ type Keys struct {
 	Down, Up, PageDown, PageUp, HalfPageDown, HalfPageUp, Top, Bottom key.Binding
 	NextUnit, PrevUnit, NextFile, PrevFile                            key.Binding
 	Filters, Expand, RawLabels                                        key.Binding
-	// Toggle[i] toggles AllFilters[i] (default keys "1".."9"); they are only
-	// active while the filters bar is open (after Filters), so the tab keys
-	// 1/2 keep working otherwise.
-	Toggle [9]key.Binding
+	// Toggle[i] toggles AllFilters[i] (default keys "1".."9", then "0");
+	// they are only active while the filters bar is open (after Filters), so
+	// the tab keys 1/2 keep working otherwise.
+	Toggle [numFilters]key.Binding
 	// Close closes the filters bar or the raw-labels overlay (default esc).
 	Close key.Binding
 }
 
 // DefaultKeys returns the spec's bindings: j/k, pgdown/pgup/space,
-// ctrl+d/ctrl+u, g/G, n/p, J/K, f, z, L, 1–9, esc.
+// ctrl+d/ctrl+u, g/G, n/p, J/K, f, z, L, 1–9 and 0, esc.
 func DefaultKeys() Keys {
 	b := func(desc string, keys ...string) key.Binding {
 		return key.NewBinding(key.WithKeys(keys...), key.WithHelp(keys[0], desc))
@@ -90,7 +95,7 @@ func DefaultKeys() Keys {
 		Close: b("close", "esc"),
 	}
 	for i := range k.Toggle {
-		s := string(rune('1' + i))
+		s := strconv.Itoa((i + 1) % 10)
 		k.Toggle[i] = b("toggle "+string(AllFilters[i]), s)
 	}
 	return k

@@ -92,8 +92,15 @@ type UnitAgg struct {
 	FailMode     string     `json:"failMode,omitempty"`
 	DescBullet   int        `json:"descBullet,omitempty"` // 1-based bullet index, 0 none/unknown
 	Undocumented bool       `json:"undocumented,omitempty"`
-	Untested     bool       `json:"untested,omitempty"` // risk >= 3 and covered < 0.5
+	Untested     bool       `json:"untested,omitempty"` // risk >= 3 and covered < 0.5 (covered known)
 	Lines        []LineMark `json:"lines,omitempty"`
+	// BehaviourUnknown, BreakingUnknown and CoveredUnknown are set when the
+	// label has no real answer (Jev unreachable, a missing or malformed
+	// answer, or never asked). The matching bool and P are then false and 0
+	// but claim nothing: filters let the unit through and chips show "?".
+	BehaviourUnknown bool `json:"behaviourUnknown,omitempty"`
+	BreakingUnknown  bool `json:"breakingUnknown,omitempty"`
+	CoveredUnknown   bool `json:"coveredUnknown,omitempty"`
 }
 
 // FileAgg is one row of the Code page's file list (mode A).

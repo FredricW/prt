@@ -434,6 +434,10 @@ func TestUnknownAndMissingLabels(t *testing.T) {
 					u.Untested || u.Undocumented || u.RiskLevel != 0 || len(u.RiskTags) != 0 {
 					t.Errorf("unit = %+v", u)
 				}
+				// Regression: unknown booleans read as a confident "no".
+				if !u.BehaviourUnknown || !u.BreakingUnknown || !u.CoveredUnknown {
+					t.Errorf("unit %s: unknown booleans not flagged: %+v", u.UnitID, u)
+				}
 				for _, m := range u.Lines {
 					if m.Mark != model.MarkNone || m.Fmt {
 						t.Errorf("line mark = %+v", m)
