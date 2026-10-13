@@ -7,8 +7,10 @@ import (
 
 	"github.com/charmbracelet/bubbles/key"
 
+	"github.com/fredricw/prt/internal/archview"
 	"github.com/fredricw/prt/internal/codeview"
 	"github.com/fredricw/prt/internal/pipeview"
+	"github.com/fredricw/prt/internal/theme"
 )
 
 // KeyMap holds every binding (spec: Keybindings and navigation). Fields
@@ -18,10 +20,14 @@ type KeyMap struct {
 	// Picker. Sort cycles the order within sections (urgency → age → size
 	// → relevance); it shares s with the Pipeline page's SkipReview.
 	Up, Down, Top, Bottom, Sort key.Binding
+	// Picker (M5): Search opens the search-and-add prompt (/), Remove drops
+	// an added item (x), Select toggles the multi-select mark (space; esc
+	// clears the marks).
+	Search, Remove, Select key.Binding
 	// Focus.
 	Focus, Back, NextFocus, PrevFocus key.Binding
-	// Item actions (any focus).
-	Refresh, Overview, Code, Open, Checkout key.Binding
+	// Item actions (any focus). Architecture (3) is the third tab (M5).
+	Refresh, Overview, Code, Architecture, Open, Checkout key.Binding
 	// Main pane scrolling (Code and Overview tabs).
 	PageDown, PageUp, HalfPageDown, HalfPageUp, NextFile, PrevFile key.Binding
 	// Code page (handed to codeview) and Overview (RawLabels).
@@ -30,6 +36,10 @@ type KeyMap struct {
 	// takes its keys away from the Code page's Top (the picker and the
 	// Overview keep g as top).
 	Mode, MergeGroups, SplitGroup key.Binding
+	// Code page (M5, handed to codeview): unified / side-by-side (u), open
+	// the cursor's file in $EDITOR (e), open the unit on GitHub (o; on the
+	// Code page it takes o from Open).
+	SideBySide, EditFile, OpenUnit key.Binding
 	// Review pipeline (M3). Pipeline opens and closes the Pipeline page for
 	// the selected item (P, any focus); Weights opens the Overview's urgency
 	// weights overlay (w); ReReview re-reviews the Code page's group on the
@@ -40,6 +50,10 @@ type KeyMap struct {
 	// routing rules (e), call log (c; elsewhere c stays Checkout), raise
 	// the cost cap ($).
 	ForceDeep, SkipReview, RerunStage, EditRules, CallLog, RaiseCap key.Binding
+	// Architecture tab (M5, handed to archview): Left and Right (h, l) with
+	// Up and Down move the module focus; DepthUp (+), DepthDown (-) change
+	// the hops shown; DiffOnly (d) toggles changed modules only.
+	Left, Right, DepthUp, DepthDown, DiffOnly key.Binding
 	// Review (M4, item scope). Approve (a) and RequestChanges (A) open the
 	// submit form with that verdict preselected; Submit (S) opens it. On a
 	// branch without a PR, Submit opens the create-PR form (Approve and
@@ -51,8 +65,8 @@ type KeyMap struct {
 	// finding (a / d), dismiss and override a label (!), thread panel (t),
 	// resolve thread (ctrl+r).
 	Comment, Visual, SaveDraft, Accept, Dismiss, OverrideLabel, Thread, Resolve key.Binding
-	// Global.
-	Help, Quit key.Binding
+	// Global. Command opens the `:` command line (M5).
+	Help, Quit, Command key.Binding
 	// Confirm prompts.
 	Yes, No key.Binding
 }
@@ -68,6 +82,9 @@ func DefaultKeyMap() KeyMap {
 		Top:            b("top", "g", "home"),
 		Bottom:         b("bottom", "G", "end"),
 		Sort:           b("cycle sort", "s"),
+		Search:         b("search and add", "/"),
+		Remove:         b("remove added item", "x"),
+		Select:         key.NewBinding(key.WithKeys(" "), key.WithHelp("space", "select")),
 		Focus:          b("focus main pane", "enter"),
 		Back:           b("back to picker", "esc"),
 		NextFocus:      b("next pane", "tab"),
@@ -75,6 +92,7 @@ func DefaultKeyMap() KeyMap {
 		Refresh:        b("refresh item", "r"),
 		Overview:       b("overview tab", "1"),
 		Code:           b("code tab", "2"),
+		Architecture:   b("architecture tab", "3"),
 		Open:           b("open on GitHub", "o"),
 		Checkout:       b("git checkout", "c"),
 		PageDown:       b("page down", "pgdown", " "),
@@ -91,6 +109,9 @@ func DefaultKeyMap() KeyMap {
 		Mode:           b("by file / by change", "g"),
 		MergeGroups:    b("merge groups", "M"),
 		SplitGroup:     b("split group", "X"),
+		SideBySide:     b("unified / side-by-side", "u"),
+		EditFile:       b("open in $EDITOR", "e"),
+		OpenUnit:       b("open unit on GitHub", "o"),
 		Pipeline:       b("pipeline page", "P"),
 		Weights:        b("urgency weights", "w"),
 		ReReview:       b("re-review on deep", "R"),
@@ -100,6 +121,11 @@ func DefaultKeyMap() KeyMap {
 		EditRules:      b("edit rules", "e"),
 		CallLog:        b("call log", "c"),
 		RaiseCap:       b("raise cost cap", "$"),
+		Left:           b("focus left", "h", "left"),
+		Right:          b("focus right", "l", "right"),
+		DepthUp:        b("more depth", "+", "="),
+		DepthDown:      b("less depth", "-"),
+		DiffOnly:       b("diff-only", "d"),
 		Approve:        b("approve", "a"),
 		RequestChanges: b("request changes", "A"),
 		Submit:         b("submit review", "S"),
@@ -113,6 +139,7 @@ func DefaultKeyMap() KeyMap {
 		Resolve:        b("resolve thread", "ctrl+r"),
 		Help:           b("help", "?"),
 		Quit:           b("quit", "q", "ctrl+c"),
+		Command:        b("command line", ":"),
 		Yes:            b("yes", "y", "Y"),
 		No:             b("no", "n", "N", "esc"),
 	}
@@ -122,6 +149,9 @@ func helpKey(keys []string) string {
 	if len(keys) == 0 {
 		return ""
 	}
+	if keys[0] == " " {
+		return "space"
+	}
 	return keys[0]
 }
 
@@ -129,18 +159,23 @@ func helpKey(keys []string) string {
 func (k *KeyMap) actions() map[string]*key.Binding {
 	return map[string]*key.Binding{
 		"up": &k.Up, "down": &k.Down, "top": &k.Top, "bottom": &k.Bottom, "sort": &k.Sort,
+		"search": &k.Search, "remove": &k.Remove, "select": &k.Select,
 		"focus": &k.Focus, "back": &k.Back, "next_focus": &k.NextFocus, "prev_focus": &k.PrevFocus,
-		"refresh": &k.Refresh, "overview": &k.Overview, "code": &k.Code, "open": &k.Open,
-		"checkout": &k.Checkout, "page_down": &k.PageDown, "page_up": &k.PageUp,
+		"refresh": &k.Refresh, "overview": &k.Overview, "code": &k.Code, "architecture": &k.Architecture,
+		"open": &k.Open, "checkout": &k.Checkout, "page_down": &k.PageDown, "page_up": &k.PageUp,
 		"half_page_down": &k.HalfPageDown, "half_page_up": &k.HalfPageUp,
 		"next_file": &k.NextFile, "prev_file": &k.PrevFile, "help": &k.Help, "quit": &k.Quit,
+		"command":   &k.Command,
 		"next_unit": &k.NextUnit, "prev_unit": &k.PrevUnit, "filters": &k.Filters,
 		"expand": &k.Expand, "raw_labels": &k.RawLabels,
 		"mode": &k.Mode, "merge_groups": &k.MergeGroups, "split_group": &k.SplitGroup,
+		"side_by_side": &k.SideBySide, "edit_file": &k.EditFile, "open_unit": &k.OpenUnit,
 		"pipeline": &k.Pipeline, "weights": &k.Weights, "rereview": &k.ReReview,
 		"force_deep": &k.ForceDeep, "skip_review": &k.SkipReview, "rerun_stage": &k.RerunStage,
 		"edit_rules": &k.EditRules, "call_log": &k.CallLog, "raise_cap": &k.RaiseCap,
-		"approve": &k.Approve, "request_changes": &k.RequestChanges, "submit": &k.Submit,
+		"left": &k.Left, "right": &k.Right, "arch_depth_up": &k.DepthUp, "arch_depth_down": &k.DepthDown,
+		"diff_only": &k.DiffOnly,
+		"approve":   &k.Approve, "request_changes": &k.RequestChanges, "submit": &k.Submit,
 		"comment": &k.Comment, "visual": &k.Visual, "save_draft": &k.SaveDraft, "accept": &k.Accept,
 		"dismiss": &k.Dismiss, "override": &k.OverrideLabel, "thread": &k.Thread, "resolve": &k.Resolve,
 	}
@@ -162,6 +197,7 @@ func (k KeyMap) codeKeys() codeview.Keys {
 	ck.Comment, ck.Visual, ck.SaveDraft = k.Comment, k.Visual, k.SaveDraft
 	ck.Accept, ck.Dismiss, ck.OverrideLabel = k.Accept, k.Dismiss, k.OverrideLabel
 	ck.Thread, ck.Resolve, ck.StripJump = k.Thread, k.Resolve, relabel(k.Focus, "jump to comment")
+	ck.SideBySide, ck.EditFile, ck.OpenUnit = k.SideBySide, k.EditFile, k.OpenUnit
 	return ck
 }
 
@@ -176,6 +212,17 @@ func (k KeyMap) pipeKeys() pipeview.Keys {
 	pk.ForceDeep, pk.Skip, pk.Rerun = k.ForceDeep, k.SkipReview, k.RerunStage
 	pk.EditRules, pk.CallLog, pk.RaiseCap = k.EditRules, k.CallLog, k.RaiseCap
 	return pk
+}
+
+// archKeys builds the Architecture tab bindings from the key map: h/j/k/l
+// (and arrows) move the module focus, enter (Focus) lists a module's files
+// and opens one, esc (Back) closes the list.
+func (k KeyMap) archKeys() archview.Keys {
+	return archview.Keys{
+		Left: k.Left, Down: relabel(k.Down, "focus down"), Up: relabel(k.Up, "focus up"), Right: k.Right,
+		Enter: relabel(k.Focus, "files in module"), Close: relabel(k.Back, "close"),
+		DepthUp: k.DepthUp, DepthDown: k.DepthDown, DiffOnly: k.DiffOnly,
+	}
 }
 
 // relabel returns b's keys with another help description.
@@ -240,29 +287,41 @@ func KeyMapFromConfig(overrides map[string]string) (KeyMap, error) {
 			return DefaultKeyMap(), fmt.Errorf("tui: key action %q has no keys", name)
 		}
 		b.SetKeys(keys...)
-		b.SetHelp(keys[0], b.Help().Desc)
+		b.SetHelp(helpKey(keys), b.Help().Desc)
 	}
 	return km, nil
 }
 
+// splitKeys splits a comma-separated key list; "space" names the space
+// key (a literal " " cannot survive the trimming).
 func splitKeys(s string) []string {
 	var out []string
 	for _, k := range strings.Split(s, ",") {
 		if k = strings.TrimSpace(k); k != "" {
+			if k == "space" {
+				k = " "
+			}
 			out = append(out, k)
 		}
 	}
 	return out
 }
 
+// tabKeys are the three tab bindings.
+func (k KeyMap) tabKeys() []key.Binding { return []key.Binding{k.Overview, k.Code, k.Architecture} }
+
+// clearMarks is Back in the picker: it clears the multi-select marks.
+func (k KeyMap) clearMarks() key.Binding { return relabel(k.Back, "clear selection") }
+
 // pickerHelp is the help shown when the picker has focus.
 func (k KeyMap) pickerHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Down, k.Up, k.Top, k.Bottom, k.Sort},
-		{k.Focus, k.NextFocus, k.Overview, k.Code, k.Pipeline},
+		{k.Search, k.Remove, k.Select, k.clearMarks()},
+		append([]key.Binding{k.Focus, k.NextFocus, k.PrevFocus}, append(k.tabKeys(), k.Pipeline)...),
 		{k.Refresh, k.Open, k.Checkout},
 		k.reviewKeys(),
-		{k.Help, k.Quit},
+		{k.Command, k.Help, k.Quit},
 	}
 }
 
@@ -271,14 +330,32 @@ func (k KeyMap) reviewKeys() []key.Binding {
 	return []key.Binding{k.Submit, k.Approve, k.RequestChanges}
 }
 
+// navKeys are the main pane's focus and tab bindings.
+func (k KeyMap) navKeys() []key.Binding {
+	return append([]key.Binding{k.Back, k.NextFocus, k.PrevFocus}, append(k.tabKeys(), k.Pipeline)...)
+}
+
+// filterToggles stands for the Code page's filter toggles (1–9, live while
+// the filters bar is open) in help.
+func filterToggles() key.Binding {
+	return key.NewBinding(key.WithKeys("1", "2", "3", "4", "5", "6", "7", "8", "9"), key.WithHelp("1–9", "toggle filter (bar open)"))
+}
+
 // codeHelp is the help shown when the Code tab has focus: the component's
-// own groups, then the root model's.
+// own groups, the Code page keys it does not list (so every spec key is
+// in help whatever the component shows), then the root model's. On the
+// Code page o opens the unit, so the item's Open is not listed.
 func (k KeyMap) codeHelp(component [][]key.Binding) [][]key.Binding {
 	out := append([][]key.Binding(nil), component...)
+	if miss := missing(component, k.Mode, k.NextUnit, k.PrevUnit, k.NextFile, k.PrevFile, k.Filters, filterToggles(),
+		k.Expand, k.RawLabels, k.MergeGroups, k.SplitGroup, k.ReReview, k.Comment, k.Visual, k.Thread,
+		k.Accept, k.Dismiss, k.OverrideLabel, k.SideBySide, k.EditFile, k.OpenUnit); len(miss) > 0 {
+		out = append(out, miss)
+	}
 	return append(out,
 		k.reviewKeys(),
-		[]key.Binding{k.Back, k.NextFocus, k.Overview, k.Code, k.Pipeline},
-		[]key.Binding{k.Refresh, k.Open, k.Checkout, k.Help, k.Quit},
+		k.navKeys(),
+		[]key.Binding{k.Refresh, k.Checkout, k.Command, k.Help, k.Quit},
 	)
 }
 
@@ -288,40 +365,112 @@ func (k KeyMap) overviewHelp() [][]key.Binding {
 		{k.Down, k.Up, k.PageDown, k.PageUp, k.HalfPageDown, k.HalfPageUp, k.Top, k.Bottom},
 		{k.jump(), k.RawLabels, k.Weights},
 		k.reviewKeys(),
-		{k.Back, k.NextFocus, k.Overview, k.Code, k.Pipeline},
-		{k.Refresh, k.Open, k.Checkout, k.Help, k.Quit},
+		k.navKeys(),
+		{k.Refresh, k.Open, k.Checkout, k.Command, k.Help, k.Quit},
 	}
 }
 
 // pipelineHelp is the help shown when the Pipeline page has focus: the
-// component's own groups, then the root model's (P or esc closes the page;
-// r and c act on the page, so refresh and checkout are not listed).
+// component's own groups (plus page keys it does not list), then the root
+// model's (P or esc closes the page; r and c act on the page, so refresh
+// and checkout are not listed).
 func (k KeyMap) pipelineHelp(component [][]key.Binding) [][]key.Binding {
 	out := append([][]key.Binding(nil), component...)
+	if miss := missing(component, k.ForceDeep, k.SkipReview, k.RerunStage, k.EditRules, k.CallLog, k.RaiseCap); len(miss) > 0 {
+		out = append(out, miss)
+	}
 	return append(out,
-		[]key.Binding{k.closePipeline(), k.NextFocus, k.Overview, k.Code},
-		[]key.Binding{k.Open, k.Help, k.Quit},
+		append([]key.Binding{k.closePipeline(), k.NextFocus, k.PrevFocus}, k.tabKeys()...),
+		k.reviewKeys(),
+		[]key.Binding{k.Open, k.Command, k.Help, k.Quit},
 	)
+}
+
+// archHelp is the help shown when the Architecture tab has focus.
+func (k KeyMap) archHelp(component [][]key.Binding) [][]key.Binding {
+	out := append([][]key.Binding(nil), component...)
+	ak := k.archKeys()
+	if miss := missing(component, ak.Left, ak.Down, ak.Up, ak.Right, ak.Enter, ak.DepthUp, ak.DepthDown, ak.DiffOnly); len(miss) > 0 {
+		out = append(out, miss)
+	}
+	return append(out,
+		k.reviewKeys(),
+		k.navKeys(),
+		[]key.Binding{k.Refresh, k.Open, k.Checkout, k.Command, k.Help, k.Quit},
+	)
+}
+
+// missing returns the bindings of want whose help key is bound by none of
+// groups.
+func missing(groups [][]key.Binding, want ...key.Binding) []key.Binding {
+	have := map[string]bool{}
+	for _, g := range groups {
+		for _, b := range g {
+			if !b.Enabled() {
+				continue
+			}
+			for _, s := range b.Keys() {
+				have[s] = true
+			}
+		}
+	}
+	var out []key.Binding
+	for _, b := range want {
+		ks := b.Keys()
+		if !b.Enabled() || len(ks) == 0 || have[ks[0]] {
+			continue
+		}
+		out = append(out, b)
+	}
+	return out
 }
 
 // closePipeline is the Pipeline key described as closing the page.
 func (k KeyMap) closePipeline() key.Binding { return relabel(k.Pipeline, "close pipeline") }
 
-// pickerShort is the status-line hint list for the picker.
-func (k KeyMap) pickerShort() []key.Binding {
-	return []key.Binding{k.Down, k.Up, k.Focus, k.Overview, k.Code, k.Pipeline, k.Refresh, k.Checkout, k.Open, k.Help, k.Quit}
+// pairHint is one hint for two bindings ("j/k move").
+func pairHint(a, b key.Binding, desc string) theme.Hint {
+	return theme.Hint{Key: a.Help().Key + "/" + b.Help().Key, Desc: desc}
 }
 
-// mainShort is the status-line hint list for the main pane; component holds
-// the Code page's or the Pipeline page's own hints.
-func (k KeyMap) mainShort(tab Tab, component []key.Binding) []key.Binding {
+// tabsHint is "1 2 3 tabs".
+func (k KeyMap) tabsHint() theme.Hint {
+	ks := make([]string, 0, 3)
+	for _, b := range k.tabKeys() {
+		ks = append(ks, b.Help().Key)
+	}
+	return theme.Hint{Key: strings.Join(ks, " "), Desc: "tabs"}
+}
+
+// hintsOf is theme.HintsOf with leading composite hints.
+func hintsOf(lead []theme.Hint, bs ...key.Binding) []theme.Hint {
+	return append(lead, theme.HintsOf(bs...)...)
+}
+
+// pickerHints is the key hint bar for the picker (design: "j/k move  space
+// select  1 2 3 tabs …").
+func (k KeyMap) pickerHints() []theme.Hint {
+	lead := []theme.Hint{pairHint(k.Down, k.Up, "move")}
+	hs := hintsOf(lead, k.Select, k.Search, k.Focus)
+	hs = append(hs, k.tabsHint())
+	return append(hs, theme.HintsOf(k.Pipeline, k.Refresh, k.Checkout, k.Open, k.Command, k.Help, k.Quit)...)
+}
+
+// mainHints is the key hint bar for the main pane; component holds the
+// Code, Pipeline or Architecture page's own hints.
+func (k KeyMap) mainHints(tab Tab, component []key.Binding) []theme.Hint {
 	switch tab {
 	case TabCode:
-		out := append([]key.Binding(nil), component...)
-		return append(out, k.Submit, k.Back, k.Overview, k.Help, k.Quit)
+		hs := theme.HintsOf(component...)
+		hs = append(hs, theme.HintsOf(k.Submit, k.Back)...)
+		return append(append(hs, k.tabsHint()), theme.HintsOf(k.Help, k.Quit)...)
 	case TabPipeline:
-		out := append([]key.Binding(nil), component...)
-		return append(out, k.closePipeline(), k.Help, k.Quit)
+		return theme.HintsOf(append(append([]key.Binding(nil), component...), k.closePipeline(), k.Help, k.Quit)...)
+	case TabArch:
+		hs := theme.HintsOf(component...)
+		hs = append(hs, theme.HintsOf(k.Back)...)
+		return append(append(hs, k.tabsHint()), theme.HintsOf(k.Help, k.Quit)...)
 	}
-	return []key.Binding{k.Down, k.Up, k.jump(), k.RawLabels, k.Weights, k.Submit, k.Approve, k.Pipeline, k.Back, k.Code, k.Help, k.Quit}
+	hs := []theme.Hint{pairHint(k.Down, k.Up, "scroll"), k.tabsHint()}
+	return append(hs, theme.HintsOf(k.jump(), k.RawLabels, k.Weights, k.Approve, k.Submit, k.Pipeline, k.Back, k.Help, k.Quit)...)
 }

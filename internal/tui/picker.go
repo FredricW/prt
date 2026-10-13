@@ -6,14 +6,18 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/lipgloss"
+
+	"github.com/fredricw/prt/internal/codeview"
 	"github.com/fredricw/prt/internal/model"
+	"github.com/fredricw/prt/internal/theme"
 )
 
 // sections is the picker's display order (spec: Picker, Sections and sort).
 var sections = []model.Section{model.SectionNeedsYou, model.SectionYours, model.SectionBranches, model.SectionInvolved, model.SectionAdded}
 
 // hideWhenEmpty lists sections that are not in the spec's table and so get
-// no "(0)" header when empty.
+// no "(0)" divider when empty.
 var hideWhenEmpty = map[model.Section]bool{model.SectionInvolved: true}
 
 func sectionRank(s model.Section) int {
@@ -41,8 +45,12 @@ func (s sortMode) String() string {
 	return [...]string{"urgency", "age", "size", "relevance"}[s]
 }
 
-// picker is the sidebar: items grouped by section, a cursor over items
-// (headers are never selectable) and a line offset for scrolling.
+// pickerTitle is the sidebar box's title (design: the shared frame).
+const pickerTitle = "Queue · ranked"
+
+// picker is the sidebar list: items grouped by section, a cursor over items
+// (dividers are never selectable) and a line offset for scrolling. width
+// and height are the list's own cells inside the sidebar box.
 type picker struct {
 	items  []model.Item // section order, then the sort mode's key
 	sort   sortMode
@@ -69,6 +77,10 @@ type rowCtx struct {
 	// (pipeview.StageStrip; nil draws no strip).
 	runLogs map[string][]model.RunLog
 	strip   func(rls []model.RunLog, width int) string
+	// marked are the multi-selected item ids (space); superseded maps a
+	// branch item id to the PR that supersedes it (from its loaded detail).
+	marked     map[string]bool
+	superseded map[string]int
 }
 
 // sortItems orders items by section, then the mode's key (urgency
@@ -151,6 +163,16 @@ func (p *picker) selected() (model.Item, bool) {
 	return p.items[p.cursor], true
 }
 
+// indexOf returns the position of item id, or -1.
+func (p *picker) indexOf(id string) int {
+	for i, it := range p.items {
+		if it.ID == id {
+			return i
+		}
+	}
+	return -1
+}
+
 // move shifts the cursor by delta items (clamped); reports whether it moved.
 func (p *picker) move(delta int) bool {
 	return p.moveTo(p.cursor + delta)
@@ -171,12 +193,18 @@ func (p *picker) setSize(w, h int) {
 
 // busy reports whether any item is fetching or analysing (spinner needed).
 func (p picker) busy() bool {
+	return p.busyCount() > 0
+}
+
+// busyCount counts items fetching or analysing.
+func (p picker) busyCount() int {
+	n := 0
 	for _, it := range p.items {
 		if it.State == model.StateFetching || it.State == model.StateAnalysing {
-			return true
+			n++
 		}
 	}
-	return false
+	return n
 }
 
 // pickerLine is one rendered line; item is the item index or -1.
@@ -185,10 +213,10 @@ type pickerLine struct {
 	item int
 }
 
-// lines lays out the whole picker (header, sections, rows) unscrolled.
+// lines lays out the whole list (section dividers and rows) unscrolled.
 func (p picker) lines(st styles, rc rowCtx) []pickerLine {
 	w := max(4, p.width)
-	out := []pickerLine{{text: st.title.Render(truncate(p.header(), w)), item: -1}}
+	var out []pickerLine
 	bySection := map[model.Section][]int{}
 	var order []model.Section
 	for i, it := range p.items {
@@ -203,35 +231,22 @@ func (p picker) lines(st styles, rc rowCtx) []pickerLine {
 	}
 	for _, s := range append(append([]model.Section(nil), sections...), order...) {
 		idx := bySection[s]
-		head := fmt.Sprintf("%s (%d)", sectionTitle(s), len(idx))
 		if len(idx) == 0 && hideWhenEmpty[s] {
 			continue
 		}
-		if len(idx) == 0 {
-			out = append(out, pickerLine{text: st.emptySection.Render(truncate(head, w)), item: -1})
-			continue
-		}
-		out = append(out, pickerLine{text: st.section.Render(truncate(head, w)), item: -1})
+		label := fmt.Sprintf("%s (%d)", strings.ToUpper(sectionTitle(s)), len(idx))
+		out = append(out, pickerLine{text: st.th.Divider(label, w), item: -1})
 		for _, i := range idx {
-			r1, r2 := p.row(i, st, rc, w)
-			out = append(out, pickerLine{text: r1, item: i}, pickerLine{text: r2, item: i})
+			for _, l := range p.row(i, st, rc, w) {
+				out = append(out, pickerLine{text: l, item: i})
+			}
 		}
 	}
 	return out
 }
 
-// header is the picker title; a sort other than the default urgency is
-// named ("prt · 5 items · by age").
-func (p picker) header() string {
-	if len(p.items) == 0 {
-		return "prt · no items yet"
-	}
-	h := "prt · " + plural(len(p.items), "item")
-	if p.sort != sortUrgency {
-		h += " · by " + p.sort.String()
-	}
-	return h
-}
+// sortLabel is the footer's sort indicator ("sort: urgency ▾").
+func (p picker) sortLabel() string { return "sort: " + p.sort.String() + " ▾" }
 
 // plural formats n with noun, adding "s" unless n is 1.
 func plural(n int, noun string) string {
@@ -241,23 +256,58 @@ func plural(n int, noun string) string {
 	return fmt.Sprintf("%d %ss", n, noun)
 }
 
-// row renders an item's two lines: cursor marker, urgency bar and label;
-// then the dim secondary line.
-func (p picker) row(i int, st styles, rc rowCtx, w int) (string, string) {
+// row renders an item's lines (design: urgency bar, bold number and title
+// or a blue branch name; the secondary line; a dim "why: …" line on the
+// selected item). The selected row carries the "▸" marker and the
+// selection background; a multi-selected row a "[x]" mark.
+func (p picker) row(i int, st styles, rc rowCtx, w int) []string {
 	it := p.items[i]
+	th := st.th
+	sel := i == p.cursor
+	var bg lipgloss.TerminalColor
 	marker := "  "
-	if i == p.cursor {
-		marker = "▸ "
+	if sel {
+		marker, bg = "▸ ", th.P.SelBg
 	}
-	first := truncate(marker+urgencyBar(it.UrgencyQuartile)+" "+itemLabel(it), w)
-	if i == p.cursor {
-		first = st.cursor.Render(first)
+	first := []seg{{marker, st.plain}}
+	if rc.marked[it.ID] {
+		first = append(first, seg{"[x] ", st.accent})
 	}
-	second := st.dim.Render(truncate("       "+secondaryLine(it, rc), w))
+	if sel {
+		first = append(first, urgencySegs(st, it.UrgencyQuartile)...)
+	} else {
+		first = append(first, seg{th.UrgencyBar(it.UrgencyQuartile), st.plain})
+	}
+	first = append(first, seg{" ", st.plain})
+	first = append(first, labelSegs(st, it)...)
+	out := []string{renderSegs(first, w, bg)}
+
+	second := append([]seg{{"       ", st.plain}}, joinFacts(st, secondaryFacts(st, it, rc, p.items))...)
 	if strip := stageStrip(it, rc, w-9); strip != "" {
-		second = st.dim.Render(truncate("       "+strings.TrimSpace(rc.spin+" "+strip), w))
+		second = []seg{{"       " + strings.TrimSpace(rc.spin+" "+strip), st.dim}}
 	}
-	return first, second
+	out = append(out, renderSegs(second, w, bg))
+	if sel && it.Why != "" && usesNeedsYouFacts(it) {
+		out = append(out, renderSegs([]seg{{"       ", st.plain}, {"why: " + it.Why, st.dim}}, w, bg))
+	}
+	return out
+}
+
+// urgencySegs is theme.UrgencyBar as runs (same roles: filled cells
+// accent, empty ones dim), so the selected row can lay its background
+// under the cells too.
+func urgencySegs(st styles, q int) []seg {
+	q = max(0, min(4, q))
+	return []seg{{strings.Repeat("▮", q), st.accent}, {strings.Repeat("▯", 4-q), st.dim}}
+}
+
+// labelSegs is the row's label: bold "#N" and the title for a PR, the ref
+// in blue for a branch.
+func labelSegs(st styles, it model.Item) []seg {
+	if it.Kind == model.KindPR {
+		return []seg{{fmt.Sprintf("#%d", it.Number), st.bold}, {" " + it.Title, st.plain}}
+	}
+	return []seg{{it.Ref, st.blue}}
 }
 
 // stageStrip is the picker's one-line stage strip for an analysing item
@@ -299,10 +349,10 @@ func stageIndex(s model.Stage) int {
 	return len(model.Stages)
 }
 
-// itemAt returns the item index drawn on screen row y of the picker (0 is
-// its first visible line), or -1 for a header, blank or out-of-range row.
+// itemAt returns the item index drawn on row y of the list (0 is its first
+// visible line), or -1 for a divider, blank or out-of-range row.
 func (p picker) itemAt(y int) int {
-	ls := p.lines(styles{}, rowCtx{})
+	ls := p.lines(layoutStyles(), rowCtx{})
 	n := p.offset + y
 	if y < 0 || y >= max(1, p.height) || n < 0 || n >= len(ls) {
 		return -1
@@ -310,37 +360,42 @@ func (p picker) itemAt(y int) int {
 	return ls[n].item
 }
 
-// cursorLine returns the index of the cursor's first line in lines().
-func (p picker) cursorLine(ls []pickerLine) int {
+// cursorLines returns the first and last line of the cursor's row.
+func (p picker) cursorLines(ls []pickerLine) (int, int) {
+	first, last := -1, -1
 	for n, l := range ls {
 		if l.item == p.cursor {
-			return n
+			if first < 0 {
+				first = n
+			}
+			last = n
 		}
 	}
-	return 0
+	return max(0, first), max(0, last)
 }
 
-// ensureVisible scrolls so both lines of the cursor row are on screen. The
-// layout does not depend on styles or text, so a zero rowCtx is enough.
+// ensureVisible scrolls so every line of the cursor row is on screen. The
+// layout does not depend on colour or the clock, so plain styles and a zero
+// rowCtx are enough.
 func (p *picker) ensureVisible() {
 	if p.height <= 0 {
 		return
 	}
-	ls := p.lines(styles{}, rowCtx{})
-	c := p.cursorLine(ls)
-	if c < p.offset {
-		p.offset = c
+	ls := p.lines(layoutStyles(), rowCtx{})
+	first, last := p.cursorLines(ls)
+	if first < p.offset {
+		p.offset = first
 	}
-	if c+1 >= p.offset+p.height {
-		p.offset = c + 2 - p.height
+	if last >= p.offset+p.height {
+		p.offset = last + 1 - p.height
 	}
-	if c <= 1 {
-		p.offset = 0 // keep the title visible near the top
+	if first <= 1 {
+		p.offset = 0 // keep the first divider visible near the top
 	}
 	p.offset = max(0, min(p.offset, len(ls)-p.height))
 }
 
-// view renders the visible window of the picker.
+// view renders the visible window of the list.
 func (p picker) view(st styles, rc rowCtx) string {
 	ls := p.lines(st, rc)
 	start := max(0, min(p.offset, len(ls)))
@@ -352,10 +407,15 @@ func (p picker) view(st styles, rc rowCtx) string {
 	return strings.Join(texts, "\n")
 }
 
-// urgencyBar draws four cells, q of them filled (spec: Urgency bar).
-func urgencyBar(q int) string {
-	q = max(0, min(4, q))
-	return strings.Repeat("▮", q) + strings.Repeat("▯", 4-q)
+// renderSidebar draws the sidebar box (w × h cells, borders included): the
+// list window, then the bottom lines (the footer or the search prompt).
+func renderSidebar(st styles, p picker, rc rowCtx, bottom []string, w, h int, focused bool) string {
+	body := strings.Split(p.view(st, rc), "\n")
+	for len(body) < p.height {
+		body = append(body, "")
+	}
+	body = append(body[:p.height], bottom...)
+	return st.th.Box(pickerTitle, strings.Join(body, "\n"), w, theme.BoxOpt{Height: h, Focused: focused})
 }
 
 func sectionTitle(s model.Section) string {
@@ -381,25 +441,60 @@ func itemLabel(it model.Item) string {
 	return it.Ref
 }
 
-// secondaryLine is the dim second row: the item state (when not ready),
-// then the section-specific facts (spec: Sections and sort).
-func secondaryLine(it model.Item, rc rowCtx) string {
-	var parts []string
+// itemShort is "#N" for a PR, the ref for a branch.
+func itemShort(it model.Item) string {
+	if it.Kind == model.KindPR {
+		return fmt.Sprintf("#%d", it.Number)
+	}
+	return it.Ref
+}
+
+// fact is one " · "-separated part of a secondary line, as styled runs.
+type fact []seg
+
+// joinFacts joins facts with a dim " · ".
+func joinFacts(st styles, fs []fact) []seg {
+	var out []seg
+	for i, f := range fs {
+		if i > 0 {
+			out = append(out, seg{" · ", st.dim})
+		}
+		out = append(out, f...)
+	}
+	return out
+}
+
+// usesNeedsYouFacts reports whether the item's secondary line is the
+// Needs-you kind (Needs you, Involved, PRs in Added).
+func usesNeedsYouFacts(it model.Item) bool {
+	return it.Section != model.SectionYours && it.Section != model.SectionBranches && it.Kind != model.KindBranch
+}
+
+// secondaryLine is the plain text of the secondary line (tests).
+func secondaryLine(it model.Item, rc rowCtx, items ...model.Item) string {
+	st := layoutStyles()
+	return segText(joinFacts(st, secondaryFacts(st, it, rc, items)))
+}
+
+// secondaryFacts is the second row: the item state (when not ready), then
+// the section-specific facts (spec: Sections and sort; design v2).
+func secondaryFacts(st styles, it model.Item, rc rowCtx, items []model.Item) []fact {
+	var fs []fact
 	if s := stateText(it, rc); s != "" {
-		parts = append(parts, s)
+		fs = append(fs, fact{{s, st.plain}})
 	}
 	if it.LabelsUnavailable {
-		parts = append(parts, "labels unavailable")
+		fs = append(fs, fact{{"labels unavailable", st.dim}})
 	}
 	switch {
 	case it.Section == model.SectionYours:
-		parts = append(parts, yoursFacts(it, rc.now)...)
+		fs = append(fs, yoursFacts(st, it, rc.now)...)
 	case it.Section == model.SectionBranches, it.Kind == model.KindBranch:
-		parts = append(parts, branchFacts(it, rc.now)...)
-	default: // Needs you, and PRs in Added
-		parts = append(parts, needsYouFacts(it)...)
+		fs = append(fs, branchFacts(st, it, rc, items)...)
+	default: // Needs you, Involved, and PRs in Added
+		fs = append(fs, needsYouFacts(st, it)...)
 	}
-	return strings.Join(parts, " · ")
+	return fs
 }
 
 // stateText renders the analysis state; "" when ready or unknown.
@@ -424,30 +519,42 @@ func stateText(it model.Item, rc rowCtx) string {
 	return ""
 }
 
-func needsYouFacts(it model.Item) []string {
-	var parts []string
-	if it.Author != "" {
-		parts = append(parts, it.Author)
-	}
-	if it.Additions != 0 || it.Deletions != 0 {
-		parts = append(parts, fmt.Sprintf("+%d −%d", it.Additions, it.Deletions))
-	}
-	if ci := ciText(it.CI); ci != "" {
-		parts = append(parts, ci)
-	}
+// needsYouFacts is "⚠1 breaking · 4 eyes · ~12m · CI ✗" (design v2); an
+// item without label facts yet shows its author and size instead.
+func needsYouFacts(st styles, it model.Item) []fact {
+	var fs []fact
 	if it.Breaking > 0 {
-		parts = append(parts, fmt.Sprintf("%d breaking", it.Breaking))
+		fs = append(fs, fact{{fmt.Sprintf("⚠%d", it.Breaking), st.accent}, {" breaking", st.plain}})
 	}
 	if it.NeedsEyes > 0 {
-		parts = append(parts, needEyes(it.NeedsEyes))
+		fs = append(fs, fact{{fmt.Sprint(it.NeedsEyes), st.accent}, {" eyes", st.plain}})
 	}
 	if it.Minutes > 0 {
-		parts = append(parts, fmt.Sprintf("~%d min", max(1, int(it.Minutes+0.5))))
+		fs = append(fs, fact{{fmt.Sprintf("~%dm", max(1, int(it.Minutes+0.5))), st.plain}})
 	}
-	if it.Why != "" {
-		parts = append(parts, it.Why)
+	if len(fs) == 0 {
+		if it.Author != "" {
+			fs = append(fs, fact{{it.Author, st.plain}})
+		}
+		if it.Additions != 0 || it.Deletions != 0 {
+			fs = append(fs, fact{{fmt.Sprintf("+%d", it.Additions), st.add}, {" ", st.plain}, {fmt.Sprintf("−%d", it.Deletions), st.del}})
+		}
 	}
-	return parts
+	if ci := ciText(it.CI); ci != "" {
+		fs = append(fs, ciFact(st, it.CI, ci))
+	}
+	return fs
+}
+
+// ciFact colours the CI state (✓ add, ✗ del).
+func ciFact(st styles, c model.CIState, text string) fact {
+	switch c {
+	case model.CIGreen:
+		return fact{{text, st.add}}
+	case model.CIRed:
+		return fact{{text, st.del}}
+	}
+	return fact{{text, st.plain}}
 }
 
 // needEyes formats a needs-eyes count ("1 needs eyes", "5 need eyes").
@@ -458,35 +565,81 @@ func needEyes(n int) string {
 	return fmt.Sprintf("%d need eyes", n)
 }
 
-func yoursFacts(it model.Item, now time.Time) []string {
-	var parts []string
+func yoursFacts(st styles, it model.Item, now time.Time) []fact {
+	var fs []fact
 	if it.OpenThreads > 0 {
-		parts = append(parts, plural(it.OpenThreads, "open thread"))
+		fs = append(fs, fact{{plural(it.OpenThreads, "open thread"), st.plain}})
 	}
 	if ci := ciText(it.CI); ci != "" {
-		parts = append(parts, ci)
+		fs = append(fs, ciFact(st, it.CI, ci))
 	}
 	if it.Draft {
-		parts = append(parts, "draft")
+		fs = append(fs, fact{{"draft", st.dim}})
 	}
 	if a := age(it.UpdatedAt, now); a != "" {
-		parts = append(parts, a)
+		fs = append(fs, fact{{a, st.plain}})
 	}
-	return parts
+	return fs
 }
 
-func branchFacts(it model.Item, now time.Time) []string {
-	var parts []string
-	if it.Unpushed > 0 {
-		parts = append(parts, fmt.Sprintf("%d unpushed", it.Unpushed))
+// branchFacts is "ready for PR .81 · 3 unpushed · 6d" once the branch state
+// is known ("abandoned? .70", "superseded by #12 .77"); before that the M0
+// line "3 unpushed · 4 ahead · 2d".
+func branchFacts(st styles, it model.Item, rc rowCtx, items []model.Item) []fact {
+	var fs []fact
+	when := it.UpdatedAt
+	if !it.LastCommitAt.IsZero() {
+		when = it.LastCommitAt
 	}
-	if it.Ahead > 0 {
-		parts = append(parts, fmt.Sprintf("%d ahead", it.Ahead))
+	if it.BranchState != "" {
+		state := branchStateWords(it.BranchState, supersededBy(it, rc, items))
+		fs = append(fs, fact{{state, st.plain}, {" " + codeview.ProbText(it.BranchStateP), st.dim}})
+		if it.Unpushed > 0 {
+			fs = append(fs, fact{{fmt.Sprintf("%d unpushed", it.Unpushed), st.plain}})
+		}
+	} else {
+		if it.Unpushed > 0 {
+			fs = append(fs, fact{{fmt.Sprintf("%d unpushed", it.Unpushed), st.plain}})
+		}
+		if it.Ahead > 0 {
+			fs = append(fs, fact{{fmt.Sprintf("%d ahead", it.Ahead), st.plain}})
+		}
 	}
-	if a := age(it.UpdatedAt, now); a != "" {
-		parts = append(parts, a)
+	if a := age(when, rc.now); a != "" {
+		fs = append(fs, fact{{a, st.plain}})
 	}
-	return parts
+	return fs
+}
+
+// supersededBy is the PR number superseding a branch: from its loaded
+// detail, else an open PR item in the list with the branch as its head.
+func supersededBy(it model.Item, rc rowCtx, items []model.Item) int {
+	if n := rc.superseded[it.ID]; n > 0 {
+		return n
+	}
+	if it.BranchState != model.BranchSuperseded {
+		return 0
+	}
+	for _, o := range items {
+		if o.Kind == model.KindPR && o.Ref != "" && o.Ref == it.Ref {
+			return o.Number
+		}
+	}
+	return 0
+}
+
+// branchStateWords names a branch state the spec's way: "abandoned?" (a
+// guess) and "superseded by #N" when the PR is known.
+func branchStateWords(state string, by int) string {
+	switch state {
+	case model.BranchAbandoned:
+		return "abandoned?"
+	case model.BranchSuperseded:
+		if by > 0 {
+			return fmt.Sprintf("superseded by #%d", by)
+		}
+	}
+	return state
 }
 
 func ciText(c model.CIState) string {

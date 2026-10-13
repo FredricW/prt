@@ -45,6 +45,15 @@ type fakeClient struct {
 	// cc records the M4 comment calls (SaveComment, CommentAction,
 	// SubmitReview, CreatePR, MarkViewed, Override).
 	cc commentCalls
+	// M5 search-and-add calls: adds/removes/previews record the queries
+	// and ids; searches every Search call. hits are Search's canned answers
+	// per source; added and previewed are what Add and Preview return (Add
+	// also lists it); searchErr fails every Search.
+	adds, removes, previews []string
+	searches                []proto.SearchParams
+	hits                    map[proto.SearchSource][]proto.SearchHit
+	added, previewed        model.Item
+	searchErr               error
 }
 
 var _ daemon.Client = (*fakeClient)(nil)
@@ -88,11 +97,54 @@ func (f *fakeClient) Refresh(_ context.Context, p proto.ItemParams) error {
 	return nil
 }
 
-func (f *fakeClient) Add(context.Context, string) (model.Item, error) {
-	return model.Item{}, errors.New("not implemented")
+// Add records the query and lists f.added (an error when none is set).
+func (f *fakeClient) Add(_ context.Context, q string) (model.Item, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.adds = append(f.adds, q)
+	if f.added.ID == "" {
+		return model.Item{}, errors.New("not found")
+	}
+	f.items = append(f.items, f.added)
+	return f.added, nil
 }
 
-func (f *fakeClient) Remove(context.Context, string) error { return nil }
+// Remove records the id and drops the item from the list.
+func (f *fakeClient) Remove(_ context.Context, id string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.removes = append(f.removes, id)
+	var keep []model.Item
+	for _, it := range f.items {
+		if it.ID != id {
+			keep = append(keep, it)
+		}
+	}
+	f.items = keep
+	return nil
+}
+
+// Search records the call and answers the source's canned hits.
+func (f *fakeClient) Search(_ context.Context, p proto.SearchParams) (proto.SearchResult, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.searches = append(f.searches, p)
+	if f.searchErr != nil {
+		return proto.SearchResult{}, f.searchErr
+	}
+	return proto.SearchResult{Source: p.Source, Query: p.Query, Hits: f.hits[p.Source]}, nil
+}
+
+// Preview records the query and answers f.previewed (an error when none).
+func (f *fakeClient) Preview(_ context.Context, q string) (model.Item, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.previews = append(f.previews, q)
+	if f.previewed.ID == "" {
+		return model.Item{}, errors.New("not found")
+	}
+	return f.previewed, nil
+}
 
 func (f *fakeClient) Checkout(_ context.Context, p proto.CheckoutParams) (proto.CheckoutResult, error) {
 	f.mu.Lock()
@@ -241,6 +293,33 @@ type fakePane struct {
 	// stripCalls records every SetStripFocus.
 	hasStrip, stripFocus bool
 	stripCalls           []bool
+	// M5: layout is toggled by SideBySide (and SetDiffLayout); EditFile and
+	// OpenUnit queue an open request for unit (when unitOK) at line 12;
+	// note is reported by Note.
+	layout     codeview.Layout
+	unit       model.ChangeUnit
+	unitOK     bool
+	pendingReq *codeview.OpenRequest
+	note       string
+}
+
+func (p *fakePane) PendingOpen() (codeview.OpenRequest, bool) {
+	if p.pendingReq == nil {
+		return codeview.OpenRequest{}, false
+	}
+	r := *p.pendingReq
+	p.pendingReq = nil
+	return r, true
+}
+
+func (p *fakePane) DiffLayout() codeview.Layout           { return p.layout }
+func (p *fakePane) CurrentUnit() (model.ChangeUnit, bool) { return p.unit, p.unitOK }
+func (p *fakePane) Note() string                          { return p.note }
+
+func (p *fakePane) SetDiffLayout(l codeview.Layout) bool {
+	changed := p.layout != l
+	p.layout = l
+	return changed
 }
 
 func (p *fakePane) PendingComment() (codeview.CommentOp, bool) {
@@ -335,6 +414,16 @@ func (p *fakePane) HandleKey(k tea.KeyMsg) bool {
 	case key.Matches(k, p.keys.ReReview):
 		p.review = "g-r"
 		return true
+	case key.Matches(k, p.keys.SideBySide):
+		p.layout = 1 - p.layout
+		return true
+	case key.Matches(k, p.keys.EditFile), key.Matches(k, p.keys.OpenUnit):
+		if !p.unitOK {
+			return true
+		}
+		p.pendingReq = &codeview.OpenRequest{Browser: key.Matches(k, p.keys.OpenUnit), Path: p.unit.Path, Line: 12,
+			Side: model.SideNew, UnitID: p.unit.ID}
+		return true
 	}
 	return false
 }
@@ -357,7 +446,10 @@ type fakePipe struct {
 	actions   map[string]pipeview.Action
 	pending   *pipeview.Action
 	origin    [2]int // last SetOrigin
+	selGroup  string // reported by SelectedGroup ("" none)
 }
+
+func (p *fakePipe) SelectedGroup() (string, bool) { return p.selGroup, p.selGroup != "" }
 
 var _ pipePane = (*fakePipe)(nil)
 

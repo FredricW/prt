@@ -19,6 +19,11 @@ var ErrNotImplemented = errors.New("gh: not implemented")
 // with local branches only.
 var ErrNoToken = errors.New("gh: no GitHub token (run `gh auth login`)")
 
+// ErrPRNotFound is wrapped by Client.PR when the repository has no pull
+// request with that number (search-and-add shows "no PR #N" instead of a
+// failure).
+var ErrPRNotFound = errors.New("gh: PR not found")
+
 // Repo identifies a GitHub repository.
 type Repo struct {
 	Owner string `json:"owner"`

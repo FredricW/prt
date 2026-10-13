@@ -211,6 +211,20 @@ func (s *Socket) Add(ctx context.Context, query string) (model.Item, error) {
 	return it, err
 }
 
+// Search implements Client.
+func (s *Socket) Search(ctx context.Context, p proto.SearchParams) (proto.SearchResult, error) {
+	var r proto.SearchResult
+	err := s.call(ctx, proto.MethodSearch, p, &r)
+	return r, err
+}
+
+// Preview implements Client.
+func (s *Socket) Preview(ctx context.Context, query string) (model.Item, error) {
+	var it model.Item
+	err := s.call(ctx, proto.MethodPreview, proto.AddParams{Query: query}, &it)
+	return it, err
+}
+
 // Remove implements Client.
 func (s *Socket) Remove(ctx context.Context, itemID string) error {
 	return s.call(ctx, proto.MethodRemove, proto.ItemParams{ItemID: itemID}, nil)

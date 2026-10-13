@@ -270,7 +270,7 @@ func TestPipelineSpinnerAndReloads(t *testing.T) {
 func TestPipelineOrigin(t *testing.T) {
 	m, p := pipeModel(t, newFake(threeItems()...), Options{})
 	m = update(t, m, tea.WindowSizeMsg{Width: 120, Height: 30})
-	if want := [2]int{sidebarWidth(120) + 2, 1}; p.origin != want {
+	if want := [2]int{sidebarWidth(120) + 2, 2}; p.origin != want {
 		t.Errorf("origin %v, want %v", p.origin, want)
 	}
 	_ = m

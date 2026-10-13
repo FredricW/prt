@@ -59,12 +59,36 @@ func pickerItems() []model.Item {
 	}
 }
 
+// renderPicker draws the sidebar box (w × h cells) with the list and the
+// footer line, as Model.View does.
 func renderPicker(items []model.Item, cursor, w, h int) string {
+	return renderPickerCtx(items, cursor, w, h, rowCtx{now: fixedNow, spin: "*"})
+}
+
+func renderPickerCtx(items []model.Item, cursor, w, h int, rc rowCtx) string {
+	st := newStyles(plainRenderer())
 	p := picker{}
-	p.setSize(w, h)
+	p.setSize(w-4, h-3)
 	p.setItems(items)
 	p.moveTo(cursor)
-	return p.view(newStyles(plainRenderer()), rowCtx{now: fixedNow, spin: "*"})
+	return renderSidebar(st, p, rc, []string{"/ search  s " + p.sortLabel()}, w, h, true)
+}
+
+// branchStateItems are branches with every picker state form.
+func branchStateItems() []model.Item {
+	b := func(ref, state string, p float64, q int) model.Item {
+		return model.Item{ID: "branch:" + ref, Kind: model.KindBranch, Ref: ref, Section: model.SectionBranches,
+			BranchState: state, BranchStateP: p, UrgencyQuartile: q, Unpushed: 3, Ahead: 4,
+			LastCommitAt: ago(6 * 24 * time.Hour), UpdatedAt: ago(time.Hour), State: model.StateReady}
+	}
+	return []model.Item{
+		b("feat/billing-export", model.BranchReady, 0.81, 2),
+		b("spike/fastapi-ws", model.BranchAbandoned, 0.70, 1),
+		b("feat/session", model.BranchSuperseded, 0.77, 1),
+		b("wip/unknown", "", 0, 0),
+		{ID: "pr:12", Kind: model.KindPR, Number: 12, Title: "Session rework", Ref: "feat/session",
+			Section: model.SectionNeedsYou, Author: "carol", UrgencyQuartile: 3, State: model.StateReady},
+	}
 }
 
 func TestPickerGolden(t *testing.T) {
@@ -74,14 +98,18 @@ func TestPickerGolden(t *testing.T) {
 		cursor int
 		w, h   int
 	}{
-		{"picker_all_sections", pickerItems(), 0, 40, 40},
-		{"picker_narrow_scrolled", pickerItems(), 6, 24, 8},
-		{"picker_empty", nil, 0, 36, 10},
-		{"picker_branches_only", pickerItems()[4:6], 1, 36, 12},
+		{"picker_all_sections", pickerItems(), 0, 40, 30},
+		{"picker_narrow_scrolled", pickerItems(), 6, 24, 10},
+		{"picker_empty", nil, 0, 36, 12},
+		{"picker_branches_only", pickerItems()[4:6], 1, 36, 14},
+		{"picker_branch_states", branchStateItems(), 1, 40, 20},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := renderPicker(tt.items, tt.cursor, tt.w, tt.h)
+			if n := len(strings.Split(got, "\n")); n != tt.h {
+				t.Errorf("%d lines, want %d", n, tt.h)
+			}
 			if strings.Contains(got, "\x1b[") {
 				t.Fatal("picker output contains ANSI escapes")
 			}
@@ -151,14 +179,17 @@ func TestPickerSortCycle(t *testing.T) {
 		if cur, _ := p.selected(); cur.ID != sel.ID {
 			t.Errorf("sort %v: cursor on %s, want %s", p.sort, cur.ID, sel.ID)
 		}
-		if h := p.header(); (p.sort == sortUrgency) == strings.Contains(h, " · by ") {
-			t.Errorf("sort %v: header %q", p.sort, h)
+		if h := p.sortLabel(); h != "sort: "+want.mode.String()+" ▾" {
+			t.Errorf("sort %v: footer %q", p.sort, h)
 		}
 		p.cycleSort()
 	}
 }
 
+// The picker's urgency bar is theme.UrgencyBar's (the selected row draws
+// the same cells as runs on the selection background).
 func TestUrgencyBar(t *testing.T) {
+	st := newStyles(plainRenderer())
 	tests := []struct {
 		q    int
 		want string
@@ -166,52 +197,72 @@ func TestUrgencyBar(t *testing.T) {
 		{-1, "▯▯▯▯"}, {0, "▯▯▯▯"}, {1, "▮▯▯▯"}, {2, "▮▮▯▯"}, {3, "▮▮▮▯"}, {4, "▮▮▮▮"}, {9, "▮▮▮▮"},
 	}
 	for _, tt := range tests {
-		if got := urgencyBar(tt.q); got != tt.want {
-			t.Errorf("urgencyBar(%d) = %q, want %q", tt.q, got, tt.want)
+		if got := st.th.UrgencyBar(tt.q); got != tt.want {
+			t.Errorf("UrgencyBar(%d) = %q, want %q", tt.q, got, tt.want)
+		}
+		if got := segText(urgencySegs(st, tt.q)); got != tt.want {
+			t.Errorf("urgencySegs(%d) = %q, want %q", tt.q, got, tt.want)
 		}
 	}
 }
 
 func TestSecondaryLine(t *testing.T) {
-	rc := rowCtx{now: fixedNow, spin: "*", stages: map[string]model.Stage{"pr:2": model.StageEmbed}}
+	rc := rowCtx{now: fixedNow, spin: "*", stages: map[string]model.Stage{"pr:2": model.StageEmbed},
+		superseded: map[string]int{"branch:known": 31}}
+	branch := func(state string, p float64) model.Item {
+		return model.Item{ID: "branch:x", Ref: "x", Section: model.SectionBranches, Kind: model.KindBranch, Unpushed: 3, Ahead: 5,
+			BranchState: state, BranchStateP: p, LastCommitAt: ago(6 * 24 * time.Hour), UpdatedAt: ago(time.Hour)}
+	}
 	tests := []struct {
-		name string
-		it   model.Item
-		want string
+		name  string
+		it    model.Item
+		items []model.Item
+		want  string
 	}{
 		{"needs you", model.Item{Section: model.SectionNeedsYou, Kind: model.KindPR, Author: "alice", Additions: 3, Deletions: 1, CI: model.CIRed, Why: "asked you · age"},
-			"alice · +3 −1 · CI ✗ · asked you · age"},
+			nil, "alice · +3 −1 · CI ✗"},
 		{"needs you minutes", model.Item{Section: model.SectionNeedsYou, Kind: model.KindPR, Author: "alice", Minutes: 39.8, Why: "asked you"},
-			"alice · ~40 min · asked you"},
-		{"needs you tiny", model.Item{Section: model.SectionNeedsYou, Kind: model.KindPR, Minutes: 0.2}, "~1 min"},
-		{"needs you labels", model.Item{Section: model.SectionNeedsYou, Kind: model.KindPR, Breaking: 2, NeedsEyes: 5, Minutes: 12, Why: "asked you"},
-			"2 breaking · 5 need eyes · ~12 min · asked you"},
-		{"needs you one eye", model.Item{Section: model.SectionNeedsYou, Kind: model.KindPR, NeedsEyes: 1}, "1 needs eyes"},
+			nil, "~40m"},
+		{"needs you tiny", model.Item{Section: model.SectionNeedsYou, Kind: model.KindPR, Minutes: 0.2}, nil, "~1m"},
+		{"needs you labels", model.Item{Section: model.SectionNeedsYou, Kind: model.KindPR, Breaking: 2, NeedsEyes: 5, Minutes: 12, CI: model.CIRed, Why: "asked you"},
+			nil, "⚠2 breaking · 5 eyes · ~12m · CI ✗"},
+		{"needs you one eye", model.Item{Section: model.SectionNeedsYou, Kind: model.KindPR, NeedsEyes: 1}, nil, "1 eyes"},
+		{"branch ready", branch(model.BranchReady, 0.81), nil, "ready for PR .81 · 3 unpushed · 6d"},
+		{"branch abandoned", branch(model.BranchAbandoned, 0.7), nil, "abandoned? .70 · 3 unpushed · 6d"},
+		{"branch superseded from list", branch(model.BranchSuperseded, 0.77),
+			[]model.Item{{Kind: model.KindPR, Number: 12, Ref: "x"}}, "superseded by #12 .77 · 3 unpushed · 6d"},
+		{"branch superseded unknown pr", branch(model.BranchSuperseded, 0.77), nil, "superseded .77 · 3 unpushed · 6d"},
+		{"branch superseded from detail", func() model.Item {
+			it := branch(model.BranchSuperseded, 0.6)
+			it.ID = "branch:known"
+			return it
+		}(), nil, "superseded by #31 .60 · 3 unpushed · 6d"},
+		{"branch unknown state", branch("", 0), nil, "3 unpushed · 5 ahead · 6d"},
 		{"labels unavailable", model.Item{Section: model.SectionNeedsYou, Kind: model.KindPR, LabelsUnavailable: true, Author: "a"},
-			"labels unavailable · a"},
+			nil, "labels unavailable · a"},
 		{"labels unavailable yours", model.Item{Section: model.SectionYours, Kind: model.KindPR, LabelsUnavailable: true, CI: model.CIGreen},
-			"labels unavailable · CI ✓"},
+			nil, "labels unavailable · CI ✓"},
 		{"labels unavailable branch", model.Item{Section: model.SectionBranches, Kind: model.KindBranch, LabelsUnavailable: true, State: model.StateStale},
-			"stale · r to refresh · labels unavailable"},
+			nil, "stale · r to refresh · labels unavailable"},
 		{"yours", model.Item{Section: model.SectionYours, Kind: model.KindPR, CI: model.CIGreen, Draft: true, UpdatedAt: ago(3 * 24 * time.Hour)},
-			"CI ✓ · draft · 3d"},
+			nil, "CI ✓ · draft · 3d"},
 		{"yours threads", model.Item{Section: model.SectionYours, Kind: model.KindPR, OpenThreads: 2, CI: model.CIGreen},
-			"2 open threads · CI ✓"},
-		{"involved", model.Item{Section: model.SectionInvolved, Kind: model.KindPR, Author: "carol"}, "carol"},
+			nil, "2 open threads · CI ✓"},
+		{"involved", model.Item{Section: model.SectionInvolved, Kind: model.KindPR, Author: "carol"}, nil, "carol"},
 		{"branch", model.Item{Section: model.SectionBranches, Kind: model.KindBranch, Unpushed: 2, Ahead: 5, UpdatedAt: ago(5 * time.Hour)},
-			"2 unpushed · 5 ahead · 5h"},
-		{"added pr", model.Item{Section: model.SectionAdded, Kind: model.KindPR, Author: "bob"}, "bob"},
-		{"added branch", model.Item{Section: model.SectionAdded, Kind: model.KindBranch, Ahead: 1, UpdatedAt: ago(10 * time.Minute)}, "1 ahead · 10m"},
-		{"fetching", model.Item{Section: model.SectionNeedsYou, State: model.StateFetching, Author: "a"}, "* fetching · a"},
-		{"analysing note", model.Item{Section: model.SectionNeedsYou, State: model.StateAnalysing, StateNote: "parse"}, "* analysing parse"},
-		{"analysing from event", model.Item{ID: "pr:2", Section: model.SectionNeedsYou, State: model.StateAnalysing}, "* analysing embed"},
-		{"stale", model.Item{Section: model.SectionYours, State: model.StateStale}, "stale · r to refresh"},
-		{"error", model.Item{Section: model.SectionBranches, Kind: model.KindBranch, State: model.StateError, StateNote: "boom"}, "error: boom"},
-		{"ready", model.Item{Section: model.SectionYours, State: model.StateReady, CI: model.CIPending}, "CI …"},
+			nil, "2 unpushed · 5 ahead · 5h"},
+		{"added pr", model.Item{Section: model.SectionAdded, Kind: model.KindPR, Author: "bob"}, nil, "bob"},
+		{"added branch", model.Item{Section: model.SectionAdded, Kind: model.KindBranch, Ahead: 1, UpdatedAt: ago(10 * time.Minute)}, nil, "1 ahead · 10m"},
+		{"fetching", model.Item{Section: model.SectionNeedsYou, State: model.StateFetching, Author: "a"}, nil, "* fetching · a"},
+		{"analysing note", model.Item{Section: model.SectionNeedsYou, State: model.StateAnalysing, StateNote: "parse"}, nil, "* analysing parse"},
+		{"analysing from event", model.Item{ID: "pr:2", Section: model.SectionNeedsYou, State: model.StateAnalysing}, nil, "* analysing embed"},
+		{"stale", model.Item{Section: model.SectionYours, State: model.StateStale}, nil, "stale · r to refresh"},
+		{"error", model.Item{Section: model.SectionBranches, Kind: model.KindBranch, State: model.StateError, StateNote: "boom"}, nil, "error: boom"},
+		{"ready", model.Item{Section: model.SectionYours, State: model.StateReady, CI: model.CIPending}, nil, "CI …"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := secondaryLine(tt.it, rc); got != tt.want {
+			if got := secondaryLine(tt.it, rc, tt.items...); got != tt.want {
 				t.Errorf("got %q, want %q", got, tt.want)
 			}
 		})

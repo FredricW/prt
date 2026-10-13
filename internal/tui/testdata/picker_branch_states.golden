@@ -1,0 +1,20 @@
+┏━ Queue · ranked ━━━━━━━━━━━━━━━━━━━━━┓
+┃ ── NEEDS YOU (1) ─────────────────── ┃
+┃   ▮▮▮▯ #12 Session rework            ┃
+┃        carol                         ┃
+┃ ── YOURS (0) ─────────────────────── ┃
+┃ ── BRANCHES (4) ──────────────────── ┃
+┃ ▸ ▮▮▯▯ feat/billing-export           ┃
+┃        ready for PR .81 · 3 unpushed ┃
+┃   ▮▯▯▯ spike/fastapi-ws              ┃
+┃        abandoned? .70 · 3 unpushed … ┃
+┃   ▮▯▯▯ feat/session                  ┃
+┃        superseded by #12 .77 · 3 un… ┃
+┃   ▯▯▯▯ wip/unknown                   ┃
+┃        3 unpushed · 4 ahead · 6d     ┃
+┃ ── ADDED (0) ─────────────────────── ┃
+┃                                      ┃
+┃                                      ┃
+┃                                      ┃
+┃ / search  s sort: urgency ▾          ┃
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛

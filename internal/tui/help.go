@@ -18,6 +18,8 @@ func (m Model) helpGroups() (string, [][]key.Binding) {
 		return "code", m.keys.codeHelp(m.code.HelpBindings())
 	case TabPipeline:
 		return "pipeline", m.keys.pipelineHelp(m.pipe.HelpBindings())
+	case TabArch:
+		return "architecture", m.keys.archHelp(m.arch.HelpBindings())
 	}
 	return "overview", m.keys.overviewHelp()
 }

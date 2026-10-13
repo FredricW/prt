@@ -47,8 +47,10 @@ func TestSnapshotRendersPickerOverviewCodeAndHelp(t *testing.T) {
 		"=== screen: picker + overview · branch:feat/x ===",
 		"=== screen: picker + code · branch:feat/x ===",
 		"=== screen: help · picker ===",
-		"Branches (1)", "Needs you (0)", "feat/x", "feat/x — add greeting", "2d",
-		"hello.go", "greeting world", "Keys · picker",
+		"=== screen: picker + code-split · branch:feat/x ===",
+		"=== screen: picker + architecture · branch:feat/x ===",
+		"BRANCHES (1)", "NEEDS YOU (0)", "Queue · ranked", "feat/x", "feat/x — add greeting", "2d",
+		"hello.go", "greeting world", "Keys · picker", "prt · 0 PRs · 1 branch", blockBranch,
 	} {
 		if !strings.Contains(s, want) {
 			t.Errorf("snapshot missing %q:\n%s", want, s)

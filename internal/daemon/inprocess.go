@@ -17,6 +17,7 @@ import (
 	"github.com/charmbracelet/log"
 
 	"github.com/fredricw/prt/internal/gh"
+	"github.com/fredricw/prt/internal/gitx"
 	"github.com/fredricw/prt/internal/model"
 	"github.com/fredricw/prt/internal/pipeline"
 	"github.com/fredricw/prt/internal/proto"
@@ -224,11 +225,18 @@ func (c *InProcess) setState(id string, st model.ItemState, note string) {
 }
 
 // Items implements Client: items sorted by section, then urgency, then most
-// recently updated, with UrgencyQuartile relative to all items.
+// recently updated, with UrgencyQuartile relative to all items. Previews
+// (model.SourcePreview) are never listed.
 func (c *InProcess) Items(ctx context.Context) ([]model.Item, error) {
-	items, err := c.d.Store.Items(ctx)
+	all, err := c.d.Store.Items(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("daemon: items: %w", err)
+	}
+	items := all[:0]
+	for _, it := range all {
+		if it.Source != model.SourcePreview {
+			items = append(items, it)
+		}
 	}
 	top := 0.0
 	for _, it := range items {
@@ -391,7 +399,7 @@ func (c *InProcess) refreshHead(ctx context.Context, id string) error {
 			st, note := it.State, it.StateNote
 			applyPR(it, pr, head)
 			it.State, it.StateNote = st, note
-			if it.Source != model.SourceAdded {
+			if it.Source != model.SourceAdded && it.Source != model.SourcePreview {
 				it.Section = prSection(pr, head, viewer)
 			}
 		})
@@ -466,7 +474,7 @@ func (c *InProcess) analyse(j job) {
 		return
 	}
 	c.setState(it.ID, model.StateFetching, "")
-	head, err := c.p.RunHead(c.ctx, it, pipeline.RunOptions{Force: j.force, FromStage: j.fromStage, KeepReviewed: j.keepReviewed})
+	head, err := c.p.RunHead(c.ctx, it, j.options())
 	c.finish(c.ctx, it.ID, head, err)
 }
 
@@ -519,7 +527,8 @@ func (c *InProcess) resetState(id string) {
 
 // recoverStates resets items left Fetching or Analysing by a process that
 // died mid-run (SIGKILL, closed terminal), so they are analysed again
-// instead of spinning forever.
+// instead of spinning forever, and deletes leftover previews (the prompt
+// that opened them is gone).
 func (c *InProcess) recoverStates(ctx context.Context) {
 	items, err := c.d.Store.Items(ctx)
 	if err != nil {
@@ -527,6 +536,12 @@ func (c *InProcess) recoverStates(ctx context.Context) {
 		return
 	}
 	for _, it := range items {
+		if it.Source == model.SourcePreview {
+			if err := c.removePreview(ctx, it.ID); err != nil {
+				c.log.Warn("remove leftover preview", "item", it.ID, "err", err)
+			}
+			continue
+		}
 		if it.State == model.StateFetching || it.State == model.StateAnalysing {
 			c.resetState(it.ID)
 		}
@@ -597,13 +612,15 @@ func (c *InProcess) RunSync(ctx context.Context, itemID string) error {
 // Add implements Client. It accepts "#N"/"N" (needs GitHub), a local ref, or
 // a free-text query matching an open PR's title (first hit). The item lands
 // in the Added section and analysis starts immediately. An item already in
-// the picker keeps its section and is just (re-)queued.
+// the picker keeps its section and is just (re-)queued; a preview (Preview)
+// is promoted to Added. The search hits' queries ("#N", a ref name) are
+// accepted as they are, closed and merged PRs included.
 func (c *InProcess) Add(ctx context.Context, query string) (model.Item, error) {
 	q := strings.TrimSpace(query)
 	if q == "" {
 		return model.Item{}, errors.New("daemon: add: empty query")
 	}
-	it, err := c.resolveAdd(ctx, q)
+	it, err := c.resolveAdd(ctx, q, model.SourceAdded)
 	if err != nil {
 		return model.Item{}, err
 	}
@@ -613,68 +630,104 @@ func (c *InProcess) Add(ctx context.Context, query string) (model.Item, error) {
 	return it, nil
 }
 
-func (c *InProcess) resolveAdd(ctx context.Context, q string) (model.Item, error) {
+// resolveAdd finds the item q names ("#N"/"N", a ref, or the first open PR
+// matching free text) and stores it with source src (SourceAdded or
+// SourcePreview) unless it exists; see addItem.
+func (c *InProcess) resolveAdd(ctx context.Context, q string, src model.ItemSource) (model.Item, error) {
+	verb := "add"
+	if src == model.SourcePreview {
+		verb = "preview"
+	}
 	if n, err := strconv.Atoi(strings.TrimPrefix(q, "#")); err == nil {
 		if c.d.GH == nil {
-			return model.Item{}, fmt.Errorf("daemon: cannot add #%d: GitHub unavailable", n)
+			return model.Item{}, fmt.Errorf("daemon: cannot %s #%d: GitHub unavailable", verb, n)
 		}
 		pr, err := c.d.GH.PR(ctx, n)
 		if err != nil {
-			return model.Item{}, fmt.Errorf("daemon: add #%d: %w", n, err)
+			return model.Item{}, fmt.Errorf("daemon: %s #%d: %w", verb, n, err)
 		}
-		return c.addPR(ctx, pr)
+		return c.addPR(ctx, pr, src)
 	}
 	sha, refErr := c.d.Git.ResolveRef(ctx, q)
 	if refErr == nil {
-		return c.addBranch(ctx, q, sha)
+		return c.addBranch(ctx, q, sha, src)
 	}
 	if c.d.GH == nil {
-		return model.Item{}, fmt.Errorf("daemon: add %q: %w", q, refErr)
+		return model.Item{}, fmt.Errorf("daemon: %s %q: %w", verb, q, refErr)
 	}
 	prs, err := c.d.GH.SearchPRs(ctx, "is:pr is:open "+q, 1)
 	if err != nil {
-		return model.Item{}, fmt.Errorf("daemon: add %q: %w", q, errors.Join(refErr, err))
+		return model.Item{}, fmt.Errorf("daemon: %s %q: %w", verb, q, errors.Join(refErr, err))
 	}
 	if len(prs) == 0 {
-		return model.Item{}, fmt.Errorf("daemon: add %q: no matching ref or open PR", q)
+		return model.Item{}, fmt.Errorf("daemon: %s %q: no matching ref or open PR", verb, q)
 	}
-	return c.addPR(ctx, prs[0])
+	return c.addPR(ctx, prs[0], src)
 }
 
-func (c *InProcess) addPR(ctx context.Context, pr gh.PR) (model.Item, error) {
+func (c *InProcess) addPR(ctx context.Context, pr gh.PR, src model.ItemSource) (model.Item, error) {
 	head := c.prHead(ctx, pr)
-	return c.addItem(ctx, model.PRItemID(pr.Number), func(it *model.Item) {
+	return c.addItem(ctx, model.PRItemID(pr.Number), src, func(it *model.Item) {
 		applyPR(it, pr, head)
 	})
 }
 
-func (c *InProcess) addBranch(ctx context.Context, ref, sha string) (model.Item, error) {
+// addBranch stores a ref as an item; the tip's subject, author, upstream
+// and commit date come from the ref listing when ref is a branch.
+func (c *InProcess) addBranch(ctx context.Context, ref, sha string, src model.ItemSource) (model.Item, error) {
 	def, err := c.d.Git.DefaultBranch(ctx)
 	if err != nil {
 		return model.Item{}, fmt.Errorf("daemon: default branch: %w", err)
 	}
-	return c.addItem(ctx, model.BranchItemID(ref), func(it *model.Item) {
+	r, found := c.findRef(ctx, ref)
+	return c.addItem(ctx, model.BranchItemID(ref), src, func(it *model.Item) {
 		it.Kind, it.Ref, it.BaseRef, it.HeadSHA = model.KindBranch, ref, def, sha
+		if found {
+			it.Title, it.Author, it.Upstream = r.Subject, r.Author, r.Upstream
+			it.LastCommitAt, it.UpdatedAt = r.CommitDate, r.CommitDate
+		}
 		if it.Title == "" {
 			it.Title = ref
 		}
 	})
 }
 
-// addItem returns the stored item if it exists, else creates an Added item
-// filled by fill.
-func (c *InProcess) addItem(ctx context.Context, id string, fill func(*model.Item)) (model.Item, error) {
+// findRef returns the listed local or remote-tracking ref named name.
+func (c *InProcess) findRef(ctx context.Context, name string) (gitx.Ref, bool) {
+	refs, err := c.d.Git.Refs(ctx, true)
+	if err != nil {
+		return gitx.Ref{}, false
+	}
+	for _, r := range refs {
+		if r.Name == name || r.FullName == name {
+			return r, true
+		}
+	}
+	return gitx.Ref{}, false
+}
+
+// addItem returns the stored item if it exists, else creates an item of
+// source src filled by fill: an Added item in the Added section, or a
+// preview with no section. Adding a stored preview promotes it to Added
+// (with an item event); any other stored item is returned unchanged.
+func (c *InProcess) addItem(ctx context.Context, id string, src model.ItemSource, fill func(*model.Item)) (model.Item, error) {
 	c.itemMu.Lock()
 	it, err := c.d.Store.Item(ctx, id)
 	if err == nil {
 		c.itemMu.Unlock()
+		if it.Source == model.SourcePreview && src == model.SourceAdded {
+			return c.promotePreview(ctx, id)
+		}
 		return it, nil
 	}
 	if !errors.Is(err, store.ErrNotFound) {
 		c.itemMu.Unlock()
 		return it, fmt.Errorf("daemon: add %s: %w", id, err)
 	}
-	it = model.Item{ID: id, Source: model.SourceAdded, Section: model.SectionAdded}
+	it = model.Item{ID: id, Source: src}
+	if src != model.SourcePreview {
+		it.Section = model.SectionAdded
+	}
 	fill(&it)
 	c.setUrgency(ctx, &it, false)
 	err = c.d.Store.UpsertItem(ctx, it)
@@ -686,15 +739,38 @@ func (c *InProcess) addItem(ctx context.Context, id string, fill func(*model.Ite
 	return it, nil
 }
 
-// Remove implements Client.
+// promotePreview turns a preview into an Added item (source and section),
+// emitting an item event. An item that stopped being a preview meanwhile
+// is left as it is.
+func (c *InProcess) promotePreview(ctx context.Context, id string) (model.Item, error) {
+	it, ok, err := c.updateItem(ctx, id, func(it *model.Item) {
+		if it.Source == model.SourcePreview {
+			it.Source, it.Section = model.SourceAdded, model.SectionAdded
+		}
+	})
+	if err != nil {
+		return it, err
+	}
+	if !ok {
+		return it, fmt.Errorf("daemon: add %s: %w", id, store.ErrNotFound)
+	}
+	return it, nil
+}
+
+// Remove implements Client. Removing a preview deletes it silently (no
+// remove event: it was never listed).
 func (c *InProcess) Remove(ctx context.Context, itemID string) error {
 	c.itemMu.Lock()
-	err := c.d.Store.RemoveItem(ctx, itemID)
+	it, err := c.d.Store.Item(ctx, itemID)
+	preview := err == nil && it.Source == model.SourcePreview
+	err = c.d.Store.RemoveItem(ctx, itemID)
 	c.itemMu.Unlock()
 	if err != nil {
 		return fmt.Errorf("daemon: remove %s: %w", itemID, err)
 	}
-	c.send(proto.Event{Type: proto.EventRemove, ItemID: itemID})
+	if !preview {
+		c.send(proto.Event{Type: proto.EventRemove, ItemID: itemID})
+	}
 	return nil
 }
 

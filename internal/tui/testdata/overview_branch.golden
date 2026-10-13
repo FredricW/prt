@@ -1,0 +1,43 @@
+feat/session — Rework session refresh · alice · 1d · main ← feat/session
+Refreshes session tokens before expiry and adds a device list; the auth refresh path is untested.  ai·from labels
+rrrrrrrrrrrrrrrrrrrrffffffffffff░░░░tttt
+r refactor 50% · f feature 32% · ░ noise 10% · t test 9%
++312 −88 → ~180 lines that matter · ~24 min · 3 of 6 chunks need eyes
+
+┌─ Branch state ────────────────────────────────────────────────────┐  ┌─ Check before approving · hot spots ──────────────────────────────┐
+│ abandoned? .70                                                    │  │ 1 web/src/session.ts:14  token reused after refresh  9.4          │
+│ rule: no commits for 16 days                                      │  │ 2 server/api/session.go:31  writes session without lock  4.2      │
+│ abandoned .70 · WIP .20 · ready for PR .05 · spike .03 · superse… │  │ 3 web/src/devices.tsx:40  unhandled fetch error path  1.1         │
+│ 7 unpushed commits                                                │  │                                                                   │
+│   a1b2c3d refresh tokens early                                    │  │                                                                   │
+│   b2 device list                                                  │  │                                                                   │
+│   c3 wip                                                          │  │                                                                   │
+│   d4 tests                                                        │  │                                                                   │
+│   e5 fmt                                                          │  │                                                                   │
+│   … 2 more                                                        │  │                                                                   │
+│ Suggested PR title: Refresh sessions before expiry  ai·from grou… │  │                                                                   │
+└───────────────────────────────────────────────────────────────────┘  └───────────────────────────────────────────────────────────────────┘
+┌─ Risk ────────────────────────────────────────────────────────────┐  ┌─ Description fidelity ────────────────────────────────────────────┐
+│ Risk HIGH (4)                                                     │  │   ✓ implemented  Refresh tokens before expiry  .91                │
+│   auth ×2 · data write ×1 · error path ×1                         │  │ ? ✓ implemented  Add a device list page  .58                      │
+│   test gap: 1 of 2 risky chunks untested                          │  │   ✗ not found    Log out other devices                            │
+│                                                                   │  │   + undocumented server/api/session.go:20 Refresh                 │
+│                                                                   │  │   coherence: mixed  .72                                           │
+└───────────────────────────────────────────────────────────────────┘  └───────────────────────────────────────────────────────────────────┘
+┌─ Minimap · attention per chunk ───────────────────────────────────┐  ┌─ Your slice ──────────────────────────────────────────────────────┐
+│ web/src/session.ts       █▒                                       │  │ web/** 4 chunks · 2 need eyes                                     │
+│ web/src/devices.tsx      □                                        │  │ server/* is 2 chunks — skip unless curious                        │
+│ web/src/session.test.ts  ▒                                        │  │                                                                   │
+│ ── not yours ──                                                   │  │                                                                   │
+│ server/api/session.go    █                                        │  │                                                                   │
+│ server/api/format.go     ·                                        │  │                                                                   │
+│ █ eyes ▒ skim · skip □ unsure                                     │  │                                                                   │
+└───────────────────────────────────────────────────────────────────┘  └───────────────────────────────────────────────────────────────────┘
+Confidence: □ 3 low-confidence labels; those units stay expanded in Code
+┌─ Description ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│   Refresh sessions before they expire.                                                                                                   │
+│                                                                                                                                          │
+│   • Refresh tokens before expiry                                                                                                         │
+│   • Add a device list page                                                                                                               │
+│   • Log out other devices                                                                                                                │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘

@@ -40,6 +40,8 @@ type pipePane interface {
 	Capturing() bool
 	// PendingAction returns (once) the daemon action the last key asked for.
 	PendingAction() (pipeview.Action, bool)
+	// SelectedGroup is the routing table's selected group (M5: `:tier`).
+	SelectedGroup() (string, bool)
 	HelpBindings() [][]key.Binding
 	ShortBindings() []key.Binding
 	View() string
@@ -238,9 +240,12 @@ func (m Model) onPipeMsg(msg tea.Msg) (Model, tea.Cmd, bool) {
 			m.note = "call log: " + msg.err.Error()
 		}
 	case capSetMsg:
-		if msg.err != nil {
+		switch {
+		case msg.err != nil:
 			m.note = "cost cap: " + msg.err.Error()
-		} else {
+		case msg.capUSD <= 0:
+			m.note = "cost cap for this item: the routing file's default"
+		default:
 			m.note = fmt.Sprintf("cost cap for this item: $%.2f", msg.capUSD)
 		}
 	default:
@@ -253,8 +258,11 @@ func reviewActedNote(msg reviewActedMsg) string {
 	if msg.err != nil {
 		return "review action failed: " + msg.err.Error()
 	}
-	if msg.action == proto.ActionSkip {
+	switch msg.action {
+	case proto.ActionSkip:
 		return "review skipped; re-routing…"
+	case proto.ActionReset:
+		return "back to the routing rules; re-routing…"
 	}
 	return "re-reviewing on deep…"
 }

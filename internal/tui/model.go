@@ -1,9 +1,13 @@
-// Package tui is the Bubble Tea front end. The root Model holds the picker
-// (sidebar, always visible on the left), the main pane (the label-driven
-// Overview and the Code tab, which wraps internal/codeview) and a one-line
-// status bar. It talks to the analysis side only
-// through daemon.Client; long operations are tea.Cmds returning messages and
-// never run in Update.
+// Package tui is the Bubble Tea front end. The root Model draws a header
+// line, the picker (the "Queue · ranked" sidebar box, always visible on the
+// left, with the `/` search prompt at its bottom), the main pane (the tab
+// bar, then the label-driven Overview, the Code tab wrapping
+// internal/codeview, the Architecture tab wrapping internal/archview, or
+// the Pipeline page) and a bottom line with the key hints, notes, prompts
+// or the `:` command line. Colours and drawing pieces come from
+// internal/theme. It talks to the analysis side only through
+// daemon.Client; long operations are tea.Cmds returning messages and never
+// run in Update.
 package tui
 
 import (
@@ -17,11 +21,16 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 
+	"github.com/fredricw/prt/internal/archview"
+	"github.com/fredricw/prt/internal/cmdline"
 	"github.com/fredricw/prt/internal/daemon"
 	"github.com/fredricw/prt/internal/model"
 	"github.com/fredricw/prt/internal/pipeview"
 	"github.com/fredricw/prt/internal/proto"
+	"github.com/fredricw/prt/internal/searchview"
+	"github.com/fredricw/prt/internal/theme"
 )
 
 // Focus is which pane has keyboard focus.
@@ -39,13 +48,14 @@ const (
 // Tab is the main-pane tab.
 type Tab int
 
-// Main-pane tabs. Architecture (3) is shown as "later" until M5.
-// TabPipeline is the Pipeline page: not a numbered tab but a page `P`
-// opens over the main pane and `P`/esc closes, back to the previous tab.
+// Main-pane tabs. TabPipeline is the Pipeline page: not a numbered tab but
+// a page `P` opens over the main pane and `P`/esc closes, back to the
+// previous tab. TabArch is the Architecture tab (3, M5).
 const (
 	TabOverview Tab = iota
 	TabCode
 	TabPipeline
+	TabArch
 )
 
 // Options configures the root model; the zero value is usable.
@@ -64,6 +74,17 @@ type Options struct {
 	// runs $EDITOR (fallback vi) through tea.ExecProcess. Tests inject a
 	// recording stand-in.
 	Edit EditFunc
+	// Repo ("owner/name", else the repo directory's name) and Role (the
+	// configured role, "frontend") fill the header line; "" hides the part
+	// (M5).
+	Repo, Role string
+	// Root is the repository's work tree, so the Code page's `e` opens
+	// <Root>/<path>; "" uses the path as is (relative to the working
+	// directory) (M5).
+	Root string
+	// EditFile opens a file at a line for the Code page's `e`; nil runs
+	// `$EDITOR +<line> <path>` (fallback vi) through tea.ExecProcess (M5).
+	EditFile EditFileFunc
 }
 
 // Messages.
@@ -133,8 +154,26 @@ type Model struct {
 	overview                   overview
 	code                       codePane
 	pipe                       pipePane
+	arch                       archPane
 	// prevTab is the tab the Pipeline page returns to.
 	prevTab Tab
+
+	// search is the `/` prompt; cmd the `:` command line (M5).
+	search searchPane
+	cmd    cmdPane
+	// previewID is the search result shown with tab (a hidden preview
+	// item), preview its loaded detail, previewOV its Overview.
+	previewID  string
+	preview    *proto.Detail
+	previewSeq int
+	previewOV  overview
+	// marked are the multi-selected items (space); markNoted is set once
+	// the "overlap view comes in M6" note was shown.
+	marked    map[string]bool
+	markNoted bool
+	// superseded maps a branch item id to the PR superseding it (from its
+	// loaded detail), for the picker line.
+	superseded map[string]int
 
 	requested map[string]string      // item id → head SHA auto-refreshed
 	stages    map[string]model.Stage // item id → latest stage seen
@@ -156,8 +195,8 @@ type Model struct {
 	// viewed holds "item@analysedSHA" keys already sent to MarkViewed this
 	// session.
 	viewed map[string]bool
-	// selectAfter is the id of a just-created PR item the picker moves to
-	// once it is listed.
+	// selectAfter is the id of a just-created PR item (or an added one) the
+	// picker moves to once it is listed.
 	selectAfter string
 
 	width, height int
@@ -178,31 +217,44 @@ func NewWithOptions(c daemon.Client, r *lipgloss.Renderer, o Options) Model {
 	if o.Keys != nil {
 		km = *o.Keys
 	}
+	now := o.Now
+	if now == nil {
+		now = time.Now
+	}
 	h := help.New()
 	h.Styles = helpStyles(r)
 	pipe := pipeview.New(r)
+	arch := archview.New(r)
+	cl := cmdline.New(r)
 	m := Model{
-		client:    c,
-		opts:      o,
-		keys:      km,
-		r:         r,
-		st:        newStyles(r),
-		md:        newMarkdown(r),
-		help:      h,
-		spin:      spinner.New(spinner.WithSpinner(spinner.MiniDot), spinner.WithStyle(r.NewStyle())),
-		overview:  newOverview(),
-		code:      newCodePane(r),
-		pipe:      &pipe,
-		requested: map[string]string{},
-		stages:    map[string]model.Stage{},
-		runLogs:   map[string][]model.RunLog{},
-		viewed:    map[string]bool{},
-		strip:     pipeview.StageStrip,
-		width:     120,
-		height:    40,
+		client:     c,
+		opts:       o,
+		keys:       km,
+		r:          r,
+		st:         newStyles(r),
+		md:         newMarkdown(r),
+		help:       h,
+		spin:       spinner.New(spinner.WithSpinner(spinner.MiniDot), spinner.WithStyle(r.NewStyle())),
+		overview:   newOverview(),
+		previewOV:  newOverview(),
+		code:       newCodePane(r),
+		pipe:       &pipe,
+		arch:       &arch,
+		search:     newSearchPane(r, c, now),
+		cmd:        &cl,
+		marked:     map[string]bool{},
+		superseded: map[string]int{},
+		requested:  map[string]string{},
+		stages:     map[string]model.Stage{},
+		runLogs:    map[string][]model.RunLog{},
+		viewed:     map[string]bool{},
+		strip:      pipeview.StageStrip,
+		width:      120,
+		height:     40,
 	}
 	m.code.SetKeys(km.codeKeys())
 	m.pipe.SetKeys(km.pipeKeys())
+	m.arch.SetKeys(km.archKeys())
 	m.layout()
 	return m
 }
@@ -352,18 +404,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case itemsMsg:
 		return m.onItems(msg)
 	case reloadedMsg:
-		m.reloadPending = false
-		var again tea.Cmd
-		if m.reloadAgain {
-			m.reloadAgain = false
-			again = m.queueReload()
-		}
-		if msg.err != nil {
-			m.note = "error: load items: " + msg.err.Error()
-			return m, again
-		}
-		next, cmd := m.onItems(itemsMsg{items: msg.items})
-		return next, tea.Batch(cmd, again)
+		return m.onReloaded(msg)
 	case detailMsg:
 		if msg.seq != m.detailSeq {
 			return m, nil
@@ -374,45 +415,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case eventMsg:
 		return m.onEvent(proto.Event(msg))
 	case spinner.TickMsg:
-		if m.tab == TabPipeline {
-			m.pipe.SetNow(m.now()) // a running review's elapsed seconds
-		}
-		if !m.picker.busy() {
-			m.spinning = false
-			return m, nil
-		}
-		var cmd tea.Cmd
-		m.spin, cmd = m.spin.Update(msg)
-		return m, cmd
+		return m.onSpin(msg)
 	case refreshTickMsg:
 		return m, tea.Batch(m.discover(), m.scheduleRefresh())
 	case checkoutMsg:
 		return m.onCheckout(msg), nil
 	case groupEditedMsg:
 		return m.onGroupEdited(msg), nil
-	case openedMsg:
-		if msg.err != nil {
-			m.note = "open failed: " + msg.err.Error()
-		} else {
-			m.note = "opened " + msg.url
-		}
-		return m, nil
-	case refreshedMsg:
-		if msg.err != nil {
-			m.note = "refresh failed: " + msg.err.Error()
-		}
-		return m, nil
-	case autoRefreshedMsg:
-		if len(msg.errs) > 0 {
-			m.note = msg.errs[0].Error()
-		}
-		return m, nil
-	case errMsg:
-		m.note = "error: " + msg.err.Error()
-		return m, nil
-	case closedMsg:
-		m.logNote = "daemon connection lost; restart prt"
-		return m, nil
+	case tierDoneMsg:
+		return m.onTierDone(msg), nil
+	}
+	if next, ok := m.onNoteMsg(msg); ok {
+		return next, nil
 	}
 	if next, cmd, ok := m.onPipeMsg(msg); ok {
 		return next, cmd
@@ -420,11 +434,92 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if next, cmd, ok := m.onCommentMsg(msg); ok {
 		return next, cmd
 	}
-	if m.form != nil {
-		// The form's own messages (next field, cursor blink, …).
+	if next, cmd, ok := m.onSearchMsg(msg); ok {
+		return next, cmd
+	}
+	return m.routeOther(msg)
+}
+
+// routeOther hands a message no case claimed to the open form, command
+// line or search prompt (their cursor blinks, debounce ticks), and search
+// results to the prompt.
+func (m Model) routeOther(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch {
+	case m.form != nil:
 		return m.updateForm(msg)
+	case m.cmd.Active():
+		return m.updateCmdline(msg)
+	}
+	if _, ok := msg.(searchview.ResultMsg); ok || m.search.Active() {
+		return m.updateSearch(msg)
 	}
 	return m, nil
+}
+
+// onNoteMsg handles the messages that only set the status note; ok is false
+// for any other message.
+func (m Model) onNoteMsg(msg tea.Msg) (Model, bool) {
+	switch msg := msg.(type) {
+	case openedMsg:
+		if msg.err != nil {
+			m.note = "open failed: " + msg.err.Error()
+		} else {
+			m.note = "opened " + msg.url
+		}
+	case unitOpenedMsg:
+		if msg.err != nil {
+			m.note = "open failed: " + msg.err.Error()
+		} else {
+			m.note = "opened " + msg.where + " on GitHub"
+		}
+	case fileEditedMsg:
+		if msg.err != nil {
+			m.note = "editor: " + msg.err.Error()
+		}
+	case refreshedMsg:
+		if msg.err != nil {
+			m.note = "refresh failed: " + msg.err.Error()
+		}
+	case autoRefreshedMsg:
+		if len(msg.errs) > 0 {
+			m.note = msg.errs[0].Error()
+		}
+	case errMsg:
+		m.note = "error: " + msg.err.Error()
+	case closedMsg:
+		m.logNote = "daemon connection lost; restart prt"
+	default:
+		return m, false
+	}
+	return m, true
+}
+
+func (m Model) onReloaded(msg reloadedMsg) (tea.Model, tea.Cmd) {
+	m.reloadPending = false
+	var again tea.Cmd
+	if m.reloadAgain {
+		m.reloadAgain = false
+		again = m.queueReload()
+	}
+	if msg.err != nil {
+		m.note = "error: load items: " + msg.err.Error()
+		return m, again
+	}
+	next, cmd := m.onItems(itemsMsg{items: msg.items})
+	return next, tea.Batch(cmd, again)
+}
+
+func (m Model) onSpin(msg spinner.TickMsg) (tea.Model, tea.Cmd) {
+	if m.tab == TabPipeline {
+		m.pipe.SetNow(m.now()) // a running review's elapsed seconds
+	}
+	if !m.picker.busy() {
+		m.spinning = false
+		return m, nil
+	}
+	var cmd tea.Cmd
+	m.spin, cmd = m.spin.Update(msg)
+	return m, cmd
 }
 
 // afterInput runs after every key and mouse message: it keeps the strip
@@ -437,16 +532,57 @@ func afterInput(tm tea.Model, cmd tea.Cmd) (tea.Model, tea.Cmd) {
 }
 
 // handleMouse implements the spec's mouse support: the wheel scrolls the
-// pane under the pointer, a left click on a picker row selects that item.
+// pane under the pointer, a left click on a picker row selects that item;
+// clicks in the search results, the Code, Pipeline and Architecture pages
+// go to those components. Row 0 is the header line; the sidebar box spans
+// rows 1..body with its list starting at row 2.
 func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
-	if m.confirm != nil || m.showHelp || m.form != nil {
+	if m.confirm != nil || m.showHelp || m.form != nil || m.cmd.Active() {
 		return m, nil
 	}
 	sw, _, bh := m.dims()
-	inPicker := msg.X < sw && msg.Y < bh
+	inPicker := msg.X <= sw && msg.Y >= 1 && msg.Y <= bh
+	row := msg.Y - 2
 	wheel := msg.Button == tea.MouseButtonWheelUp || msg.Button == tea.MouseButtonWheelDown
 	switch {
-	case inPicker && wheel:
+	case inPicker && m.search.Active() && row >= m.picker.height:
+		listRows, pad, _ := m.searchLayout()
+		local := msg
+		local.X, local.Y = msg.X-2, row-listRows-pad
+		cmd := m.search.Update(local)
+		return m, batch(cmd, m.afterSearch())
+	case inPicker:
+		return m.pickerMouse(msg, row, wheel)
+	case msg.Y < 1:
+		return m, nil
+	case m.previewing():
+		wheelOverview(&m.previewOV, msg, wheel)
+	case m.tab == TabCode:
+		return m, m.code.Update(msg)
+	case m.tab == TabPipeline:
+		return m, m.pipe.Update(msg)
+	case m.tab == TabArch:
+		cmd := m.arch.Update(msg)
+		return m, batch(cmd, m.archJump())
+	case msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress && !m.overview.raw:
+		// Rows 0 and 1 are the header and the tab bar; a click on an
+		// anchored Overview line (minimap cell, headline, …) opens that unit
+		// in Code. The main pane starts after the sidebar box and a gap.
+		if id, ok := m.overview.clickAt(m.overview.vp.YOffset+msg.Y-2, msg.X-sw-2); ok && m.detail != nil {
+			m.focus = FocusMain
+			m.jumpToUnit(id)
+		}
+	default:
+		wheelOverview(&m.overview, msg, wheel)
+	}
+	return m, nil
+}
+
+// pickerMouse is the wheel (moves the cursor) and a click (selects the row)
+// over the picker list.
+func (m Model) pickerMouse(msg tea.MouseMsg, row int, wheel bool) (tea.Model, tea.Cmd) {
+	switch {
+	case wheel:
 		delta := 1
 		if msg.Button == tea.MouseButtonWheelUp {
 			delta = -1
@@ -454,9 +590,8 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		if m.picker.move(delta) {
 			return m, m.selectionChanged()
 		}
-		return m, nil
-	case inPicker && msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress:
-		i := m.picker.itemAt(msg.Y)
+	case msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress:
+		i := m.picker.itemAt(row)
 		if i < 0 {
 			return m, nil
 		}
@@ -464,36 +599,24 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		if m.picker.moveTo(i) {
 			return m, m.selectionChanged()
 		}
-		return m, nil
-	case inPicker:
-		return m, nil
-	case m.tab == TabCode:
-		return m, m.code.Update(msg)
-	case m.tab == TabPipeline:
-		return m, m.pipe.Update(msg)
-	case msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress && !m.overview.raw:
-		// Row 0 of the main pane is the tab bar; a click on an anchored
-		// Overview line (minimap row, headline, …) opens that unit in Code.
-		// The main pane starts after the sidebar, its right border and a
-		// one-cell gap (View).
-		if id, ok := m.overview.clickAt(m.overview.vp.YOffset+msg.Y-1, msg.X-sw-2); ok && m.detail != nil {
-			m.focus = FocusMain
-			m.jumpToUnit(id)
-		}
-	case wheel && m.overview.raw:
-		if msg.Button == tea.MouseButtonWheelUp {
-			m.overview.rawVP.ScrollUp(3)
-		} else {
-			m.overview.rawVP.ScrollDown(3)
-		}
-	case wheel:
-		if msg.Button == tea.MouseButtonWheelUp {
-			m.overview.vp.ScrollUp(3)
-		} else {
-			m.overview.vp.ScrollDown(3)
-		}
 	}
 	return m, nil
+}
+
+// wheelOverview scrolls an Overview (or its open overlay) by three lines.
+func wheelOverview(o *overview, msg tea.MouseMsg, wheel bool) {
+	if !wheel {
+		return
+	}
+	vp := &o.vp
+	if o.raw {
+		vp = &o.rawVP
+	}
+	if msg.Button == tea.MouseButtonWheelUp {
+		vp.ScrollUp(3)
+	} else {
+		vp.ScrollDown(3)
+	}
 }
 
 func (m Model) onItems(msg itemsMsg) (tea.Model, tea.Cmd) {
@@ -550,6 +673,10 @@ func (m Model) onEvent(e proto.Event) (tea.Model, tea.Cmd) {
 		m.detailSeq++
 		cmds = append(cmds, m.loadDetail(it.ID, m.detailSeq))
 	}
+	if m.previewID != "" && e.ItemID == m.previewID && e.Type != proto.EventRemove {
+		m.previewSeq++
+		cmds = append(cmds, m.loadPreview(m.previewID, m.previewSeq))
+	}
 	return m, tea.Batch(cmds...)
 }
 
@@ -584,6 +711,7 @@ func (m *Model) selectionChanged() tea.Cmd {
 	m.detailSeq++
 	m.code.Clear()
 	m.pipe.Clear()
+	m.arch.Clear()
 	m.overview.setContent("", nil)
 	m.overview.closeRaw()
 	it, ok := m.picker.selected()
@@ -596,14 +724,18 @@ func (m *Model) selectionChanged() tea.Cmd {
 }
 
 // applyDetail shows d in the main pane. A reload of the same item keeps the
-// Overview scroll position; the Code page keeps its own state (codeview
-// SetDetail contract).
+// Overview scroll position; the Code and Architecture pages keep their own
+// state (SetDetail contracts).
 func (m *Model) applyDetail(d proto.Detail) {
 	same := m.detail != nil && m.detail.Item.ID == d.Item.ID
 	m.code.SetDetail(d)
 	m.pipe.SetDetail(d)
+	m.arch.SetDetail(d)
 	m.detail = &d
 	m.detailPending = false
+	if d.Agg != nil && d.Agg.Branch != nil && d.Agg.Branch.SupersededBy > 0 {
+		m.superseded[d.Item.ID] = d.Agg.Branch.SupersededBy
+	}
 	y := m.overview.vp.YOffset
 	m.renderOverview()
 	if same {
@@ -616,7 +748,7 @@ func (m *Model) renderOverview() {
 		return
 	}
 	_, mw, _ := m.dims()
-	m.overview.setPage(overviewPage(m.st, m.md, *m.detail, m.now(), mw-2))
+	m.overview.setPage(overviewPage(m.st, m.md, *m.detail, m.now(), mw))
 }
 
 // jumpToUnit switches to the Code tab and focuses unit id there.
@@ -627,6 +759,9 @@ func (m *Model) jumpToUnit(id string) {
 	}
 }
 
+// previewing reports whether the main pane shows a previewed search result.
+func (m Model) previewing() bool { return m.previewID != "" && m.search.Active() }
+
 // ---- keys -----------------------------------------------------------------
 
 func (m Model) handleKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -635,27 +770,29 @@ func (m Model) handleKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	m.note = ""
 	km := m.keys
-	if k.String() == "ctrl+c" {
-		// Quitting keeps an open composer's text as a draft (spec: drafts
-		// are saved): send the save, then quit.
-		if m.code.SaveOpenComposer() {
-			if cmd := m.sendComment(); cmd != nil {
-				return m, tea.Sequence(cmd, tea.Quit)
-			}
-		}
-		return m, tea.Quit
-	}
-	if m.form != nil {
+	switch {
+	case k.String() == "ctrl+c":
+		return m.quit()
+	case m.form != nil:
 		return m.updateForm(k)
+	case m.cmd.Active():
+		return m.updateCmdline(k)
+	case m.search.Active():
+		return m.updateSearch(k)
 	}
 	if !m.showHelp && m.focus != FocusPicker {
+		capturing := m.tab == TabCode && m.code.Capturing()
 		if next, ok := m.routeMain(k); ok {
-			cmd := batch(next.sendGroupEdit(), next.sendReReview(), next.pipeActionCmd(), next.sendComment())
+			if next.tab == TabCode && !capturing && key.Matches(k, km.SideBySide) {
+				next.layoutNote()
+			}
+			cmd := batch(next.sendGroupEdit(), next.sendReReview(), next.pipeActionCmd(), next.sendComment(),
+				next.codeOpenCmd(), next.archJump())
 			return next, cmd
 		}
 	}
 	if key.Matches(k, km.Quit) {
-		return m, tea.Quit
+		return m.quit()
 	}
 	if m.showHelp {
 		if key.Matches(k, km.Help) || key.Matches(k, km.Back) {
@@ -675,9 +812,10 @@ func (m Model) handleKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 // routeMain gives the focused main pane the first look at k. The Code page
 // takes every key while it captures (filters bar, raw labels: so 1–9 toggle
 // filters instead of switching tabs) and otherwise any key it handles; the
-// Pipeline page likewise (cap prompt, call log, stage log); the Overview's
-// overlays (raw labels, urgency weights) capture every key. ok is false
-// when k falls through to the global and pane keys.
+// Pipeline page (cap prompt, call log, stage log) and the Architecture tab
+// (a module's file list) likewise; the Overview's overlays (raw labels,
+// urgency weights) capture every key. ok is false when k falls through to
+// the global and pane keys.
 func (m Model) routeMain(k tea.KeyMsg) (Model, bool) {
 	switch {
 	case m.tab == TabCode && m.code.Capturing():
@@ -690,6 +828,11 @@ func (m Model) routeMain(k tea.KeyMsg) (Model, bool) {
 		return m, true
 	case m.tab == TabPipeline:
 		return m, m.pipe.HandleKey(k)
+	case m.tab == TabArch && m.arch.Capturing():
+		m.arch.HandleKey(k)
+		return m, true
+	case m.tab == TabArch:
+		return m, m.arch.HandleKey(k)
 	case m.overview.raw:
 		m.handleRawKey(k)
 		return m, true
@@ -731,6 +874,8 @@ func (m Model) handleGlobalKey(k tea.KeyMsg) (Model, tea.Cmd, bool) {
 	switch {
 	case key.Matches(k, km.Help):
 		m.showHelp = true
+	case key.Matches(k, km.Command):
+		return m, m.cmd.Open(), true
 	case key.Matches(k, km.NextFocus):
 		m.cycleFocus(1)
 	case key.Matches(k, km.PrevFocus):
@@ -745,12 +890,16 @@ func (m Model) handleGlobalKey(k tea.KeyMsg) (Model, tea.Cmd, bool) {
 		m.togglePipeline()
 	case key.Matches(k, km.Back) && m.tab == TabPipeline && m.focus == FocusMain:
 		m.closePipeline()
+	case key.Matches(k, km.Back) && m.focus == FocusPicker && len(m.marked) > 0:
+		m.clearMarks()
 	case key.Matches(k, km.Back):
 		m.focus = FocusPicker
 	case key.Matches(k, km.Overview):
 		m.tab = TabOverview
 	case key.Matches(k, km.Code):
 		m.tab = TabCode
+	case key.Matches(k, km.Architecture):
+		m.tab = TabArch
 	case key.Matches(k, km.Refresh):
 		it, ok := m.picker.selected()
 		if !ok {
@@ -814,6 +963,12 @@ func (m Model) handlePickerKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(k, km.Sort):
 		m.picker.cycleSort()
 		m.note = "sort: " + m.picker.sort.String()
+	case key.Matches(k, km.Search):
+		return m, m.openSearch()
+	case key.Matches(k, km.Remove):
+		return m, m.removeSelected()
+	case key.Matches(k, km.Select):
+		m.toggleMark()
 	case key.Matches(k, km.Focus):
 		if _, ok := m.picker.selected(); ok {
 			m.focus = FocusMain
@@ -825,8 +980,8 @@ func (m Model) handlePickerKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// handleMainKey handles Overview keys (Code and Pipeline keys went to their
-// components in routeMain).
+// handleMainKey handles Overview keys (Code, Pipeline and Architecture keys
+// went to their components in routeMain).
 func (m Model) handleMainKey(k tea.KeyMsg) Model {
 	if m.tab != TabOverview {
 		return m
@@ -888,46 +1043,92 @@ func sidebarWidth(total int) int {
 }
 
 // dims returns the sidebar width, main pane width and body height (the
-// terminal minus the status line). The sidebar has a one-cell right border
-// and a one-cell gap.
+// terminal minus the header line and the bottom line). The sidebar box is
+// sidebar+1 cells wide and followed by a one-cell gap, so the main pane
+// starts at column sidebar+2.
 func (m Model) dims() (side, main, body int) {
 	side = sidebarWidth(m.width)
-	return side, max(10, m.width-side-2), max(1, m.height-1)
+	return side, max(10, m.width-side-2), max(3, m.height-2)
+}
+
+// sidebarInner is the rows inside the sidebar box's borders.
+func (m Model) sidebarInner() int {
+	_, _, bh := m.dims()
+	return max(1, bh-2)
+}
+
+// sizeSidebar sizes the picker list (and the open search prompt) inside
+// the sidebar box: the bottom line is the footer, or the prompt's rows.
+func (m *Model) sizeSidebar() {
+	sw, _, _ := m.dims()
+	inner := m.sidebarInner()
+	w := max(4, sw-3)
+	rows := inner - 1
+	if m.search.Active() {
+		sr := searchRows(inner)
+		rows = inner - sr
+		m.search.SetSize(w, sr)
+	}
+	m.picker.setSize(w, max(1, rows))
 }
 
 func (m *Model) layout() {
 	sw, mw, bh := m.dims()
-	m.picker.setSize(sw, bh)
+	m.sizeSidebar()
 	m.code.SetSize(mw, bh-1)
 	m.pipe.SetSize(mw, bh-1)
-	// The main pane starts after the sidebar, its right border and a gap,
-	// one row below the tab bar; components map mouse cells from there.
-	for _, c := range []any{m.code, m.pipe} {
+	m.arch.SetSize(mw, bh-1)
+	// The main pane starts after the sidebar box and a gap, below the
+	// header and the tab bar; components map mouse cells from there.
+	for _, c := range []any{m.code, m.pipe, m.arch} {
 		if o, ok := c.(originSetter); ok {
-			o.SetOrigin(sw+2, 1)
+			o.SetOrigin(sw+2, 2)
 		}
 	}
 	m.overview.setSize(mw, bh-1)
+	m.previewOV.setSize(mw, bh-2)
+	m.cmd.SetWidth(m.width)
 	m.renderOverview()
+	m.renderPreview()
 }
 
 // View implements tea.Model.
 func (m Model) View() string {
 	sw, mw, bh := m.dims()
-	rc := rowCtx{now: m.now(), spin: m.spin.View(), stages: m.stages, runLogs: m.runLogs, strip: m.strip}
-	side := m.st.sidebar.Width(sw).Render(fit(m.picker.view(m.st, rc), sw, bh))
+	side := fit(m.viewSidebar(), sw+1, bh)
 	main := fit(m.viewMain(mw), mw, bh)
 	body := lipgloss.JoinHorizontal(lipgloss.Top, side, " ", main)
-	return body + "\n" + m.viewStatus()
+	return m.viewHeader() + "\n" + body + "\n" + m.viewStatus()
+}
+
+// rowCtx is the picker's rendering context.
+func (m Model) rowCtx() rowCtx {
+	return rowCtx{now: m.now(), spin: m.spin.View(), stages: m.stages, runLogs: m.runLogs, strip: m.strip,
+		marked: m.marked, superseded: m.superseded}
+}
+
+// viewSidebar draws the "Queue · ranked" box: the list, then the footer
+// ("/ search  s sort: urgency ▾") or the open search prompt.
+func (m Model) viewSidebar() string {
+	sw, _, bh := m.dims()
+	bottom := []string{m.st.dim.Render(m.keys.Search.Help().Key + " search  " + m.keys.Sort.Help().Key + " " + m.picker.sortLabel())}
+	if m.search.Active() {
+		_, pad, lines := m.searchLayout()
+		bottom = append(make([]string, pad), lines...)
+	}
+	return renderSidebar(m.st, m.picker, m.rowCtx(), bottom, sw+1, bh, m.focus == FocusPicker)
 }
 
 func (m Model) viewMain(w int) string {
-	head := m.viewTabs()
+	head := m.viewTabs(w)
 	if m.showHelp {
 		return head + "\n" + m.viewHelp(w)
 	}
 	if m.form != nil {
 		return head + "\n" + m.viewForm()
+	}
+	if m.previewing() {
+		return head + "\n" + m.viewPreview()
 	}
 	it, ok := m.picker.selected()
 	switch {
@@ -939,79 +1140,133 @@ func (m Model) viewMain(w int) string {
 		return head + "\n" + m.code.View()
 	case m.tab == TabPipeline:
 		return head + "\n" + m.pipe.View()
+	case m.tab == TabArch:
+		return head + "\n" + m.arch.View()
 	}
 	return head + "\n" + m.overview.view()
 }
 
-func (m Model) viewTabs() string {
-	tab := func(t Tab, s string) string {
-		if m.tab == t {
-			return m.st.tabOn.Render(s)
-		}
-		return m.st.tabOff.Render(s)
+// spread is theme.Spread that leaves no trailing blanks when right is
+// empty.
+func spread(left, right string, w int) string {
+	if ansi.StringWidth(right) == 0 {
+		return truncate(left, w)
 	}
+	return theme.Spread(left, right, w)
+}
+
+// viewTabs is the tab bar ("1 Overview  2 Code  3 Architecture", the
+// active one bracketed without colour) with the tab's dim context on the
+// right.
+func (m Model) viewTabs(w int) string {
+	th, k := m.st.th, m.keys
+	tab := func(t Tab, label string) string { return th.Tab(label, m.tab == t) }
 	focus := "  "
 	if m.focus == FocusMain {
 		focus = "▸ "
 	}
-	s := focus + tab(TabOverview, "1 Overview") + "  " + tab(TabCode, "2 Code") + "  " +
-		m.st.tabLater.Render("3 Architecture (later)")
+	s := focus + tab(TabOverview, k.Overview.Help().Key+" Overview") + " " + tab(TabCode, k.Code.Help().Key+" Code") + " " +
+		tab(TabArch, k.Architecture.Help().Key+" Architecture")
 	if m.tab == TabPipeline {
-		s += "  " + tab(TabPipeline, m.keys.Pipeline.Help().Key+" Pipeline")
+		s += " " + tab(TabPipeline, k.Pipeline.Help().Key+" Pipeline")
 	}
-	return s
+	// The tabs win: the context is cut to the room left after them.
+	room := w - ansi.StringWidth(s) - 2
+	if room < 4 {
+		return truncate(s, w)
+	}
+	return spread(s, m.st.dim.Render(truncate(m.tabContext(), room)), w)
 }
 
-func (m Model) viewStatus() string {
-	right := m.statusCounts()
-	avail := max(10, m.width-lipgloss.Width(right)-2)
-	var left string
-	switch {
-	case m.confirm != nil:
-		left = m.st.prompt.Render("work tree dirty — checkout " + orDash(m.confirm.ref) + " anyway? y/N")
-	case m.form != nil:
-		left = m.st.dim.Render("enter next · enter on the last field submits · esc cancels")
-	case m.note != "":
-		left = m.note
-	default:
-		h := m.help
-		h.Width = avail
-		switch {
-		case m.focus == FocusPicker:
-			left = h.ShortHelpView(m.keys.pickerShort())
-		case m.tab == TabOverview && m.overview.raw && m.overview.weights:
-			left = m.st.dim.Render("urgency weights · esc or " + m.keys.Weights.Help().Key + " closes")
-		case m.tab == TabOverview && m.overview.raw:
-			left = m.st.dim.Render("raw labels · esc or " + m.keys.RawLabels.Help().Key + " closes")
-		case m.tab == TabPipeline:
-			left = h.ShortHelpView(m.keys.mainShort(m.tab, m.pipe.ShortBindings()))
-		default:
-			left = h.ShortHelpView(m.keys.mainShort(m.tab, m.code.ShortBindings()))
-		}
+// viewHeader is the top line: "prt · <repo> · N PRs · N branches · role:
+// <role>" on the left; the sort mode (when not urgency), the multi-select
+// count, busy items, drafts and the daemon's log note dim on the right.
+func (m Model) viewHeader() string {
+	st := m.st
+	sep := st.dim.Render(" · ")
+	left := st.accent.Bold(true).Render("prt")
+	if m.opts.Repo != "" {
+		left += sep + st.bold.Render(m.opts.Repo)
 	}
-	left = truncate(left, avail)
-	gap := max(1, m.width-lipgloss.Width(left)-lipgloss.Width(right))
-	return truncate(left+strings.Repeat(" ", gap)+right, m.width)
-}
-
-func (m Model) statusCounts() string {
-	busy := 0
+	prs, branches := 0, 0
 	for _, it := range m.picker.items {
-		if it.State == model.StateFetching || it.State == model.StateAnalysing {
-			busy++
+		if it.Kind == model.KindBranch {
+			branches++
+		} else {
+			prs++
 		}
 	}
-	s := plural(len(m.picker.items), "item")
-	if busy > 0 {
-		s += fmt.Sprintf(" · %d busy", busy)
+	nb := fmt.Sprintf("%d branches", branches)
+	if branches == 1 {
+		nb = "1 branch"
+	}
+	left += sep + st.dim.Render(plural(prs, "PR")) + sep + st.dim.Render(nb)
+	if m.opts.Role != "" {
+		left += sep + st.dim.Render("role: ") + m.opts.Role
+	}
+	return spread(left, st.dim.Render(strings.Join(m.headerFacts(), " · ")), m.width)
+}
+
+// headerFacts are the header's right-hand facts.
+func (m Model) headerFacts() []string {
+	var parts []string
+	if m.picker.sort != sortUrgency {
+		parts = append(parts, "sort: "+m.picker.sort.String())
+	}
+	if n := len(m.marked); n > 0 {
+		parts = append(parts, fmt.Sprintf("%d selected", n))
+	}
+	if n := m.picker.busyCount(); n > 0 {
+		parts = append(parts, fmt.Sprintf("%d busy", n))
 	}
 	if m.detail != nil {
 		if n := countDrafts(m.detail.Comments).total(); n > 0 {
-			s = plural(n, "draft") + " · " + s
+			parts = append(parts, plural(n, "draft"))
 		}
 	}
 	if m.logNote != "" {
-		s = m.logNote + " · " + s
+		parts = append(parts, m.logNote)
 	}
-	return m.st.dim.Render(s)
+	return parts
+}
+
+// viewStatus is the bottom line: the checkout prompt, the form hint, the
+// command line or a note when there is one, else the key hint bar.
+func (m Model) viewStatus() string {
+	var s string
+	switch {
+	case m.confirm != nil:
+		s = m.st.prompt.Render("work tree dirty — checkout " + orDash(m.confirm.ref) + " anyway? y/N")
+	case m.form != nil:
+		s = m.st.dim.Render("enter next · enter on the last field submits · esc cancels")
+	case m.cmd.Active():
+		s = m.cmd.View()
+	case m.note != "":
+		s = m.note
+	case m.tab == TabOverview && m.focus != FocusPicker && m.overview.raw && m.overview.weights:
+		s = m.st.dim.Render("urgency weights · esc or " + m.keys.Weights.Help().Key + " closes")
+	case m.tab == TabOverview && m.focus != FocusPicker && m.overview.raw:
+		s = m.st.dim.Render("raw labels · esc or " + m.keys.RawLabels.Help().Key + " closes")
+	default:
+		s = m.st.th.Hints(m.hints(), m.width)
+	}
+	return truncate(s, m.width)
+}
+
+// hints is the key hint bar for the focus and tab.
+func (m Model) hints() []theme.Hint {
+	switch {
+	case m.search.Active():
+		sk := searchview.DefaultKeys()
+		return append([]theme.Hint{pairHint(sk.Up, sk.Down, "results")}, theme.HintsOf(sk.Add, sk.Preview, sk.Close)...)
+	case m.focus == FocusPicker:
+		return m.keys.pickerHints()
+	case m.tab == TabPipeline:
+		return m.keys.mainHints(m.tab, m.pipe.ShortBindings())
+	case m.tab == TabArch:
+		return m.keys.mainHints(m.tab, m.arch.ShortBindings())
+	case m.tab == TabCode:
+		return m.keys.mainHints(m.tab, m.code.ShortBindings())
+	}
+	return m.keys.mainHints(TabOverview, nil)
 }

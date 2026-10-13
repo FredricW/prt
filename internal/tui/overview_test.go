@@ -10,6 +10,7 @@ import (
 
 	"github.com/fredricw/prt/internal/model"
 	"github.com/fredricw/prt/internal/proto"
+	"github.com/fredricw/prt/internal/theme"
 )
 
 // loadDetail reads a proto.Detail fixture from testdata.
@@ -90,21 +91,28 @@ func TestOverviewEmptyBlocksCollapse(t *testing.T) {
 	}
 }
 
+// unboxed strips a box row's side borders, its one-cell padding and the
+// trailing fill ("│ text   │" → "text").
+func unboxed(l string) string {
+	l = strings.TrimPrefix(strings.TrimPrefix(l, "│"), " ")
+	return strings.TrimRight(strings.TrimSuffix(strings.TrimRight(l, " "), "│"), " ")
+}
+
 func TestOverviewProbabilities(t *testing.T) {
 	got, _ := renderOverviewText(loadDetail(t, "detail_full.json"))
 	lines := strings.Split(got, "\n")
 	find := func(sub string) string {
 		for _, l := range lines {
 			if strings.Contains(l, sub) {
-				return l
+				return unboxed(l)
 			}
 		}
 		t.Fatalf("no line with %q:\n%s", sub, got)
 		return ""
 	}
 	tests := []struct{ sub, prefix, prob string }{
-		{"refresh(token)", "  breaking", ".86"},    // sure
-		{"Refresh(ctx, id)", "? signature", ".55"}, // below .60: '?' and unsure
+		{"refresh(token)", "  ⚠ breaking", ".86"},    // sure
+		{"Refresh(ctx, id)", "? ⚠ signature", ".55"}, // below .60: '?' and unsure
 		{"Refresh tokens before", "  ✓ implemented", ".91"},
 		{"Add a device list", "? ✓ implemented", ".58"},
 		{"coherence: mixed", "  coherence", ".72"},
@@ -156,8 +164,12 @@ func TestRiskWordAndChips(t *testing.T) {
 			t.Errorf("riskWord(%v) = %s, want %s", r, got, want)
 		}
 	}
-	if got := riskChips(map[string]int{"pii": 1, "auth": 2, "data_write": 1, "money": 0}); got != "auth ×2  data write ×1  pii ×1" {
+	chips := riskChips(map[string]int{"pii": 1, "auth": 2, "data_write": 1, "money": 0})
+	if got := newStyles(plainRenderer()).th.Chips(chips...); got != "auth ×2 · data write ×1 · pii ×1" {
 		t.Errorf("chips = %q", got)
+	}
+	if chips[0].Kind != theme.ChipWarn || chips[1].Kind != theme.ChipPlain {
+		t.Errorf("chip kinds = %v, %v; want the top tag warm", chips[0].Kind, chips[1].Kind)
 	}
 }
 
@@ -179,7 +191,7 @@ func overviewFocused(t *testing.T, d proto.Detail) (Model, *fakePane) {
 // lineOf returns the content line index of the first Overview line with sub.
 func lineOf(t *testing.T, m Model, sub string) int {
 	t.Helper()
-	text, _ := overviewText(m.st, m.md, *m.detail, fixedNow, m.overview.vp.Width-2)
+	text, _ := overviewText(m.st, m.md, *m.detail, fixedNow, m.overview.vp.Width)
 	for i, l := range strings.Split(text, "\n") {
 		if strings.Contains(l, sub) {
 			return i
@@ -267,7 +279,7 @@ func TestOverviewClickOpensUnit(t *testing.T) {
 	row := lineOf(t, m, "server/api/session.go  ") // minimap row
 	m.overview.vp.SetYOffset(row)                  // may clamp near the bottom
 	sw, _, _ := m.dims()
-	y := row - m.overview.vp.YOffset + 1 // row 0 of the main pane is the tab bar
+	y := row - m.overview.vp.YOffset + 2 // rows 0 and 1 are the header and the tab bar
 	m = update(t, m, mouseClick(sw+4, y))
 	if m.tab != TabCode || fmt.Sprint(p.focused) != "[u-server]" {
 		t.Errorf("click on a minimap row: tab %v focused %v", m.tab, p.focused)
@@ -280,13 +292,14 @@ func TestOverviewClickOnMinimapCell(t *testing.T) {
 	d := loadDetail(t, "detail_full.json")
 	m, p := overviewFocused(t, d)
 	row := lineOf(t, m, "web/src/session.ts  ")
-	c, ok := m.overview.cells[row]
-	if !ok || len(c.ids) != 2 {
-		t.Fatalf("minimap row %d cells = %+v", row, c)
+	cs := m.overview.cells[row]
+	if len(cs) != 1 || len(cs[0].ids) != 2 {
+		t.Fatalf("minimap row %d cells = %+v", row, cs)
 	}
+	c := cs[0]
 	m.overview.vp.SetYOffset(row)
 	sw, _, _ := m.dims()
-	y := row - m.overview.vp.YOffset + 1
+	y := row - m.overview.vp.YOffset + 2
 	m = update(t, m, mouseClick(sw+2+c.col+1, y))
 	if m.tab != TabCode || fmt.Sprint(p.focused) != "[u-expired]" {
 		t.Errorf("click on the second cell: tab %v focused %v, want u-expired", m.tab, p.focused)

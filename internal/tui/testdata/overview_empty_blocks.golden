@@ -1,35 +1,32 @@
 #482 Rework session refresh and add device list · alice · 1d · main ← feat/sess…
 TL;DR: not generated — pending
-
-Composition
 no changed lines
 +3 −1 → ~0 lines that matter · ~0 min · 0 of 1 chunks need eyes
 
-Headlines
-no contract changes
-
-Check before approving
-nothing flagged
-
-Risk
-risk unknown
-  no risky chunks
-
-Description fidelity
-no description bullets
-
-Minimap
-  README.md  ·
-  █ eyes ▒ skim · skip □ unsure
-
-Your slice
-no modules
-
-Since you looked
-nothing to compare yet (first look)
-
-Confidence
-all labels confident
-
-Description
-no description
+┌─ Headlines · contract surface ───────────────────────────────────────────────┐
+│ no contract changes                                                          │
+└──────────────────────────────────────────────────────────────────────────────┘
+┌─ Check before approving · hot spots ─────────────────────────────────────────┐
+│ nothing flagged                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+┌─ Risk ───────────────────────────────────────────────────────────────────────┐
+│ risk unknown                                                                 │
+│   no risky chunks                                                            │
+└──────────────────────────────────────────────────────────────────────────────┘
+┌─ Description fidelity ───────────────────────────────────────────────────────┐
+│ no description bullets                                                       │
+└──────────────────────────────────────────────────────────────────────────────┘
+┌─ Minimap · attention per chunk ──────────────────────────────────────────────┐
+│ README.md  ·                                                                 │
+│ █ eyes ▒ skim · skip □ unsure                                                │
+└──────────────────────────────────────────────────────────────────────────────┘
+┌─ Your slice ─────────────────────────────────────────────────────────────────┐
+│ no modules                                                                   │
+└──────────────────────────────────────────────────────────────────────────────┘
+┌─ Since you looked ───────────────────────────────────────────────────────────┐
+│ nothing to compare yet (first look)                                          │
+└──────────────────────────────────────────────────────────────────────────────┘
+Confidence: all labels confident
+┌─ Description ────────────────────────────────────────────────────────────────┐
+│ no description                                                               │
+└──────────────────────────────────────────────────────────────────────────────┘

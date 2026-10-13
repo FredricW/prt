@@ -53,22 +53,22 @@ demo: build $(FIXTURE_REPO)/.git
 # (needs JEV_API_KEY; spend capped at $1.00, ledger in testdata/recordings/SPEND.md).
 # Run once after parse/labels/pipeline are final; tests replay the recordings.
 record-jev:
-	go run ./tools/recordjev --live --embed replay
+	go run ./tools/recordjev --live --embed replay --branches
 
 # Free dry run: counts the requests record-jev would send; no network.
 record-jev-dry:
-	go run ./tools/recordjev --embed replay
+	go run ./tools/recordjev --embed replay --branches
 
 # Record real Anthropic reviews, TL;DRs and group titles for the fixture PRs
 # into testdata/recordings/review (needs PRT_ANTHROPIC_API_KEY; spend capped
 # at $3.00 for anthropic, $5.00 project-wide; ledger in SPEND.md). Jev answers
 # and embeddings come from the existing recordings.
 record-review:
-	go run ./tools/recordjev --live --review --embed replay
+	go run ./tools/recordjev --live --review --embed replay --branches
 
 # Free dry run: counts the review requests and their upper-bound cost; no network.
 record-review-dry:
-	go run ./tools/recordjev --review --embed replay
+	go run ./tools/recordjev --review --embed replay --branches
 
 # Record Ollama embeddings for every fixture unit into testdata/recordings/embed
 # (local and free; needs Ollama with embeddinggemma-2).
@@ -76,5 +76,7 @@ record-embed:
 	go run ./tools/recordjev --embed live
 
 # Non-interactive: render a few screens to stdout (for agents and CI).
+# Five items so the fixture branch (05-spike-dark-mode, ranked last) shows
+# its branch-state block too.
 snapshot: build $(FIXTURE_REPO)/.git
-	./bin/prt --no-daemon --offline $(REPLAY) --snapshot --width 120 --height 30 --now $(SNAPSHOT_NOW) --repo $(FIXTURE_REPO) --fixtures $(FIXTURE_PRS) --drafts $(FIXTURE_DRAFTS)
+	./bin/prt --no-daemon --offline $(REPLAY) --snapshot --width 120 --height 30 --max-items 5 --now $(SNAPSHOT_NOW) --repo $(FIXTURE_REPO) --fixtures $(FIXTURE_PRS) --drafts $(FIXTURE_DRAFTS)

@@ -382,6 +382,18 @@ func (s *server) call(ctx context.Context, sc *serverConn, m proto.Message) (any
 			return nil, err
 		}
 		return empty{}, c.Override(ctx, p)
+	case proto.MethodSearch:
+		p, err := params[proto.SearchParams](m)
+		if err != nil {
+			return nil, err
+		}
+		return c.Search(ctx, p)
+	case proto.MethodPreview:
+		p, err := params[proto.AddParams](m)
+		if err != nil {
+			return nil, err
+		}
+		return c.Preview(ctx, p.Query)
 	case proto.MethodSubscribe:
 		sc.subscribe()
 		return empty{}, nil

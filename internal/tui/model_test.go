@@ -147,21 +147,25 @@ func TestClosedConnectionShowsNote(t *testing.T) {
 func TestMouse(t *testing.T) {
 	f := newFake(threeItems()...)
 	m := newTestModel(t, f, Options{})
-	// Rows: 0 title, 1 "Needs you (2)", 2–3 pr:1, 4–5 pr:2, 6 "Yours (0)", 7 "Branches (1)", 8–9 branch.
+	// Screen rows: 0 header line, 1 the sidebar box's top border, then the
+	// list: 2 "── NEEDS YOU (2)", 3–4 pr:1, 5–6 pr:2, 7 "── YOURS (0)",
+	// 8 "── BRANCHES (1)", 9–10 branch.
 	click := func(y int) tea.MouseMsg {
 		return tea.MouseMsg{X: 3, Y: y, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress}
 	}
-	m, cmd := updateCmd(t, m, click(9))
+	m, cmd := updateCmd(t, m, click(10))
 	if got := selectedID(m); got != "branch:feat/x" || cmd == nil {
-		t.Fatalf("click on row 9 selected %s (cmd %v)", got, cmd != nil)
+		t.Fatalf("click on row 10 selected %s (cmd %v)", got, cmd != nil)
 	}
-	m = update(t, m, click(6)) // a header: no change
-	if got := selectedID(m); got != "branch:feat/x" {
-		t.Fatalf("click on a header moved the cursor to %s", got)
+	for _, y := range []int{0, 1, 2, 7, 8} { // header line, border, dividers: no change
+		m = update(t, m, click(y))
+		if got := selectedID(m); got != "branch:feat/x" {
+			t.Fatalf("click on row %d moved the cursor to %s", y, got)
+		}
 	}
-	m = update(t, m, click(4))
+	m = update(t, m, click(6))
 	if got := selectedID(m); got != "pr:2" {
-		t.Fatalf("click on row 4 selected %s", got)
+		t.Fatalf("click on row 6 selected %s", got)
 	}
 	m = update(t, m, tea.MouseMsg{X: 3, Y: 4, Button: tea.MouseButtonWheelUp, Action: tea.MouseActionPress})
 	if got := selectedID(m); got != "pr:1" {
@@ -529,7 +533,7 @@ func TestOverviewContent(t *testing.T) {
 	m = feed[detailMsg](t, m, m.selectionChanged())
 	v := m.View()
 	for _, want := range []string{
-		"1 Overview", "2 Code", "3 Architecture (later)",
+		"[1 Overview]", "2 Code", "3 Architecture", "@alice · 2d",
 		"#1 one · alice · 2d · main ← feat/one", "Composition", "analysing…",
 	} {
 		if !strings.Contains(v, want) {
@@ -560,8 +564,8 @@ func TestEvents(t *testing.T) {
 	f := newFake(threeItems()...)
 	m := newTestModel(t, f, Options{})
 	m = update(t, m, eventMsg{Type: proto.EventLog, Note: "GitHub unavailable"})
-	if !strings.Contains(m.viewStatus(), "GitHub unavailable") {
-		t.Errorf("log note not in status: %q", m.viewStatus())
+	if !strings.Contains(m.viewHeader(), "GitHub unavailable") {
+		t.Errorf("log note not in the header: %q", m.viewHeader())
 	}
 	busy := threeItems()[1]
 	busy.State, busy.StateNote = model.StateAnalysing, "parse"

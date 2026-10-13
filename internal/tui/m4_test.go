@@ -486,12 +486,12 @@ func TestStripFocusRoutesKeysAndClears(t *testing.T) {
 
 func TestStatusShowsDraftCount(t *testing.T) {
 	m, _, _, _ := m4Model(t)
-	if s := m.viewStatus(); !strings.Contains(s, "2 drafts · ") {
-		t.Errorf("status = %q", s)
+	if s := m.viewHeader(); !strings.Contains(s, "2 drafts") {
+		t.Errorf("header = %q", s)
 	}
 	m.detail.Comments = nil
-	if s := m.viewStatus(); strings.Contains(s, "draft") {
-		t.Errorf("status with no drafts = %q", s)
+	if s := m.viewHeader(); strings.Contains(s, "draft") {
+		t.Errorf("header with no drafts = %q", s)
 	}
 }
 
@@ -596,7 +596,10 @@ func TestOverviewSince(t *testing.T) {
 			"  web/src/session.ts:12", "  server/api/session.go:20", "  … 2 more", "  no earlier comments of yours"}},
 		{"unsure, unknown, resolved", unsure, []string{
 			"? ✓ addressed .55  a.go:3  maybe", "  ? unknown  b.go:4  who knows", "  ✓ addressed .90  c.go:5  done  resolved"}},
-		{"branch", branch, []string{"no reviews to compare on a branch"}},
+	}
+	// A branch has the branch state box instead (spec Overview, Branches).
+	if got, _ := renderOverviewText(branch); sinceSection(got) != "" || !strings.Contains(got, blockBranch) {
+		t.Errorf("branch overview has a Since block or lacks the branch state:\n%s", got)
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -621,7 +624,7 @@ func sinceSection(page string) string {
 		return ""
 	}
 	rest := page[i:]
-	if j := strings.Index(rest, "\n\n"); j >= 0 {
+	if j := strings.Index(rest, "└"); j >= 0 { // the box's bottom border
 		rest = rest[:j]
 	}
 	return rest

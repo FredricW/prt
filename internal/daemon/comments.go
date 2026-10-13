@@ -396,8 +396,8 @@ func (c *InProcess) MarkViewed(ctx context.Context, p proto.ViewedParams) error 
 	return nil
 }
 
-// Override implements Client: it stores a label override and queues a
-// re-run of the item (cached stages hit; aggregate applies the override).
+// Override implements Client: it stores a label override and queues an
+// aggregate-only run of the item (pipeline.RunOptions.AggregateOnly).
 func (c *InProcess) Override(ctx context.Context, p proto.OverrideParams) error {
 	it, err := c.d.Store.Item(ctx, p.ItemID)
 	if err != nil {
@@ -426,13 +426,15 @@ func (c *InProcess) normaliseOverride(o model.Override) (model.Override, error) 
 	return o, nil
 }
 
-// applyOverride stores o and queues a re-run of it so aggregate sees it
-// (a rerun job follows a run already in flight).
+// applyOverride stores o and queues an aggregate-only run of the item
+// (spec: "An override invalidates aggregate only"); as a rerun job it
+// follows a run already in flight, and merged with a queued full run it
+// becomes part of that run.
 func (c *InProcess) applyOverride(ctx context.Context, it model.Item, o model.Override) error {
 	if err := c.d.Store.PutOverride(ctx, o); err != nil {
 		return fmt.Errorf("daemon: override %s/%s: %w", o.UnitID, o.Question, err)
 	}
-	c.q.push(job{itemID: it.ID, urgency: it.Urgency, rerun: true})
+	c.q.push(job{itemID: it.ID, urgency: it.Urgency, rerun: true, aggOnly: true})
 	return nil
 }
 

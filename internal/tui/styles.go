@@ -1,43 +1,58 @@
 package tui
 
 import (
+	"io"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/muesli/termenv"
+
+	"github.com/fredricw/prt/internal/theme"
 )
 
 // styles are built from a renderer so snapshots render without colour. No
 // meaning is carried by colour alone: the urgency bar, cursor marker and
-// states are all readable as plain text.
+// states are all readable as plain text. Every colour comes from the shared
+// palette (internal/theme, DECISIONS "Design canvas adopted (M5)").
 type styles struct {
-	title, dim, cursor, section, emptySection, tabOn, tabOff, tabLater lipgloss.Style
-	sidebar, helpBox, prompt                                           lipgloss.Style
+	th                                theme.Theme
+	title, dim, cursor, section       lipgloss.Style
+	helpBox, prompt, plain            lipgloss.Style
+	add, del, accent, blue, bold, sel lipgloss.Style
 }
 
 func newStyles(r *lipgloss.Renderer) styles {
+	th := theme.New(r)
 	return styles{
-		title:        r.NewStyle().Bold(true),
-		dim:          r.NewStyle().Faint(true),
-		cursor:       r.NewStyle().Bold(true),
-		section:      r.NewStyle().Bold(true),
-		emptySection: r.NewStyle().Faint(true),
-		tabOn:        r.NewStyle().Bold(true).Underline(true),
-		tabOff:       r.NewStyle(),
-		tabLater:     r.NewStyle().Faint(true),
-		sidebar:      r.NewStyle().Border(lipgloss.NormalBorder(), false, true, false, false),
-		helpBox:      r.NewStyle().Border(lipgloss.NormalBorder()).Padding(0, 1),
-		prompt:       r.NewStyle().Bold(true),
+		th:      th,
+		title:   th.Title,
+		dim:     th.Dim,
+		cursor:  th.Selected,
+		section: th.Bold,
+		helpBox: r.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(th.P.Border).Padding(0, 1),
+		prompt:  th.Accent.Bold(true),
+		plain:   r.NewStyle(),
+		add:     th.Add,
+		del:     th.Del,
+		accent:  th.Accent,
+		blue:    th.Blue,
+		bold:    th.Bold,
+		sel:     th.Selected,
 	}
 }
+
+// layoutStyles are colour-free styles for measuring layouts (line counts
+// and positions do not depend on colour).
+func layoutStyles() styles { return newStyles(lipgloss.NewRenderer(io.Discard)) }
 
 // helpStyles returns bubbles/help styles bound to r (the defaults are bound
 // to the global renderer and would leak colour into snapshots).
 func helpStyles(r *lipgloss.Renderer) help.Styles {
-	key := r.NewStyle().Bold(true)
-	desc := r.NewStyle().Faint(true)
+	th := theme.New(r)
+	key := th.Bright
+	desc := th.Dim
 	return help.Styles{
 		Ellipsis:       desc,
 		ShortKey:       key,
@@ -88,4 +103,46 @@ func trimRight(s string) string {
 		lines[i] = strings.TrimRight(l, " ")
 	}
 	return strings.Join(lines, "\n")
+}
+
+// seg is one styled run of a line (picker rows): plain text and the style
+// it is drawn in.
+type seg struct {
+	text  string
+	style lipgloss.Style
+}
+
+// renderSegs draws segs cut to w cells (an ellipsis marks the cut). With
+// bg set (the selected row) every run also gets the selection background
+// and the line is padded to w, so the highlight spans the row.
+func renderSegs(segs []seg, w int, bg lipgloss.TerminalColor) string {
+	var b strings.Builder
+	used := 0
+	for _, s := range segs {
+		st := s.style
+		if bg != nil {
+			st = st.Background(bg)
+		}
+		tw := ansi.StringWidth(s.text)
+		if used+tw > w {
+			b.WriteString(st.Render(ansi.Truncate(s.text, max(0, w-used), "…")))
+			used = w
+			break
+		}
+		b.WriteString(st.Render(s.text))
+		used += tw
+	}
+	if bg != nil && used < w && len(segs) > 0 {
+		b.WriteString(segs[0].style.UnsetForeground().Background(bg).Render(strings.Repeat(" ", w-used)))
+	}
+	return b.String()
+}
+
+// segText is the plain text of segs (tests and width checks).
+func segText(segs []seg) string {
+	var b strings.Builder
+	for _, s := range segs {
+		b.WriteString(s.text)
+	}
+	return b.String()
 }

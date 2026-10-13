@@ -99,7 +99,9 @@ func TestSnapshotAgainstFixtures(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("code %d err %q", code, errOut)
 	}
-	for _, want := range []string{"Needs you", "#101", "=== screen:"} {
+	// M5: the header names the repo and role from setup, sections are
+	// dividers, and the Architecture tab renders.
+	for _, want := range []string{"NEEDS YOU", "#101", "=== screen:", "prt · acme/portal · ", "picker + architecture"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("snapshot lacks %q:\n%s", want, out)
 		}

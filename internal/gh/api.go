@@ -281,10 +281,13 @@ func (a *API) PR(ctx context.Context, number int) (PR, error) {
 		"number": githubv4.Int(int32(number)), // PR numbers fit in int32
 	}
 	if err := a.GQL.Query(ctx, &q, vars); err != nil {
+		if strings.Contains(err.Error(), "Could not resolve to a PullRequest") {
+			return PR{}, fmt.Errorf("gh: PR #%d in %s: %w", number, a.Repo, ErrPRNotFound)
+		}
 		return PR{}, fmt.Errorf("gh: PR #%d: %w", number, err)
 	}
 	if q.Repository.PullRequest.Number == 0 {
-		return PR{}, fmt.Errorf("gh: PR #%d not found in %s", number, a.Repo)
+		return PR{}, fmt.Errorf("gh: PR #%d in %s: %w", number, a.Repo, ErrPRNotFound)
 	}
 	return prFromNode(q.Repository.PullRequest, viewer), nil
 }

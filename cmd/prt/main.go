@@ -163,7 +163,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 	defer func() { _ = client.Close() }()
 
 	if o.snapshot {
-		if err := tui.SnapshotWithOptions(ctx, client, stdout, o.width, o.height, o.maxItems, tui.Options{Now: nowFn}); err != nil {
+		sopts := tui.Options{Now: nowFn, Repo: env.repoLabel, Role: env.cfg.User.Role, Root: env.root}
+		if err := tui.SnapshotWithOptions(ctx, client, stdout, o.width, o.height, o.maxItems, sopts); err != nil {
 			_, _ = fmt.Fprintln(stderr, "prt:", err)
 			return 1
 		}
@@ -173,6 +174,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 		Open:         openURL,
 		RefreshEvery: time.Duration(env.cfg.Pipeline.RefreshSeconds) * time.Second,
 		Now:          nowFn,
+		Repo:         env.repoLabel,
+		Role:         env.cfg.User.Role,
+		Root:         env.root,
 	}
 	if km, err := tui.KeyMapFromConfig(env.cfg.Keys); err != nil {
 		env.deps.Log.Warn("bad [keys] in prt.toml; using defaults", "err", err)
@@ -195,7 +199,28 @@ type environment struct {
 	ghNote string
 	// srcNote names replayed sources ("" when none), shown in the status bar.
 	srcNote string
-	closers []func()
+	// repoLabel ("owner/name", else the work tree's directory name) and
+	// root (the work tree) feed the TUI header and the Code page's `e`.
+	repoLabel string
+	root      string
+	closers   []func()
+}
+
+// repoLabel names the repo for the header: github.repo from config, else
+// the origin remote when it is on GitHub, else the work tree's base name.
+func repoLabel(ctx context.Context, g gitx.Git, cfg config.Config) string {
+	if cfg.GitHub.Repo != "" {
+		return cfg.GitHub.Repo
+	}
+	if url, err := g.RemoteURL(ctx, "origin"); err == nil {
+		if r, ok := gh.ParseRemote(url); ok {
+			return r.String()
+		}
+	}
+	if g.Root() == "" {
+		return ""
+	}
+	return filepath.Base(g.Root())
 }
 
 func (e *environment) close() {
@@ -314,6 +339,8 @@ func setup(ctx context.Context, o options) (*environment, error) {
 	env.srcNote = replayDeps(&d, o)
 	env.deps = d
 	env.cfg = cfg
+	env.repoLabel = repoLabel(ctx, g, cfg)
+	env.root = g.Root()
 	return env, nil
 }
 

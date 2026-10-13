@@ -2,6 +2,12 @@ package tui
 
 import (
 	"context"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strconv"
+	"strings"
 
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
@@ -52,6 +58,17 @@ type codePane interface {
 	HelpBindings() [][]key.Binding
 	ShortBindings() []key.Binding
 	View() string
+
+	// M5. PendingOpen returns and clears the e/o request of the last key;
+	// DiffLayout and SetDiffLayout read and request unified / side-by-side;
+	// CurrentUnit is the unit under the cursor (its group is the focused
+	// group by change, for :tier); Note is the page's one-shot note (a
+	// degraded side-by-side says so).
+	PendingOpen() (codeview.OpenRequest, bool)
+	DiffLayout() codeview.Layout
+	SetDiffLayout(l codeview.Layout) bool
+	CurrentUnit() (model.ChangeUnit, bool)
+	Note() string
 }
 
 // originSetter is implemented by components that map mouse coordinates
@@ -93,10 +110,148 @@ func (p *codeviewPane) HelpBindings() [][]key.Binding              { return p.m.
 func (p *codeviewPane) ShortBindings() []key.Binding               { return p.m.ShortBindings() }
 func (p *codeviewPane) View() string                               { return p.m.View() }
 
+func (p *codeviewPane) PendingOpen() (codeview.OpenRequest, bool) { return p.m.PendingOpen() }
+func (p *codeviewPane) DiffLayout() codeview.Layout               { return p.m.DiffLayout() }
+func (p *codeviewPane) SetDiffLayout(l codeview.Layout) bool      { return p.m.SetDiffLayout(l) }
+func (p *codeviewPane) CurrentUnit() (model.ChangeUnit, bool)     { return p.m.CurrentUnit() }
+func (p *codeviewPane) Note() string                              { return p.m.Note() }
+
+// ContextLine forwards the page's tab-bar context ("#482 · showing 7 of 19
+// chunks") when codeview provides one; "" otherwise.
+func (p *codeviewPane) ContextLine() string {
+	if c, ok := any(&p.m).(contextLiner); ok {
+		return c.ContextLine()
+	}
+	return ""
+}
+
 func (p *codeviewPane) Update(msg tea.Msg) tea.Cmd {
 	var cmd tea.Cmd
 	p.m, cmd = p.m.Update(msg)
 	return cmd
+}
+
+// Code page open messages (M5): the browser opened for `o`, the editor
+// exited for `e`.
+type (
+	unitOpenedMsg struct {
+		where string
+		err   error
+	}
+	fileEditedMsg struct{ err error }
+)
+
+// EditFileFunc opens path at line in an editor; the default runs $EDITOR
+// (fallback vi) as `$EDITOR +<line> <path>` through tea.ExecProcess.
+type EditFileFunc func(path string, line int) tea.Cmd
+
+// execEditFile is the default EditFileFunc.
+func execEditFile(path string, line int) tea.Cmd {
+	args := strings.Fields(os.Getenv("EDITOR"))
+	if len(args) == 0 {
+		args = []string{"vi"}
+	}
+	if line > 0 {
+		args = append(args, "+"+strconv.Itoa(line))
+	}
+	c := exec.CommandContext(context.Background(), args[0], append(args[1:], path)...)
+	return tea.ExecProcess(c, func(err error) tea.Msg { return fileEditedMsg{err: err} })
+}
+
+// codeOpenCmd acts on the Code page's pending e/o request: o opens the
+// item's files on GitHub (the item URL when it is not a PR), e opens the
+// file at the line in $EDITOR (Options.EditFile), under Options.Root.
+func (m *Model) codeOpenCmd() tea.Cmd {
+	req, ok := m.code.PendingOpen()
+	if !ok {
+		return nil
+	}
+	where := req.Path
+	if req.Line > 0 {
+		where = fmt.Sprintf("%s:%d", req.Path, req.Line)
+	}
+	if req.Browser {
+		return m.openOnGitHub(where)
+	}
+	path := req.Path
+	if m.opts.Root != "" && !filepath.IsAbs(path) {
+		path = filepath.Join(m.opts.Root, path)
+	}
+	edit := m.opts.EditFile
+	if edit == nil {
+		edit = execEditFile
+	}
+	m.note = "opening " + where + " in $EDITOR…"
+	return edit(path, req.Line)
+}
+
+// openOnGitHub opens the shown item's files page for o on the Code page.
+func (m *Model) openOnGitHub(where string) tea.Cmd {
+	it, ok := m.shownItem()
+	switch {
+	case !ok:
+		m.note = "no item selected"
+		return nil
+	case it.URL == "":
+		m.note = "no GitHub URL for " + itemLabel(it)
+		return nil
+	case m.opts.Open == nil:
+		m.note = "no opener configured"
+		return nil
+	}
+	url := it.URL
+	if it.Kind == model.KindPR {
+		url = strings.TrimRight(url, "/") + "/files"
+	}
+	open := m.opts.Open
+	return func() tea.Msg { return unitOpenedMsg{where: where, err: open(url)} }
+}
+
+// shownItem is the item the main pane shows (loaded detail, else the
+// picker selection).
+func (m Model) shownItem() (model.Item, bool) {
+	if m.detail != nil {
+		return m.detail.Item, true
+	}
+	return m.picker.selected()
+}
+
+// layoutNote says which diff layout `u` left in effect; a side-by-side
+// request below codeview.SplitMinWidth columns renders unified and says so
+// (the page's own note wins when it has one).
+func (m *Model) layoutNote() {
+	if n := m.code.Note(); n != "" {
+		m.note = n
+		return
+	}
+	l := m.code.DiffLayout()
+	if _, mw, _ := m.dims(); l == codeview.LayoutSplit && mw < codeview.SplitMinWidth {
+		m.note = fmt.Sprintf("side-by-side needs %d columns (pane has %d) — showing unified", codeview.SplitMinWidth, mw)
+		return
+	}
+	m.note = "diff: " + l.String()
+}
+
+// focusedGroup is the group :tier acts on: the Code page's group by change
+// (the cursor unit's), or the Pipeline page's selected row.
+func (m Model) focusedGroup() (string, bool) {
+	switch {
+	case m.tab == TabPipeline:
+		return m.pipe.SelectedGroup()
+	case m.tab == TabCode && m.code.Mode() == codeview.ModeChange && m.detail != nil:
+		u, ok := m.code.CurrentUnit()
+		if !ok {
+			return "", false
+		}
+		for _, g := range m.detail.Groups {
+			for _, id := range g.UnitIDs {
+				if id == u.ID {
+					return g.ID, true
+				}
+			}
+		}
+	}
+	return "", false
 }
 
 // groupEditedMsg answers a daemon EditGroups call.

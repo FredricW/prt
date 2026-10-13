@@ -169,9 +169,18 @@ func (m *Model) openSubmit(ev proto.ReviewEvent) tea.Cmd {
 			return nil
 		}
 		return m.showForm(formSpec{kind: formCreatePR, item: it, drafts: d},
-			&formValues{Title: it.Title, Base: it.BaseRef})
+			&formValues{Title: m.prTitle(it), Base: it.BaseRef})
 	}
 	return m.showForm(formSpec{kind: formReview, item: it, drafts: d}, &formValues{Event: ev})
+}
+
+// prTitle prefills the create-PR form: the branch block's suggested title
+// (M5) when there is one, else the branch's title.
+func (m Model) prTitle(it model.Item) string {
+	if d := m.detail; d != nil && d.Agg != nil && d.Agg.Branch != nil && d.Agg.Branch.SuggestedTitle != "" {
+		return d.Agg.Branch.SuggestedTitle
+	}
+	return it.Title
 }
 
 // showForm opens the form for s with values v and returns its Init command.

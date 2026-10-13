@@ -81,8 +81,15 @@ type Client interface {
 	CreatePR(ctx context.Context, p proto.CreatePRParams) (proto.CreatePRResult, error)
 	// MarkViewed records the head the user looked at (M4, Since you looked).
 	MarkViewed(ctx context.Context, p proto.ViewedParams) error
-	// Override stores a label override and re-aggregates the item (M4: `!`).
+	// Override stores a label override and re-aggregates the item (M4: `!`;
+	// M5: aggregate only, affected reviews marked stale-labels).
 	Override(ctx context.Context, p proto.OverrideParams) error
+	// Search runs one search-and-add source (M5, picker `/`).
+	Search(ctx context.Context, p proto.SearchParams) (proto.SearchResult, error)
+	// Preview resolves a query like Add but stores the item as
+	// model.SourcePreview (never listed by Items) and starts its analysis,
+	// so `tab` can show its overview without adding it (M5).
+	Preview(ctx context.Context, query string) (model.Item, error)
 	// Events streams patches; closed by Close.
 	Events() <-chan proto.Event
 	Close() error

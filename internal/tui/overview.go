@@ -7,7 +7,6 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/x/ansi"
 
 	"github.com/fredricw/prt/internal/model"
 	"github.com/fredricw/prt/internal/proto"
@@ -67,9 +66,10 @@ func (md *markdown) render(body string, width int) string {
 // block at the viewport top refers to. raw is the `L` overlay.
 type overview struct {
 	vp      viewport.Model
-	anchors []string        // per content line; "" when the line has no unit
-	cells   map[int]cellRow // per content line with unit cells (minimap)
-	lines   []string        // the page's content lines (setPage only)
+	anchors []string          // per content line; "" when the line has no unit
+	spans   map[int][]span    // per content line: clickable unit ranges
+	cells   map[int][]cellRow // per content line with unit cells (minimap)
+	boxes   map[string]int    // box title → line of its top border
 
 	raw   bool // an overlay is open (raw labels, or urgency weights)
 	rawVP viewport.Model
@@ -90,38 +90,42 @@ func (o *overview) setSize(w, h int) {
 // setContent replaces the page and its anchors and scrolls to the top.
 func (o *overview) setContent(s string, anchors []string) {
 	o.vp.SetContent(s)
-	o.anchors, o.cells, o.lines = anchors, nil, nil
+	o.anchors, o.spans, o.cells, o.boxes = anchors, nil, nil, nil
 	o.vp.GotoTop()
 }
 
-// setPage is setContent for a rendered page, keeping its cell runs.
+// setPage is setContent for a rendered page, keeping its spans, cell runs
+// and box positions.
 func (o *overview) setPage(p *page) {
 	o.setContent(strings.Join(p.lines, "\n"), p.anchors)
-	o.cells = p.cells
-	o.lines = p.lines
+	o.spans, o.cells, o.boxes = p.spans, p.cells, p.boxes
 }
 
-// scrollToBlock scrolls so the block titled title starts at the top (its
-// leading blank line included) and reports whether the page has it.
+// scrollToBlock scrolls so the box titled title starts at the top and
+// reports whether the page has it.
 func (o *overview) scrollToBlock(title string) bool {
-	for i, l := range o.lines {
-		if strings.TrimSpace(ansi.Strip(l)) == title {
-			o.vp.SetYOffset(max(0, i-1))
-			return true
-		}
+	i, ok := o.boxes[title]
+	if ok {
+		o.vp.SetYOffset(i)
 	}
-	return false
+	return ok
 }
 
 // clickAt returns the unit behind a click on content line i at display
-// column x: the cell's unit on a minimap row, else the line's anchor.
+// column x: the cell's unit on a minimap row, else the unit of the range
+// (box row) under x.
 func (o overview) clickAt(i, x int) (string, bool) {
-	if c, ok := o.cells[i]; ok {
+	for _, c := range o.cells[i] {
 		if id, ok := c.at(x); ok {
 			return id, true
 		}
 	}
-	return o.anchorAt(i)
+	for _, s := range o.spans[i] {
+		if x >= s.col && x < s.end {
+			return s.unit, true
+		}
+	}
+	return "", false
 }
 
 // anchor returns the unit behind the first anchored line at or after the
@@ -138,14 +142,6 @@ func (o overview) anchorFrom(i int) (string, bool) {
 		}
 	}
 	return "", false
-}
-
-// anchorAt returns the anchor of content line i only.
-func (o overview) anchorAt(i int) (string, bool) {
-	if i < 0 || i >= len(o.anchors) || o.anchors[i] == "" {
-		return "", false
-	}
-	return o.anchors[i], true
 }
 
 // openRaw shows the raw-labels overlay with body.
@@ -179,6 +175,20 @@ func titleLine(it model.Item, now time.Time) string {
 	parts := []string{label}
 	if it.Author != "" {
 		parts = append(parts, it.Author)
+	}
+	if a := age(it.UpdatedAt, now); a != "" {
+		parts = append(parts, a)
+	}
+	parts = append(parts, orDash(it.BaseRef)+" ← "+orDash(it.Ref))
+	return strings.Join(parts, " · ")
+}
+
+// overviewContext is the tab bar's dim context on the Overview (design:
+// "@ingrid · 2d · main ← feat/jwt-session").
+func overviewContext(it model.Item, now time.Time) string {
+	var parts []string
+	if it.Author != "" {
+		parts = append(parts, "@"+it.Author)
 	}
 	if a := age(it.UpdatedAt, now); a != "" {
 		parts = append(parts, a)

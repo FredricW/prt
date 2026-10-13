@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/bmatcuk/doublestar/v4"
 
@@ -235,6 +236,7 @@ func (c *InProcess) upsertPR(ctx context.Context, pr gh.PR, viewer string) error
 	head := c.prHead(ctx, pr)
 	return c.upsertDiscovered(ctx, model.PRItemID(pr.Number), func(it *model.Item) {
 		applyPR(it, pr, head)
+		rankPreview(it)
 		if it.Source != model.SourceAdded {
 			it.Section = prSection(pr, head, viewer)
 		}
@@ -278,7 +280,7 @@ func (c *InProcess) upsertDiscovered(ctx context.Context, id string, fill func(*
 // itemKey is the item's stored form, for change detection. Times are
 // normalised to UTC so a store round trip compares equal.
 func itemKey(it model.Item) []byte {
-	it.CreatedAt, it.UpdatedAt = it.CreatedAt.UTC(), it.UpdatedAt.UTC()
+	it.CreatedAt, it.UpdatedAt, it.LastCommitAt = it.CreatedAt.UTC(), it.UpdatedAt.UTC(), it.LastCommitAt.UTC()
 	b, err := json.Marshal(it)
 	if err != nil {
 		return nil
@@ -294,8 +296,7 @@ func itemKey(it model.Item) []byte {
 // Otherwise minutes are the stand-in from the line counts and the label
 // terms 0.
 func (c *InProcess) setUrgency(ctx context.Context, it *model.Item, sameHead bool) {
-	age, release, ciRed := aggregate.Facts(*it, c.d.Config.GitHub.ReleaseBranches, c.now())
-	in := aggregate.Input{Item: *it, Weights: c.d.Config.Rank, AgeDays: age, Release: release, CIRedAfterApproval: ciRed}
+	in := c.urgencyInput(*it)
 	it.Minutes = aggregate.StandInMinutes(it.Additions + it.Deletions)
 	if sameHead && it.State != model.StateStale && (it.AnalysedSHA == "" || it.AnalysedSHA == it.HeadSHA) {
 		if agg, ok, err := c.d.Store.Agg(ctx, it.ID); err == nil && ok {
@@ -304,6 +305,26 @@ func (c *InProcess) setUrgency(ctx context.Context, it *model.Item, sameHead boo
 		}
 	}
 	_, it.Urgency, it.Why = aggregate.Urgency(in, it.Minutes)
+}
+
+// urgencyInput is the metadata part of the urgency input for it at the
+// daemon's clock (no Prior aggregate).
+func (c *InProcess) urgencyInput(it model.Item) aggregate.Input {
+	now := c.now()
+	age, release, ciRed := aggregate.Facts(it, c.d.Config.GitHub.ReleaseBranches, now)
+	return aggregate.Input{
+		Item: it, Weights: c.d.Config.Rank, AgeDays: age, IdleDays: idleDays(it, now),
+		Release: release, CIRedAfterApproval: ciRed,
+	}
+}
+
+// idleDays is the days since a branch's head commit (aggregate.Input
+// IdleDays): 0 for PRs, an unknown commit date or a date in the future.
+func idleDays(it model.Item, now time.Time) float64 {
+	if it.Kind != model.KindBranch || it.LastCommitAt.IsZero() {
+		return 0
+	}
+	return max(0, now.Sub(it.LastCommitAt).Hours()/24)
 }
 
 // prIndex returns the head SHAs and head refs of the PR items that stay in
@@ -372,22 +393,34 @@ func (c *InProcess) discoverBranches(ctx context.Context, def string, prHeads, p
 
 func applyBranch(it *model.Item, r gitx.Ref, base string, ahead, unpushed int) {
 	it.Kind, it.Ref, it.BaseRef, it.Title, it.Author = model.KindBranch, r.Name, base, r.Subject, r.Author
+	rankPreview(it)
 	if it.Source != model.SourceAdded {
 		it.Section = model.SectionBranches
 	}
 	markStale(it, r.SHA)
 	it.HeadSHA, it.Ahead, it.Unpushed, it.UpdatedAt = r.SHA, ahead, unpushed, r.CommitDate
+	it.Upstream, it.LastCommitAt = r.Upstream, r.CommitDate
+}
+
+// rankPreview makes a preview that a picker source returned a ranked item:
+// it is listed from now on, so the preview rules no longer apply to it.
+func rankPreview(it *model.Item) {
+	if it.Source == model.SourcePreview {
+		it.Source = model.SourceRanked
+	}
 }
 
 // prune removes ranked items no source returned. PR items are kept when
 // GitHub did not answer, branch items when the branch source did not run.
+// Added items stay until `x`; previews follow their own rules (Preview,
+// Remove, start-up).
 func (c *InProcess) prune(ctx context.Context, seen map[string]bool, ghOK, branchesOK bool) error {
 	items, err := c.d.Store.Items(ctx)
 	if err != nil {
 		return fmt.Errorf("daemon: items: %w", err)
 	}
 	for _, it := range items {
-		if it.Source == model.SourceAdded || seen[it.ID] ||
+		if it.Source == model.SourceAdded || it.Source == model.SourcePreview || seen[it.ID] ||
 			(it.Kind == model.KindPR && !ghOK) || (it.Kind == model.KindBranch && !branchesOK) {
 			continue
 		}

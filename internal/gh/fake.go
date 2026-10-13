@@ -197,7 +197,7 @@ func (f *Fake) PR(_ context.Context, number int) (PR, error) {
 	}
 	p, ok := f.PRs[number]
 	if !ok {
-		return PR{}, fmt.Errorf("gh fake: PR #%d not found", number)
+		return PR{}, fmt.Errorf("gh fake: PR #%d: %w", number, ErrPRNotFound)
 	}
 	return p, nil
 }
