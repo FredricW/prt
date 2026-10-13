@@ -24,6 +24,7 @@ import (
 	"github.com/fredricw/prt/internal/config"
 	"github.com/fredricw/prt/internal/daemon"
 	"github.com/fredricw/prt/internal/fixturegen"
+	"github.com/fredricw/prt/internal/proto"
 	"github.com/fredricw/prt/internal/tui"
 	"github.com/fredricw/prt/internal/workspace"
 )
@@ -68,7 +69,11 @@ func runWorkspace(ctx context.Context, o options, daemonMode bool, stdout, stder
 		}
 	}
 	if client == nil {
-		ws, err := openWorkspace(ctx, o, root, wcfg, logger)
+		owner := daemon.LockOwner{What: "prt --root " + root + " (no daemon)", Root: root}
+		if daemonMode {
+			owner = daemon.LockOwner{What: "prt daemon --root " + root, Socket: sock, Root: root}
+		}
+		ws, err := openWorkspace(ctx, o, root, wcfg, owner, logger)
 		if err != nil {
 			return fail(err)
 		}
@@ -162,12 +167,14 @@ func (w *workspaceEnv) close() {
 
 // openWorkspace discovers the repositories under root and sets each one up
 // as single-repo mode would, on one shared pool (the global [pipeline]
-// concurrency) and ledger, with `gh auth token` read at most once. With
-// --fixtures the file is a workspace manifest (fixturegen.Manifest) and
-// each repo gets its own fixture; a repo the manifest has none for keeps
-// GitHub disabled. A repo whose setup fails is skipped with a workspace
-// note; finding no repository, or none that sets up, is an error.
-func openWorkspace(ctx context.Context, o options, root string, wcfg config.Config, logger *log.Logger) (*workspaceEnv, error) {
+// concurrency) and ledger, with `gh auth token` read at most once, taking
+// each repo's pipeline lock for owner. With --fixtures the file is a
+// workspace manifest (fixturegen.Manifest) and each repo gets its own
+// fixture; a repo the manifest has none for keeps GitHub disabled. A repo
+// whose setup fails, or whose lock another process holds, is listed as a
+// RepoError repo with the reason (and logged); finding no repository, or
+// none that opens, is an error.
+func openWorkspace(ctx context.Context, o options, root string, wcfg config.Config, owner daemon.LockOwner, logger *log.Logger) (*workspaceEnv, error) {
 	depth := o.depth
 	if depth <= 0 {
 		depth = wcfg.Workspace.Depth
@@ -196,9 +203,11 @@ func openWorkspace(ctx context.Context, o options, root string, wcfg config.Conf
 
 	pool, ledger := daemon.NewPool(wcfg.Pipeline.Concurrency), daemon.NewLedger()
 	token := onceToken(o.tokenFunc())
-	notes := append([]string(nil), res.Notes...)
 	we := &workspaceEnv{}
-	var members []workspace.Member
+	var (
+		members  []workspace.Member
+		unopened []proto.RepoInfo
+	)
 	for _, r := range res.Repos {
 		ro := o
 		ro.root, ro.repo, ro.token, ro.fixtures = "", r.Root, token, ""
@@ -208,8 +217,14 @@ func openWorkspace(ctx context.Context, o options, root string, wcfg config.Conf
 			}
 		}
 		env, err := setup(ctx, ro)
+		if err == nil {
+			if err = lockRepo(env, owner); err != nil {
+				env.close()
+			}
+		}
 		if err != nil {
-			notes = append(notes, fmt.Sprintf("skipped %s: %v", r.Key, err))
+			unopened = append(unopened, proto.RepoInfo{Key: r.Key, Label: r.Key, Root: r.Root, GitDir: r.GitDir,
+				Status: proto.RepoError, Note: err.Error()})
 			logger.Warn("repo not opened", "repo", r.Key, "err", err)
 			continue
 		}
@@ -224,17 +239,18 @@ func openWorkspace(ctx context.Context, o options, root string, wcfg config.Conf
 	}
 	if len(members) == 0 {
 		we.close()
-		return nil, errors.Join(append([]error{fmt.Errorf("no repository under %s could be opened", res.Root)}, notesErr(notes)...)...)
+		return nil, errors.Join(append([]error{fmt.Errorf("no repository under %s could be opened", res.Root)}, unopenedErrs(unopened)...)...)
 	}
-	we.client = workspace.New(res.Root, members, workspace.ClientOptions{Pool: pool, Ledger: ledger, Notes: notes, Log: logger})
+	we.client = workspace.New(res.Root, members, workspace.ClientOptions{Pool: pool, Ledger: ledger, Notes: res.Notes, Unopened: unopened, Log: logger})
 	return we, nil
 }
 
-// notesErr turns notes into errors (for the "none could be opened" error).
-func notesErr(notes []string) []error {
-	out := make([]error, 0, len(notes))
-	for _, n := range notes {
-		out = append(out, errors.New(n))
+// unopenedErrs are the reasons repos could not be opened, as errors (for
+// the "none could be opened" error).
+func unopenedErrs(repos []proto.RepoInfo) []error {
+	out := make([]error, 0, len(repos))
+	for _, r := range repos {
+		out = append(out, fmt.Errorf("%s: %s", r.Key, r.Note))
 	}
 	return out
 }

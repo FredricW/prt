@@ -50,6 +50,12 @@ var version = "dev"
 // ghToken returns the GitHub token (`gh auth token`); tests replace it.
 var ghToken = gh.TokenFromGH
 
+// newGitHubAPI builds the live GitHub client for a repo and token; tests
+// replace it with a fake so nothing they run can reach GitHub.
+var newGitHubAPI = func(ctx context.Context, repo gh.Repo, token string) gh.Client {
+	return gh.NewAPI(ctx, repo, token)
+}
+
 func main() { os.Exit(run(os.Args[1:], os.Stdout, os.Stderr)) }
 
 type options struct {
@@ -195,6 +201,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 
 	if daemonMode {
+		if err := lockRepo(env, daemon.LockOwner{What: "prt daemon", Socket: daemon.SocketPath(env.gitDir)}); err != nil {
+			_, _ = fmt.Fprintln(stderr, "prt daemon:", err)
+			return 1
+		}
 		inproc := newInProcess()
 		defer func() { _ = inproc.Close() }()
 		go discoverLoop(ctx, inproc, time.Duration(env.cfg.Pipeline.RefreshSeconds)*time.Second, env.deps.Log)
@@ -218,7 +228,20 @@ func run(args []string, stdout, stderr io.Writer) int {
 		}
 	}
 	if client == nil {
-		client = newInProcess()
+		// Only one process runs a repo's pipeline: when another holds the
+		// lock (a workspace daemon serving this repo, a daemon started after
+		// the dial), attach to it, else say who has the repo.
+		if err := lockRepo(env, daemon.LockOwner{What: "prt (no daemon)"}); err == nil {
+			client = newInProcess()
+		} else {
+			c, err := attachOwner(ctx, err, o)
+			if err != nil {
+				_, _ = fmt.Fprintln(stderr, "prt:", err)
+				return 1
+			}
+			env.deps.Log.Info("attached to the process analysing this repo")
+			client, attached = c, true
+		}
 	}
 	defer func() { _ = client.Close() }()
 
@@ -240,6 +263,41 @@ func run(args []string, stdout, stderr io.Writer) int {
 		ReloadOnTick: attached,
 	}
 	return runTUI(ctx, client, topts, env.cfg.Keys, env.deps.Log, stderr)
+}
+
+// lockRepo takes env's repo pipeline lock for owner (daemon.LockRepo); it is
+// released by env.close, after the client using the store is closed.
+func lockRepo(env *environment, owner daemon.LockOwner) error {
+	release, err := daemon.LockRepo(env.gitDir, owner)
+	if err != nil {
+		return err
+	}
+	env.closers = append(env.closers, release)
+	return nil
+}
+
+// attachOwner handles a repo whose pipeline lock another process holds
+// (err from lockRepo): it dials that process's socket when it serves one
+// and o allows a daemon (not --no-daemon or --snapshot, which must run
+// here); otherwise it returns an error naming the process and the way out.
+// A workspace daemon answers as a workspace, so the TUI shows every repo.
+func attachOwner(ctx context.Context, err error, o options) (daemon.Client, error) {
+	var busy *daemon.BusyError
+	if !errors.As(err, &busy) {
+		return nil, err
+	}
+	ow := busy.Owner
+	if ow.Socket != "" && !o.noDaemon && !o.snapshot {
+		c, derr := daemon.Dial(ctx, ow.Socket)
+		if derr == nil {
+			return c, nil
+		}
+		return nil, fmt.Errorf("%w, whose socket %s does not answer: %w", err, ow.Socket, derr)
+	}
+	if ow.Socket != "" {
+		return nil, fmt.Errorf("%w; stop it to run with --no-daemon or --snapshot here", err)
+	}
+	return nil, fmt.Errorf("%w; quit it first, or run `prt daemon` so every prt shares one pipeline", err)
 }
 
 // runTUI runs the interactive TUI on client until the user quits: keys from
@@ -638,5 +696,5 @@ func githubClient(ctx context.Context, g gitx.Git, cfg config.Config, logger *lo
 		logger.Warn("GitHub disabled", "err", err)
 		return nil, "no token from `gh auth token`"
 	}
-	return gh.NewAPI(ctx, repo, tok), ""
+	return newGitHubAPI(ctx, repo, tok), ""
 }

@@ -28,9 +28,11 @@ func isolate(t *testing.T) {
 	t.Setenv("JEV_API_KEY", "")
 	t.Setenv("PRT_ANTHROPIC_API_KEY", "")
 	t.Setenv("OLLAMA_HOST", "http://127.0.0.1:1")
-	prev := ghToken
+	prev, prevAPI := ghToken, newGitHubAPI
 	ghToken = func(context.Context) (string, error) { return "", gh.ErrNoToken }
-	t.Cleanup(func() { ghToken = prev })
+	// A test that hands out a token still never builds a live client.
+	newGitHubAPI = func(_ context.Context, repo gh.Repo, _ string) gh.Client { return &gh.Fake{Repo: repo.String()} }
+	t.Cleanup(func() { ghToken, newGitHubAPI = prev, prevAPI })
 }
 
 // gitRepo creates an empty-history git repo with an optional GitHub origin.

@@ -130,7 +130,7 @@ func TestOpenWorkspace(t *testing.T) {
 	ctx := context.Background()
 	quiet := log.New(io.Discard)
 
-	ws, err := openWorkspace(ctx, options{}, workspaceRoot(root), config.Defaults(), quiet)
+	ws, err := openWorkspace(ctx, options{}, workspaceRoot(root), config.Defaults(), testOwner, quiet)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -158,7 +158,7 @@ func TestOpenWorkspace(t *testing.T) {
 	}
 
 	reads.Store(0)
-	ws, err = openWorkspace(ctx, options{fixtures: testutil.FixtureWorkspaceManifest(t)}, workspaceRoot(root), config.Defaults(), quiet)
+	ws, err = openWorkspace(ctx, options{fixtures: testutil.FixtureWorkspaceManifest(t)}, workspaceRoot(root), config.Defaults(), testOwner, quiet)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -175,44 +175,109 @@ func TestOpenWorkspace(t *testing.T) {
 	}
 }
 
-// A repo whose setup fails (malformed prt.toml) is skipped with a
-// workspace note; the others are served.
-func TestOpenWorkspaceSkipsBrokenRepo(t *testing.T) {
+// testOwner is the pipeline-lock owner the tests open workspaces as.
+var testOwner = daemon.LockOwner{What: "prt --root (test)"}
+
+// A repo whose setup fails (malformed prt.toml) or whose pipeline another
+// process runs is listed with the error status and the reason, so the
+// picker shows it; the others are served.
+func TestOpenWorkspaceListsUnopenedRepos(t *testing.T) {
 	isolate(t)
 	root := t.TempDir()
 	gitRepoAt(t, filepath.Join(root, "good"), "")
 	writePrtToml(t, gitRepoAt(t, filepath.Join(root, "bad"), ""), "[rank\n")
+	busy := gitRepoAt(t, filepath.Join(root, "busy"), "")
+	release, err := daemon.LockRepo(filepath.Join(busy, ".git"), daemon.LockOwner{What: "prt (no daemon)"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer release()
 	ctx := context.Background()
-	ws, err := openWorkspace(ctx, options{offline: true}, workspaceRoot(root), config.Defaults(), log.New(io.Discard))
+	ws, err := openWorkspace(ctx, options{offline: true}, workspaceRoot(root), config.Defaults(), testOwner, log.New(io.Discard))
 	if err != nil {
 		t.Fatal(err)
 	}
 	info, _ := ws.client.Workspace(ctx)
 	_ = ws.client.Close()
 	ws.close()
-	if len(info.Repos) != 1 || info.Repos[0].Key != "good" {
-		t.Errorf("repos = %+v, want only good", info.Repos)
+	var keys []string
+	for _, r := range info.Repos {
+		keys = append(keys, r.Key)
 	}
-	if !slices.ContainsFunc(info.Notes, func(n string) bool { return strings.HasPrefix(n, "skipped bad: ") }) {
-		t.Errorf("notes = %q, want the broken repo noted", info.Notes)
+	if !slices.Equal(keys, []string{"bad", "busy", "good"}) || len(ws.client.Members()) != 1 {
+		t.Fatalf("repos = %+v, members %d; want bad, busy and good, only good opened", info.Repos, len(ws.client.Members()))
+	}
+	if r := info.Repos[0]; r.Status != proto.RepoError || !strings.Contains(r.Note, "config") {
+		t.Errorf("bad = %+v, want the config error", r)
+	}
+	if r := info.Repos[1]; r.Status != proto.RepoError || !strings.Contains(r.Note, "already analysed by pid") || !strings.Contains(r.Note, "prt (no daemon)") {
+		t.Errorf("busy = %+v, want the lock owner named", r)
+	}
+	// Closing the workspace released its locks.
+	again, err := daemon.LockRepo(filepath.Join(root, "good", ".git"), testOwner)
+	if err != nil {
+		t.Fatalf("lock after close: %v", err)
+	}
+	again()
+}
+
+// Only one process runs a repo's pipeline: a single-repo prt that must run
+// in-process (--snapshot) refuses a repo another prt analyses, naming it.
+func TestSingleRepoRefusesLockedRepo(t *testing.T) {
+	isolate(t)
+	repo := gitRepo(t, "")
+	release, err := daemon.LockRepo(filepath.Join(repo, ".git"), daemon.LockOwner{What: "prt daemon --root /w", Socket: "/nowhere/prtd.sock", Root: "/w"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	code, _, errOut := runPrt("--offline", "--snapshot", "--repo", repo)
+	release()
+	if code != 1 || !strings.Contains(errOut, "already analysed by pid") || !strings.Contains(errOut, "prt daemon --root /w") || !strings.Contains(errOut, "--snapshot") {
+		t.Errorf("code %d err %q", code, errOut)
+	}
+	if code, _, errOut := runPrt("--offline", "--snapshot", "--repo", repo); code != 0 {
+		t.Errorf("after release: code %d err %q", code, errOut)
 	}
 }
 
+// shortTemp returns a fresh directory with a short path, removed after the
+// test: t.TempDir() is too long for a Unix socket on macOS, and the socket's
+// temp-dir fallback must not land in the user's real $TMPDIR.
+func shortTemp(t *testing.T) string {
+	t.Helper()
+	dir, err := os.MkdirTemp("", "ws")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	return dir
+}
+
 // One daemon serves a workspace on its state-dir socket: a client dialling
-// WorkspaceSocketPath(root) sees every repo, with prefixed ids.
+// WorkspaceSocketPath(root) sees every repo, with prefixed ids. A
+// single-repo prt started in one of its repos finds the daemon through the
+// repo's pipeline lock and attaches to it instead of analysing the repo a
+// second time.
 func TestWorkspaceDaemon(t *testing.T) {
 	isolate(t)
+	tmp := shortTemp(t)
+	t.Setenv("TMPDIR", tmp)
+	t.Setenv("XDG_STATE_HOME", tmp)
 	root := workspaceRoot(testutil.FixtureWorkspace(t))
 	manifest := testutil.FixtureWorkspaceManifest(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	ws, err := openWorkspace(ctx, options{offline: true, fixtures: manifest}, root, config.Defaults(), log.New(io.Discard))
+	sock := daemon.WorkspaceSocketPath(root)
+	if !strings.HasPrefix(sock, tmp) {
+		t.Fatalf("socket %s is outside the test's temp dir %s", sock, tmp)
+	}
+	owner := daemon.LockOwner{What: "prt daemon --root " + root, Socket: sock, Root: root}
+	ws, err := openWorkspace(ctx, options{offline: true, fixtures: manifest}, root, config.Defaults(), owner, log.New(io.Discard))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer ws.close()
 	defer func() { _ = ws.client.Close() }()
-	sock := daemon.WorkspaceSocketPath(root)
 	served := make(chan error, 1)
 	go func() { served <- serveWorkspace(ctx, ws.client, sock, 0, log.New(io.Discard)) }()
 
@@ -253,6 +318,23 @@ func TestWorkspaceDaemon(t *testing.T) {
 		if !ids[want] {
 			t.Errorf("items lack %s: %v", want, ids)
 		}
+	}
+
+	// prt in portal: the lock names the workspace daemon, which it attaches to.
+	_, lockErr := daemon.LockRepo(filepath.Join(root, "portal", ".git"), daemon.LockOwner{What: "prt (no daemon)"})
+	if lockErr == nil {
+		t.Fatal("portal's pipeline lock was free while the workspace daemon serves it")
+	}
+	att, err := attachOwner(ctx, lockErr, options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info, err := att.Workspace(ctx); err != nil || !info.Multi || info.Root != root {
+		t.Errorf("attached to %+v, %v; want the workspace daemon", info, err)
+	}
+	_ = att.Close()
+	if _, err := attachOwner(ctx, lockErr, options{noDaemon: true}); err == nil || !strings.Contains(err.Error(), "already analysed by pid") {
+		t.Errorf("--no-daemon on a served repo: %v", err)
 	}
 	cancel()
 	select {
