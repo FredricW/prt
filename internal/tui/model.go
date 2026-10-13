@@ -167,9 +167,10 @@ func (m Model) now() time.Time {
 	return time.Now()
 }
 
-// Init implements tea.Model: discover, listen for events, schedule refresh.
+// Init implements tea.Model: show the stored items at once (the TUI starts
+// against the cache), then discover, listen for events, schedule refresh.
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(m.discover(), m.listen(), m.scheduleRefresh())
+	return tea.Batch(m.loadItems(), m.discover(), m.listen(), m.scheduleRefresh())
 }
 
 // ---- commands -------------------------------------------------------------
@@ -278,10 +279,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		return m.handleKey(msg)
 	case tea.MouseMsg:
-		if m.tab == TabCode && !m.showHelp {
-			return m, m.code.update(msg)
-		}
-		return m, nil
+		return m.handleMouse(msg)
 	case itemsMsg:
 		return m.onItems(msg)
 	case detailMsg:
@@ -324,7 +322,51 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.note = "error: " + msg.err.Error()
 		return m, nil
 	case closedMsg:
+		m.logNote = "daemon connection lost; restart prt"
 		return m, nil
+	}
+	return m, nil
+}
+
+// handleMouse implements the spec's mouse support: the wheel scrolls the
+// pane under the pointer, a left click on a picker row selects that item.
+func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	if m.confirm != nil || m.showHelp {
+		return m, nil
+	}
+	sw, _, bh := m.dims()
+	inPicker := msg.X < sw && msg.Y < bh
+	wheel := msg.Button == tea.MouseButtonWheelUp || msg.Button == tea.MouseButtonWheelDown
+	switch {
+	case inPicker && wheel:
+		delta := 1
+		if msg.Button == tea.MouseButtonWheelUp {
+			delta = -1
+		}
+		if m.picker.move(delta) {
+			return m, m.selectionChanged()
+		}
+		return m, nil
+	case inPicker && msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress:
+		i := m.picker.itemAt(msg.Y)
+		if i < 0 {
+			return m, nil
+		}
+		m.focus = FocusPicker
+		if m.picker.moveTo(i) {
+			return m, m.selectionChanged()
+		}
+		return m, nil
+	case inPicker:
+		return m, nil
+	case m.tab == TabCode:
+		return m, m.code.update(msg)
+	case wheel:
+		if msg.Button == tea.MouseButtonWheelUp {
+			m.overview.vp.ScrollUp(3)
+		} else {
+			m.overview.vp.ScrollDown(3)
+		}
 	}
 	return m, nil
 }
@@ -337,7 +379,9 @@ func (m Model) onItems(msg itemsMsg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 	var ids []string
 	for _, it := range m.picker.items {
-		if it.State != "" && it.State != model.StateStale {
+		// Only never-analysed items start automatically; a stale item waits
+		// for `r` (spec: "stale (new push since analysis; r refreshes)").
+		if it.State != "" {
 			continue
 		}
 		if prev, ok := m.requested[it.ID]; ok && prev == it.HeadSHA {

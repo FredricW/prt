@@ -10,7 +10,11 @@ import (
 )
 
 // sections is the picker's display order (spec: Picker, Sections and sort).
-var sections = []model.Section{model.SectionNeedsYou, model.SectionYours, model.SectionBranches, model.SectionAdded}
+var sections = []model.Section{model.SectionNeedsYou, model.SectionYours, model.SectionBranches, model.SectionInvolved, model.SectionAdded}
+
+// hideWhenEmpty lists sections that are not in the spec's table and so get
+// no "(0)" header when empty.
+var hideWhenEmpty = map[model.Section]bool{model.SectionInvolved: true}
 
 func sectionRank(s model.Section) int {
 	for i, x := range sections {
@@ -147,6 +151,9 @@ func (p picker) lines(st styles, rc rowCtx) []pickerLine {
 	for _, s := range append(append([]model.Section(nil), sections...), order...) {
 		idx := bySection[s]
 		head := fmt.Sprintf("%s (%d)", sectionTitle(s), len(idx))
+		if len(idx) == 0 && hideWhenEmpty[s] {
+			continue
+		}
 		if len(idx) == 0 {
 			out = append(out, pickerLine{text: st.emptySection.Render(truncate(head, w)), item: -1})
 			continue
@@ -189,6 +196,17 @@ func (p picker) row(i int, st styles, rc rowCtx, w int) (string, string) {
 	}
 	second := st.dim.Render(truncate("       "+secondaryLine(it, rc), w))
 	return first, second
+}
+
+// itemAt returns the item index drawn on screen row y of the picker (0 is
+// its first visible line), or -1 for a header, blank or out-of-range row.
+func (p picker) itemAt(y int) int {
+	ls := p.lines(styles{}, rowCtx{})
+	n := p.offset + y
+	if y < 0 || y >= max(1, p.height) || n < 0 || n >= len(ls) {
+		return -1
+	}
+	return ls[n].item
 }
 
 // cursorLine returns the index of the cursor's first line in lines().
@@ -247,6 +265,8 @@ func sectionTitle(s model.Section) string {
 		return "Yours"
 	case model.SectionBranches:
 		return "Branches"
+	case model.SectionInvolved:
+		return "Involved"
 	case model.SectionAdded:
 		return "Added"
 	}
@@ -311,6 +331,9 @@ func needsYouFacts(it model.Item) []string {
 	if ci := ciText(it.CI); ci != "" {
 		parts = append(parts, ci)
 	}
+	if it.Minutes > 0 {
+		parts = append(parts, fmt.Sprintf("~%d min", max(1, int(it.Minutes+0.5))))
+	}
 	if it.Why != "" {
 		parts = append(parts, it.Why)
 	}
@@ -319,6 +342,9 @@ func needsYouFacts(it model.Item) []string {
 
 func yoursFacts(it model.Item, now time.Time) []string {
 	var parts []string
+	if it.OpenThreads > 0 {
+		parts = append(parts, plural(it.OpenThreads, "open thread"))
+	}
 	if ci := ciText(it.CI); ci != "" {
 		parts = append(parts, ci)
 	}

@@ -110,13 +110,72 @@ func TestItemsStartAnalysisInOrderOnce(t *testing.T) {
 		}
 		got = append(got, p.ItemID)
 	}
-	if strings.Join(got, " ") != "pr:1 pr:3" {
-		t.Fatalf("refreshes = %v, want pr:1 pr:3", got)
+	// pr:3 is stale: it waits for `r` (spec), it is not re-analysed by itself.
+	if strings.Join(got, " ") != "pr:1" {
+		t.Fatalf("refreshes = %v, want pr:1", got)
 	}
 	_, cmd = updateCmd(t, m, itemsMsg{items: items})
 	run(cmd)
-	if len(f.refreshes) != 2 {
+	if len(f.refreshes) != 1 {
 		t.Errorf("same head SHA refreshed again: %v", f.refreshes)
+	}
+}
+
+func TestInitShowsCachedItemsBeforeDiscovery(t *testing.T) {
+	f := newFake(threeItems()...)
+	m := NewWithOptions(f, plainRenderer(), Options{})
+	var cached bool
+	for _, msg := range run(m.Init()) {
+		if im, ok := msg.(itemsMsg); ok && len(im.items) == 3 {
+			cached = true
+		}
+	}
+	if !cached {
+		t.Fatal("Init must load stored items without waiting for discovery")
+	}
+}
+
+func TestClosedConnectionShowsNote(t *testing.T) {
+	m := newTestModel(t, newFake(threeItems()...), Options{})
+	m = update(t, m, closedMsg{})
+	if !strings.Contains(m.View(), "daemon connection lost") {
+		t.Error("lost daemon connection must be visible")
+	}
+}
+
+func TestMouse(t *testing.T) {
+	f := newFake(threeItems()...)
+	m := newTestModel(t, f, Options{})
+	// Rows: 0 title, 1 "Needs you (2)", 2–3 pr:1, 4–5 pr:2, 6 "Yours (0)", 7 "Branches (1)", 8–9 branch.
+	click := func(y int) tea.MouseMsg {
+		return tea.MouseMsg{X: 3, Y: y, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress}
+	}
+	m, cmd := updateCmd(t, m, click(9))
+	if got := selectedID(m); got != "branch:feat/x" || cmd == nil {
+		t.Fatalf("click on row 9 selected %s (cmd %v)", got, cmd != nil)
+	}
+	m = update(t, m, click(6)) // a header: no change
+	if got := selectedID(m); got != "branch:feat/x" {
+		t.Fatalf("click on a header moved the cursor to %s", got)
+	}
+	m = update(t, m, click(4))
+	if got := selectedID(m); got != "pr:2" {
+		t.Fatalf("click on row 4 selected %s", got)
+	}
+	m = update(t, m, tea.MouseMsg{X: 3, Y: 4, Button: tea.MouseButtonWheelUp, Action: tea.MouseActionPress})
+	if got := selectedID(m); got != "pr:1" {
+		t.Fatalf("wheel up in picker selected %s", got)
+	}
+	// Wheel over the overview scrolls it.
+	d := proto.Detail{Item: threeItems()[0], Diff: longDiff(200)}
+	d.Item.Body = strings.Repeat("A paragraph of description.\n\n", 80)
+	m = update(t, m, detailMsg{seq: m.detailSeq, d: d})
+	if m.overview.vp.TotalLineCount() <= m.overview.vp.Height {
+		t.Fatalf("overview too short to scroll: %d lines", m.overview.vp.TotalLineCount())
+	}
+	m = update(t, m, tea.MouseMsg{X: 60, Y: 5, Button: tea.MouseButtonWheelDown, Action: tea.MouseActionPress})
+	if m.overview.vp.YOffset == 0 {
+		t.Error("wheel over the overview did not scroll it")
 	}
 }
 
