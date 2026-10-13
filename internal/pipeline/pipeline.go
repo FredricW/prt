@@ -8,9 +8,11 @@
 // External calls go only through the interfaces in Deps, so the whole
 // pipeline runs offline in tests with fakes or recordings.
 //
-// Current state: fetch (local git, GitHub diff fallback), parse (hunk
-// fallback) and aggregate (line counts, M0 urgency) run; other stages are
-// recorded as skipped. TODO(M1–M3).
+// Current state (M1): fetch (local git, GitHub diff fallback), parse (with
+// file ownership from user.owns and CODEOWNERS), jev labels (cached by unit
+// id) and aggregate run; link and embed (M2), cluster (M2), route and review
+// (M3) are recorded as skipped. Stage 4 failures are soft: the item still
+// aggregates, with unknown labels and LabelsMissing set.
 package pipeline
 
 import (
@@ -71,6 +73,9 @@ type RunOptions struct {
 // Pipeline runs stages for items.
 type Pipeline struct {
 	d Deps
+
+	mu    sync.Mutex
+	login string // cached GitHub viewer login (see viewer)
 }
 
 // New builds a Pipeline.
@@ -118,51 +123,102 @@ func (p *Pipeline) runAfterFetch(ctx context.Context, it model.Item, f model.Fet
 		p.d.Log.Warn("parse diff failed", "item", it.ID, "err", err)
 		return fmt.Errorf("pipeline: parse diff: %w", err)
 	}
-	units, err := runStage(ctx, p, it.ID, model.StageParse, func(rl *model.RunLog) ([]model.ChangeUnit, error) {
+	parsed, err := runStage(ctx, p, it.ID, model.StageParse, func(rl *model.RunLog) (parseOut, error) {
 		return p.parse(ctx, it.ID, f, files, rl)
 	})
 	if err != nil {
 		return err
 	}
-	for _, s := range []model.Stage{model.StageLink, model.StageEmbed, model.StageJev, model.StageCluster, model.StageRoute, model.StageReview} {
-		p.emit(model.RunLog{ItemID: it.ID, Stage: s, Status: model.StageSkipped, StartedAt: p.d.Now(), Note: "not implemented yet"})
+	p.skip(it.ID, "M2", model.StageLink, model.StageEmbed)
+	jo, err := runStage(ctx, p, it.ID, model.StageJev, func(rl *model.RunLog) (jevOut, error) {
+		return p.labelStage(ctx, p.currentItem(ctx, it), parsed.files, parsed.units, rl)
+	})
+	if err != nil {
+		// Soft failure (spec: failure handling): the RunLog row carries the
+		// error and the item still aggregates with unknown labels.
+		if ctx.Err() != nil {
+			return err
+		}
+		p.d.Log.Warn("labels failed; continuing with unknown labels", "item", it.ID, "err", err)
+		jo.missing = true
 	}
+	p.skip(it.ID, "M2", model.StageCluster)
+	p.skip(it.ID, "M3", model.StageRoute, model.StageReview)
 	_, err = runStage(ctx, p, it.ID, model.StageAggregate, func(rl *model.RunLog) (model.ItemAgg, error) {
-		return p.aggregate(ctx, it, f, units, rl)
+		return p.aggregate(ctx, it, f, parsed, jo, rl)
 	})
 	return err
 }
 
-// parse splits the diff into change units and stores files and units.
-func (p *Pipeline) parse(ctx context.Context, itemID string, f model.Fetch, files []diff.File, rl *model.RunLog) ([]model.ChangeUnit, error) {
-	us, err := parse.Split(ctx, parse.Input{ItemID: itemID, BaseSHA: f.BaseSHA, HeadSHA: f.HeadSHA, Files: files, Src: p.d.Git})
-	if err != nil {
-		return nil, fmt.Errorf("pipeline: split %s: %w", itemID, err)
+// skip records stages that are not built yet (note names the milestone).
+func (p *Pipeline) skip(itemID, milestone string, stages ...model.Stage) {
+	for _, s := range stages {
+		p.emit(model.RunLog{ItemID: itemID, Stage: s, Status: model.StageSkipped, StartedAt: p.d.Now(), Note: milestone})
 	}
-	rl.In, rl.Out = len(files), len(us)
-	if err := p.d.Store.PutFiles(ctx, itemID, toFiles(itemID, files)); err != nil {
-		return nil, fmt.Errorf("pipeline: store files: %w", err)
-	}
-	if err := p.d.Store.PutUnits(ctx, itemID, us); err != nil {
-		return nil, fmt.Errorf("pipeline: store units: %w", err)
-	}
-	return us, nil
 }
 
-// aggregate computes and stores the ItemAgg, then copies urgency, why and
-// line counts onto the stored Item.
-func (p *Pipeline) aggregate(ctx context.Context, it model.Item, f model.Fetch, units []model.ChangeUnit, rl *model.RunLog) (model.ItemAgg, error) {
+// parseOut is the output of stage 1: the item's files (with ownership) and
+// change units.
+type parseOut struct {
+	files []model.File
+	units []model.ChangeUnit
+}
+
+// parse splits the diff into change units, marks owned files and stores
+// files and units.
+func (p *Pipeline) parse(ctx context.Context, itemID string, f model.Fetch, files []diff.File, rl *model.RunLog) (parseOut, error) {
+	us, err := parse.Split(ctx, parse.Input{ItemID: itemID, BaseSHA: f.BaseSHA, HeadSHA: f.HeadSHA, Files: files, Src: p.d.Git})
+	if err != nil {
+		return parseOut{}, fmt.Errorf("pipeline: split %s: %w", itemID, err)
+	}
+	rl.In, rl.Out = len(files), len(us)
+	fs := toFiles(itemID, files)
+	markOwned(fs, p.ownershipFor(ctx, f.HeadSHA))
+	if err := p.d.Store.PutFiles(ctx, itemID, fs); err != nil {
+		return parseOut{}, fmt.Errorf("pipeline: store files: %w", err)
+	}
+	if err := p.d.Store.PutUnits(ctx, itemID, us); err != nil {
+		return parseOut{}, fmt.Errorf("pipeline: store units: %w", err)
+	}
+	return parseOut{files: fs, units: us}, nil
+}
+
+// aggregate computes and stores the ItemAgg from files, units and the
+// stored labels (overrides applied), then copies the picker fields onto the
+// stored Item.
+func (p *Pipeline) aggregate(ctx context.Context, it model.Item, f model.Fetch, in parseOut, jo jevOut, rl *model.RunLog) (model.ItemAgg, error) {
 	cur := p.currentItem(ctx, it)
+	ls, err := p.itemLabels(ctx, it.ID, in.units)
+	if err != nil {
+		return model.ItemAgg{}, err
+	}
 	age, release, ciRed := aggregate.Facts(cur, p.d.Config.GitHub.ReleaseBranches, p.d.Now())
 	agg := aggregate.Item(aggregate.Input{
-		Item: cur, Units: units, Weights: p.d.Config.Rank, Pipeline: p.d.Config.Pipeline,
+		Item: cur, Files: in.files, Units: in.units, Labels: ls,
+		Weights: p.d.Config.Rank, Pipeline: p.d.Config.Pipeline,
 		AgeDays: age, Release: release, CIRedAfterApproval: ciRed,
+		Owns: p.d.Config.User.Owns, LabelsMissing: jo.missing,
 	})
-	rl.In = len(units)
+	rl.In, rl.Out = len(in.units), len(ls)
 	if err := p.d.Store.PutAgg(ctx, agg); err != nil {
 		return agg, fmt.Errorf("pipeline: store agg: %w", err)
 	}
 	return agg, p.applyAgg(ctx, it, f, agg)
+}
+
+// itemLabels loads every stored label of the item's units and of the item
+// itself (model.ItemSubject), with the user's overrides applied.
+func (p *Pipeline) itemLabels(ctx context.Context, itemID string, units []model.ChangeUnit) ([]model.Label, error) {
+	ids := append(unitIDs(units), model.ItemSubject(itemID))
+	ls, err := p.d.Store.Labels(ctx, ids)
+	if err != nil {
+		return nil, fmt.Errorf("pipeline: load labels: %w", err)
+	}
+	ovs, err := p.d.Store.Overrides(ctx, ids)
+	if err != nil {
+		return nil, fmt.Errorf("pipeline: load overrides: %w", err)
+	}
+	return applyOverrides(ls, ovs), nil
 }
 
 // currentItem returns the latest stored version of it (metadata may have
@@ -195,6 +251,13 @@ func (p *Pipeline) applyAgg(ctx context.Context, it model.Item, f model.Fetch, a
 	}
 	cur.Urgency, cur.Why, cur.Minutes = agg.Urgency, agg.Why, agg.Minutes
 	cur.Additions, cur.Deletions = agg.Added, agg.Removed
+	cur.LabelsUnavailable, cur.NeedsEyes = agg.LabelsMissing, agg.UnitsEyes
+	cur.Breaking = 0
+	for _, h := range agg.Headlines {
+		if h.Kind == HeadlineBreaking {
+			cur.Breaking++
+		}
+	}
 	if err := p.d.Store.UpsertItem(ctx, cur); err != nil {
 		return fmt.Errorf("pipeline: store item %s: %w", cur.ID, err)
 	}

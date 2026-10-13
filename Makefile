@@ -7,7 +7,7 @@ FIXTURE_PRS  := testdata/fixtures/prs.json
 # Fixed clock for snapshots so ages are byte-stable.
 SNAPSHOT_NOW := 2026-10-13T12:00:00Z
 
-.PHONY: build test lint check demo fixtures snapshot
+.PHONY: build test lint check demo fixtures snapshot record-jev record-jev-dry
 
 build:
 	CGO_ENABLED=1 go build -o bin/prt ./cmd/prt
@@ -40,6 +40,16 @@ $(FIXTURE_REPO)/.git: $(FIXTURE_DEPS)
 # Interactive TUI against the fixture repo, fully offline.
 demo: build $(FIXTURE_REPO)/.git
 	./bin/prt --no-daemon --offline --repo $(FIXTURE_REPO) --fixtures $(FIXTURE_PRS)
+
+# Record real Jev answers for the fixture PRs into testdata/recordings/jev
+# (needs JEV_API_KEY; spend capped at $1.00, ledger in testdata/recordings/SPEND.md).
+# Run once after parse/labels/pipeline are final; tests replay the recordings.
+record-jev:
+	go run ./tools/recordjev --live
+
+# Free dry run: counts the requests record-jev would send; no network.
+record-jev-dry:
+	go run ./tools/recordjev
 
 # Non-interactive: render a few screens to stdout (for agents and CI).
 snapshot: build $(FIXTURE_REPO)/.git

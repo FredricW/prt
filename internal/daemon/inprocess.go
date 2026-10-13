@@ -116,9 +116,21 @@ func (c *InProcess) send(e proto.Event) {
 	}
 }
 
-// onStage turns "stage started" rows into item states.
+// onStage turns "stage started" rows into item states and finished rows into
+// patch events (the stage's output is stored: re-read Detail), so screens
+// fill in as labels land. When aggregate finishes, the stored item (with the
+// picker fields the pipeline copied from the aggregate: urgency, minutes,
+// LabelsUnavailable, Breaking, NeedsEyes) goes out as an item event.
 func (c *InProcess) onStage(rl model.RunLog) {
-	if rl.Status != model.StageRunning {
+	switch rl.Status {
+	case model.StageDone, model.StageCached, model.StageFailed:
+		c.send(proto.Event{Type: proto.EventPatch, ItemID: rl.ItemID, Stage: rl.Stage})
+		if rl.Stage == model.StageAggregate && rl.Status != model.StageFailed {
+			c.sendItem(rl.ItemID)
+		}
+		return
+	case model.StageRunning:
+	default:
 		return
 	}
 	if rl.Stage == model.StageFetch {
@@ -149,6 +161,15 @@ func (c *InProcess) updateItem(ctx context.Context, id string, fn func(*model.It
 	}
 	c.send(proto.Event{Type: proto.EventItem, ItemID: it.ID, Item: &it})
 	return it, true, nil
+}
+
+// sendItem emits an item event with the stored item (nothing if it is gone).
+func (c *InProcess) sendItem(id string) {
+	it, err := c.d.Store.Item(context.Background(), id)
+	if err != nil {
+		return
+	}
+	c.send(proto.Event{Type: proto.EventItem, ItemID: it.ID, Item: &it})
 }
 
 func (c *InProcess) setState(id string, st model.ItemState, note string) {
@@ -238,11 +259,7 @@ func (c *InProcess) Detail(ctx context.Context, itemID string) (proto.Detail, er
 	if det.Units, err = s.Units(ctx, itemID); err != nil {
 		return det, err
 	}
-	ids := make([]string, len(det.Units))
-	for i, u := range det.Units {
-		ids[i] = u.ID
-	}
-	if det.Labels, err = s.Labels(ctx, ids); err != nil {
+	if det.Labels, err = s.Labels(ctx, labelSubjects(itemID, det.Files, det.Units)); err != nil {
 		return det, err
 	}
 	if det.Links, err = s.Links(ctx, itemID); err != nil {
@@ -262,6 +279,20 @@ func (c *InProcess) Detail(ctx context.Context, itemID string) (proto.Detail, er
 	}
 	det.RunLogs, err = s.RunLogs(ctx, itemID)
 	return det, err
+}
+
+// labelSubjects lists every Label.UnitID an item's labels can carry: its
+// units, its files (model.FileSubject) and the item itself
+// (model.ItemSubject).
+func labelSubjects(itemID string, files []model.File, units []model.ChangeUnit) []string {
+	ids := make([]string, 0, len(units)+len(files)+1)
+	for _, u := range units {
+		ids = append(ids, u.ID)
+	}
+	for _, f := range files {
+		ids = append(ids, model.FileSubject(itemID, f.Path))
+	}
+	return append(ids, model.ItemSubject(itemID))
 }
 
 // Refresh implements Client: queues the item for analysis (deduplicated).
