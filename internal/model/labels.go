@@ -183,6 +183,11 @@ func FileSubject(itemID, path string) string { return "file:" + itemID + ":" + p
 // the hash of the PR title and bullets it was asked with.
 func GroupSubject(groupID string) string { return "group:" + groupID }
 
+// CommentSubject is the Label.UnitID used for the per-comment item question
+// comment_addressed (M4). The label's Ctx hashes the comment and the diff it
+// was judged against (judge.AddressedCtx), so a new push asks again.
+func CommentSubject(itemID, commentID string) string { return "comment:" + itemID + ":" + commentID }
+
 // PairSubject is the Label.UnitID used for pair-scope questions (relation).
 // The two unit ids are sorted, so (a, b) and (b, a) share one cached answer.
 func PairSubject(a, b string) string {

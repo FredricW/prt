@@ -19,7 +19,9 @@
       "reviewers": ["fredric"],
       "reviewRequested": true,
       "viewerApproved": false,
-      "viewerCommented": false,
+      "viewerCommented": true,
+      "viewerReviewedSha": "e661461bccca9ae9395ab9e74da9836914d81a0c",
+      "openThreads": 2,
       "ci": "green",
       "additions": 334,
       "deletions": 64,
@@ -99,5 +101,116 @@
       "createdAt": "2026-10-12T05:04:00Z",
       "updatedAt": "2026-10-12T07:31:00Z"
     }
-  ]
+  ],
+  "threads": {
+    "101": [
+      {
+        "id": "PRRT_fixture101_ttl",
+        "path": "web/src/hooks/useProfileCache.ts",
+        "line": 6,
+        "side": "new",
+        "resolved": false,
+        "outdated": false,
+        "comments": [
+          {
+            "id": "gh-5001",
+            "itemId": "pr:101",
+            "path": "web/src/hooks/useProfileCache.ts",
+            "line": 6,
+            "side": "new",
+            "body": "An hour is far longer than the 5 minute TTL the description promises. Please use 5 minutes here (or make it configurable).",
+            "author": "fredric",
+            "source": "github",
+            "state": "posted",
+            "ghId": 5001,
+            "threadId": "PRRT_fixture101_ttl",
+            "commitSha": "e661461bccca9ae9395ab9e74da9836914d81a0c",
+            "createdAt": "2026-10-06T16:02:00Z"
+          },
+          {
+            "id": "gh-5002",
+            "itemId": "pr:101",
+            "path": "web/src/hooks/useProfileCache.ts",
+            "line": 6,
+            "side": "new",
+            "body": "Good catch, it is 5 minutes now, matching the description.",
+            "author": "alice",
+            "source": "github",
+            "state": "posted",
+            "ghId": 5002,
+            "threadId": "PRRT_fixture101_ttl",
+            "inReplyTo": 5001,
+            "commitSha": "b3ca0eb0e8ea06083fd828b2fe49a4c8c4ea98ea",
+            "createdAt": "2026-10-07T08:55:00Z"
+          }
+        ]
+      },
+      {
+        "id": "PRRT_fixture101_catch",
+        "path": "web/src/hooks/useProfileCache.ts",
+        "line": 75,
+        "side": "new",
+        "resolved": false,
+        "outdated": false,
+        "comments": [
+          {
+            "id": "gh-5003",
+            "itemId": "pr:101",
+            "path": "web/src/hooks/useProfileCache.ts",
+            "line": 75,
+            "side": "new",
+            "body": "This swallows load errors and leaves `loading` true forever. Set `loading` to false and surface the error, for example as an `error` field in `ProfileCacheState`.",
+            "author": "fredric",
+            "source": "github",
+            "state": "posted",
+            "ghId": 5003,
+            "threadId": "PRRT_fixture101_catch",
+            "commitSha": "e661461bccca9ae9395ab9e74da9836914d81a0c",
+            "createdAt": "2026-10-06T16:05:00Z"
+          }
+        ]
+      },
+      {
+        "id": "PRRT_fixture101_token",
+        "path": "web/src/api/errors.ts",
+        "line": 15,
+        "side": "new",
+        "resolved": true,
+        "outdated": false,
+        "comments": [
+          {
+            "id": "gh-5004",
+            "itemId": "pr:101",
+            "path": "web/src/api/errors.ts",
+            "line": 15,
+            "side": "new",
+            "body": "Could the token lookup move into a small token store, so tests can stub it?",
+            "author": "bob",
+            "source": "github",
+            "state": "resolved",
+            "ghId": 5004,
+            "threadId": "PRRT_fixture101_token",
+            "commitSha": "e661461bccca9ae9395ab9e74da9836914d81a0c",
+            "createdAt": "2026-10-06T17:10:00Z"
+          },
+          {
+            "id": "gh-5005",
+            "itemId": "pr:101",
+            "path": "web/src/api/errors.ts",
+            "line": 15,
+            "side": "new",
+            "body": "Out of scope for this PR; tracked in #98.",
+            "author": "alice",
+            "source": "github",
+            "state": "resolved",
+            "ghId": 5005,
+            "threadId": "PRRT_fixture101_token",
+            "inReplyTo": 5004,
+            "commitSha": "b3ca0eb0e8ea06083fd828b2fe49a4c8c4ea98ea",
+            "createdAt": "2026-10-07T08:57:00Z"
+          }
+        ]
+      }
+    ]
+  }
 }

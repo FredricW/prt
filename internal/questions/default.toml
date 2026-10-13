@@ -425,10 +425,9 @@ deferred = "M3"
 scope = "item"
 id = "comment_addressed"
 type = "N"
-prompt = "Is this review comment addressed by the latest push?"
+prompt = "Does the latest push address this review comment: does the changed code now do what the comment asked, or remove the problem it pointed out?"
 inputs = ["comment_and_diff"]
 feeds = ["since_you_looked"]
-deferred = "M4"
 
 # -------------------------------------------------------------- branch scope
 

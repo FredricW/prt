@@ -273,4 +273,51 @@ type ItemAgg struct {
 	// calibration panel, set by the pipeline after stage 7 (M3).
 	Review      *ReviewStats      `json:"review,omitempty"`
 	Calibration *CalibrationStats `json:"calibration,omitempty"`
+	// Since is the Overview's "Since you looked" block, set by the pipeline
+	// (M4); nil when there is no earlier head to compare with.
+	Since *SinceLooked `json:"since,omitempty"`
+}
+
+// Since-you-looked base sources (SinceLooked.Source).
+const (
+	// SinceViewed: the base is a head the user looked at in prt (ViewMark).
+	SinceViewed = "viewed"
+	// SinceReviewed: no ViewMark; the base is the commit of the viewer's
+	// latest GitHub review (Item.ViewerReviewedSHA).
+	SinceReviewed = "reviewed"
+)
+
+// SinceLooked is the Overview's "Since you looked" block (spec Overview 9):
+// the units changed since the base head, and for each of the user's earlier
+// comments whether the latest push addressed it (Jev comment_addressed).
+type SinceLooked struct {
+	// BaseSHA is the head the user last looked at; HeadSHA the analysed head
+	// it is compared with. Source is SinceViewed or SinceReviewed.
+	BaseSHA string `json:"baseSha"`
+	HeadSHA string `json:"headSha"`
+	Source  string `json:"source"`
+	// ChangedUnits are the current unit ids that did not exist at BaseSHA
+	// (unit ids are content hashes), in unit order.
+	ChangedUnits []string `json:"changedUnits"`
+	// Comments are the user's earlier top-level comments with their
+	// comment_addressed answers, in path/line order.
+	Comments []AddressedComment `json:"comments,omitempty"`
+	// Note explains a degraded block ("base head not available locally",
+	// "labels unavailable").
+	Note string `json:"note,omitempty"`
+}
+
+// AddressedComment is one of the user's earlier comments and Jev's answer
+// to comment_addressed for it. Known is false when Jev was unavailable (the
+// row then shows "?"); Addressed is P >= 0.5.
+type AddressedComment struct {
+	CommentID string  `json:"commentId"`
+	UnitID    string  `json:"unitId,omitempty"`
+	Path      string  `json:"path"`
+	Line      int     `json:"line"`
+	Excerpt   string  `json:"excerpt"` // first line of the body, ≤ 80 runes
+	Known     bool    `json:"known"`
+	Addressed bool    `json:"addressed"`
+	P         float64 `json:"p"`
+	Resolved  bool    `json:"resolved,omitempty"` // the thread is resolved on GitHub
 }

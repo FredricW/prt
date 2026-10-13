@@ -163,6 +163,9 @@ func TestLiveSetMatchesDecisions(t *testing.T) {
 		ScopeFile:  {"separate_pr"},
 		ScopeGroup: {"name_bullet"},
 		ScopePair:  {"relation"},
+		// M4: comment_addressed, asked once per earlier comment by
+		// judge.CommentAddressed (DECISIONS "M4 shared contracts").
+		ScopeItem: {"comment_addressed"},
 	}
 	for _, s := range Scopes {
 		var got []string

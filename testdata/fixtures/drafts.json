@@ -1,0 +1,29 @@
+[
+  {
+    "id": "draft-fixture-1",
+    "itemId": "pr:101",
+    "path": "web/src/components/ProfilePage.tsx",
+    "line": 17,
+    "side": "new",
+    "body": "The load error from `useUser` used to be shown here. With the cache a failed load now shows **Loading…** forever; please keep an error state.",
+    "author": "fredric",
+    "source": "user",
+    "state": "draft",
+    "commitSha": "b3ca0eb0e8ea06083fd828b2fe49a4c8c4ea98ea",
+    "createdAt": "2026-10-13T11:40:00Z"
+  },
+  {
+    "id": "draft-fixture-2",
+    "itemId": "pr:101",
+    "path": "web/src/components/ProfilePage.tsx",
+    "line": 27,
+    "startLine": 26,
+    "side": "new",
+    "body": "`primeProfile` already stores the saved profile, so `refresh()` right after it refetches immediately.\n\nIs the second request needed?",
+    "author": "fredric",
+    "source": "user",
+    "state": "draft",
+    "commitSha": "b3ca0eb0e8ea06083fd828b2fe49a4c8c4ea98ea",
+    "createdAt": "2026-10-13T11:42:00Z"
+  }
+]

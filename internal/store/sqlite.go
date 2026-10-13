@@ -137,6 +137,11 @@ const (
 	// kCalibration holds calibration samples, id = RFC3339Nano time +
 	// item + group so listDocs returns them oldest first.
 	kCalibration = "calibration"
+	// kFindingMark holds accepted/dismissed AI findings, id = item|key,
+	// parent = item id (kept when the item is removed, like comments).
+	kFindingMark = "findingmark"
+	// kViewMark holds the head last looked at, id = parent = item id.
+	kViewMark = "viewmark"
 )
 
 type execer interface {
@@ -479,6 +484,26 @@ func (s *SQLite) DeleteComment(ctx context.Context, id string) error {
 // Comments implements Store.
 func (s *SQLite) Comments(ctx context.Context, itemID string) ([]model.Comment, error) {
 	return listDocs[model.Comment](ctx, s, kComment, []string{itemID})
+}
+
+// PutFindingMark implements Store.
+func (s *SQLite) PutFindingMark(ctx context.Context, m model.FindingMark) error {
+	return putDoc(ctx, s.db, kFindingMark, m.ItemID+"|"+m.FindingKey, m.ItemID, m)
+}
+
+// FindingMarks implements Store.
+func (s *SQLite) FindingMarks(ctx context.Context, itemID string) ([]model.FindingMark, error) {
+	return listDocs[model.FindingMark](ctx, s, kFindingMark, []string{itemID})
+}
+
+// PutViewMark implements Store.
+func (s *SQLite) PutViewMark(ctx context.Context, v model.ViewMark) error {
+	return putDoc(ctx, s.db, kViewMark, v.ItemID, v.ItemID, v)
+}
+
+// ViewMark implements Store.
+func (s *SQLite) ViewMark(ctx context.Context, itemID string) (model.ViewMark, bool, error) {
+	return getDoc[model.ViewMark](ctx, s, kViewMark, itemID)
 }
 
 // PutOverride implements Store.

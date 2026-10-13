@@ -77,10 +77,22 @@ type Store interface {
 	AppendCalibration(ctx context.Context, c model.CalibrationSample) error
 	Calibrations(ctx context.Context, since time.Time) ([]model.CalibrationSample, error)
 
-	// Comments: local drafts and loaded GitHub comments.
+	// Comments: local drafts, ai-drafts and loaded GitHub comments, keyed
+	// by Comment.ID (parent ItemID). They are not removed with the item, so
+	// drafts survive a remove/re-add.
 	PutComment(ctx context.Context, c model.Comment) error
 	DeleteComment(ctx context.Context, id string) error
 	Comments(ctx context.Context, itemID string) ([]model.Comment, error)
+
+	// Finding marks: AI findings the user accepted or dismissed, keyed by
+	// (ItemID, FindingKey); the pipeline skips them when it syncs ai-drafts.
+	PutFindingMark(ctx context.Context, m model.FindingMark) error
+	FindingMarks(ctx context.Context, itemID string) ([]model.FindingMark, error)
+
+	// View marks: the head the user last looked at, one per item
+	// ("Since you looked"). ViewMark reports false when none is stored.
+	PutViewMark(ctx context.Context, v model.ViewMark) error
+	ViewMark(ctx context.Context, itemID string) (model.ViewMark, bool, error)
 
 	// Overrides are keyed by unit and question.
 	PutOverride(ctx context.Context, o model.Override) error

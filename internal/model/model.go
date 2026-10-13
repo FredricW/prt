@@ -140,6 +140,12 @@ type Item struct {
 	// CapUSD is this item's review cost cap set with `$` on the Pipeline
 	// page (or `:cap`); 0 means prt.routing.toml cost_cap_usd.
 	CapUSD float64 `json:"capUsd,omitempty"`
+
+	// ViewerReviewedSHA is the commit the viewer's latest submitted GitHub
+	// review was made on (gh.PR.ViewerReviewedSHA; "" for branches or when
+	// the viewer never reviewed). "Since you looked" falls back to it when
+	// prt has no ViewMark for the item (M4).
+	ViewerReviewedSHA string `json:"viewerReviewedSha,omitempty"`
 }
 
 // FileRole is the Jev-assigned role of a changed file.
@@ -437,9 +443,13 @@ const (
 
 // Finding is one review claim anchored to a unit and line.
 type Finding struct {
-	UnitID   string   `json:"unitId,omitempty"`
-	Path     string   `json:"path"`
-	Line     int      `json:"line"`
+	UnitID string `json:"unitId,omitempty"`
+	Path   string `json:"path"`
+	Line   int    `json:"line"`
+	// Side is the diff side Line counts on: SideOld for a deleted line,
+	// SideNew (or "", which means new) otherwise (M4; DECISIONS "M4 shared
+	// contracts").
+	Side     Side     `json:"side,omitempty"`
 	Severity Severity `json:"severity"`
 	Claim    string   `json:"claim"`
 	Fix      string   `json:"fix,omitempty"`
@@ -484,7 +494,10 @@ type Review struct {
 	// UnitStarts maps each unit id of the group to the first line of its
 	// anchor span (new side; old side for a pure deletion) when this review
 	// ran. A cached review served after the unit moved (push, rebase,
-	// stacked PRs) shifts its findings' lines by the difference.
+	// stacked PRs) shifts its findings' lines by the difference. A key
+	// "<unitID>@old" holds the start of that unit's old span, used to shift
+	// old-side findings (Finding.Side old); reviews cached before M4 lack
+	// it and fall back to the anchor start.
 	UnitStarts  map[string]int `json:"unitStarts,omitempty"`
 	Verdict     string         `json:"verdict,omitempty"`
 	Confidence  float64        `json:"confidence"`
@@ -618,6 +631,22 @@ const (
 )
 
 // Comment is a review comment, local draft or GitHub thread entry.
+//
+// Anchoring (spec "Identity rules"; DECISIONS "M4 shared contracts"): a
+// comment anchors to Path + Line + Side as GitHub requires (a range adds
+// StartLine/StartSide), and additionally to UnitID with UnitOffset = Line −
+// the unit's first line on Side, so comments.Reanchor can move it when a
+// push or rebase shifts the unit. Outdated is set when neither the unit nor
+// the path/line can be found in the current analysis.
+//
+// Lifecycle by Source:
+//   - user: State draft (local, editable) → pending (being submitted) →
+//     posted (GHID set) ; drafts survive restarts (Store.PutComment).
+//   - ai-draft: one per review finding not yet accepted or dismissed
+//     (FindingKey set, Severity copied); `a` turns it into a user draft
+//     with the same FindingKey, `d`/`!` dismiss it (Store.PutFindingMark).
+//   - github: loaded from review threads (ThreadID, GHID, CommitSHA);
+//     State posted, or resolved when the thread is resolved.
 type Comment struct {
 	ID        string        `json:"id"`
 	ItemID    string        `json:"itemId"`
@@ -626,6 +655,7 @@ type Comment struct {
 	Line      int           `json:"line"`
 	StartLine int           `json:"startLine,omitempty"` // multi-line selection
 	Side      Side          `json:"side"`
+	StartSide Side          `json:"startSide,omitempty"` // side of StartLine ("" = Side)
 	Body      string        `json:"body"`
 	Author    string        `json:"author,omitempty"`
 	Source    CommentSource `json:"source"`
@@ -634,6 +664,59 @@ type Comment struct {
 	ThreadID  string        `json:"threadId,omitempty"` // GraphQL thread node id
 	InReplyTo int64         `json:"inReplyTo,omitempty"`
 	CreatedAt time.Time     `json:"createdAt"`
+	UpdatedAt time.Time     `json:"updatedAt,omitempty"`
+
+	// UnitOffset is Line minus the first line of UnitID's span on Side
+	// (valid when UnitID is set).
+	UnitOffset int `json:"unitOffset,omitempty"`
+	// Outdated is set when the anchor no longer exists in the analysed diff.
+	Outdated bool `json:"outdated,omitempty"`
+	// CommitSHA is the commit the comment was made on (GitHub
+	// originalCommit; for local drafts the analysed head when saved).
+	CommitSHA string `json:"commitSha,omitempty"`
+	// FindingKey ties an ai-draft (and the user draft accepted from it) to
+	// its review finding (comments.FindingKey).
+	FindingKey string `json:"findingKey,omitempty"`
+	// Severity is the finding's severity (ai-drafts only).
+	Severity Severity `json:"severity,omitempty"`
+	// ReviewID is the GitHub review the comment was posted in (posted only).
+	ReviewID int64 `json:"reviewId,omitempty"`
+}
+
+// FindingMarkState is what the user did with an AI finding.
+type FindingMarkState string
+
+// Finding mark states.
+const (
+	FindingAccepted  FindingMarkState = "accepted"
+	FindingDismissed FindingMarkState = "dismissed"
+)
+
+// FindingMark records that an ai-draft was accepted or dismissed, keyed by
+// item and FindingKey, so the pipeline never re-creates it on a re-run
+// (Store.PutFindingMark/FindingMarks).
+type FindingMark struct {
+	ItemID     string           `json:"itemId"`
+	FindingKey string           `json:"findingKey"`
+	State      FindingMarkState `json:"state"`
+	// CommentID is the user draft an accept created ("" for dismissals).
+	CommentID string `json:"commentId,omitempty"`
+	// Override is set when `!` dismissed the finding and filed a label
+	// override.
+	Override *Override `json:"override,omitempty"`
+	At       time.Time `json:"at"`
+}
+
+// ViewMark records which head of an item the user last looked at
+// (Store.PutViewMark/ViewMark). PrevHeadSHA is the head looked at before
+// HeadSHA (the last distinct one), so "Since you looked" stays stable while
+// the user reads the current head: its base is PrevHeadSHA when HeadSHA is
+// the item's current head, else HeadSHA (comments.SinceBase).
+type ViewMark struct {
+	ItemID      string    `json:"itemId"`
+	HeadSHA     string    `json:"headSha"`
+	PrevHeadSHA string    `json:"prevHeadSha,omitempty"`
+	At          time.Time `json:"at"`
 }
 
 // Override is a user correction of a label.

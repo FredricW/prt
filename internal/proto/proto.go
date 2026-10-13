@@ -39,8 +39,25 @@ const (
 	MethodAdd       = "add"       // {query} → model.Item
 	MethodRemove    = "remove"    // {itemId} → {}
 	MethodSubscribe = "subscribe" // {} → {}; then events
-	MethodOverride  = "override"  // model.Override → {}
-	MethodComment   = "comment"   // model.Comment → model.Comment (draft upsert)
+	// MethodOverride stores a label override (Code page `!`) and re-runs
+	// the item's aggregate: OverrideParams → {}.
+	MethodOverride = "override"
+	// MethodComment saves (upserts) or deletes a local draft comment:
+	// CommentParams → model.Comment (the stored draft; zero after a delete).
+	MethodComment = "comment"
+	// MethodCommentAction accepts or dismisses an ai-draft, or replies to or
+	// resolves a GitHub thread: CommentActionParams → model.Comment (the
+	// accepted draft or the posted reply; zero otherwise).
+	MethodCommentAction = "comment_action"
+	// MethodSubmitReview submits the item's drafts as one GitHub review:
+	// SubmitParams → SubmitResult.
+	MethodSubmitReview = "submit_review"
+	// MethodCreatePR creates a PR for a branch item and attaches its local
+	// drafts: CreatePRParams → CreatePRResult.
+	MethodCreatePR = "create_pr"
+	// MethodViewed records that the user looked at an item's head
+	// ("Since you looked"): ViewedParams → {}.
+	MethodViewed = "viewed"
 	// MethodEditGroups persists a user merge/split/reset of an item's
 	// groups and re-runs the item (cached stages are skipped, so only
 	// clustering re-runs): GroupEditParams → {}.
@@ -139,6 +156,109 @@ type CapParams struct {
 	CapUSD float64 `json:"capUsd"`
 }
 
+// CommentParams is the params of MethodComment. Comment.ItemID must equal
+// ItemID (the daemon fills it when empty). Save with Comment.ID "" creates
+// a draft (the daemon assigns ID, Author, Source user, State draft,
+// CommitSHA = the analysed head, CreatedAt, and anchors UnitID/UnitOffset);
+// with an ID it updates that draft's body and anchor (only user drafts can
+// be edited). Delete removes the draft Comment.ID.
+type CommentParams struct {
+	ItemID  string        `json:"itemId"`
+	Comment model.Comment `json:"comment"`
+	Delete  bool          `json:"delete,omitempty"`
+}
+
+// CommentAction is what MethodCommentAction does.
+type CommentAction string
+
+// Comment actions.
+const (
+	// CommentAccept turns the ai-draft CommentID into an editable user
+	// draft (same FindingKey) and marks the finding accepted.
+	CommentAccept CommentAction = "accept"
+	// CommentDismiss removes the ai-draft CommentID and marks the finding
+	// dismissed; with Override set (`!`) it also stores that label override.
+	CommentDismiss CommentAction = "dismiss"
+	// CommentReply posts Body as a reply to thread ThreadID.
+	CommentReply CommentAction = "reply"
+	// CommentResolve resolves thread ThreadID.
+	CommentResolve CommentAction = "resolve"
+)
+
+// CommentActionParams is the params of MethodCommentAction.
+type CommentActionParams struct {
+	ItemID    string          `json:"itemId"`
+	Action    CommentAction   `json:"action"`
+	CommentID string          `json:"commentId,omitempty"` // accept, dismiss
+	ThreadID  string          `json:"threadId,omitempty"`  // reply, resolve
+	Body      string          `json:"body,omitempty"`      // reply
+	Override  *model.Override `json:"override,omitempty"`  // dismiss with `!`
+}
+
+// ReviewEvent is the verdict of a submitted review (GitHub REST values).
+type ReviewEvent string
+
+// Review events.
+const (
+	EventApprove        ReviewEvent = "APPROVE"
+	EventRequestChanges ReviewEvent = "REQUEST_CHANGES"
+	EventComment        ReviewEvent = "COMMENT"
+)
+
+// SubmitParams is the params of MethodSubmitReview: one GitHub review with
+// Event, the optional summary Body and, as line comments, every user draft
+// of the item (CommentIDs, when set, limits it to those drafts). ai-drafts
+// are never sent.
+type SubmitParams struct {
+	ItemID     string      `json:"itemId"`
+	Event      ReviewEvent `json:"event"`
+	Body       string      `json:"body,omitempty"`
+	CommentIDs []string    `json:"commentIds,omitempty"`
+}
+
+// SubmitResult is the result of MethodSubmitReview: the posted drafts
+// (State posted, GHID set) and the review's URL. Skipped lists drafts that
+// could not be sent (outdated anchor), which stay drafts.
+type SubmitResult struct {
+	ReviewID int64           `json:"reviewId"`
+	URL      string          `json:"url,omitempty"`
+	Posted   []model.Comment `json:"posted,omitempty"`
+	Skipped  []model.Comment `json:"skipped,omitempty"`
+}
+
+// CreatePRParams is the params of MethodCreatePR: open a PR from the branch
+// item ItemID (head = its ref, Base default the item's base ref) and attach
+// the branch's local drafts as one COMMENT review on it.
+type CreatePRParams struct {
+	ItemID string `json:"itemId"`
+	Title  string `json:"title"`
+	Body   string `json:"body,omitempty"`
+	Base   string `json:"base,omitempty"`
+	Draft  bool   `json:"draft,omitempty"`
+}
+
+// CreatePRResult is the result of MethodCreatePR: the new PR item and how
+// many drafts were attached to it.
+type CreatePRResult struct {
+	Item     model.Item `json:"item"`
+	Attached int        `json:"attached"`
+	URL      string     `json:"url,omitempty"`
+}
+
+// ViewedParams is the params of MethodViewed: the user looked at HeadSHA
+// of ItemID (the analysed head shown).
+type ViewedParams struct {
+	ItemID  string `json:"itemId"`
+	HeadSHA string `json:"headSha"`
+}
+
+// OverrideParams is the params of MethodOverride (Override.At is filled by
+// the daemon when zero).
+type OverrideParams struct {
+	ItemID   string         `json:"itemId"`
+	Override model.Override `json:"override"`
+}
+
 // GroupEditParams is the params of MethodEditGroups. Edit.ItemID must equal
 // ItemID; the daemon fills Edit.At when zero.
 type GroupEditParams struct {
@@ -218,8 +338,11 @@ type Detail struct {
 	// (Store.ItemReviews).
 	Reviews  []model.Review  `json:"reviews,omitempty"`
 	Comments []model.Comment `json:"comments,omitempty"`
-	Agg      *model.ItemAgg  `json:"agg,omitempty"`
-	RunLogs  []model.RunLog  `json:"runLogs,omitempty"`
+	// FindingMarks are the item's accepted and dismissed review findings
+	// (Store.FindingMarks); the Code page stops drawing those inline.
+	FindingMarks []model.FindingMark `json:"findingMarks,omitempty"`
+	Agg          *model.ItemAgg      `json:"agg,omitempty"`
+	RunLogs      []model.RunLog      `json:"runLogs,omitempty"`
 	// Routing is the active routing configuration (rules panel).
 	Routing *RoutingInfo `json:"routing,omitempty"`
 }

@@ -1,0 +1,20 @@
+diff --git a/web/src/hooks/useProfileCache.ts b/web/src/hooks/useProfileCache.ts
+--- a/web/src/hooks/useProfileCache.ts
++++ b/web/src/hooks/useProfileCache.ts
+@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from "react";
+ import { getUser, type User } from "../api/client";
+
+ // How long a cached profile is served without revalidating.
+-export const PROFILE_TTL_MS = 5 * 60 * 1000;
++export const PROFILE_TTL_MS = 60 * 60 * 1000;
+
+ interface Entry {
+   user: User;
+@@ -15,7 +15,6 @@ const inflight = new Map<string, Promise<User>>();
+
+ export function clearProfileCache(): void {
+   cache.clear();
+-  inflight.clear();
+ }
+
+ export function primeProfile(user: User, now = Date.now()): void {

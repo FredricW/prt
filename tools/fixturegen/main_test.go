@@ -124,6 +124,54 @@ func TestFixtureRepo(t *testing.T) {
 	t.Run("prs.json", func(t *testing.T) {
 		assertPRFixture(t, repo)
 	})
+
+	t.Run("earlier head of #101", func(t *testing.T) {
+		assertEarlierHead(t, repo)
+	})
+}
+
+// assertEarlierHead checks the history ref behind #101's "Since you
+// looked" fixture: a sibling of the branch head off main, differing only in
+// useProfileCache.ts, named by prs.json viewerReviewedSha, and the comments
+// of the viewer's threads were made on it.
+func assertEarlierHead(t *testing.T, repo string) {
+	t.Helper()
+	ref := "refs/fixture/01-user-profile-refactor/v1"
+	sha := gitOut(t, repo, "rev-parse", ref)
+	if parents := gitOut(t, repo, "rev-list", "--parents", "-n", "1", ref); parents != sha+" "+gitOut(t, repo, "rev-parse", "main") {
+		t.Errorf("%s parents = %q, want main only", ref, parents)
+	}
+	if files := gitOut(t, repo, "diff", "--name-only", ref, "01-user-profile-refactor"); files != "web/src/hooks/useProfileCache.ts" {
+		t.Errorf("v1..head changes %q, want only web/src/hooks/useProfileCache.ts", files)
+	}
+	if heads := gitOut(t, repo, "for-each-ref", "--contains", sha, "refs/heads"); heads != "" {
+		t.Errorf("v1 must not be on a local branch, found %q", heads)
+	}
+	fake, err := gh.LoadFixture(filepath.Join(fixtureSrc, "prs.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pr := fake.PRs[101]
+	if pr.ViewerReviewedSHA != sha {
+		t.Errorf("#101 viewerReviewedSha = %s, generated v1 %s", pr.ViewerReviewedSHA, sha)
+	}
+	mine := 0
+	for _, th := range fake.ThreadMap[101] {
+		for _, c := range th.Comments {
+			if c.ThreadID != th.ID || c.Path != th.Path || c.Line != th.Line {
+				t.Errorf("thread %s comment %d: thread/path/line %s %s:%d", th.ID, c.GHID, c.ThreadID, c.Path, c.Line)
+			}
+			if c.Author == fake.Login && c.InReplyTo == 0 {
+				mine++
+				if c.CommitSHA != sha {
+					t.Errorf("viewer comment %d made on %s, want v1 %s", c.GHID, c.CommitSHA, sha)
+				}
+			}
+		}
+	}
+	if mine != 2 {
+		t.Errorf("viewer has %d top-level comments on #101, want 2", mine)
+	}
 }
 
 func assertPRFixture(t *testing.T, repo string) {

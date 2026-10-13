@@ -4,7 +4,16 @@
 //
 //	testdata/fixtures/base/**             tree of the initial commit on main
 //	testdata/fixtures/prs/NN-name.patch   one branch per patch, off main
+//	testdata/fixtures/history/<branch>.<label>.patch
+//	                                      an earlier head of <branch> (M4)
 //	testdata/fixtures/prt.toml            copied to <out>/.git/prt/prt.toml
+//
+// A history patch is a plain diff applied on top of <branch>'s head; the
+// resulting tree is committed with main as its only parent (like a head
+// that was later force-pushed over) and stored at
+// refs/fixture/<branch>/<label>, outside refs/heads so it is not a local
+// branch. "Since you looked" fixtures use it as the head the viewer last
+// reviewed (prs.json viewerReviewedSha).
 //
 // A patch in `git format-patch` mbox form (starts with "From ") is applied
 // with `git am` (keeps its messages, authors and Date headers; the committer
@@ -60,6 +69,9 @@ func Generate(ctx context.Context, src, out string) error {
 		return err
 	}
 	if err := applyPatches(ctx, r, filepath.Join(src, "prs")); err != nil {
+		return err
+	}
+	if err := applyHistory(ctx, r, filepath.Join(src, "history")); err != nil {
 		return err
 	}
 	if err := r.git(ctx, "checkout", "-q", "main"); err != nil {
@@ -146,6 +158,57 @@ func applyPatch(ctx context.Context, r repo, branch, path string) error {
 	return r.git(ctx, "commit", "-q", "-m", branch)
 }
 
+// HistoryRef is the ref an earlier head of branch is stored at.
+func HistoryRef(branch, label string) string { return "refs/fixture/" + branch + "/" + label }
+
+// applyHistory creates one earlier head per history patch, in file-name
+// order (see the package doc). A missing directory is not an error.
+func applyHistory(ctx context.Context, r repo, dir string) error {
+	patches, err := filepath.Glob(filepath.Join(dir, "*.patch"))
+	if err != nil {
+		return fmt.Errorf("list history patches: %w", err)
+	}
+	sort.Strings(patches)
+	for _, p := range patches {
+		name := strings.TrimSuffix(filepath.Base(p), ".patch")
+		branch, label, ok := strings.Cut(name, ".")
+		if !ok || branch == "" || label == "" {
+			return fmt.Errorf("history patch %s: want <branch>.<label>.patch", filepath.Base(p))
+		}
+		if err := applyEarlierHead(ctx, r, branch, label, p); err != nil {
+			return fmt.Errorf("history %s: %w", name, err)
+		}
+	}
+	return nil
+}
+
+func applyEarlierHead(ctx context.Context, r repo, branch, label, path string) error {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return fmt.Errorf("resolve patch: %w", err)
+	}
+	if err := r.git(ctx, "checkout", "-q", branch); err != nil {
+		return err
+	}
+	if err := r.git(ctx, "apply", "--index", abs); err != nil {
+		return err
+	}
+	tree, err := r.gitOut(ctx, "write-tree")
+	if err != nil {
+		return err
+	}
+	sha, err := r.gitOut(ctx, "commit-tree", tree, "-p", "main", "-m", branch+" ("+label+")")
+	if err != nil {
+		return err
+	}
+	if err := r.git(ctx, "update-ref", HistoryRef(branch, label), sha); err != nil {
+		return err
+	}
+	// Drop the applied changes from the index and work tree; the branch
+	// itself never moved.
+	return r.git(ctx, "checkout", "-q", "-f", "main")
+}
+
 // installConfig copies the fixture prt.toml into <repo>/.git/prt/ if it exists.
 func installConfig(src, repoDir string) error {
 	b, err := os.ReadFile(src)
@@ -169,6 +232,12 @@ func installConfig(src, repoDir string) error {
 type repo struct{ dir string }
 
 func (r repo) git(ctx context.Context, args ...string) error {
+	_, err := r.gitOut(ctx, args...)
+	return err
+}
+
+// gitOut runs git and returns its trimmed standard output.
+func (r repo) gitOut(ctx context.Context, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", r.dir}, args...)...)
 	cmd.Env = append(os.Environ(),
 		"GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1",
@@ -176,12 +245,12 @@ func (r repo) git(ctx context.Context, args ...string) error {
 		"GIT_COMMITTER_NAME=Fixture Author", "GIT_COMMITTER_EMAIL=fixture@example.com",
 		"GIT_AUTHOR_DATE="+fixedDate, "GIT_COMMITTER_DATE="+fixedDate,
 	)
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(stderr.String()))
+		return "", fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(stderr.String()))
 	}
-	return nil
+	return strings.TrimSpace(stdout.String()), nil
 }
 
 func copyTree(src, dst string) error {
