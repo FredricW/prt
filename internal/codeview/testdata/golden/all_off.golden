@@ -1,0 +1,30 @@
+▸ web/src/api/client.ts              █·□  web/src/api/client.ts  +8 −3                                                  
+  web/src/api/session.ts              ·█ ┌ modified · feature · behaviour ✓ .91 · breaking .86 · b2 · tests ✗ · auth
+── not yours ─────────────────────────── │ error_path · risk 4 · eyes
+  web/legacy/util.ts                  ▒█ │ L10–15 · +3 −1 · export async function fetchJSON(url: string, opts?: Request…
+                                           10 10   export async function fetchJSON(url: string, opts?: RequestInit) {
+                                           11    -   const res = await fetch(url);
+                                         ~    11 +   const res = await fetch(url, { ...opts, credentials: "include" });
+                                         ◆    12 +   if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                                         ⋯    13 +   console.log("debug", res);
+                                           12 14     return res.json();
+                                           13 15   }
+                                         
+                                         ▸ formatting · +2 −2 (z to expand)
+                                         
+                                         ┌ added · feature · ?behaviour ✗ .55 · undocumented · tests ✓ · risk 2 · skim
+                                         │ ?
+                                         │ L41–43 · +3 −0 · export function retryDelay(n: number): number
+                                         ·    41 + export function retryDelay(n: number): number {
+                                         ·    42 +   return Math.min(1000 * 2 ** n, 30000);
+                                         ·    43 + }
+                                         
+                                         
+                                         
+                                         
+                                         
+                                         
+                                         
+                                         
+                                         
+                                         
