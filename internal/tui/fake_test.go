@@ -42,6 +42,9 @@ type fakeClient struct {
 	caps          []proto.CapParams
 	routing       proto.RoutingInfo
 	calls         []model.ReviewCall
+	// cc records the M4 comment calls (SaveComment, CommentAction,
+	// SubmitReview, CreatePR, MarkViewed, Override).
+	cc commentCalls
 }
 
 var _ daemon.Client = (*fakeClient)(nil)
@@ -139,6 +142,64 @@ func (f *fakeClient) SetCap(_ context.Context, p proto.CapParams) error {
 	return nil
 }
 
+// M4 comment calls, recorded; each returns the matching canned answer.
+type commentCalls struct {
+	saves     []proto.CommentParams
+	actions   []proto.CommentActionParams
+	submits   []proto.SubmitParams
+	createPRs []proto.CreatePRParams
+	viewed    []proto.ViewedParams
+	overrides []proto.OverrideParams
+
+	saved      model.Comment
+	acted      model.Comment
+	submitted  proto.SubmitResult
+	created    proto.CreatePRResult
+	commentErr error
+}
+
+func (f *fakeClient) SaveComment(_ context.Context, p proto.CommentParams) (model.Comment, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.cc.saves = append(f.cc.saves, p)
+	return f.cc.saved, f.cc.commentErr
+}
+
+func (f *fakeClient) CommentAction(_ context.Context, p proto.CommentActionParams) (model.Comment, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.cc.actions = append(f.cc.actions, p)
+	return f.cc.acted, f.cc.commentErr
+}
+
+func (f *fakeClient) SubmitReview(_ context.Context, p proto.SubmitParams) (proto.SubmitResult, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.cc.submits = append(f.cc.submits, p)
+	return f.cc.submitted, f.cc.commentErr
+}
+
+func (f *fakeClient) CreatePR(_ context.Context, p proto.CreatePRParams) (proto.CreatePRResult, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.cc.createPRs = append(f.cc.createPRs, p)
+	return f.cc.created, f.cc.commentErr
+}
+
+func (f *fakeClient) MarkViewed(_ context.Context, p proto.ViewedParams) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.cc.viewed = append(f.cc.viewed, p)
+	return nil
+}
+
+func (f *fakeClient) Override(_ context.Context, p proto.OverrideParams) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.cc.overrides = append(f.cc.overrides, p)
+	return f.cc.commentErr
+}
+
 // listenerStarted is signalled each time a command asks for the event
 // channel: that command is the (blocking) event listener, so run abandons it.
 var listenerStarted = make(chan struct{}, 64)
@@ -169,6 +230,31 @@ type fakePane struct {
 	pending   *model.GroupEdit
 	// review is handed out (once) by PendingReview; R sets it to "g-r".
 	review string
+	// opKeys maps a key to the comment operation it makes: the key is then
+	// consumed and the op handed out (once) by PendingComment.
+	opKeys    map[string]codeview.CommentOp
+	pendingOp *codeview.CommentOp
+	// hasStrip is reported by HasStrip; stripFocus by StripFocused and
+	// stripCalls records every SetStripFocus.
+	hasStrip, stripFocus bool
+	stripCalls           []bool
+}
+
+func (p *fakePane) PendingComment() (codeview.CommentOp, bool) {
+	if p.pendingOp == nil {
+		return codeview.CommentOp{}, false
+	}
+	op := *p.pendingOp
+	p.pendingOp = nil
+	return op, true
+}
+
+func (p *fakePane) HasStrip() bool     { return p.hasStrip }
+func (p *fakePane) StripFocused() bool { return p.stripFocus }
+
+func (p *fakePane) SetStripFocus(on bool) {
+	p.stripFocus = on
+	p.stripCalls = append(p.stripCalls, on)
 }
 
 func (p *fakePane) PendingReview() (string, bool) {
@@ -219,6 +305,10 @@ func (p *fakePane) HandleKey(k tea.KeyMsg) bool {
 		if key.Matches(k, p.keys.Close) {
 			p.capturing = false
 		}
+		return true
+	}
+	if op, ok := p.opKeys[k.String()]; ok {
+		p.pendingOp = &op
 		return true
 	}
 	switch {

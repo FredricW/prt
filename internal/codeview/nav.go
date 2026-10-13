@@ -18,12 +18,13 @@ const (
 
 // layout is the geometry of one frame.
 type layout struct {
-	top   int // 1 when the bar line is shown
-	listW int // 0 when the list is hidden
-	paneX int // first column of the right pane
-	paneW int
-	bodyH int // rows below the bar
-	viewH int // pane rows below the file title
+	top    int // 1 when the bar line is shown
+	listW  int // 0 when the list is hidden
+	paneX  int // first column of the right pane
+	paneW  int
+	bodyH  int // rows below the bar and above the Comments strip
+	viewH  int // pane rows below the file title
+	stripH int // Comments strip rows at the bottom (0 when hidden)
 }
 
 func (m *Model) layout() layout {
@@ -32,6 +33,11 @@ func (m *Model) layout() layout {
 		l.top = 1
 	}
 	l.bodyH = max(0, m.h-l.top)
+	// The strip is drawn only when at least two body rows remain.
+	if s := m.stripWant(); s > 0 && l.bodyH-s >= 2 {
+		l.stripH = s
+		l.bodyH -= s
+	}
 	l.viewH = max(0, l.bodyH-1)
 	if m.w < narrowBelow {
 		l.paneW = m.w
@@ -141,6 +147,7 @@ func (m *Model) HandleKey(k tea.KeyMsg) bool {
 	used := m.handleKey(k)
 	if !m.c.plain() {
 		m.ensureListVisible() // the bar line may have appeared or gone
+		m.keepCursorVisible()
 	}
 	return used
 }
@@ -149,9 +156,19 @@ func (m *Model) handleKey(k tea.KeyMsg) bool {
 	switch {
 	case m.c.plain():
 		return m.plainKey(k)
+	case m.comp != nil:
+		return m.composerKey(k)
+	case m.panel != nil:
+		return m.panelKey(k)
+	case m.picker != nil:
+		return m.pickerKey(k)
 	case m.overlay:
 		return m.overlayKey(k)
 	case m.barOpen && m.barKey(k):
+		return true
+	case m.stripFocus && m.stripKey(k):
+		return true
+	case m.vis != nil && m.visualKey(k):
 		return true
 	}
 	kk := m.keys
@@ -162,6 +179,10 @@ func (m *Model) handleKey(k tea.KeyMsg) bool {
 	case key.Matches(k, kk.Close) && m.cancelMerge():
 		return true
 	case m.scrollKey(k):
+		return true
+	case key.Matches(k, kk.Accept):
+		return m.acceptKey()
+	case m.commentKey(k):
 		return true
 	}
 	switch {
@@ -211,8 +232,8 @@ func (m *Model) barKey(k tea.KeyMsg) bool {
 // toggleFilter flips AllFilters[i]; filters without data only show a note.
 func (m *Model) toggleFilter(i int) {
 	f := AllFilters[i]
-	if !hasData(f) {
-		m.note = filterLabel(f) + ": no data yet (comments and last-look marks arrive in M4)"
+	if !m.c.hasData(f) {
+		m.note = filterLabel(f) + ": no data yet (no last look recorded for this item)"
 		return
 	}
 	m.filters[i] = !m.filters[i]
@@ -225,9 +246,9 @@ func (m *Model) scrollKey(k tea.KeyMsg) bool {
 	kk, page := m.keys, max(1, m.layout().viewH)
 	switch {
 	case key.Matches(k, kk.Down):
-		m.scrollBy(1)
+		m.cursorDown()
 	case key.Matches(k, kk.Up):
-		m.scrollBy(-1)
+		m.cursorUp()
 	case key.Matches(k, kk.PageDown):
 		m.scrollBy(page)
 	case key.Matches(k, kk.PageUp):
@@ -238,8 +259,10 @@ func (m *Model) scrollKey(k tea.KeyMsg) bool {
 		m.scrollBy(-max(1, page/2))
 	case key.Matches(k, kk.Top):
 		m.off = 0
+		m.setCursorRow(m.targetIn(0, len(m.p.rows)-1, false))
 	case key.Matches(k, kk.Bottom):
 		m.off = m.maxOffset()
+		m.setCursorRow(m.targetIn(0, len(m.p.rows)-1, true))
 	default:
 		return false
 	}
@@ -345,11 +368,12 @@ func (m *Model) toggleExpand() {
 // nextUnit moves to the next visible unit, crossing into later files (by
 // change: groups).
 func (m *Model) nextUnit() {
-	// The unit after the current one: by change the pane may be scrolled
-	// above the first header (group header rows), which already counts as
-	// being on the first unit.
-	if ui := m.p.unitAt(m.off); ui+1 < len(m.p.heads) {
+	// The unit after the cursor's (the top unit when the cursor is out of
+	// view): by change the pane may be scrolled above the first header
+	// (group header rows), which already counts as being on the first unit.
+	if ui := m.cursorUnitIndex(); ui+1 < len(m.p.heads) {
 		m.off = m.p.heads[ui+1]
+		m.cursorToUnit(m.p.units[ui+1].u.ID)
 		return
 	}
 	for fi := m.sel + 1; fi < m.entries(); fi++ {
@@ -362,12 +386,17 @@ func (m *Model) nextUnit() {
 }
 
 // prevUnit moves to the previous visible unit, crossing into earlier files.
+// The cursor's unit counts as previous when its header is scrolled out of
+// view.
 func (m *Model) prevUnit() {
-	for i := len(m.p.heads) - 1; i >= 0; i-- {
-		if m.p.heads[i] < m.off {
-			m.off = m.p.heads[i]
-			return
-		}
+	ui := m.cursorUnitIndex()
+	if ui >= 0 && m.p.heads[ui] >= m.off {
+		ui--
+	}
+	if ui >= 0 {
+		m.off = m.p.heads[ui]
+		m.cursorToUnit(m.p.units[ui].u.ID)
+		return
 	}
 	for fi := m.sel - 1; fi >= 0; fi-- {
 		if id := m.edgeVisible(fi, false); id != "" {
@@ -398,6 +427,7 @@ func (m *Model) focusRow(fi int, id string) {
 	m.sel = fi
 	m.rebuild()
 	m.off = max(0, m.p.headOf(id))
+	m.cursorToUnit(id)
 }
 
 // Update handles non-key messages: the mouse wheel scrolls the pane (or
@@ -412,6 +442,9 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		m.dv, cmd = m.dv.Update(msg)
 		return m, cmd
 	}
+	if m.comp != nil || m.panel != nil || m.picker != nil {
+		return m, nil // the composer, panel and picker take the keyboard only
+	}
 	lay := m.layout()
 	x, y := mm.X-m.ox, mm.Y-m.oy
 	inList := lay.listW > 0 && x < lay.listW && y >= lay.top
@@ -419,13 +452,13 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	case tea.MouseButtonWheelUp:
 		if inList {
 			m.selectEntry(m.sel - 1)
-		} else if !m.overlay {
+		} else if !m.overlay && m.picker == nil {
 			m.scrollBy(-wheelStep)
 		}
 	case tea.MouseButtonWheelDown:
 		if inList {
 			m.selectEntry(m.sel + 1)
-		} else if !m.overlay {
+		} else if !m.overlay && m.picker == nil {
 			m.scrollBy(wheelStep)
 		}
 	case tea.MouseButtonLeft:
@@ -433,6 +466,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			m.clickList(y - lay.top)
 		}
 	}
+	m.keepCursorVisible()
 	return m, nil
 }
 

@@ -169,7 +169,7 @@ func gitFactsBlocks(p *page, d proto.Detail) {
 		p.block(b)
 		p.dim("needs labels")
 	}
-	sinceBlock(p)
+	sinceBlock(p, d, newUnitIndex(d))
 	p.block(blockConfidence)
 	p.dim("needs labels")
 }
@@ -228,7 +228,7 @@ func labelledBlocks(p *page, d proto.Detail) {
 	fidelityBlock(p, a, ix)
 	minimapBlock(p, a, ix)
 	sliceBlock(p, a)
-	sinceBlock(p)
+	sinceBlock(p, d, ix)
 	confidenceBlock(p, a)
 }
 
@@ -560,9 +560,90 @@ func sliceBlock(p *page, a *model.ItemAgg) {
 	}
 }
 
-func sinceBlock(p *page) {
+// sinceMax is how many changed units "Since you looked" lists.
+const sinceMax = 5
+
+// sinceBlock draws "Since you looked" (spec block 9) from Agg.Since: the
+// units changed since the base head and, per earlier comment of the
+// viewer's, whether the latest push addressed it. The page only formats.
+func sinceBlock(p *page, d proto.Detail, ix unitIndex) {
 	p.block(blockSince)
-	p.dim("since you looked — arrives with comments (M4)")
+	if d.Item.Kind == model.KindBranch {
+		p.dim("no reviews to compare on a branch")
+		return
+	}
+	s := d.Agg.Since
+	if s == nil {
+		p.dim("nothing to compare yet (first look)")
+		return
+	}
+	first := ""
+	if len(s.ChangedUnits) > 0 {
+		first = s.ChangedUnits[0]
+	}
+	p.add(fmt.Sprintf("since %s (%s) · %s changed", shortSHA(s.BaseSHA), sinceSource(s.Source),
+		plural(len(s.ChangedUnits), "unit")), first)
+	if s.Note != "" {
+		p.dim("  " + s.Note)
+	}
+	for _, id := range s.ChangedUnits[:min(sinceMax, len(s.ChangedUnits))] {
+		p.add("  "+ix.loc(id), id)
+	}
+	if n := len(s.ChangedUnits) - sinceMax; n > 0 {
+		p.dim(fmt.Sprintf("  … %d more", n))
+	}
+	if len(s.Comments) == 0 {
+		p.dim("  no earlier comments of yours")
+		return
+	}
+	for _, c := range s.Comments {
+		addressedRow(p, c)
+	}
+}
+
+// addressedRow is one earlier comment: "✓ addressed .91", "✗ not addressed
+// .12" or "? unknown", then path:line and the excerpt. P is the probability
+// that it was addressed; the row is unsure ("?" prefix) when neither answer
+// reaches .60.
+func addressedRow(p *page, c model.AddressedComment) {
+	var verdict string
+	switch {
+	case !c.Known:
+		verdict = "  ? unknown"
+	case c.Addressed:
+		verdict = gutter(max(c.P, 1-c.P)) + "✓ addressed " + p.prob(c.P)
+	default:
+		verdict = gutter(max(c.P, 1-c.P)) + "✗ not addressed " + p.prob(c.P)
+	}
+	right := ""
+	if c.Resolved {
+		right = "  " + p.st.dim.Render("resolved")
+	}
+	p.addFit(fmt.Sprintf("%s  %s:%d  ", verdict, c.Path, c.Line), c.Excerpt, right, c.UnitID)
+}
+
+// sinceSource names what the base head is.
+func sinceSource(src string) string {
+	if src == model.SinceReviewed {
+		return "your last review"
+	}
+	return "you looked"
+}
+
+// shortSHA is the first seven characters of a commit id.
+func shortSHA(s string) string {
+	if len(s) > 7 {
+		return s[:7]
+	}
+	return orDash(s)
+}
+
+// loc renders a unit as "path:line" (new side), falling back to where.
+func (ix unitIndex) loc(id string) string {
+	if u, ok := ix.units[id]; ok {
+		return fmt.Sprintf("%s:%d", u.Path, u.Range.New.Start)
+	}
+	return ix.where(id)
 }
 
 func confidenceBlock(p *page, a *model.ItemAgg) {

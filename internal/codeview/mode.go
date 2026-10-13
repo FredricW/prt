@@ -36,6 +36,7 @@ func (m *Model) SetMode(md Mode) bool {
 	}
 	if md != m.Mode() {
 		m.switchMode(md)
+		m.keepCursorVisible()
 	}
 	return true
 }
@@ -163,7 +164,7 @@ func (m *Model) splitKey() {
 		m.note = "split: a one-unit group cannot be split"
 		return
 	}
-	id, _ := m.cursor()
+	id := m.cursorUnitID()
 	at := -1
 	for i, u := range ge.units {
 		if u == id {

@@ -69,6 +69,16 @@ func keyMsg(s string) tea.KeyMsg {
 		return tea.KeyMsg{Type: tea.KeyCtrlC}
 	case "pgdown":
 		return tea.KeyMsg{Type: tea.KeyPgDown}
+	case "enter":
+		return tea.KeyMsg{Type: tea.KeyEnter}
+	case "ctrl+s":
+		return tea.KeyMsg{Type: tea.KeyCtrlS}
+	case "ctrl+r":
+		return tea.KeyMsg{Type: tea.KeyCtrlR}
+	case "ctrl+d":
+		return tea.KeyMsg{Type: tea.KeyCtrlD}
+	case "backspace":
+		return tea.KeyMsg{Type: tea.KeyBackspace}
 	case "space":
 		return tea.KeyMsg{Type: tea.KeySpace, Runes: []rune{' '}}
 	}
@@ -231,7 +241,7 @@ func TestChipsAndMarks(t *testing.T) {
 	contains(t, v, "~    11 +   const res")
 	contains(t, v, "◆    12 +   if (!res.ok)")
 	contains(t, v, "⋯    13 +   console.log")
-	contains(t, v, "  11    -   const res = await fetch(url);")
+	contains(t, v, " ▸11    -   const res = await fetch(url);") // the line cursor starts on the first changed line
 	contains(t, v, "  10 10   export async function")
 	contains(t, v, "·    41 + export function retryDelay")
 }
@@ -341,11 +351,15 @@ func TestDefaultFiltersAndToggle(t *testing.T) {
 	contains(t, m.View(), "┌ modified · bugfix")
 	press(t, &m, "7")
 	contains(t, m.View(), "2 units hidden by filters (f)")
+	// has comments (8) has data from M4: no unit of the fixture has a
+	// comment, so everything is hidden.
 	press(t, &m, "8")
-	if m.Note() == "" || m.FilterOn(FilterComments) {
-		t.Errorf("has comments: note %q on %v", m.Note(), m.FilterOn(FilterComments))
+	if !m.FilterOn(FilterComments) {
+		t.Error("has comments did not turn on")
 	}
-	contains(t, lines(m)[0], "has comments: no data yet")
+	contains(t, m.View(), "2 units hidden by filters (f)")
+	press(t, &m, "8")
+	// Without Agg.Since there is no last look: no data yet.
 	press(t, &m, "0")
 	if m.FilterOn(FilterSince) {
 		t.Error("changed since last look turned on without data")
@@ -696,12 +710,20 @@ func TestLazyRendering(t *testing.T) {
 	if m.cache.renders != 39 {
 		t.Errorf("second View rendered %d rows, want cached", m.cache.renders)
 	}
+	// j moves the line cursor: the row it left and the row it is on now.
 	press(t, &m, "j")
 	_ = m.View()
-	if m.cache.renders != 40 {
-		t.Errorf("scroll by one: %d rows, want 40", m.cache.renders)
+	if m.cache.renders != 41 {
+		t.Errorf("cursor down: %d rows, want 41", m.cache.renders)
 	}
-	if len(m.cache.spans) > 2*40 {
+	// ctrl+d scrolls half a page (19 rows): 19 new rows, and the cursor,
+	// scrolled out of view, moves onto the first visible line.
+	press(t, &m, "ctrl+d")
+	_ = m.View()
+	if m.cache.renders != 41+19+1 {
+		t.Errorf("half page: %d rows, want %d", m.cache.renders, 41+19+1)
+	}
+	if len(m.cache.spans) > 2*80 {
 		t.Errorf("intra-line spans for %d rows, want only visible pairs", len(m.cache.spans))
 	}
 }

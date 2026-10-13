@@ -7,6 +7,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/fredricw/prt/internal/model"
 	"github.com/fredricw/prt/internal/proto"
@@ -68,6 +69,7 @@ type overview struct {
 	vp      viewport.Model
 	anchors []string        // per content line; "" when the line has no unit
 	cells   map[int]cellRow // per content line with unit cells (minimap)
+	lines   []string        // the page's content lines (setPage only)
 
 	raw   bool // an overlay is open (raw labels, or urgency weights)
 	rawVP viewport.Model
@@ -88,7 +90,7 @@ func (o *overview) setSize(w, h int) {
 // setContent replaces the page and its anchors and scrolls to the top.
 func (o *overview) setContent(s string, anchors []string) {
 	o.vp.SetContent(s)
-	o.anchors, o.cells = anchors, nil
+	o.anchors, o.cells, o.lines = anchors, nil, nil
 	o.vp.GotoTop()
 }
 
@@ -96,6 +98,19 @@ func (o *overview) setContent(s string, anchors []string) {
 func (o *overview) setPage(p *page) {
 	o.setContent(strings.Join(p.lines, "\n"), p.anchors)
 	o.cells = p.cells
+	o.lines = p.lines
+}
+
+// scrollToBlock scrolls so the block titled title starts at the top (its
+// leading blank line included) and reports whether the page has it.
+func (o *overview) scrollToBlock(title string) bool {
+	for i, l := range o.lines {
+		if strings.TrimSpace(ansi.Strip(l)) == title {
+			o.vp.SetYOffset(max(0, i-1))
+			return true
+		}
+	}
+	return false
 }
 
 // clickAt returns the unit behind a click on content line i at display

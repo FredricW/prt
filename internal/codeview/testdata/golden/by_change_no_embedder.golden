@@ -11,7 +11,7 @@ no embedding model: groups from structural links only
   ‹save› — 1 unit hidden by filters      ┌ modified · feature · behaviour ✓ .90 · breaking .86 · b2 · tests ✗ · auth
 ── split suggestion ──────────────────── │ error_path · risk 4 · eyes
   split? web/src/styles/theme.css .74    │ L10–12 · +2 −2 · export async function getUser(id: string, opts?: RequestIni…
-                                           10    - export async function getUser(id: string) {
+                                          ▸10    - export async function getUser(id: string) {
                                            11    -   return fetchJSON(`/users/${id}`);
                                          ·    10 + export async function getUser(id: string, opts?: RequestInit) {
                                          ·    11 +   return fetchJSON(`/users/${id}`, opts);

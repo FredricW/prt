@@ -70,6 +70,19 @@ type Client interface {
 	CallLog(ctx context.Context, p proto.CallLogParams) ([]model.ReviewCall, error)
 	// SetCap sets an item's review cost cap and re-runs groups queued over it.
 	SetCap(ctx context.Context, p proto.CapParams) error
+	// SaveComment upserts or deletes a local draft comment (M4).
+	SaveComment(ctx context.Context, p proto.CommentParams) (model.Comment, error)
+	// CommentAction accepts/dismisses an ai-draft or replies to/resolves a
+	// GitHub thread (M4).
+	CommentAction(ctx context.Context, p proto.CommentActionParams) (model.Comment, error)
+	// SubmitReview posts the item's drafts as one GitHub review (M4).
+	SubmitReview(ctx context.Context, p proto.SubmitParams) (proto.SubmitResult, error)
+	// CreatePR opens a PR for a branch item and attaches its drafts (M4).
+	CreatePR(ctx context.Context, p proto.CreatePRParams) (proto.CreatePRResult, error)
+	// MarkViewed records the head the user looked at (M4, Since you looked).
+	MarkViewed(ctx context.Context, p proto.ViewedParams) error
+	// Override stores a label override and re-aggregates the item (M4: `!`).
+	Override(ctx context.Context, p proto.OverrideParams) error
 	// Events streams patches; closed by Close.
 	Events() <-chan proto.Event
 	Close() error

@@ -51,6 +51,26 @@ type content struct {
 	// that name no unit of this detail stay on their group's row only.
 	reviews      map[string]*model.Review
 	unitFindings map[string][]model.Finding
+	// unitInline is unitFindings minus the findings shown another way: one
+	// with a comment carrying its FindingKey (its ai-draft, or the draft it
+	// was accepted into) or with a FindingMark (accepted or dismissed). Only
+	// these are drawn as inline finding rows by file, so a finding never
+	// shows twice and a dismissed one goes away.
+	unitInline map[string][]model.Finding
+	// findingDone holds the FindingKeys shown another way (see unitInline).
+	findingDone map[string]bool
+
+	// Comments layer (M4): blocks are Detail.Comments as drawn (a user
+	// comment, an ai-draft, or a GitHub thread), sorted by position;
+	// unitBlocks lists the blocks drawn in each unit, in order. since is
+	// Agg.Since.ChangedUnits; sinceKnown is false without Agg.Since (the
+	// "changed since last look" filter has no data then).
+	blocks     []cblock
+	unitBlocks map[string][]int
+	since      map[string]bool
+	sinceKnown bool
+	// lineCache holds each unit's parsed diff lines (linesOf).
+	lineCache map[string][]diff.Line
 }
 
 // plain reports whether there are no units to lay out, so the component
@@ -61,10 +81,11 @@ func (c *content) plain() bool { return len(c.units) == 0 }
 // units; otherwise files come from d.Files/d.Units in path and line order.
 func buildContent(d proto.Detail) content {
 	c := content{
-		itemID: d.Item.ID,
-		units:  make(map[string]*model.ChangeUnit, len(d.Units)),
-		aggs:   map[string]*model.UnitAgg{},
-		labels: d.Labels,
+		itemID:    d.Item.ID,
+		units:     make(map[string]*model.ChangeUnit, len(d.Units)),
+		aggs:      map[string]*model.UnitAgg{},
+		labels:    d.Labels,
+		lineCache: map[string][]diff.Line{},
 	}
 	for i := range d.Units {
 		c.units[d.Units[i].ID] = &d.Units[i]
@@ -99,7 +120,20 @@ func buildContent(d proto.Detail) content {
 	if len(c.groups) > 0 && d.Agg != nil && d.Agg.Grouping != nil {
 		c.embedNote = d.Agg.Grouping.EmbedNote
 	}
+	c.findingDone = map[string]bool{}
+	for _, cm := range d.Comments {
+		if cm.FindingKey != "" {
+			c.findingDone[cm.FindingKey] = true
+		}
+	}
+	for _, fm := range d.FindingMarks {
+		c.findingDone[fm.FindingKey] = true
+	}
 	indexReviews(&c, d.Reviews)
+	indexComments(&c, d.Comments)
+	if d.Agg != nil {
+		indexSince(&c, d.Agg.Since)
+	}
 	return c
 }
 

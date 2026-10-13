@@ -2,7 +2,7 @@
   web/src/components/UserCard.tsx      █ ┌ modified · feature · behaviour ✓ .90 · breaking .86 · b2 · tests ✗ · auth
   web/src/hooks/useProfileCache.ts     □ │ error_path · risk 4 · eyes
   web/src/api/client.test.ts           ▒ │ L10–12 · +2 −2 · export async function getUser(id: string, opts?: RequestIni…
-  web/src/api/errors.ts                ·   10    - export async function getUser(id: string) {
+  web/src/api/errors.ts                ·  ▸10    - export async function getUser(id: string) {
   web/src/pages/a.tsx                  ·   11    -   return fetchJSON(`/users/${id}`);
   web/src/pages/b.tsx                  · ·    10 + export async function getUser(id: string, opts?: RequestInit) {
   web/src/pages/c.tsx                  · ·    11 +   return fetchJSON(`/users/${id}`, opts);

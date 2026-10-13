@@ -7,7 +7,7 @@
   ‹import fetchJSON from client›         
     ×5 5f · none                         ┌ deleted · refactor · behaviour ✗ .95 · tests ✓ · risk 1 · skip
 ── ungrouped (3) ─────────────────────── │ old L30–34 · +0 −5 · ApiError
-  ‹f.tsx›                                  30    - export class ApiError extends Error {
+  ‹f.tsx›                                 ▸30    - export class ApiError extends Error {
     1u 1f · fast · queued (over cap)       31    -   constructor(public status: number) {
   ‹theme.css›                              32    -     super(`HTTP ${status}`);
     1u 1f · none (skipped)                 33    -   }

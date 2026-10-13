@@ -32,6 +32,9 @@ type styles struct {
 	markLeft, markNone                      lipgloss.Style
 	cellEyes, cellSkim, cellSkip            lipgloss.Style
 	placeholder                             lipgloss.Style // placeholder group names
+	// Comments layer: block headers, dim borders and bars, the ❱ gutter
+	// mark, the strip line and the composer/panel titles.
+	cHead, cDim, threadMark, strip, panelTitle lipgloss.Style
 }
 
 func newStyles(r *lipgloss.Renderer) styles {
@@ -53,6 +56,9 @@ func newStyles(r *lipgloss.Renderer) styles {
 		markLeft: r.NewStyle().Foreground(yellow), markNone: faint,
 		cellEyes: r.NewStyle().Foreground(red), cellSkim: r.NewStyle().Foreground(yellow), cellSkip: faint,
 		placeholder: faint.Italic(true),
+		cHead:       r.NewStyle().Bold(true), cDim: faint,
+		threadMark: r.NewStyle().Foreground(lipgloss.Color("6")).Bold(true),
+		strip:      r.NewStyle().Bold(true), panelTitle: r.NewStyle().Bold(true).Reverse(true),
 	}
 }
 
@@ -87,12 +93,20 @@ func (m Model) View() string {
 		list = m.listLines(lay)
 	}
 	pane := m.paneLines(lay)
+	body := make([]string, lay.bodyH)
 	for i := range lay.bodyH {
 		if lay.listW > 0 {
-			out = append(out, list[i]+" "+pane[i])
+			body[i] = list[i] + " " + pane[i]
 		} else {
-			out = append(out, pane[i])
+			body[i] = pane[i]
 		}
+	}
+	if m.panel != nil {
+		body = m.panelOverlay(body)
+	}
+	out = append(out, body...)
+	if lay.stripH > 0 {
+		out = append(out, m.stripLines(lay.stripH)...)
 	}
 	return strings.Join(out, "\n")
 }
@@ -117,7 +131,7 @@ func (m Model) barText() string {
 		s := "[" + strconv.Itoa(i+1) + " " + filterLabel(f)
 		st := m.st.bar
 		switch {
-		case !hasData(f):
+		case !m.c.hasData(f):
 			st = m.st.barDim
 		case m.filters[i] && !m.filterActive(f):
 			s += " ✓ (no owned files, ignored)"
@@ -219,7 +233,10 @@ func (m Model) paneLines(lay layout) []string {
 	if lay.bodyH == 0 || lay.paneW <= 0 {
 		return out
 	}
-	if m.overlay {
+	switch {
+	case m.picker != nil:
+		return m.pickerView(lay, out)
+	case m.overlay:
 		return m.overlayView(lay, out)
 	}
 	title := ""
@@ -233,14 +250,30 @@ func (m Model) paneLines(lay layout) []string {
 		m.cache.width = lay.paneW
 		m.cache.lines = map[int]string{}
 	}
-	for i := 1; i < lay.bodyH; i++ {
-		ri := m.off + i - 1
-		if ri >= len(m.p.rows) {
-			break
-		}
-		out[i] = m.renderRow(ri, lay.paneW)
-	}
+	copy(out[1:], m.viewRowLines(lay))
 	return out
+}
+
+// viewRowLines renders the pane rows in view (viewH lines at most), with
+// the open composer spliced in under its anchor row (at the top when the
+// anchor is out of view).
+func (m Model) viewRowLines(lay layout) []string {
+	rows := make([]string, 0, lay.viewH)
+	var comp []string
+	inserted := true
+	if m.comp != nil {
+		comp, inserted = m.composerLines(lay.paneW), false
+		if m.comp.row < m.off || m.comp.row >= m.off+lay.viewH {
+			rows, inserted = append(rows, comp...), true
+		}
+	}
+	for ri := m.off; len(rows) < lay.viewH && ri < len(m.p.rows); ri++ {
+		rows = append(rows, m.renderRow(ri, lay.paneW))
+		if !inserted && ri == m.comp.row {
+			rows, inserted = append(rows, comp...), true
+		}
+	}
+	return rows[:min(len(rows), lay.viewH)]
 }
 
 // fileTitle is " path  +a −d", plus "(not yours)" and, when the list is
@@ -275,22 +308,26 @@ func (m Model) overlayView(lay layout, out []string) []string {
 	return out
 }
 
-// renderRow returns pane row i, from the cache when possible.
+// renderRow returns pane row i, from the cache when possible (keyed by row
+// and decoration, so moving the cursor re-renders two rows only).
 func (m Model) renderRow(i, width int) string {
-	if s, ok := m.cache.lines[i]; ok {
+	deco := m.rowDeco(i)
+	ck := i*numDecos + deco
+	if s, ok := m.cache.lines[ck]; ok {
 		return s
 	}
-	s := m.buildRow(i, width)
+	s := m.buildRow(i, deco, width)
 	m.cache.renders++
 	if len(m.cache.lines) >= maxCachedRows {
 		m.cache.lines = map[int]string{}
 	}
-	m.cache.lines[i] = s
+	m.cache.lines[ck] = s
 	return s
 }
 
-// buildRow styles pane row i; the result is at most width cells.
-func (m Model) buildRow(i, width int) string {
+// buildRow styles pane row i with decoration deco; the result is at most
+// width cells.
+func (m Model) buildRow(i, deco, width int) string {
 	r := m.p.rows[i]
 	switch r.kind {
 	case rowHeader:
@@ -300,12 +337,18 @@ func (m Model) buildRow(i, width int) string {
 	case rowMoved:
 		return m.st.moved.Render(fit("│ "+diffview.Clean(m.movedText(m.p.units[r.unit].u)), width))
 	case rowLine:
-		return m.lineRow(i, r, width)
+		return m.lineRow(i, r, deco, width)
+	case rowComment:
+		return m.commentRow(m.p.clines[r.line], deco, width)
 	case rowNoEOL:
 		text := strings.Repeat(" ", 2*m.p.gutter+4) + `\ No newline at end of file`
 		return m.st.noEOL.Render(fit(text, width))
 	case rowCollapsed:
-		return m.st.collapsed.Render(fit("▸ "+diffview.Clean(m.collapsedText(m.p.units[r.unit])), width))
+		lead := "▸ "
+		if deco == decoCursor {
+			lead = "▶ " // the cursor on a collapsed unit
+		}
+		return m.st.collapsed.Render(fit(lead+diffview.Clean(m.collapsedText(m.p.units[r.unit])), width))
 	case rowNote:
 		return m.st.hidden.Render(fit(m.p.notes[r.line], width))
 	case rowGroupHead:
@@ -405,8 +448,8 @@ func (m Model) collapsedText(pu paneUnit) string {
 	return strings.Join(parts, " · ") + " (z to expand)"
 }
 
-// lineRow renders "mark old new op text" with intra-line emphasis.
-func (m Model) lineRow(i int, r prow, width int) string {
+// lineRow renders "mark cursor old new op text" with intra-line emphasis.
+func (m Model) lineRow(i int, r prow, deco, width int) string {
 	pu := m.p.units[r.unit]
 	l := pu.lines[r.line]
 	g := m.p.gutter
@@ -417,8 +460,12 @@ func (m Model) lineRow(i int, r prow, width int) string {
 		spans = m.intraSpans(i, int(r.pair))
 	}
 	var b strings.Builder
-	b.WriteString(m.markCell(pu, l))
-	b.WriteString(" ")
+	if pu.threads[int(r.line)] {
+		b.WriteString(m.st.threadMark.Render(glyphThread))
+	} else {
+		b.WriteString(m.markCell(pu, l))
+	}
+	b.WriteString(decoGlyph(deco))
 	b.WriteString(m.st.gutter.Render(num(l.OldNo, g) + " " + num(l.NewNo, g) + " "))
 	b.WriteString(base.Render(string(rune(l.Op)) + " "))
 	diffview.WriteSegments(&b, text, spans, base, emph)

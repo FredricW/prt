@@ -1,0 +1,24 @@
+ thread · web/src/api/client.ts:old L11 · open · 2 comments                     
+alice · 2026-10-10 09:00                                                        
+  Was the old fetch call wrong?                                                 
+                                                                                
+fredricw · 2026-10-10 10:00                                                     
+  Yes: it dropped the credentials.                                              
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+reply · ctrl+s send · ctrl+r resolve · esc close                                
+┃ markdown                                                                      
+┃                                                                               
+┃                                                                               
+Comments 8 · 3 drafts · 1 pending · 1 posted · 1 ai · 2 threads (1 open) (tab f…

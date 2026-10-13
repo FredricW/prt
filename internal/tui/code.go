@@ -37,6 +37,15 @@ type codePane interface {
 	// PendingReview returns and clears the group R asked to re-review on
 	// the deep tier.
 	PendingReview() (string, bool)
+	// PendingComment returns and clears the comments-layer write made by the
+	// last key (draft saved, ai-draft accepted, reply, …).
+	PendingComment() (codeview.CommentOp, bool)
+	// HasStrip reports whether the Comments strip is shown, so the root's
+	// tab cycle includes it; SetStripFocus and StripFocused move and report
+	// keyboard focus on it.
+	HasStrip() bool
+	SetStripFocus(on bool)
+	StripFocused() bool
 	HelpBindings() [][]key.Binding
 	ShortBindings() []key.Binding
 	View() string
@@ -70,9 +79,15 @@ func (p *codeviewPane) SetMode(md codeview.Mode) bool { return p.m.SetMode(md) }
 
 func (p *codeviewPane) PendingEdit() (model.GroupEdit, bool) { return p.m.PendingEdit() }
 func (p *codeviewPane) PendingReview() (string, bool)        { return p.m.PendingReview() }
-func (p *codeviewPane) HelpBindings() [][]key.Binding        { return p.m.HelpBindings() }
-func (p *codeviewPane) ShortBindings() []key.Binding         { return p.m.ShortBindings() }
-func (p *codeviewPane) View() string                         { return p.m.View() }
+func (p *codeviewPane) HasStrip() bool                       { return p.m.HasStrip() }
+func (p *codeviewPane) SetStripFocus(on bool)                { p.m.SetStripFocus(on) }
+func (p *codeviewPane) StripFocused() bool                   { return p.m.StripFocused() }
+
+func (p *codeviewPane) JumpToComment(id string) bool               { return p.m.JumpToComment(id) }
+func (p *codeviewPane) PendingComment() (codeview.CommentOp, bool) { return p.m.PendingComment() }
+func (p *codeviewPane) HelpBindings() [][]key.Binding              { return p.m.HelpBindings() }
+func (p *codeviewPane) ShortBindings() []key.Binding               { return p.m.ShortBindings() }
+func (p *codeviewPane) View() string                               { return p.m.View() }
 
 func (p *codeviewPane) Update(msg tea.Msg) tea.Cmd {
 	var cmd tea.Cmd

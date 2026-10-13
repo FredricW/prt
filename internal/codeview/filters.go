@@ -28,9 +28,10 @@ func filterIndex(f Filter) int {
 	return -1
 }
 
-// hasData reports whether a filter can be evaluated yet; comments and
-// last-look marks arrive in M4.
-func hasData(f Filter) bool { return f != FilterComments && f != FilterSince }
+// hasData reports whether a filter can be evaluated: "changed since last
+// look" needs Agg.Since (no last look recorded: no data yet); every other
+// filter always can.
+func (c *content) hasData(f Filter) bool { return f != FilterSince || c.sinceKnown }
 
 // filterLabel is the bar text of f ("risk ≥ 3" for FilterRisk).
 func filterLabel(f Filter) string {
@@ -79,32 +80,43 @@ func (m *Model) visible(id string) bool {
 		if !m.filters[i] || !m.filterActive(f) {
 			continue
 		}
-		ok := matches(f, a)
-		if f == FilterFindings {
-			ok = m.c.hasFindings(id) // findings live on the routing rows, not the aggregate
-		}
-		if !ok {
+		if !m.c.passes(f, id, a) {
 			return false
 		}
 	}
 	return true
 }
 
+// passes reports whether unit id (aggregate a) satisfies filter f.
+// Findings live on the routing rows, comments in Detail.Comments and the
+// last-look set in Agg.Since, not on the unit aggregate.
+func (c *content) passes(f Filter, id string, a *model.UnitAgg) bool {
+	switch f {
+	case FilterFindings:
+		return c.hasFindings(id)
+	case FilterComments:
+		return c.hasComments(id)
+	case FilterSince:
+		return c.since[id]
+	}
+	return matches(f, a)
+}
+
 // filterActive reports whether an enabled filter takes effect: it has data,
 // and for "mine" the item has at least one owned file (with none, "mine"
 // would hide every unit, so it is ignored and the bar says so).
 func (m *Model) filterActive(f Filter) bool {
-	return hasData(f) && (f != FilterMine || m.c.anyOwned)
+	return m.c.hasData(f) && (f != FilterMine || m.c.anyOwned)
 }
 
 // collapsed reports whether a unit is drawn as a one-line summary: noise
 // per the aggregate (or, by file, a mechanical repeat: a non-example member
-// of a mechanical group), not unsure, without review findings, and not
-// expanded by `z` (on its file by file, on its group by change) or
+// of a mechanical group), not unsure, without review findings or comments,
+// and not expanded by `z` (on its file by file, on its group by change) or
 // FocusUnit. By change a mechanical group already shows only its example.
 func (m *Model) collapsed(id string) bool {
 	a := m.c.aggs[id]
-	if !m.c.hasAgg || a == nil || a.Unsure || m.c.hasFindings(id) || m.expandedUnits[id] {
+	if !m.c.hasAgg || a == nil || a.Unsure || m.c.hasFindings(id) || m.c.hasComments(id) || m.expandedUnits[id] {
 		return false
 	}
 	if m.byChange() {
@@ -131,16 +143,17 @@ func (m *Model) hiddenIn(ids []string) int {
 	return n
 }
 
-// SetFilter turns filter f on or off (filters without data yet are
-// ignored). It keeps the selected file and clamps the scroll.
+// SetFilter turns filter f on or off (a filter without data for this item
+// is ignored). It keeps the selected file and clamps the scroll.
 func (m *Model) SetFilter(f Filter, on bool) {
 	i := filterIndex(f)
-	if i < 0 || !hasData(f) {
+	if i < 0 || (on && !m.c.hasData(f)) {
 		return
 	}
 	m.filters[i] = on
 	m.revealed = map[string]bool{}
 	m.rebuild()
+	m.keepCursorVisible()
 }
 
 // FilterOn reports whether filter f is on.

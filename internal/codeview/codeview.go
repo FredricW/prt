@@ -24,6 +24,17 @@
 // findings never collapse. `R` asks for a deep re-review through
 // PendingReview.
 //
+// Comments (M4; comments_api.go): a line cursor (▸ between the gutter mark
+// and the line numbers) sits on a diff line or on the first row of a
+// comment block; j/k move it and scrolling keeps it in view. Detail.Comments
+// render inline under their line (user drafts, ai-drafts in a dim border,
+// GitHub threads, resolved ones collapsed; outdated ones under the unit
+// header), bodies through Glamour; lines with an open thread show ❱ in the
+// gutter. C opens the composer (V selects a range first), t the thread
+// panel, a/d/! act on ai-drafts, ! elsewhere opens the label picker; a
+// Comments strip sits at the bottom. Every write goes to the root through
+// PendingComment.
+//
 // It renders only what proto.Detail carries (Units, Labels, Files, Agg,
 // Reviews, Diff); every number comes from Detail.Agg or the routing table
 // (the TUI never does maths).
@@ -62,8 +73,10 @@ type Filter string
 // Filters in bar order; number keys 1–9 and 0 toggle them in this order.
 // The first three are on by default (spec: needs eyes, behaviour changes,
 // mine). FilterRisk means risk ≥ RiskMin. Filters hide units, never files.
-// FilterFindings keeps units with at least one review finding. Comments and
-// changed-since-last-look are placeholders until their data exists (M4).
+// FilterFindings keeps units with at least one review finding,
+// FilterComments units with any comment (user drafts, ai-drafts, threads)
+// and FilterSince the units changed since the last look
+// (Agg.Since.ChangedUnits; no data when Agg.Since is nil).
 const (
 	FilterNeedsEyes    Filter = "needs eyes"
 	FilterBehaviour    Filter = "behaviour"
@@ -120,6 +133,18 @@ type Keys struct {
 	Toggle [numFilters]key.Binding
 	// Close closes the filters bar or the raw-labels overlay (default esc).
 	Close key.Binding
+
+	// Comments layer (M4; see comments_api.go). Comment (C) opens the
+	// inline composer under the cursor line (or the Visual selection);
+	// Visual (V) starts/ends a line selection; SaveDraft (ctrl+s) saves the
+	// composer as a draft and Close (esc) discards it. Accept (a), Dismiss
+	// (d) and OverrideLabel (!) act on the ai-draft under the cursor;
+	// Thread (t) opens the side thread panel, where SaveDraft sends a reply
+	// and Resolve (ctrl+r) resolves the thread. StripJump (enter) jumps to
+	// the comment selected in the focused Comments strip.
+	Comment, Visual, SaveDraft     key.Binding
+	Accept, Dismiss, OverrideLabel key.Binding
+	Thread, Resolve, StripJump     key.Binding
 }
 
 // DefaultKeys returns the spec's bindings: j/k, pgdown/pgup/space,
@@ -140,6 +165,10 @@ func DefaultKeys() Keys {
 		Mode: b("by file / by change", "g"), MergeGroups: b("merge groups", "M"), SplitGroup: b("split group", "X"),
 		ReReview: b("re-review on deep", "R"),
 		Close:    b("close", "esc"),
+		Comment:  b("comment on line", "C"), Visual: b("select lines", "V"), SaveDraft: b("save draft", "ctrl+s"),
+		Accept: b("accept AI finding", "a"), Dismiss: b("dismiss AI finding", "d"),
+		OverrideLabel: b("dismiss + override label", "!"),
+		Thread:        b("thread panel", "t"), Resolve: b("resolve thread", "ctrl+r"), StripJump: b("jump to comment", "enter"),
 	}
 	for i := range k.Toggle {
 		s := strconv.Itoa((i + 1) % 10)
@@ -189,6 +218,24 @@ type Model struct {
 
 	p     *pane
 	cache *renderCache
+
+	// Comments layer (M4). cur is the line cursor (a diff line or a comment
+	// block's first row) and curRow its pane row (-1 when the pane has
+	// none); vis is the anchor of a V selection (visRow its row). comp,
+	// panel and picker are the open composer, thread panel and label
+	// picker (nil when closed). md renders comment bodies.
+	cur            curKey
+	curRow         int
+	vis            *curKey
+	visRow         int
+	comp           *composer
+	panel          *threadPanel
+	picker         *labelPicker
+	stripFocus     bool
+	stripSel       int
+	stripOff       int
+	pendingComment *CommentOp
+	md             *markdown
 }
 
 // New builds an empty component. r may not be nil.
@@ -196,7 +243,8 @@ func New(r *lipgloss.Renderer) Model {
 	if r == nil {
 		r = lipgloss.DefaultRenderer()
 	}
-	m := Model{keys: DefaultKeys(), r: r, st: newStyles(r), dv: diffview.New(r), w: 80, h: 20, filters: defaultFilters()}
+	m := Model{keys: DefaultKeys(), r: r, st: newStyles(r), dv: diffview.New(r), w: 80, h: 20, filters: defaultFilters(),
+		curRow: -1, visRow: -1, md: newMarkdown(r)}
 	m.resetView()
 	m.rebuild()
 	return m
@@ -211,10 +259,18 @@ func (m *Model) SetSize(w, h int) {
 	m.w, m.h = max(1, w), max(1, h)
 	m.dv.SetSize(m.w, m.h)
 	if m.layout().paneW != oldPaneW {
-		m.rebuildKeep() // header chips wrap to the pane width
-		return
+		m.rebuildKeep() // header chips and comment bodies wrap to the pane width
+	} else {
+		m.clamp()
 	}
-	m.clamp()
+	if m.comp != nil {
+		m.comp.ta.SetWidth(max(4, m.layout().paneW-blockIndent))
+	}
+	if m.panel != nil {
+		_, cw := m.panelGeom()
+		m.panel.ta.SetWidth(max(4, cw))
+	}
+	m.keepCursorVisible()
 }
 
 // SetOrigin tells the component where its top-left cell is on screen, so
@@ -227,7 +283,36 @@ func (m *Model) SetOrigin(x, y int) { m.ox, m.oy = x, y }
 // on the same unit, even when regrouping moved it to another group.
 // Another item resets selection, scroll and expansions but keeps filters
 // and the requested mode.
+//
+// Comments: a reload keeps the line cursor, an open composer (drawn under
+// its line again), the thread panel while its thread exists, the label
+// picker while its unit exists and a V selection while its anchor is
+// drawn; another item closes them all.
 func (m *Model) SetDetail(d proto.Detail) {
+	m.setDetail(d)
+	m.settleComments()
+	m.keepCursorVisible()
+}
+
+// settleComments closes what a reload removed: the panel's thread, the
+// picker's unit, the selection's anchor, the strip (no comments left).
+func (m *Model) settleComments() {
+	if m.panel != nil && m.panelBlock() == nil {
+		m.panel = nil
+	}
+	if m.picker != nil && m.c.units[m.picker.unit] == nil {
+		m.picker = nil
+	}
+	if m.vis != nil && m.visRow < 0 {
+		m.vis = nil
+	}
+	if !m.HasStrip() {
+		m.stripFocus = false
+	}
+	m.clampStrip()
+}
+
+func (m *Model) setDetail(d proto.Detail) {
 	same := d.Item.ID != "" && d.Item.ID == m.c.itemID
 	prevPath, prevOff, prevDV, prevB := m.selectedPath(), m.off, m.dv.Offset(), m.byChange()
 	prevUnit, prevDelta := m.cursor()
@@ -283,6 +368,10 @@ func (m *Model) resetView() {
 	m.mergeMark = ""
 	m.pendingReview = ""
 	m.note = ""
+	m.cur, m.curRow, m.vis, m.visRow = curKey{}, -1, nil, -1
+	m.comp, m.panel, m.picker = nil, nil, nil
+	m.stripFocus, m.stripSel, m.stripOff = false, 0, 0
+	m.pendingComment = nil
 }
 
 // Clear empties the component (selection changed, detail loading). Filter
@@ -309,6 +398,13 @@ func (m *Model) rebuild() {
 	}
 	m.cache = newRenderCache()
 	m.clamp()
+	m.resolveCursor()
+	if m.vis != nil {
+		m.visRow = m.rowOfKey(*m.vis)
+	}
+	if m.comp != nil {
+		m.comp.row = m.anchorRow(m.comp.key)
+	}
 }
 
 // rebuildKeep rebuilds and keeps the current unit's header where it was
@@ -385,21 +481,24 @@ func (m *Model) place(id string, delta int) bool {
 	return true
 }
 
-// Capturing reports whether the filters bar or the raw-labels overlay is
-// open, so the root model routes every key (including 1–9 and esc) here.
-func (m Model) Capturing() bool { return !m.c.plain() && (m.barOpen || m.overlay) }
+// Capturing reports whether the filters bar, the raw-labels overlay, the
+// comment composer, the thread panel or the label picker is open, so the
+// root model routes every key (including 1–9, q and esc) here.
+func (m Model) Capturing() bool {
+	return !m.c.plain() && (m.barOpen || m.overlay || m.comp != nil || m.panel != nil || m.picker != nil)
+}
 
 // Note returns the one-shot note shown in the bar line ("" when none).
 func (m Model) Note() string { return m.note }
 
-// CurrentUnit returns the unit under the cursor: the unit whose header is
-// at or above the top of the pane (the first unit when the pane is scrolled
-// above every header).
+// CurrentUnit returns the unit under the cursor: the line cursor's unit
+// when it is in view, else the unit whose header is at or above the top of
+// the pane (the first unit when the pane is scrolled above every header).
 func (m Model) CurrentUnit() (model.ChangeUnit, bool) {
 	if m.p == nil || m.c.plain() {
 		return model.ChangeUnit{}, false
 	}
-	ui := m.p.unitAt(m.off)
+	ui := m.cursorUnitIndex()
 	if ui < 0 {
 		return model.ChangeUnit{}, false
 	}
@@ -438,31 +537,74 @@ func (m *Model) FocusUnit(unitID string) bool {
 	m.sel = fi
 	m.rebuild()
 	m.off = max(0, m.p.headOf(unitID)) // may overscroll so the header is on top
+	m.cursorToUnit(unitID)
 	m.ensureListVisible()
+	m.keepCursorVisible()
 	return true
 }
 
 // HelpBindings returns the bindings for the `?` overlay, grouped in rows.
-// By change, J/K read "next/previous group".
+// By change, J/K read "next/previous group". The comment keys form their
+// own row; while the composer, thread panel or strip has the keyboard its
+// keys come first.
 func (m Model) HelpBindings() [][]key.Binding {
 	k := m.entryKeys()
-	return [][]key.Binding{
+	rows := [][]key.Binding{
 		{k.Down, k.Up, k.PageDown, k.PageUp, k.HalfPageDown, k.HalfPageUp, k.Top, k.Bottom},
 		{k.NextUnit, k.PrevUnit, k.NextFile, k.PrevFile},
 		{k.Filters, k.Expand, k.RawLabels},
 		{k.Mode, k.MergeGroups, k.SplitGroup, k.ReReview},
+		{k.Comment, k.Visual, k.Thread, k.Accept, k.Dismiss, k.OverrideLabel},
 	}
+	if open := m.modalBindings(); open != nil {
+		rows = append([][]key.Binding{open}, rows...)
+	}
+	return rows
 }
 
 // ShortBindings returns the status-line hints; merge, split and re-review
-// only by change.
+// only by change. While the composer, thread panel, label picker or strip
+// has the keyboard only its keys are listed.
 func (m Model) ShortBindings() []key.Binding {
-	k := m.entryKeys()
-	if m.byChange() {
-		return []key.Binding{k.NextUnit, k.PrevUnit, k.NextFile, k.PrevFile, k.MergeGroups, k.SplitGroup,
-			k.ReReview, k.Filters, k.Expand, k.RawLabels, k.Mode}
+	if open := m.modalBindings(); open != nil {
+		return open
 	}
-	return []key.Binding{k.NextUnit, k.PrevUnit, k.NextFile, k.PrevFile, k.Filters, k.Expand, k.RawLabels, k.Mode}
+	k := m.entryKeys()
+	comments := []key.Binding{k.Comment, k.Visual, k.Thread, k.Accept, k.Dismiss, k.OverrideLabel}
+	if m.byChange() {
+		return append([]key.Binding{k.NextUnit, k.PrevUnit, k.NextFile, k.PrevFile, k.MergeGroups, k.SplitGroup,
+			k.ReReview, k.Filters, k.Expand, k.RawLabels, k.Mode}, comments...)
+	}
+	return append([]key.Binding{k.NextUnit, k.PrevUnit, k.NextFile, k.PrevFile, k.Filters, k.Expand, k.RawLabels, k.Mode},
+		comments...)
+}
+
+// modalBindings are the keys of whatever holds the keyboard (composer,
+// thread panel, label picker, V selection, focused strip), nil otherwise.
+func (m Model) modalBindings() []key.Binding {
+	k := m.keys
+	discard := withHelp(k.Close, "discard")
+	switch {
+	case m.c.plain():
+		return nil
+	case m.comp != nil:
+		return []key.Binding{k.SaveDraft, discard}
+	case m.panel != nil:
+		return []key.Binding{withHelp(k.SaveDraft, "send reply"), k.Resolve, k.Close}
+	case m.picker != nil:
+		return []key.Binding{k.Down, k.Up, withHelp(k.StripJump, "pick"), k.Close}
+	case m.vis != nil:
+		return []key.Binding{k.Down, k.Up, k.Comment, withHelp(k.Close, "cancel")}
+	case m.stripFocus:
+		return []key.Binding{k.Down, k.Up, k.StripJump}
+	}
+	return nil
+}
+
+// withHelp returns b with another description.
+func withHelp(b key.Binding, desc string) key.Binding {
+	b.SetHelp(b.Help().Key, desc)
+	return b
 }
 
 // entryKeys returns the bindings with the J/K descriptions of the mode in

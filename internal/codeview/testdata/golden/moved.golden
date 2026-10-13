@@ -4,7 +4,7 @@
   web/legacy/util.ts                  ▒█ ┌ modified · bugfix · behaviour ✓ .80 · b1 · tests ✓ · auth · risk 3 · eyes
                                          │ L23–25 · +1 −1 · getSession
                                            20 23   export function getSession() {
-                                           21    -   return parseCookie(document.cookie).sid;
+                                          ▸21    -   return parseCookie(document.cookie).sid;
                                          ◆    24 +   return parseCookie(document.cookie).sid ?? null;
                                            22 25   }
                                          

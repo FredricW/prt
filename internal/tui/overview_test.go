@@ -79,7 +79,7 @@ func TestOverviewEmptyBlocksCollapse(t *testing.T) {
 	for _, want := range []string{
 		"no changed lines", "+0 −0 → ~0 lines that matter · ~0 min · 0 of 0 chunks need eyes",
 		"no contract changes", "nothing flagged", "risk unknown", "no risky chunks",
-		"no description bullets", "no units", "no modules", "arrives with comments (M4)", "all labels confident",
+		"no description bullets", "no units", "no modules", "nothing to compare yet (first look)", "all labels confident",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("empty overview missing %q:\n%s", want, got)

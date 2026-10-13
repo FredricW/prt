@@ -204,6 +204,7 @@ func applyPR(it *model.Item, pr gh.PR, head string) {
 	it.Ref, it.BaseRef, it.Title, it.Body, it.Author = pr.HeadRef, pr.BaseRef, pr.Title, pr.Body, pr.Author
 	it.Reviewers, it.CI, it.Labels, it.URL, it.Draft = pr.Reviewers, pr.CI, pr.Labels, pr.URL, pr.Draft
 	it.ViewerApproved, it.ReviewRequested = pr.ViewerApproved, pr.ReviewRequested
+	it.ViewerReviewedSHA = pr.ViewerReviewedSHA
 	it.OpenThreads, it.CrossRepo = pr.OpenThreads, pr.CrossRepo
 	if pr.Additions+pr.Deletions > 0 { // fixtures may omit counts; keep the diff's
 		it.Additions, it.Deletions = pr.Additions, pr.Deletions

@@ -27,11 +27,13 @@ import (
 // Focus is which pane has keyboard focus.
 type Focus int
 
-// Focus targets. The bottom strip (spec: tab cycles picker → main → strip)
-// arrives with later milestones.
+// Focus targets (spec: tab cycles picker → main pane → bottom strip).
+// FocusStrip is the Code page's Comments strip; it is only reachable while
+// the Code tab shows a strip, and its keys go to the Code page.
 const (
 	FocusPicker Focus = iota
 	FocusMain
+	FocusStrip
 )
 
 // Tab is the main-pane tab.
@@ -147,6 +149,17 @@ type Model struct {
 	logNote string // latest daemon log note ("GitHub unavailable")
 	confirm *confirmCheckout
 
+	// form is the open submit-review or create-PR form (nil when none); it
+	// captures every key. newDialog builds it (nil: Huh); tests script it.
+	form      *openForm
+	newDialog func(formSpec, *formValues) dialog
+	// viewed holds "item@analysedSHA" keys already sent to MarkViewed this
+	// session.
+	viewed map[string]bool
+	// selectAfter is the id of a just-created PR item the picker moves to
+	// once it is listed.
+	selectAfter string
+
 	width, height int
 }
 
@@ -183,6 +196,7 @@ func NewWithOptions(c daemon.Client, r *lipgloss.Renderer, o Options) Model {
 		requested: map[string]string{},
 		stages:    map[string]model.Stage{},
 		runLogs:   map[string][]model.RunLog{},
+		viewed:    map[string]bool{},
 		strip:     pipeview.StageStrip,
 		width:     120,
 		height:    40,
@@ -329,11 +343,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		m.layout()
+		m.sizeForm()
 		return m, nil
 	case tea.KeyMsg:
-		return m.handleKey(msg)
+		return afterInput(m.handleKey(msg))
 	case tea.MouseMsg:
-		return m.handleMouse(msg)
+		return afterInput(m.handleMouse(msg))
 	case itemsMsg:
 		return m.onItems(msg)
 	case reloadedMsg:
@@ -350,10 +365,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		next, cmd := m.onItems(itemsMsg{items: msg.items})
 		return next, tea.Batch(cmd, again)
 	case detailMsg:
-		if msg.seq == m.detailSeq {
-			m.applyDetail(msg.d)
+		if msg.seq != m.detailSeq {
+			return m, nil
 		}
-		return m, nil
+		m.applyDetail(msg.d)
+		m.syncFocus()
+		return m, m.markViewed()
 	case eventMsg:
 		return m.onEvent(proto.Event(msg))
 	case spinner.TickMsg:
@@ -400,13 +417,29 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if next, cmd, ok := m.onPipeMsg(msg); ok {
 		return next, cmd
 	}
+	if next, cmd, ok := m.onCommentMsg(msg); ok {
+		return next, cmd
+	}
+	if m.form != nil {
+		// The form's own messages (next field, cursor blink, …).
+		return m.updateForm(msg)
+	}
 	return m, nil
+}
+
+// afterInput runs after every key and mouse message: it keeps the strip
+// focus in step and marks the shown item viewed when the main pane has
+// focus.
+func afterInput(tm tea.Model, cmd tea.Cmd) (tea.Model, tea.Cmd) {
+	m := tm.(Model)
+	m.syncFocus()
+	return m, batch(cmd, m.markViewed())
 }
 
 // handleMouse implements the spec's mouse support: the wheel scrolls the
 // pane under the pointer, a left click on a picker row selects that item.
 func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
-	if m.confirm != nil || m.showHelp {
+	if m.confirm != nil || m.showHelp || m.form != nil {
 		return m, nil
 	}
 	sw, _, bh := m.dims()
@@ -465,6 +498,7 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 
 func (m Model) onItems(msg itemsMsg) (tea.Model, tea.Cmd) {
 	changed := m.picker.setItems(msg.items)
+	changed = m.takeSelectAfter() || changed
 	if msg.err != nil {
 		m.note = msg.err.Error()
 	}
@@ -604,9 +638,12 @@ func (m Model) handleKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if k.String() == "ctrl+c" {
 		return m, tea.Quit
 	}
-	if !m.showHelp && m.focus == FocusMain {
+	if m.form != nil {
+		return m.updateForm(k)
+	}
+	if !m.showHelp && m.focus != FocusPicker {
 		if next, ok := m.routeMain(k); ok {
-			cmd := tea.Batch(next.sendGroupEdit(), next.sendReReview(), next.pipeActionCmd())
+			cmd := batch(next.sendGroupEdit(), next.sendReReview(), next.pipeActionCmd(), next.sendComment())
 			return next, cmd
 		}
 	}
@@ -687,13 +724,16 @@ func (m Model) handleGlobalKey(k tea.KeyMsg) (Model, tea.Cmd, bool) {
 	switch {
 	case key.Matches(k, km.Help):
 		m.showHelp = true
-	case key.Matches(k, km.NextFocus), key.Matches(k, km.PrevFocus):
-		// Two panes until the bottom strip exists, so both directions toggle.
-		if m.focus == FocusPicker {
-			m.focus = FocusMain
-		} else {
-			m.focus = FocusPicker
-		}
+	case key.Matches(k, km.NextFocus):
+		m.cycleFocus(1)
+	case key.Matches(k, km.PrevFocus):
+		m.cycleFocus(-1)
+	case key.Matches(k, km.Approve):
+		return m, m.openSubmit(proto.EventApprove), true
+	case key.Matches(k, km.RequestChanges):
+		return m, m.openSubmit(proto.EventRequestChanges), true
+	case key.Matches(k, km.Submit):
+		return m, m.openSubmit(proto.EventComment), true
 	case key.Matches(k, km.Pipeline):
 		m.togglePipeline()
 	case key.Matches(k, km.Back) && m.tab == TabPipeline && m.focus == FocusMain:
@@ -879,6 +919,9 @@ func (m Model) viewMain(w int) string {
 	if m.showHelp {
 		return head + "\n" + m.viewHelp(w)
 	}
+	if m.form != nil {
+		return head + "\n" + m.viewForm()
+	}
 	it, ok := m.picker.selected()
 	switch {
 	case !ok:
@@ -919,6 +962,8 @@ func (m Model) viewStatus() string {
 	switch {
 	case m.confirm != nil:
 		left = m.st.prompt.Render("work tree dirty — checkout " + orDash(m.confirm.ref) + " anyway? y/N")
+	case m.form != nil:
+		left = m.st.dim.Render("enter next · enter on the last field submits · esc cancels")
 	case m.note != "":
 		left = m.note
 	default:
@@ -952,6 +997,11 @@ func (m Model) statusCounts() string {
 	s := plural(len(m.picker.items), "item")
 	if busy > 0 {
 		s += fmt.Sprintf(" · %d busy", busy)
+	}
+	if m.detail != nil {
+		if n := countDrafts(m.detail.Comments).total(); n > 0 {
+			s = plural(n, "draft") + " · " + s
+		}
 	}
 	if m.logNote != "" {
 		s = m.logNote + " · " + s

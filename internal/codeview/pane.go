@@ -24,6 +24,7 @@ const (
 	rowGroupHead                // chips strip of a group (by change)
 	rowText                     // a styled text line (by change: why block, counts)
 	rowFinding                  // one row of an inline review finding (by file)
+	rowComment                  // one row of an inline comment block
 )
 
 // textStyle picks the style of a rowText line.
@@ -56,7 +57,9 @@ type paneUnit struct {
 	a     *model.UnitAgg // nil without an aggregate
 	lines []diff.Line    // nil when collapsed
 	marks map[int]model.LineMark
-	chips []chip
+	// threads marks the line indices with an unresolved GitHub thread (❱).
+	threads map[int]bool
+	chips   []chip
 	// chipRows splits chips into header rows that fit the pane width:
 	// chipRows[k] = [start, end) indices into chips for header row k.
 	chipRows [][2]int
@@ -100,6 +103,8 @@ type pane struct {
 	texts     []ptext
 	// flines are the inline finding rows (by file).
 	flines []fline
+	// clines are the inline comment rows.
+	clines []cline
 }
 
 func (p *pane) addText(s string, st textStyle) {
@@ -157,13 +162,14 @@ func (m *Model) addUnit(p *pane, id string) int {
 		p.rows = append(p.rows, prow{kind: rowCollapsed, unit: ui, pair: -1}, prow{kind: rowBlank, pair: -1})
 		return 0
 	}
-	pu.lines = unitLines(u)
+	pu.lines = m.c.linesOf(id)
 	if m.c.labelled && pu.a != nil && len(pu.a.Lines) > 0 {
 		pu.marks = make(map[int]model.LineMark, len(pu.a.Lines))
 		for _, lm := range pu.a.Lines {
 			pu.marks[lm.Line] = lm
 		}
 	}
+	pu.threads = m.c.threadLines(id)
 	pu.chips = unitChips(u, pu.a, m.c.labelled)
 	pu.chipRows = wrapChips(pu.chips, m.layout().paneW)
 	p.units = append(p.units, pu)
@@ -174,8 +180,10 @@ func (m *Model) addUnit(p *pane, id string) int {
 	if u.MovedFrom != "" {
 		p.rows = append(p.rows, prow{kind: rowMoved, unit: ui, pair: -1})
 	}
+	w := m.layout().paneW
 	atLine, rest := m.inlineFindings(id, pu.lines)
-	m.addFindingRows(p, ui, rest, m.layout().paneW)
+	m.addFindingRows(p, ui, rest, w)
+	m.addBlockRows(p, ui, m.c.blocksAt(id, -1), w)
 	lineRow := make([]int32, len(pu.lines))
 	maxNo := 0
 	for li, l := range pu.lines {
@@ -185,8 +193,9 @@ func (m *Model) addUnit(p *pane, id string) int {
 			p.rows = append(p.rows, prow{kind: rowNoEOL, unit: ui, line: int32(li), pair: -1})
 		}
 		if l.Op != diff.Del && atLine[l.NewNo] != nil {
-			m.addFindingRows(p, ui, atLine[l.NewNo], m.layout().paneW)
+			m.addFindingRows(p, ui, atLine[l.NewNo], w)
 		}
+		m.addBlockRows(p, ui, m.c.blocksAt(id, li), w)
 		maxNo = max(maxNo, l.OldNo, l.NewNo)
 	}
 	for _, pr := range diff.Pair(diff.Hunk{Lines: pu.lines}) {
@@ -199,9 +208,10 @@ func (m *Model) addUnit(p *pane, id string) int {
 
 // inlineFindings returns unit id's findings to draw inline (by file only;
 // by change they are listed after the group's units): those under a new-side
-// line of lines, and the rest, drawn under the unit's header.
+// line of lines, and the rest, drawn under the unit's header. Findings shown
+// as comments or marked accepted/dismissed are left out (content.unitInline).
 func (m *Model) inlineFindings(id string, lines []diff.Line) (map[int][]model.Finding, []model.Finding) {
-	fs := m.c.unitFindings[id]
+	fs := m.c.unitInline[id]
 	if m.byChange() || len(fs) == 0 {
 		return nil, nil
 	}
@@ -228,6 +238,22 @@ func (p *pane) unitAt(r int) int {
 		best = i
 	}
 	return best
+}
+
+// unitSpan returns the first and last rows of unit id (its header through
+// the row before the next unit's header), or -1, -1.
+func (p *pane) unitSpan(id string) (int, int) {
+	for i, pu := range p.units {
+		if pu.u.ID != id {
+			continue
+		}
+		end := len(p.rows) - 1
+		if i+1 < len(p.heads) {
+			end = p.heads[i+1] - 1
+		}
+		return p.heads[i], end
+	}
+	return -1, -1
 }
 
 // headOf returns the header row of unit id, or -1.

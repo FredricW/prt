@@ -346,6 +346,42 @@ func (s *server) call(ctx context.Context, sc *serverConn, m proto.Message) (any
 			return nil, err
 		}
 		return empty{}, c.SetCap(ctx, p)
+	case proto.MethodComment:
+		p, err := params[proto.CommentParams](m)
+		if err != nil {
+			return nil, err
+		}
+		return c.SaveComment(ctx, p)
+	case proto.MethodCommentAction:
+		p, err := params[proto.CommentActionParams](m)
+		if err != nil {
+			return nil, err
+		}
+		return c.CommentAction(ctx, p)
+	case proto.MethodSubmitReview:
+		p, err := params[proto.SubmitParams](m)
+		if err != nil {
+			return nil, err
+		}
+		return c.SubmitReview(ctx, p)
+	case proto.MethodCreatePR:
+		p, err := params[proto.CreatePRParams](m)
+		if err != nil {
+			return nil, err
+		}
+		return c.CreatePR(ctx, p)
+	case proto.MethodViewed:
+		p, err := params[proto.ViewedParams](m)
+		if err != nil {
+			return nil, err
+		}
+		return empty{}, c.MarkViewed(ctx, p)
+	case proto.MethodOverride:
+		p, err := params[proto.OverrideParams](m)
+		if err != nil {
+			return nil, err
+		}
+		return empty{}, c.Override(ctx, p)
 	case proto.MethodSubscribe:
 		sc.subscribe()
 		return empty{}, nil

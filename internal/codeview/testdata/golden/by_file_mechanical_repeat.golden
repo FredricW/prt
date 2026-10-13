@@ -1,5 +1,5 @@
   web/src/api/client.ts               █·  web/src/pages/b.tsx  +1 −1                                                    
-  web/src/components/UserCard.tsx      █ ▸ mechanical repeat of a.tsx (×5) · +1 −1 (z to expand)
+  web/src/components/UserCard.tsx      █ ▶ mechanical repeat of a.tsx (×5) · +1 −1 (z to expand)
   web/src/hooks/useProfileCache.ts     □ 
   web/src/api/client.test.ts           ▒ 
   web/src/api/errors.ts                · 

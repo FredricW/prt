@@ -252,6 +252,44 @@ func (s *Socket) SetCap(ctx context.Context, p proto.CapParams) error {
 	return s.call(ctx, proto.MethodSetCap, p, nil)
 }
 
+// SaveComment implements Client.
+func (s *Socket) SaveComment(ctx context.Context, p proto.CommentParams) (model.Comment, error) {
+	var c model.Comment
+	err := s.call(ctx, proto.MethodComment, p, &c)
+	return c, err
+}
+
+// CommentAction implements Client.
+func (s *Socket) CommentAction(ctx context.Context, p proto.CommentActionParams) (model.Comment, error) {
+	var c model.Comment
+	err := s.call(ctx, proto.MethodCommentAction, p, &c)
+	return c, err
+}
+
+// SubmitReview implements Client.
+func (s *Socket) SubmitReview(ctx context.Context, p proto.SubmitParams) (proto.SubmitResult, error) {
+	var r proto.SubmitResult
+	err := s.call(ctx, proto.MethodSubmitReview, p, &r)
+	return r, err
+}
+
+// CreatePR implements Client.
+func (s *Socket) CreatePR(ctx context.Context, p proto.CreatePRParams) (proto.CreatePRResult, error) {
+	var r proto.CreatePRResult
+	err := s.call(ctx, proto.MethodCreatePR, p, &r)
+	return r, err
+}
+
+// MarkViewed implements Client.
+func (s *Socket) MarkViewed(ctx context.Context, p proto.ViewedParams) error {
+	return s.call(ctx, proto.MethodViewed, p, nil)
+}
+
+// Override implements Client.
+func (s *Socket) Override(ctx context.Context, p proto.OverrideParams) error {
+	return s.call(ctx, proto.MethodOverride, p, nil)
+}
+
 // Events implements Client. The channel closes when the connection drops or
 // Close is called.
 func (s *Socket) Events() <-chan proto.Event { return s.events }

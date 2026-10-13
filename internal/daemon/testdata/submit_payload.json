@@ -1,0 +1,21 @@
+{
+  "commit_id": "h1",
+  "body": "Two things before merge.",
+  "event": "REQUEST_CHANGES",
+  "comments": [
+    {
+      "path": "a.go",
+      "line": 12,
+      "side": "RIGHT",
+      "body": "Handle the error here."
+    },
+    {
+      "path": "a.go",
+      "line": 13,
+      "side": "RIGHT",
+      "start_line": 11,
+      "start_side": "RIGHT",
+      "body": "This block could be a helper."
+    }
+  ]
+}

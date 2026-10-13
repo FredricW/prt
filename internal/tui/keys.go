@@ -40,6 +40,16 @@ type KeyMap struct {
 	// routing rules (e), call log (c; elsewhere c stays Checkout), raise
 	// the cost cap ($).
 	ForceDeep, SkipReview, RerunStage, EditRules, CallLog, RaiseCap key.Binding
+	// Review (M4, item scope). Approve (a) and RequestChanges (A) open the
+	// submit form with that verdict preselected; Submit (S) opens it. On a
+	// branch without a PR, Submit and Approve open the create-PR form. The
+	// Code page sees a first (Accept on an ai-draft).
+	Approve, RequestChanges, Submit key.Binding
+	// Code page comments layer (handed to codeview): comment on line (C),
+	// line selection (V), save draft (ctrl+s), accept / dismiss an AI
+	// finding (a / d), dismiss and override a label (!), thread panel (t),
+	// resolve thread (ctrl+r).
+	Comment, Visual, SaveDraft, Accept, Dismiss, OverrideLabel, Thread, Resolve key.Binding
 	// Global.
 	Help, Quit key.Binding
 	// Confirm prompts.
@@ -52,47 +62,58 @@ func DefaultKeyMap() KeyMap {
 		return key.NewBinding(key.WithKeys(keys...), key.WithHelp(helpKey(keys), desc))
 	}
 	return KeyMap{
-		Up:           b("up", "k", "up"),
-		Down:         b("down", "j", "down"),
-		Top:          b("top", "g", "home"),
-		Bottom:       b("bottom", "G", "end"),
-		Sort:         b("cycle sort", "s"),
-		Focus:        b("focus main pane", "enter"),
-		Back:         b("back to picker", "esc"),
-		NextFocus:    b("next pane", "tab"),
-		PrevFocus:    b("previous pane", "shift+tab"),
-		Refresh:      b("refresh item", "r"),
-		Overview:     b("overview tab", "1"),
-		Code:         b("code tab", "2"),
-		Open:         b("open on GitHub", "o"),
-		Checkout:     b("git checkout", "c"),
-		PageDown:     b("page down", "pgdown", " "),
-		PageUp:       b("page up", "pgup"),
-		HalfPageDown: b("half page down", "ctrl+d"),
-		HalfPageUp:   b("half page up", "ctrl+u"),
-		NextFile:     b("next file", "J", "]"),
-		PrevFile:     b("previous file", "K", "["),
-		NextUnit:     b("next unit", "n"),
-		PrevUnit:     b("previous unit", "p"),
-		Filters:      b("filters", "f"),
-		Expand:       b("expand noise", "z"),
-		RawLabels:    b("raw labels", "L"),
-		Mode:         b("by file / by change", "g"),
-		MergeGroups:  b("merge groups", "M"),
-		SplitGroup:   b("split group", "X"),
-		Pipeline:     b("pipeline page", "P"),
-		Weights:      b("urgency weights", "w"),
-		ReReview:     b("re-review on deep", "R"),
-		ForceDeep:    b("force deep", "D"),
-		SkipReview:   b("skip review", "s"),
-		RerunStage:   b("re-run stage", "r"),
-		EditRules:    b("edit rules", "e"),
-		CallLog:      b("call log", "c"),
-		RaiseCap:     b("raise cost cap", "$"),
-		Help:         b("help", "?"),
-		Quit:         b("quit", "q", "ctrl+c"),
-		Yes:          b("yes", "y", "Y"),
-		No:           b("no", "n", "N", "esc"),
+		Up:             b("up", "k", "up"),
+		Down:           b("down", "j", "down"),
+		Top:            b("top", "g", "home"),
+		Bottom:         b("bottom", "G", "end"),
+		Sort:           b("cycle sort", "s"),
+		Focus:          b("focus main pane", "enter"),
+		Back:           b("back to picker", "esc"),
+		NextFocus:      b("next pane", "tab"),
+		PrevFocus:      b("previous pane", "shift+tab"),
+		Refresh:        b("refresh item", "r"),
+		Overview:       b("overview tab", "1"),
+		Code:           b("code tab", "2"),
+		Open:           b("open on GitHub", "o"),
+		Checkout:       b("git checkout", "c"),
+		PageDown:       b("page down", "pgdown", " "),
+		PageUp:         b("page up", "pgup"),
+		HalfPageDown:   b("half page down", "ctrl+d"),
+		HalfPageUp:     b("half page up", "ctrl+u"),
+		NextFile:       b("next file", "J", "]"),
+		PrevFile:       b("previous file", "K", "["),
+		NextUnit:       b("next unit", "n"),
+		PrevUnit:       b("previous unit", "p"),
+		Filters:        b("filters", "f"),
+		Expand:         b("expand noise", "z"),
+		RawLabels:      b("raw labels", "L"),
+		Mode:           b("by file / by change", "g"),
+		MergeGroups:    b("merge groups", "M"),
+		SplitGroup:     b("split group", "X"),
+		Pipeline:       b("pipeline page", "P"),
+		Weights:        b("urgency weights", "w"),
+		ReReview:       b("re-review on deep", "R"),
+		ForceDeep:      b("force deep", "D"),
+		SkipReview:     b("skip review", "s"),
+		RerunStage:     b("re-run stage", "r"),
+		EditRules:      b("edit rules", "e"),
+		CallLog:        b("call log", "c"),
+		RaiseCap:       b("raise cost cap", "$"),
+		Approve:        b("approve", "a"),
+		RequestChanges: b("request changes", "A"),
+		Submit:         b("submit review", "S"),
+		Comment:        b("comment on line", "C"),
+		Visual:         b("select lines", "V"),
+		SaveDraft:      b("save draft", "ctrl+s"),
+		Accept:         b("accept AI finding", "a"),
+		Dismiss:        b("dismiss AI finding", "d"),
+		OverrideLabel:  b("dismiss + override label", "!"),
+		Thread:         b("thread panel", "t"),
+		Resolve:        b("resolve thread", "ctrl+r"),
+		Help:           b("help", "?"),
+		Quit:           b("quit", "q", "ctrl+c"),
+		Yes:            b("yes", "y", "Y"),
+		No:             b("no", "n", "N", "esc"),
 	}
 }
 
@@ -118,6 +139,9 @@ func (k *KeyMap) actions() map[string]*key.Binding {
 		"pipeline": &k.Pipeline, "weights": &k.Weights, "rereview": &k.ReReview,
 		"force_deep": &k.ForceDeep, "skip_review": &k.SkipReview, "rerun_stage": &k.RerunStage,
 		"edit_rules": &k.EditRules, "call_log": &k.CallLog, "raise_cap": &k.RaiseCap,
+		"approve": &k.Approve, "request_changes": &k.RequestChanges, "submit": &k.Submit,
+		"comment": &k.Comment, "visual": &k.Visual, "save_draft": &k.SaveDraft, "accept": &k.Accept,
+		"dismiss": &k.Dismiss, "override": &k.OverrideLabel, "thread": &k.Thread, "resolve": &k.Resolve,
 	}
 }
 
@@ -134,6 +158,9 @@ func (k KeyMap) codeKeys() codeview.Keys {
 	ck.Filters, ck.Expand, ck.RawLabels, ck.Close = k.Filters, k.Expand, k.RawLabels, k.Back
 	ck.Mode, ck.MergeGroups, ck.SplitGroup = k.Mode, k.MergeGroups, k.SplitGroup
 	ck.ReReview = k.ReReview
+	ck.Comment, ck.Visual, ck.SaveDraft = k.Comment, k.Visual, k.SaveDraft
+	ck.Accept, ck.Dismiss, ck.OverrideLabel = k.Accept, k.Dismiss, k.OverrideLabel
+	ck.Thread, ck.Resolve, ck.StripJump = k.Thread, k.Resolve, relabel(k.Focus, "jump to comment")
 	return ck
 }
 
@@ -233,8 +260,14 @@ func (k KeyMap) pickerHelp() [][]key.Binding {
 		{k.Down, k.Up, k.Top, k.Bottom, k.Sort},
 		{k.Focus, k.NextFocus, k.Overview, k.Code, k.Pipeline},
 		{k.Refresh, k.Open, k.Checkout},
+		k.reviewKeys(),
 		{k.Help, k.Quit},
 	}
+}
+
+// reviewKeys are the item-scope review bindings (submit form).
+func (k KeyMap) reviewKeys() []key.Binding {
+	return []key.Binding{k.Submit, k.Approve, k.RequestChanges}
 }
 
 // codeHelp is the help shown when the Code tab has focus: the component's
@@ -242,6 +275,7 @@ func (k KeyMap) pickerHelp() [][]key.Binding {
 func (k KeyMap) codeHelp(component [][]key.Binding) [][]key.Binding {
 	out := append([][]key.Binding(nil), component...)
 	return append(out,
+		k.reviewKeys(),
 		[]key.Binding{k.Back, k.NextFocus, k.Overview, k.Code, k.Pipeline},
 		[]key.Binding{k.Refresh, k.Open, k.Checkout, k.Help, k.Quit},
 	)
@@ -252,6 +286,7 @@ func (k KeyMap) overviewHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Down, k.Up, k.PageDown, k.PageUp, k.HalfPageDown, k.HalfPageUp, k.Top, k.Bottom},
 		{k.jump(), k.RawLabels, k.Weights},
+		k.reviewKeys(),
 		{k.Back, k.NextFocus, k.Overview, k.Code, k.Pipeline},
 		{k.Refresh, k.Open, k.Checkout, k.Help, k.Quit},
 	}
@@ -282,10 +317,10 @@ func (k KeyMap) mainShort(tab Tab, component []key.Binding) []key.Binding {
 	switch tab {
 	case TabCode:
 		out := append([]key.Binding(nil), component...)
-		return append(out, k.Back, k.Overview, k.Help, k.Quit)
+		return append(out, k.Submit, k.Back, k.Overview, k.Help, k.Quit)
 	case TabPipeline:
 		out := append([]key.Binding(nil), component...)
 		return append(out, k.closePipeline(), k.Help, k.Quit)
 	}
-	return []key.Binding{k.Down, k.Up, k.jump(), k.RawLabels, k.Weights, k.Pipeline, k.Back, k.Code, k.Help, k.Quit}
+	return []key.Binding{k.Down, k.Up, k.jump(), k.RawLabels, k.Weights, k.Submit, k.Approve, k.Pipeline, k.Back, k.Code, k.Help, k.Quit}
 }

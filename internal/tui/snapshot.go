@@ -10,6 +10,8 @@ import (
 
 	"github.com/fredricw/prt/internal/codeview"
 	"github.com/fredricw/prt/internal/daemon"
+	"github.com/fredricw/prt/internal/model"
+	"github.com/fredricw/prt/internal/proto"
 )
 
 // Runner runs the pipeline synchronously for snapshots (InProcess has it).
@@ -28,7 +30,8 @@ func Snapshot(ctx context.Context, c daemon.Client, w io.Writer, width, height, 
 // the picker with the Overview tab, the picker with the Code tab by file,
 // the picker with the Code tab by change ("code-by-change"; by file with
 // the note "no groups yet" when the item has no groups) and the picker with
-// the Pipeline page ("pipeline"), plus one help-overlay screen. Screens are separated by "=== screen: … ==="
+// the Pipeline page ("pipeline"), then the comment screens the item has data
+// for (see commentScreens), plus one help-overlay screen. Screens are separated by "=== screen: … ==="
 // headers. Output has no colour; pass o.Now for deterministic ages.
 func SnapshotWithOptions(ctx context.Context, c daemon.Client, w io.Writer, width, height, maxItems int, o Options) error {
 	if err := c.Discover(ctx); err != nil {
@@ -91,8 +94,60 @@ func SnapshotWithOptions(ctx context.Context, c daemon.Client, w io.Writer, widt
 		if err != nil {
 			return err
 		}
+		if err := commentScreens(w, &m, d); err != nil {
+			return err
+		}
 	}
 	m.tab, m.focus, m.showHelp = TabOverview, FocusPicker, true
 	_, err = fmt.Fprintf(w, "=== screen: help · picker ===\n%s\n", m.View())
 	return err
+}
+
+// commentJumper is the Code pane's jump to one comment (codeview has it;
+// test panes need not).
+type commentJumper interface{ JumpToComment(id string) bool }
+
+// commentScreens writes the M4 screens an item has data for: the Overview
+// scrolled to "Since you looked" ("overview-since"), and the Code tab at the
+// first local draft ("code-draft"), the first ai-draft ("code-ai-draft") and
+// the first open GitHub thread ("code-thread"), in Detail.Comments order. Each screen is skipped when the item has nothing for it.
+func commentScreens(w io.Writer, m *Model, d proto.Detail) error {
+	if d.Agg != nil && d.Agg.Since != nil && m.overview.scrollToBlock(blockSince) {
+		_, err := fmt.Fprintf(w, "=== screen: picker + overview-since · %s ===\n%s\n\n", d.Item.ID, m.View())
+		m.overview.vp.GotoTop()
+		if err != nil {
+			return err
+		}
+	}
+	j, ok := m.code.(commentJumper)
+	if !ok {
+		return nil
+	}
+	var draft, ai, thread string
+	for _, c := range d.Comments {
+		switch {
+		case draft == "" && c.Source == model.CommentUser && c.State == model.CommentDraft:
+			draft = c.ID
+		case ai == "" && c.Source == model.CommentAIDraft:
+			ai = c.ID
+		case thread == "" && c.Source == model.CommentGitHub && c.InReplyTo == 0 && c.State != model.CommentResolved:
+			thread = c.ID
+		}
+	}
+	for _, s := range []struct{ name, id string }{{"code-draft", draft}, {"code-ai-draft", ai}, {"code-thread", thread}} {
+		if s.id == "" {
+			continue
+		}
+		m.code.SetDetail(d) // fresh scroll and cursor for each jump
+		if !j.JumpToComment(s.id) {
+			continue
+		}
+		m.tab = TabCode
+		_, err := fmt.Fprintf(w, "=== screen: picker + %s · %s ===\n%s\n\n", s.name, d.Item.ID, m.View())
+		m.tab = TabOverview
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }

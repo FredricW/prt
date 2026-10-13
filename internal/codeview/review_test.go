@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/fredricw/prt/internal/comments"
 	"github.com/fredricw/prt/internal/model"
 	"github.com/fredricw/prt/internal/proto"
 )
@@ -162,6 +163,33 @@ func TestFindingsInlineByFile(t *testing.T) {
 	if got := paneOf(ls[line+1]); !strings.HasPrefix(got, "! [medium] "+claimMed) {
 		t.Errorf("row under line 9 = %q", got)
 	}
+}
+
+// A finding shown as a comment (its ai-draft) or marked (dismissed) is not
+// drawn again as an inline finding row; the by-change list still has it.
+func TestFindingsInlineSkipCommentedAndMarked(t *testing.T) {
+	d := withReviews(loadGroups(t))
+	fs := d.Reviews[0].Findings
+	hi, med := fs[2], fs[1]
+	key := func(f model.Finding) string { return comments.FindingKey(d.Item.ID, "g-user", f) }
+	d.Comments = []model.Comment{{ID: comments.AIDraftID(key(hi)), ItemID: d.Item.ID, UnitID: hi.UnitID,
+		Path: hi.Path, Line: hi.Line, Side: model.SideNew, Body: comments.DraftBody(hi),
+		Source: model.CommentAIDraft, State: model.CommentDraft, FindingKey: key(hi), Severity: hi.Severity}}
+	d.FindingMarks = []model.FindingMark{{ItemID: d.Item.ID, FindingKey: key(med), State: model.FindingDismissed}}
+
+	m := newModel(t, d, 120, 40)
+	allOff(&m)
+	v := m.View()
+	lacks(t, v, "! [high]")
+	contains(t, v, "ai-draft · high")
+	selectFile(t, &m, "web/src/components/UserCard.tsx")
+	lacks(t, m.View(), "! [medium]")
+	if !m.c.hasFindings("k1") {
+		t.Error("a dismissed finding still counts for the has-findings filter")
+	}
+
+	m = byChangeModel(t, d, 160, 60, true)
+	contains(t, m.View(), "findings (3)")
 }
 
 func TestFindingUnderHeaderAndNeverCollapsed(t *testing.T) {

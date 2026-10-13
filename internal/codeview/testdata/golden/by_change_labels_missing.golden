@@ -9,7 +9,7 @@ labels unavailable — filters off
     ×5 5f · not routed                   
 ── ungrouped (3) ─────────────────────── ┌ modified
   ‹f.tsx›                                │ L10–12 · +2 −2 · export async function getUser(id: string, opts?: RequestIni…
-    1u 1f · not routed                     10    - export async function getUser(id: string) {
+    1u 1f · not routed                    ▸10    - export async function getUser(id: string) {
   ‹theme.css›                              11    -   return fetchJSON(`/users/${id}`);
     1u 1f · not routed                        10 + export async function getUser(id: string, opts?: RequestInit) {
   ‹save›                                      11 +   return fetchJSON(`/users/${id}`, opts);

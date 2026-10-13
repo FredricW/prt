@@ -3,7 +3,7 @@
 ── not yours ─────────────────────────── │ error_path · risk 4 · eyes
   web/legacy/util.ts                  ▒█ │ L10–15 · +3 −1 · export async function fetchJSON(url: string, opts?: Request…
                                            10 10   export async function fetchJSON(url: string, opts?: RequestInit) {
-                                           11    -   const res = await fetch(url);
+                                          ▸11    -   const res = await fetch(url);
                                          ~    11 +   const res = await fetch(url, { ...opts, credentials: "include" });
                                          ◆    12 +   if (!res.ok) throw new Error(`HTTP ${res.status}`);
                                          ⋯    13 +   console.log("debug", res);

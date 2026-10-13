@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/charmbracelet/log"
@@ -47,6 +48,15 @@ type InProcess struct {
 	ghNote  string // guarded by evMu
 	srcNote string // guarded by evMu
 
+	// Comment writes (see comments.go): commentLocks serialises them per
+	// item, draftSeq makes draft ids unique within the process, viewer
+	// caches the GitHub login used as a draft's author.
+	commentMu    sync.Mutex
+	commentLocks map[string]*sync.Mutex
+	draftSeq     atomic.Uint64
+	viewerMu     sync.Mutex
+	viewer       string
+
 	ctx    context.Context
 	cancel context.CancelFunc
 	once   sync.Once
@@ -59,7 +69,10 @@ var _ Client = (*InProcess)(nil)
 // d.ItemLock is set to the client's item lock.
 func NewInProcess(d pipeline.Deps) *InProcess {
 	ctx, cancel := context.WithCancel(context.Background())
-	c := &InProcess{events: make(chan proto.Event, 256), ctx: ctx, cancel: cancel, itemMu: &sync.Mutex{}}
+	c := &InProcess{
+		events: make(chan proto.Event, 256), ctx: ctx, cancel: cancel,
+		itemMu: &sync.Mutex{}, commentLocks: map[string]*sync.Mutex{},
+	}
 	if d.Log == nil {
 		d.Log = log.New(io.Discard)
 	}
@@ -296,6 +309,10 @@ func (c *InProcess) Detail(ctx context.Context, itemID string) (proto.Detail, er
 		return det, err
 	}
 	if det.Comments, err = s.Comments(ctx, itemID); err != nil {
+		return det, err
+	}
+	sortComments(det.Comments)
+	if det.FindingMarks, err = s.FindingMarks(ctx, itemID); err != nil {
 		return det, err
 	}
 	if agg, ok, err := s.Agg(ctx, itemID); err == nil && ok {

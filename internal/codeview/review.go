@@ -7,6 +7,7 @@ import (
 
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/fredricw/prt/internal/comments"
 	"github.com/fredricw/prt/internal/model"
 )
 
@@ -31,18 +32,24 @@ const (
 func indexReviews(c *content, rows []model.Review) {
 	c.reviews = make(map[string]*model.Review, len(rows))
 	c.unitFindings = map[string][]model.Finding{}
+	c.unitInline = map[string][]model.Finding{}
 	for i := range rows {
 		r := &rows[i]
 		c.reviews[r.GroupID] = r
 		for _, f := range r.Findings {
 			if id := c.findingUnit(r.GroupID, f); id != "" {
 				c.unitFindings[id] = append(c.unitFindings[id], f)
+				if !c.findingDone[comments.FindingKey(c.itemID, r.GroupID, f)] {
+					c.unitInline[id] = append(c.unitInline[id], f)
+				}
 			}
 		}
 	}
-	for id, fs := range c.unitFindings {
-		sortFindingsByLine(fs)
-		c.unitFindings[id] = fs
+	for _, m := range []map[string][]model.Finding{c.unitFindings, c.unitInline} {
+		for id, fs := range m {
+			sortFindingsByLine(fs)
+			m[id] = fs
+		}
 	}
 }
 
@@ -397,7 +404,7 @@ func (m *Model) reReviewKey() {
 	gi := -1
 	if m.byChange() {
 		gi = m.sel
-	} else if id, _ := m.cursor(); id != "" {
+	} else if id := m.cursorUnitID(); id != "" {
 		if g, ok := m.c.groupOf[id]; ok {
 			gi = g
 		}
