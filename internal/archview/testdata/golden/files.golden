@@ -20,13 +20,13 @@
 ┃                                                                                                                            ┃ │ and 2 more import changes     │
 ┃                                                                                                                            ┃ └───────────────────────────────┘
 ┃                                                                                                                            ┃ ┌─ Legend ──────────────────────┐
-┃                                                                                                                            ┃ │ ● changed  ★ yours            │
+┃                                                                                                                            ┃ │ ● changed  ★ yours  ? unsure  │
 ┃                                                                                                                            ┃ │ + new module / edge           │
 ┃                                                                                                                            ┃ │ ✕ ╌ removed  ── unchanged     │
+┃                                                                                                                            ┃ │ □ eyes  □ skim  □ skip (box)  │
+┃                                                                                                                            ┃ │ r = max risk  ✗ untested      │
 ┃                                                                                                                            ┃ └───────────────────────────────┘
 ┃                                                                                                                            ┃  Graph from import analysis.
-┃                                                                                                                            ┃
-┃                                                                                                                            ┃
 ┃                                                                                                                            ┃
 ┃                                                                                                                            ┃
 ┃                                                                                                                            ┃

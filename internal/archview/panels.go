@@ -412,12 +412,16 @@ func wrap(s string, w int) []string {
 	return strings.Split(ansi.Wrap(s, w, ""), "\n")
 }
 
-// legend explains the glyphs and line styles.
+// legend explains the glyphs, line styles, the box borders' attention
+// colours and the module fact codes (design v2 key line).
 func (m *Model) legend() []string {
 	t := m.th
 	return []string{
-		t.Accent.Render("●") + " changed  " + t.Blue.Render("★") + " yours",
+		t.Accent.Render("●") + " changed  " + t.Blue.Render("★") + " yours  " + t.Blue.Render("?") + " unsure",
 		t.Add.Render("+") + " new module / edge",
 		t.Del.Render("✕ ╌") + " removed  " + t.R.NewStyle().Foreground(t.P.Line).Render("──") + " unchanged",
+		styleOf(t, stAccent).Render("□") + " eyes  " + styleOf(t, stSkim).Render("□") + " skim  " +
+			styleOf(t, stBorder).Render("□") + " skip (box)",
+		"r = max risk  " + t.Del.Render("✗") + " untested",
 	}
 }

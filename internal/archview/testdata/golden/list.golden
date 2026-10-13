@@ -20,11 +20,11 @@
 │   server/auth → server/session (removed) · 1 import  │ │ and 2 more import changes     │
 │   server/middleware → server/auth · 1 import         │ └───────────────────────────────┘
 │   web/api → server/middleware (new) · 1 import       │ ┌─ Legend ──────────────────────┐
-│   web/api → server/session (removed) · 1 import      │ │ ● changed  ★ yours            │
+│   web/api → server/session (removed) · 1 import      │ │ ● changed  ★ yours  ? unsure  │
 │   web/app → web/auth · 2 imports · ⚠ expiresAt ISO … │ │ + new module / edge           │
 │   web/auth → web/api · 3 imports                     │ │ ✕ ╌ removed  ── unchanged     │
-│   web/components → web/auth · 1 import · ⚠ expiresA… │ └───────────────────────────────┘
+│   web/components → web/auth · 1 import · ⚠ expiresA… │ │ □ eyes  □ skim  □ skip (box)  │
+│                                                      │ │ r = max risk  ✗ untested      │
+│                                                      │ └───────────────────────────────┘
 │                                                      │  Graph from import analysis.
-│                                                      │
-│                                                      │
 └──────────────────────────────────────────────────────┘

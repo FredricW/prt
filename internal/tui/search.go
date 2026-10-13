@@ -129,13 +129,24 @@ func (m *Model) onChoice(ch searchview.Choice) tea.Cmd {
 			return nil
 		}
 		m.note = "previewing " + hitLabel(hit) + "…"
-		c, q := m.client, hit.Query
-		return func() tea.Msg {
-			it, err := c.Preview(context.Background(), q)
-			return previewMsg{item: it, err: err}
-		}
+		return m.previewCmd(hit.Query)
 	}
 	return nil
+}
+
+// previewCmd asks the daemon to preview q, or, while another Preview call
+// is in flight, keeps q to ask once that call answers (the last tab wins).
+func (m *Model) previewCmd(q string) tea.Cmd {
+	if m.previewBusy {
+		m.previewNext, m.hasNext = q, true
+		return nil
+	}
+	m.previewBusy = true
+	c := m.client
+	return func() tea.Msg {
+		it, err := c.Preview(context.Background(), q)
+		return previewMsg{item: it, err: err}
+	}
 }
 
 // hitLabel names a search hit ("#482" or the ref).
@@ -171,6 +182,7 @@ func (m *Model) removeCmd(it model.Item) tea.Cmd {
 // through RemovePreview, so an item that is listed (or was added or
 // promoted meanwhile) is never deleted.
 func (m *Model) discardPreview() tea.Cmd {
+	m.previewNext, m.hasNext = "", false
 	if m.previewID == "" {
 		return nil
 	}
@@ -222,6 +234,16 @@ func (m Model) onSearchMsg(msg tea.Msg) (Model, tea.Cmd, bool) {
 			return m, m.queueReload(), true
 		}
 	case previewMsg:
+		m.previewBusy = false
+		if m.hasNext {
+			// Another tab came while this call ran: this answer is stale. The
+			// next call's daemon cleanup drops its item (one preview at a
+			// time); a stale item left by a failing next call goes at the
+			// next preview or daemon start-up.
+			q := m.previewNext
+			m.previewNext, m.hasNext = "", false
+			return m, m.previewCmd(q), true
+		}
 		if msg.err != nil {
 			m.note = "preview failed: " + msg.err.Error()
 			return m, nil, true

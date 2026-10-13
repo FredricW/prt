@@ -204,7 +204,12 @@ func TestBranchBlock(t *testing.T) {
 			t.Errorf("branch block lacks %q:\n%s", want, got)
 		}
 	}
-	for _, absent := range []string{blockHeadlines, blockSince} {
+	// The label-driven Headlines stay; the description-derived boxes go
+	// (M5 review finding).
+	if !strings.Contains(got, blockHeadlines) {
+		t.Errorf("branch overview lacks %q:\n%s", blockHeadlines, got)
+	}
+	for _, absent := range []string{blockFidelity, blockSince} {
 		if strings.Contains(got, absent) {
 			t.Errorf("branch overview has %q", absent)
 		}
@@ -482,6 +487,38 @@ func TestSearchPreview(t *testing.T) {
 	}
 	if strings.Contains(m.View(), previewLine) {
 		t.Error("preview still shown after esc")
+	}
+}
+
+// Two quick tabs never run two Preview calls at once: the second waits for
+// the first answer, which is dropped as stale (M5 review finding).
+func TestSearchPreviewCallsRunOneAtATime(t *testing.T) {
+	m, f, _ := searchModel(t)
+	f.previewed = model.Item{ID: "pr:98", Kind: model.KindPR, Number: 98, Source: model.SourcePreview}
+	m = press(t, m, "/")
+	m = typeKeys(m, "9")
+	m, first := updateCmd(t, m, keyMsg("tab"))
+	m, second := updateCmd(t, m, keyMsg("tab"))
+	if first == nil || second != nil {
+		t.Fatalf("tab cmds: first %v second %v; want only the first to call", first != nil, second != nil)
+	}
+	var next tea.Cmd
+	for _, msg := range run(first) {
+		if _, ok := msg.(previewMsg); ok {
+			f.previewed = model.Item{ID: "pr:99", Kind: model.KindPR, Number: 99, Source: model.SourcePreview}
+			m, next = updateCmd(t, m, msg)
+		}
+	}
+	if m.previewID == "pr:98" || next == nil {
+		t.Fatalf("stale answer shown (%q) or next call missing (%v)", m.previewID, next != nil)
+	}
+	for _, msg := range run(next) {
+		if _, ok := msg.(previewMsg); ok {
+			m = update(t, m, msg)
+		}
+	}
+	if m.previewID != "pr:99" || len(f.previews) != 2 {
+		t.Errorf("preview %q after calls %v; want pr:99 after two calls", m.previewID, f.previews)
 	}
 }
 

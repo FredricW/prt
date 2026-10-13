@@ -20,13 +20,13 @@
 │                                             └───┐  └╌╌╌╌╌╌╌╌┐                                                              │ │ and 2 more import changes     │
 │                                                +▼           ╎                                                              │ └───────────────────────────────┘
 │                                      ┌────────────────────┐ ╎                                                              │ ┌─ Legend ──────────────────────┐
-│                                      │ + …rver/middleware │ ╎                                                              │ │ ● changed  ★ yours            │
+│                                      │ + …rver/middleware │ ╎                                                              │ │ ● changed  ★ yours  ? unsure  │
 │                                      │ skim · r3          │ ╎                                                              │ │ + new module / edge           │
 │                                      └──────────┬─────────┘ ╎                                                              │ │ ✕ ╌ removed  ── unchanged     │
-│                                                 │           ╎                                                              │ └───────────────────────────────┘
-│                                                 ▼           ╎                                                              │  Graph from import analysis.
-│                                      ┌────────────────────┐ ╎                                                              │
-│                                      │ ● server/auth      │ ╎                                                              │
+│                                                 │           ╎                                                              │ │ □ eyes  □ skim  □ skip (box)  │
+│                                                 ▼           ╎                                                              │ │ r = max risk  ✗ untested      │
+│                                      ┌────────────────────┐ ╎                                                              │ └───────────────────────────────┘
+│                                      │ ● server/auth      │ ╎                                                              │  Graph from import analysis.
 │                                      │ skim · r4 · +1 un… │ ╎                                                              │
 │                                      └──────────┬─────────┘ ╎                                                              │
 │                                             ┌╌╌╌┘  ┌╌╌╌╌╌╌╌╌┘                                                              │

@@ -18,13 +18,13 @@
 │                                      │ 1 eyes · r3 · ?    │                                                                │ │ the diff's files              │
 │                                      └──────┬──────┬──────┘                                                                │ └───────────────────────────────┘
 │                                             └───┐  └────────┐                                                              │ ┌─ Legend ──────────────────────┐
-│                                                 ▼           │                                                              │ │ ● changed  ★ yours            │
+│                                                 ▼           │                                                              │ │ ● changed  ★ yours  ? unsure  │
 │                                      ┌────────────────────┐ │                                                              │ │ + new module / edge           │
 │                                      │ + …rver/middleware │ │                                                              │ │ ✕ ╌ removed  ── unchanged     │
-│                                      │ skim · r3          │ │                                                              │ └───────────────────────────────┘
-│                                      └──────────┬─────────┘ │                                                              │  Graph from import analysis.
-│                                                 │           │                                                              │
-│                                                 ▼           │                                                              │
+│                                      │ skim · r3          │ │                                                              │ │ □ eyes  □ skim  □ skip (box)  │
+│                                      └──────────┬─────────┘ │                                                              │ │ r = max risk  ✗ untested      │
+│                                                 │           │                                                              │ └───────────────────────────────┘
+│                                                 ▼           │                                                              │  Graph from import analysis.
 │                                      ┌────────────────────┐ │                                                              │
 │                                      │ ● server/auth      │ │                                                              │
 │                                      │ skim · r4 · +1 un… │ │                                                              │

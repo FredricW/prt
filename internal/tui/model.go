@@ -167,6 +167,13 @@ type Model struct {
 	preview    *proto.Detail
 	previewSeq int
 	previewOV  overview
+	// previewBusy is set while a Preview call is in flight; previewNext is
+	// the latest tab'd query waiting for it (hasNext). Preview calls run
+	// one at a time, so the daemon's "one preview" cleanup never races a
+	// newer preview (M5 review finding).
+	previewBusy bool
+	previewNext string
+	hasNext     bool
 	// marked are the multi-selected items (space); markNoted is set once
 	// the "overlap view comes in M6" note was shown.
 	marked    map[string]bool

@@ -292,13 +292,11 @@ func overviewPage(st styles, md *markdown, d proto.Detail, now time.Time, width 
 // pending or failed; labels missing).
 func noteCells(d proto.Detail, note string) []cell {
 	one := func(title string) cell { return cell{{title, func(q *page) { q.dim(note) }}} }
-	first := one(blockHeadlines)
-	last := cell{{blockSlice, func(q *page) { q.dim(note) }}, {blockSince, func(q *page) { q.dim(note) }}}
 	if d.Item.Kind == model.KindBranch {
-		first = one(blockBranch)
-		last = one(blockSlice)
+		return []cell{one(blockBranch), one(blockHeadlines), one(blockCheck), one(blockRisk), one(blockMinimap), one(blockSlice)}
 	}
-	return []cell{first, one(blockCheck), one(blockRisk), one(blockFidelity), one(blockMinimap), last}
+	last := cell{{blockSlice, func(q *page) { q.dim(note) }}, {blockSince, func(q *page) { q.dim(note) }}}
+	return []cell{one(blockHeadlines), one(blockCheck), one(blockRisk), one(blockFidelity), one(blockMinimap), last}
 }
 
 // pendingBlocks draws every block as a dim one-liner while no aggregate
@@ -393,28 +391,33 @@ func (ix unitIndex) where(id string) string {
 	return id
 }
 
-// labelledBlocks draws the full label-driven page (spec blocks 2–10): for a
-// branch the Headlines and Since boxes give way to the branch state box
-// (spec Overview, "Branches").
+// labelledBlocks draws the full label-driven page (spec blocks 2–10). For
+// a branch the description-derived boxes (Description fidelity, Since you
+// looked) give way to the branch state box; the label-driven Headlines stay
+// (spec Overview, "Branches"; DECISIONS "Branch Overview keeps Headlines").
 func labelledBlocks(p *page, d proto.Detail) {
 	a := d.Agg
 	ix := newUnitIndex(d)
 	compositionBlock(p, a, ix)
 	p.add("", "")
-	first := cell{{blockHeadlines, func(q *page) { headlinesBlock(q, a) }}}
-	last := cell{{blockSlice, func(q *page) { sliceBlock(q, a) }}, {blockSince, func(q *page) { sinceBlock(q, d, ix) }}}
+	headlines := cell{{blockHeadlines, func(q *page) { headlinesBlock(q, a) }}}
+	check := cell{{blockCheck, func(q *page) { checkBlock(q, a) }}}
+	risk := cell{{blockRisk, func(q *page) { riskBlock(q, a, ix) }}}
+	minimap := cell{{blockMinimap, func(q *page) { minimapBlock(q, a, ix) }}}
 	if d.Item.Kind == model.KindBranch {
-		first = cell{{blockBranch, func(q *page) { branchBlock(q, d) }}}
-		last = cell{{blockSlice, func(q *page) { sliceBlock(q, a) }}}
+		p.grid([]cell{
+			{{blockBranch, func(q *page) { branchBlock(q, d) }}},
+			headlines, check, risk, minimap,
+			{{blockSlice, func(q *page) { sliceBlock(q, a) }}},
+		})
+	} else {
+		p.grid([]cell{
+			headlines, check, risk,
+			{{blockFidelity, func(q *page) { fidelityBlock(q, a, ix) }}},
+			minimap,
+			{{blockSlice, func(q *page) { sliceBlock(q, a) }}, {blockSince, func(q *page) { sinceBlock(q, d, ix) }}},
+		})
 	}
-	p.grid([]cell{
-		first,
-		{{blockCheck, func(q *page) { checkBlock(q, a) }}},
-		{{blockRisk, func(q *page) { riskBlock(q, a, ix) }}},
-		{{blockFidelity, func(q *page) { fidelityBlock(q, a, ix) }}},
-		{{blockMinimap, func(q *page) { minimapBlock(q, a, ix) }}},
-		last,
-	})
 	confidenceBlock(p, a)
 }
 
