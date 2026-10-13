@@ -430,6 +430,8 @@ func (s *server) call(ctx context.Context, sc *serverConn, m proto.Message) (any
 			return nil, err
 		}
 		return c.SaveSettings(ctx, p)
+	case proto.MethodWorkspace:
+		return c.Workspace(ctx)
 	case proto.MethodSubscribe:
 		sc.subscribe()
 		return empty{}, nil

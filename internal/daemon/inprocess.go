@@ -30,7 +30,8 @@ const defaultConcurrency = 4
 
 // InProcess implements Client by running discovery and the pipeline in this
 // process. Analyses run on a worker pool limited by
-// Config.Pipeline.Concurrency, most urgent first.
+// Config.Pipeline.Concurrency, most urgent first (or, in a workspace, on
+// the Pool shared by every repo).
 type InProcess struct {
 	d   pipeline.Deps
 	p   *pipeline.Pipeline
@@ -91,6 +92,10 @@ type InProcess struct {
 	sdeps      SettingsDeps
 	// saveMu serialises SaveSettings (read files, save, reload, apply).
 	saveMu sync.Mutex
+
+	// ws is the workspace part (M5.3, workspace.go): this client's repo
+	// description, the shared worker pool and the cost ledger.
+	ws wsState
 }
 
 // runEntry is one running analysis (guarded by InProcess.runMu).
@@ -101,15 +106,32 @@ type runEntry struct {
 
 var _ Client = (*InProcess)(nil)
 
-// NewInProcess builds an in-process client. d.Emit is wrapped so RunLog rows
-// become events and drive item states (a caller's Emit still runs), and
-// d.ItemLock is set to the client's item lock.
+// NewInProcess builds an in-process client with its own worker slots
+// (Config.Pipeline.Concurrency) and its own cost ledger; it is
+// NewInProcessWith(d, Options{}). d.Emit is wrapped so RunLog rows become
+// events, drive item states and add each stage's cost to the ledger (a
+// caller's Emit still runs), and d.ItemLock is set to the client's item
+// lock.
 func NewInProcess(d pipeline.Deps) *InProcess {
+	return NewInProcessWith(d, Options{})
+}
+
+// NewInProcessWith builds an in-process client like NewInProcess, sharing
+// o.Pool and o.Ledger with the other repos of a workspace (M5.3): with
+// o.Pool set the queue runs on that pool from construction, before anything
+// can queue a job, and never uses private slots; every stage's cost goes to
+// o.Ledger (a private ledger when nil) under o.Repo.Key (spendMeter has the
+// counting rule).
+func NewInProcessWith(d pipeline.Deps, o Options) *InProcess {
+	if o.Ledger == nil {
+		o.Ledger = NewLedger()
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	c := &InProcess{
 		events: make(chan proto.Event, 256), ctx: ctx, cancel: cancel,
 		itemMu: &sync.Mutex{}, commentLock: pipeline.NewKeyedLock(),
 		runs: map[string]*runEntry{}, snaps: newSnapshots(maxSnapshots), urgencyDays: map[string]ageDays{},
+		ws: wsState{repo: o.Repo, pool: o.Pool, ledger: o.Ledger},
 	}
 	// A random start keeps draft ids unique across processes too: with a
 	// fixed clock (--now) every process would otherwise count from 1 and
@@ -121,13 +143,15 @@ func NewInProcess(d pipeline.Deps) *InProcess {
 	if d.Now == nil {
 		d.Now = time.Now
 	}
-	userEmit := d.Emit
+	userEmit, meter := d.Emit, newSpendMeter()
 	d.Emit = func(rl model.RunLog) {
 		if aggregateLanded(rl) {
 			// Before any event of the row: the reloads it triggers must see
 			// the new analysis, not the snapshot.
 			c.snaps.drop(rl.ItemID)
 		}
+		// Before the row's events, so a Workspace read they trigger sees it.
+		c.addSpend(meter.spent(rl))
 		c.send(proto.Event{Type: proto.EventStage, ItemID: rl.ItemID, Stage: rl.Stage, RunLog: &rl})
 		c.onStage(rl)
 		if userEmit != nil {
@@ -139,7 +163,7 @@ func NewInProcess(d pipeline.Deps) *InProcess {
 	c.d, c.log, c.now = d, d.Log, d.Now
 	c.p = pipeline.New(d)
 	c.run = c.p.RunHead
-	c.q = newQueue(slotsFor(d.Config), &c.wg, c.analyse)
+	c.q = newQueueOn(o.Pool, slotsFor(d.Config), &c.wg, c.analyse)
 	c.recoverStates(ctx)
 	c.sweepLabels(ctx)
 	return c

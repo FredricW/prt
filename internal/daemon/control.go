@@ -58,6 +58,10 @@ const (
 	ensureQuestions = "questions"
 )
 
+// nothingChanged is SettingsInfo.Applied when a save or reload changed
+// nothing live.
+const nothingChanged = "nothing changed"
+
 // Stop implements Client (DECISIONS "M5.1 stop / resume"). For one item it
 // drops the item's waiting jobs and cancels its running run with cause
 // pipeline.ErrStopped (finish then marks it StateStopped at the stage in
@@ -275,7 +279,16 @@ func (c *InProcess) SaveSettings(ctx context.Context, p proto.SaveSettingsParams
 	if err := settings.SaveSeededChanged(dir, oldVals, p.Values, seedMain, oldRt.Source); err != nil {
 		return c.settingsInfo(ctx), fmt.Errorf("daemon: save settings: %w", err)
 	}
-	notes := c.shadowWarnings(p.Scope)
+	return c.reloadLocked(ctx, oldVals, c.shadowWarnings(p.Scope))
+}
+
+// reloadLocked is the tail of SaveSettings and ReloadSettings (c.saveMu
+// held): it reloads prt.toml and prt.routing.toml from the config dirs (on
+// an error the previous configuration stays and the error is returned),
+// applies what changed against oldVals, the live values before the save,
+// and tells every TUI with an EventSettings. notes are extra warnings for
+// the result.
+func (c *InProcess) reloadLocked(ctx context.Context, oldVals proto.SettingsValues, notes []string) (proto.SettingsInfo, error) {
 	newCfg, err := config.Load(c.d.ConfigDirs)
 	if err != nil {
 		return c.settingsInfo(ctx), fmt.Errorf("daemon: reload prt.toml (previous settings kept): %w", err)
@@ -375,7 +388,7 @@ func (c *InProcess) apply(ctx context.Context, ch settings.Changes, cfg config.C
 	}
 	parts = append(parts, c.requeue(ch, items)...)
 	if len(parts) == 0 {
-		parts = append(parts, "nothing changed")
+		parts = append(parts, nothingChanged)
 	}
 	return strings.Join(parts, " · "), warns, errors.Join(errs...)
 }

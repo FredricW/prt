@@ -118,6 +118,10 @@ type Client interface {
 	// SaveSettings writes the settings to the chosen scope, reloads the
 	// configuration and applies it live (M5.1); an EventSettings follows.
 	SaveSettings(ctx context.Context, p proto.SaveSettingsParams) (proto.SettingsInfo, error)
+	// Workspace describes what the client serves (M5.3): one repo with
+	// Multi false for a single-repo client, every discovered repo for a
+	// workspace client (internal/workspace).
+	Workspace(ctx context.Context) (proto.WorkspaceInfo, error)
 	// Events streams patches; closed by Close.
 	Events() <-chan proto.Event
 	Close() error

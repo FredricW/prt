@@ -65,6 +65,13 @@ type fakeClient struct {
 	detailCtxs   []context.Context
 	labelCalls   []proto.LabelsParams
 	labelsErr    error
+	// M5.3: workspace is Workspace's answer (zero: a single repo),
+	// workspaceErr fails it; workspaceCalls counts the calls. repoSettings
+	// answers Settings{Repo} per repo key (else ctl.settings).
+	workspace      proto.WorkspaceInfo
+	workspaceErr   error
+	workspaceCalls int
+	repoSettings   map[string]proto.SettingsInfo
 }
 
 var _ daemon.Client = (*fakeClient)(nil)
@@ -353,6 +360,9 @@ func (f *fakeClient) Settings(_ context.Context, p proto.SettingsParams) (proto.
 	if f.ctl.settingsErr != nil {
 		return proto.SettingsInfo{}, f.ctl.settingsErr
 	}
+	if info, ok := f.repoSettings[p.Repo]; ok && p.Repo != "" {
+		return info, f.ctl.err
+	}
 	return f.ctl.settings, f.ctl.err
 }
 
@@ -366,6 +376,15 @@ func (f *fakeClient) SaveSettings(_ context.Context, p proto.SaveSettingsParams)
 	info := f.ctl.settings
 	info.Values = p.Values
 	return info, f.ctl.err
+}
+
+// Workspace implements daemon.Client (M5.3): f.workspace (zero: a single
+// repo, Multi false), or workspaceErr.
+func (f *fakeClient) Workspace(context.Context) (proto.WorkspaceInfo, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.workspaceCalls++
+	return f.workspace, f.workspaceErr
 }
 
 // listenerStarted is signalled each time a command asks for the event
@@ -426,8 +445,39 @@ type fakePane struct {
 	gotLabels    []model.Label
 	failedLabels [][]string
 	staleLabels  [][]string
-	// updates counts the non-key messages (mouse) the pane was given.
+	// updates counts the non-key messages (mouse) the pane was given; mice
+	// records the mouse messages.
 	updates int
+	mice    []tea.MouseMsg
+	// M5.3: listWidth is reported by ListWidth and set by SetListWidth
+	// (listCalls records every call); dragging is reported by Dragging, and
+	// a release while dragging ends the drag and hands out dropWidth (once)
+	// through PendingListWidth. sizes and origin record SetSize and
+	// SetOrigin.
+	listWidth, dropWidth int
+	listCalls            []int
+	dragging             bool
+	pendingList          *int
+	sizes                [][2]int
+	origin               [2]int
+}
+
+func (p *fakePane) SetListWidth(w int) {
+	p.listCalls = append(p.listCalls, w)
+	p.listWidth = w
+}
+
+func (p *fakePane) ListWidth() int     { return p.listWidth }
+func (p *fakePane) Dragging() bool     { return p.dragging }
+func (p *fakePane) SetOrigin(x, y int) { p.origin = [2]int{x, y} }
+
+func (p *fakePane) PendingListWidth() (int, bool) {
+	if p.pendingList == nil {
+		return 0, false
+	}
+	w := *p.pendingList
+	p.pendingList = nil
+	return w, true
 }
 
 func (p *fakePane) PendingLabels() (string, []string, bool) {
@@ -512,14 +562,22 @@ func (p *fakePane) PendingReview() (string, bool) {
 var _ codePane = (*fakePane)(nil)
 
 func (p *fakePane) SetKeys(k codeview.Keys) { p.keys = k }
-func (p *fakePane) SetSize(int, int)        {}
+func (p *fakePane) SetSize(w, h int)        { p.sizes = append(p.sizes, [2]int{w, h}) }
 func (p *fakePane) SetDetail(d proto.Detail) {
 	p.details = append(p.details, d.Item.ID)
 	p.itemID = d.Item.ID
 }
 func (p *fakePane) Clear() { p.clears++ }
-func (p *fakePane) Update(tea.Msg) tea.Cmd {
+func (p *fakePane) Update(msg tea.Msg) tea.Cmd {
 	p.updates++
+	if mm, ok := msg.(tea.MouseMsg); ok {
+		p.mice = append(p.mice, mm)
+		if p.dragging && mm.Action == tea.MouseActionRelease {
+			p.dragging = false
+			w := p.dropWidth
+			p.listWidth, p.pendingList = w, &w
+		}
+	}
 	return nil
 }
 func (p *fakePane) Capturing() bool               { return p.capturing }

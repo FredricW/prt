@@ -270,6 +270,13 @@ func (s *Socket) SaveSettings(ctx context.Context, p proto.SaveSettingsParams) (
 	return r, err
 }
 
+// Workspace implements Client.
+func (s *Socket) Workspace(ctx context.Context) (proto.WorkspaceInfo, error) {
+	var r proto.WorkspaceInfo
+	err := s.call(ctx, proto.MethodWorkspace, nil, &r)
+	return r, err
+}
+
 // Remove implements Client.
 func (s *Socket) Remove(ctx context.Context, itemID string) error {
 	return s.call(ctx, proto.MethodRemove, proto.ItemParams{ItemID: itemID}, nil)
