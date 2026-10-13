@@ -7,13 +7,13 @@ M0–M5 are built per `docs/spec.md`. On top of that is the M5.1, M5.2 and M5.3 
 - M5.2: measured and tuned label quality (`make quality`), instant open of analysed items with stale-while-revalidate, the tab-click fix, capped Overview blocks with a full-list overlay, a coloured composition bar, API / Database / Flags change blocks, a sixth fixture PR, and the truncated fast review fixed and re-recorded.
 - M5.3: multi-repo workspaces (`prt --root DIR`, one picker grouped by repo, one daemon, worker pool and cost ledger per workspace, repo-qualified search and `:add`) and resizable sidebars (mouse drag or `<`/`>`, widths remembered).
 
-M6 (overlap) is deliberately deferred because the spec marks it "later". The repo is `github.com/fredricw/prt`; M5.2 and earlier are pushed, and **the M5.3 commits are on local `main` and not pushed** (this run was started with the request "Status", which did not ask for a push). `make check` (vet, also `-tags live`; tests; golangci-lint v2) is green at HEAD. Real model spend so far is **$1.4941 of the $5.00 cap** (M5.3 made no model calls). Nothing is blocked.
+M6 (overlap) is deliberately deferred because the spec marks it "later". The repo is `github.com/fredricw/prt`; every milestone through M5.3 is on `origin/main`, and M5.3 is tagged `m5.3` on its "docs: changelog for M5.3" commit after the release gate (build, vet, lint, tests also uncached, both snapshots). `make check` (vet, also `-tags live`; tests; golangci-lint v2) is green at HEAD. Real model spend so far is **$1.4941 of the $5.00 cap** (M5.3 made no model calls). Nothing is blocked.
 
 Details: `CHANGELOG.md` (per milestone), `docs/DECISIONS.md` (every call made), `docs/ARCHITECTURE.md` (packages).
 
 ## Milestones
 
-**Tag quirk:** tags `m0` (`7d27b45`) and `m5.1` (`56357ac`) were created and pushed *before* their final review-fix commits. They were not moved, to avoid rewriting pushed refs. The complete M0 is the "docs: changelog for M0" commit (`68555ad`). The complete M5.1 is `main` at `a88d1e0`. Tags `m1`–`m5` sit on their final changelog commits.
+**Tag quirk:** tags `m0` (`7d27b45`) and `m5.1` (`56357ac`) were created and pushed *before* their final review-fix commits. They were not moved, to avoid rewriting pushed refs. The complete M0 is the "docs: changelog for M0" commit (`68555ad`). The complete M5.1 is `main` at `a88d1e0`. Tags `m1`–`m5`, `m5.2` and `m5.3` sit on their final commits.
 
 ### M0: skeleton (fast PR browser)
 - Done:

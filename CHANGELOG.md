@@ -429,16 +429,42 @@ exercised against `gh.Fake`.
   demo/snapshot shows it as "labels unavailable" (replay miss degrades, by
   design).
 
-### M5.3 — multi-repo workspaces and resizable sidebars (2026-10-13)
+### M5.3 — multi-repo workspaces and resizable sidebars (released 2026-10-13)
 
 User-requested changes beyond the spec (recorded in DECISIONS as user
 decisions; the multi-repo view overrides the spec's non-goal "one repo per
 process"). Gate: `make check` (vet, also `-tags live`; all tests; lint
 0 issues) green on every commit, each checked out in a scratch worktree
 right after it was made (the leaf `uistate` commit with vet, its own tests
-and lint); `make snapshot` and `make snapshot-workspace` render. Inside a single repo prt behaves as before: the single-repo snapshot
-is pinned by a golden test and differs from M5.2 only in the help overlay's
-new resize lines. No model spend; no GitHub writes.
+and lint); `make snapshot` and `make snapshot-workspace` render. Inside a
+single repo prt behaves as before: the single-repo snapshot is pinned by a
+golden test and differs from M5.2 only in the help overlay's new resize
+lines. No model spend; no GitHub writes.
+
+Release gate: `go build ./...`, `go vet ./...` (also `-tags live`),
+`make lint` (0 issues), `make test` (also uncached, `go test -count=1`),
+`make snapshot` (every screen of the six items) and `make snapshot-workspace`
+(both repos, folded and filtered screens) all green on `0b4fc12`, with no
+panics and a clean tree afterwards. `make demo` runs the TUI offline
+(`--no-daemon --offline`, replay flags, `--now`) against
+`testdata/fixture-repo` with `testdata/fixtures/prs.json` and
+`testdata/fixtures/drafts.json`. It uses the snapshot's flags without the
+`--snapshot`, size and item-count flags (checked with `make -n demo`, not run
+interactively). `make demo-workspace` does the same over
+`testdata/fixture-workspace`.
+
+- **Shipped:** workspaces (`prt --root DIR`, or prt outside any repo), the
+  repo-grouped picker with fold and filter, one daemon, worker pool and cost
+  ledger per workspace, repo-qualified search and `:add`, a per-repo pipeline
+  lock, resizable picker and Code-list sidebars (mouse and `<`/`>`, persisted),
+  the two-repo fixture workspace, the single-repo golden snapshot, and two
+  rounds of review fixes.
+- **Deferred:** recordings for `acme/billing-svc` (its items show "labels
+  unavailable" offline); a key-by-key merge of the repo and global prt.toml
+  (needs a spec change; whole-file lookup kept); a long workspace root still
+  cuts the header counts. Carried over: M6 overlap, the ONNX embedder (stub,
+  falls back to Ollama).
+- **Blocked:** nothing (`docs/BLOCKED.md` stays absent).
 
 #### Added
 
