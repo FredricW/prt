@@ -67,14 +67,19 @@ type groupOverride struct {
 	// Tier is deep (Pipeline page D, Code page R), none (s) or "" (reset).
 	Tier model.Tier `json:"tier"`
 	At   time.Time  `json:"at"`
+	// Fresh asks for one deep review that bypasses the review cache (D, R:
+	// "re-review this group on the deep tier"); stage 7 clears it once the
+	// fresh review is done.
+	Fresh bool `json:"fresh,omitempty"`
 }
 
 // SetGroupOverride stores a user's routing override for a group of an
-// item: TierDeep forces the deep tier (D, R), TierNone skips the review
-// (s) and "" drops the override (back to the rules). It applies from the
-// next run's route stage. Overrides are keyed by group id, which is the
-// hash of the group's units: a group whose membership changes is routed by
-// the rules again.
+// item: TierDeep forces the deep tier (D, R) and asks for one fresh deep
+// review (a cached deep review is not served for it), TierNone skips the
+// review (s) and "" drops the override (back to the rules). It applies
+// from the next run's route stage. Overrides are keyed by group id, which
+// is the hash of the group's units: a group whose membership changes is
+// routed by the rules again.
 func (p *Pipeline) SetGroupOverride(ctx context.Context, itemID, groupID string, tier model.Tier) error {
 	switch tier {
 	case model.TierDeep, model.TierNone, "":
@@ -84,7 +89,11 @@ func (p *Pipeline) SetGroupOverride(ctx context.Context, itemID, groupID string,
 	if itemID == "" || groupID == "" {
 		return errors.New("pipeline: override: item and group ids required")
 	}
-	b, err := json.Marshal(groupOverride{Tier: tier, At: p.d.Now()})
+	return p.putOverride(ctx, itemID, groupID, groupOverride{Tier: tier, At: p.d.Now(), Fresh: tier == model.TierDeep})
+}
+
+func (p *Pipeline) putOverride(ctx context.Context, itemID, groupID string, o groupOverride) error {
+	b, err := json.Marshal(o)
 	if err != nil {
 		return fmt.Errorf("pipeline: override %s: %w", groupID, err)
 	}
@@ -94,22 +103,48 @@ func (p *Pipeline) SetGroupOverride(ctx context.Context, itemID, groupID string,
 	return nil
 }
 
+// clearFresh marks a group's deep override as served: later runs use the
+// review cache again.
+func (p *Pipeline) clearFresh(ctx context.Context, itemID, groupID string) {
+	o, ok := p.loadOverride(ctx, itemID, groupID)
+	if !ok || !o.Fresh {
+		return
+	}
+	o.Fresh = false
+	if err := p.putOverride(ctx, itemID, groupID, o); err != nil {
+		p.d.Log.Warn("clear fresh override failed", "item", itemID, "group", groupID, "err", err)
+	}
+}
+
+func (p *Pipeline) loadOverride(ctx context.Context, itemID, groupID string) (groupOverride, bool) {
+	b, ok, err := p.d.Store.CacheGet(ctx, nsOverride, rowKey(itemID, groupID))
+	var o groupOverride
+	if err != nil || !ok || json.Unmarshal(b, &o) != nil {
+		return groupOverride{}, false
+	}
+	return o, true
+}
+
 // groupOverrides loads the overrides of the item's groups (group id →
-// tier deep or none; reset or absent groups are left out).
-func (p *Pipeline) groupOverrides(ctx context.Context, itemID string, groups []model.Group) (map[string]model.Tier, error) {
-	out := map[string]model.Tier{}
+// tier deep or none; reset or absent groups are left out) and the groups
+// whose deep override still asks for a fresh review.
+func (p *Pipeline) groupOverrides(ctx context.Context, itemID string, groups []model.Group) (map[string]model.Tier, map[string]bool, error) {
+	out, fresh := map[string]model.Tier{}, map[string]bool{}
 	for _, g := range groups {
 		b, ok, err := p.d.Store.CacheGet(ctx, nsOverride, rowKey(itemID, g.ID))
 		if err != nil {
-			return nil, fmt.Errorf("pipeline: load override %s: %w", g.ID, err)
+			return nil, nil, fmt.Errorf("pipeline: load override %s: %w", g.ID, err)
 		}
 		var o groupOverride
 		if !ok || json.Unmarshal(b, &o) != nil || o.Tier == "" {
 			continue
 		}
 		out[g.ID] = o.Tier
+		if o.Tier == model.TierDeep && o.Fresh {
+			fresh[g.ID] = true
+		}
 	}
-	return out, nil
+	return out, fresh, nil
 }
 
 // userFlags says which user override decided a group.
@@ -117,17 +152,17 @@ type userFlags struct{ forced, skipped bool }
 
 // applyUserTiers applies the overrides to the decisions: deep → tier deep
 // (the rule's prompts and context kept; a group the rules sent to none,
-// which carries no context, gets autoCtx's stage-6 context), "forced deep
-// (D)"; none → tier none without prompts or context, "skipped by user
-// (s)". Either way no rule decided (RuleIndex 0).
-func applyUserTiers(decs []route.Decision, ovs map[string]model.Tier, autoCtx func(groupID string) []string) ([]route.Decision, map[string]userFlags) {
+// which carries neither, gets auto's stage-6 context and fired prompts),
+// "forced deep (D)"; none → tier none without prompts or context, "skipped
+// by user (s)". Either way no rule decided (RuleIndex 0).
+func applyUserTiers(decs []route.Decision, ovs map[string]model.Tier, auto func(groupID string) (ctx, prompts []string)) ([]route.Decision, map[string]userFlags) {
 	flags := map[string]userFlags{}
 	out := make([]route.Decision, len(decs))
 	for i, d := range decs {
 		switch ovs[d.GroupID] {
 		case model.TierDeep:
-			if d.Tier == model.TierNone && d.Context == nil && autoCtx != nil {
-				d.Context = autoCtx(d.GroupID)
+			if d.Tier == model.TierNone && d.Context == nil && d.Prompts == nil && auto != nil {
+				d.Context, d.Prompts = auto(d.GroupID)
 			}
 			d.Tier, d.RuleIndex, d.Rule, d.Words, d.Unknown = model.TierDeep, 0, "", wordsForcedDeep, false
 			flags[d.GroupID] = userFlags{forced: true}
@@ -159,6 +194,9 @@ type routeOut struct {
 	// escalations and calibration samples start.
 	capUSD   float64
 	reserved float64
+	// fresh are the groups a user asked to re-review on deep (D, R): their
+	// routed deep review skips the review cache once.
+	fresh map[string]bool
 }
 
 // capFor is the effective per-item cost cap: Item.CapUSD, else the
@@ -183,7 +221,7 @@ func (p *Pipeline) routeStage(ctx context.Context, r *run, a analysis, rl *model
 	pre := p.fn.aggregate(in)
 	groups := a.gro.groups
 	facts := groupFacts(groups, a.parsed.units, pre, in.Labels, a.jo.missing)
-	ovs, err := p.groupOverrides(ctx, r.it.ID, groups)
+	ovs, fresh, err := p.groupOverrides(ctx, r.it.ID, groups)
 	if err != nil {
 		return nil, err
 	}
@@ -196,18 +234,21 @@ func (p *Pipeline) routeStage(ctx context.Context, r *run, a analysis, rl *model
 	if r.opt.KeepReviewed && !r.opt.ignoresCache(model.StageReview) {
 		decs = p.keepReviewed(ctx, r.it.ID, decs, ovs)
 	}
-	decs, flags := applyUserTiers(decs, ovs, func(id string) []string { return route.AutoContext(byGroup[id]) })
+	decs, flags := applyUserTiers(decs, ovs, func(id string) ([]string, []string) {
+		return route.AutoContext(byGroup[id]), route.AutoPrompts(byGroup[id])
+	})
 	ro := &routeOut{
 		rules: rules, capUSD: capFor(in.Item, rules.Config),
-		inputs: map[string]review.GroupInput{}, reqs: map[string]review.Request{},
+		inputs: map[string]review.GroupInput{}, reqs: map[string]review.Request{}, fresh: fresh,
 	}
 	for _, d := range decs {
 		f, ok := byGroup[d.GroupID]
 		if !ok || d.Tier == model.TierNone {
 			continue
 		}
+		units, aggs, labels := reviewUnits(f)
 		gi := review.GroupInput{
-			Item: in.Item, Group: f.Group, Units: f.Units, Aggs: f.Aggs, Labels: f.Labels,
+			Item: in.Item, Group: f.Group, Units: units, Aggs: aggs, Labels: labels,
 			Context: p.fn.gather(d.Context, f.Group, a.parsed.units, a.gro.links, pre.Units),
 			Prompts: d.Prompts, Tier: d.Tier,
 		}
@@ -278,7 +319,7 @@ func (p *Pipeline) keepReviewed(ctx context.Context, itemID string, decs []route
 }
 
 // estimate is the pre-call cost bound of a group's routed review: 0 for
-// tier none, else review.EstimateCost of its request on the tier's model —
+// tier none, else review.PlanCost of its request on the tier's model —
 // also when the review is cached. The cap bounds the item's estimated
 // review cost, not this run's spend, so a re-run plans exactly like the run
 // that filled the cache: a refresh does not quietly review the over-cap
@@ -289,16 +330,76 @@ func (p *Pipeline) estimate(ro *routeOut, groupID string, tier model.Tier) float
 	if !ok || tier == model.TierNone {
 		return 0
 	}
-	return review.EstimateCost(p.tierModel(tier), req)
+	return review.PlanCost(p.tierModel(tier), req)
 }
 
-// cachedReview returns the finished cached review of a group on a tier.
-func (p *Pipeline) cachedReview(ctx context.Context, groupID string, tier model.Tier) (model.Review, bool) {
+// cachedReview returns the finished cached review of a group on a tier
+// when it was produced the way this run would ask: the tier's current
+// model, the current review prompt version and the same specialist
+// prompts. Anything else is a miss (a new call replaces it).
+func (p *Pipeline) cachedReview(ctx context.Context, groupID string, tier model.Tier, prompts []string) (model.Review, bool) {
 	rv, ok, err := p.d.Store.Review(ctx, groupID, tier)
 	if err != nil || !ok || rv.Status != model.ReviewDone {
 		return model.Review{}, false
 	}
+	if rv.Prompt != review.PromptReviewV1 || !sameModel(rv.Model, p.tierModel(tier)) || !slices.Equal(sortedCopy(rv.Prompts), sortedCopy(prompts)) {
+		return model.Review{}, false
+	}
 	return rv, true
+}
+
+// sameModel compares model names with or without the "provider:" prefix;
+// an empty name (a review cached without one) matches.
+func sameModel(a, b string) bool {
+	if a == "" || b == "" {
+		return true
+	}
+	strip := func(s string) string {
+		if _, name, ok := strings.Cut(s, ":"); ok {
+			return name
+		}
+		return s
+	}
+	return strip(a) == strip(b)
+}
+
+// sortedCopy is a sorted copy of ss (nil for empty).
+func sortedCopy(ss []string) []string {
+	if len(ss) == 0 {
+		return nil
+	}
+	out := slices.Clone(ss)
+	slices.Sort(out)
+	return out
+}
+
+// reviewUnits are the units (with their aggregates and labels) a group's
+// review request carries: every member, except for a mechanical group,
+// whose prompt says only the example is shown — there it is the example
+// unit alone (Group.ExampleUnit, else the first member).
+func reviewUnits(f route.GroupFacts) ([]model.ChangeUnit, []model.UnitAgg, []model.Label) {
+	if !f.Group.Mechanical || len(f.Units) <= 1 {
+		return f.Units, f.Aggs, f.Labels
+	}
+	k := 0
+	for i, u := range f.Units {
+		if u.ID == f.Group.ExampleUnit {
+			k = i
+			break
+		}
+	}
+	ex := f.Units[k]
+	var aggs []model.UnitAgg
+	if k < len(f.Aggs) {
+		aggs = []model.UnitAgg{f.Aggs[k]}
+	}
+	var labels []model.Label
+	for _, l := range f.Labels {
+		if l.UnitID == ex.ID {
+			labels = append(labels, l)
+		}
+	}
+	return []model.ChangeUnit{ex}, aggs, labels
 }
 
 // groupFacts builds route.GroupFacts per group: units in group order, the

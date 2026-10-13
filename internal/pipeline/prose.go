@@ -18,6 +18,9 @@ type proseOut struct {
 	calls  []model.ReviewCall
 	cached bool
 	err    error
+	// notReady is set when the cache missed and the fast reviewer cannot
+	// run (err is the readiness error); no call was made.
+	notReady bool
 }
 
 // spent sums the cost of the calls actually made (0 for a cache hit).
@@ -46,19 +49,25 @@ func (o proseOut) cost() float64 {
 // prose answers a fast-tier prose request from the cache namespace ns, or
 // (bypass, or a miss) with one call retried once, then caches the cleaned
 // text. A cache hit is logged as a Cached call with what it cost when it
-// ran. The caller has checked that the fast reviewer is ready.
+// ran. Prose already paid for is served from the cache even when the fast
+// reviewer is not ready (no key); only a miss then returns notReady with
+// the readiness error.
 func (p *Pipeline) prose(ctx context.Context, ns string, req review.Request, m callMeta, bypass bool, clean func(string) string) proseOut {
 	rev := p.d.Reviewers.Fast
 	key, err := review.RequestKey(rev.Model(), req)
 	if err != nil {
 		return proseOut{err: fmt.Errorf("pipeline: %s request key: %w", ns, err)}
 	}
-	if !bypass {
+	ready := review.Ready(rev)
+	if !bypass || ready != nil {
 		if pc, ok := p.loadProse(ctx, ns, key); ok {
 			c := pc.Call
 			c.Cached, c.Purpose, c.ItemID, c.GroupID = true, m.purpose, m.itemID, m.groupID
 			return proseOut{text: pc.Text, key: key, calls: []model.ReviewCall{c}, cached: true}
 		}
+	}
+	if ready != nil {
+		return proseOut{key: key, err: ready, notReady: true}
 	}
 	out := p.callRetry(ctx, rev, req, m, nil, nil)
 	po := proseOut{key: key, calls: out.calls, err: out.err}
@@ -94,8 +103,8 @@ func (p *Pipeline) titleGroups(ctx context.Context, r *run, units []model.Change
 	if len(idx) == 0 {
 		return groups, "", nil
 	}
-	if err := review.Ready(p.d.Reviewers.Fast); err != nil {
-		return groups, fmt.Sprintf("titles: %d placeholders kept (%s)", len(idx), reasonText(err)), nil
+	if p.d.Reviewers.Fast == nil {
+		return groups, fmt.Sprintf("titles: %d placeholders kept (%s)", len(idx), reasonText(review.Ready(nil))), nil
 	}
 	out := append([]model.Group(nil), groups...)
 	byID := unitsByID(units)
@@ -109,7 +118,8 @@ func (p *Pipeline) titleGroups(ctx context.Context, r *run, units []model.Change
 	if err := ctx.Err(); err != nil {
 		return groups, "", err
 	}
-	cached, failed := 0, 0
+	cached, failed, kept := 0, 0, 0
+	var notReady error
 	for k, i := range idx {
 		res := results[k]
 		r.calls.add(out[i].ID, res.calls...)
@@ -121,6 +131,8 @@ func (p *Pipeline) titleGroups(ctx context.Context, r *run, units []model.Change
 		switch {
 		case res.cached:
 			cached++
+		case res.notReady:
+			kept, notReady = kept+1, res.err
 		case res.err != nil:
 			failed++
 			p.d.Log.Warn("group title failed; placeholder kept", "item", r.it.ID, "group", out[i].ID, "err", res.err)
@@ -129,9 +141,15 @@ func (p *Pipeline) titleGroups(ctx context.Context, r *run, units []model.Change
 			out[i].Name, out[i].NameSource = res.text, model.NameAI
 		}
 	}
-	note := fmt.Sprintf("titles: %d asked, %d cached", len(idx), cached)
+	if notReady != nil && cached == 0 {
+		return out, fmt.Sprintf("titles: %d placeholders kept (%s)", kept, reasonText(notReady)), nil
+	}
+	note := fmt.Sprintf("titles: %d asked, %d cached", len(idx)-kept, cached)
 	if failed > 0 {
 		note += fmt.Sprintf(" (%d failed)", failed)
+	}
+	if notReady != nil {
+		note += fmt.Sprintf("; %d placeholders kept (%s)", kept, reasonText(notReady))
 	}
 	return out, note, nil
 }

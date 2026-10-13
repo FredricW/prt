@@ -24,18 +24,20 @@ const calibrationWindow = 30 * 24 * time.Hour
 // that key is reused with no call ("regenerated only when the aggregate
 // record changes"); a forced run or FromStage ≤ aggregate asks again. The
 // text is CleanTLDR'd and capped at 160 runes. No fast reviewer leaves it
-// empty; an error leaves it empty with a note (returned).
+// empty; an error leaves it empty with a note (returned). A fast reviewer
+// that is not ready (no key) still serves a cached TL;DR.
 func (p *Pipeline) tldr(ctx context.Context, r *run, agg *model.ItemAgg, rl *model.RunLog) string {
 	fast := p.d.Reviewers.Fast
 	if fast == nil {
 		return ""
 	}
-	if err := review.Ready(fast); err != nil {
-		return "TL;DR skipped: " + reasonText(err)
-	}
 	bypass := r.opt.Force || r.opt.ignoresCache(model.StageAggregate)
 	clean := func(s string) string { return capRunes(p.fn.cleanTLDR(s), review.MaxTLDR) }
 	out := p.prose(ctx, nsTLDR, p.fn.buildTLDR(*agg), callMeta{itemID: r.it.ID, tier: model.TierFast, purpose: purposeTLDR}, bypass, clean)
+	if out.notReady {
+		// A cached TL;DR is served without a key; only a miss is skipped.
+		return "TL;DR skipped: " + reasonText(out.err)
+	}
 	r.calls.add("", out.calls...)
 	if !out.cached {
 		rl.Calls += len(out.calls)

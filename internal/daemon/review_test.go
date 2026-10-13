@@ -143,10 +143,10 @@ func TestReviewActionForcesAndSkips(t *testing.T) {
 	if got.Tier != model.TierDeep || got.Forced {
 		t.Errorf("reset row = %+v", got)
 	}
-	// The deep review was cached by the first run: the actions re-ran
-	// routing, not the review.
-	if n := e.deepReviews.Load(); n != 1 {
-		t.Errorf("deep review calls = %d, want 1 (later runs hit the cache)", n)
+	// D re-reviews on deep once, bypassing the cached deep review; skip and
+	// reset re-ran routing only and served the cache.
+	if n := e.deepReviews.Load(); n != 2 {
+		t.Errorf("deep review calls = %d, want 2 (first run + one fresh re-review)", n)
 	}
 }
 

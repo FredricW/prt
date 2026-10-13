@@ -67,7 +67,8 @@ type ReviewAction string
 
 // Review actions.
 const (
-	// ActionDeep forces the group to the deep tier (re-reviews it there).
+	// ActionDeep forces the group to the deep tier and re-reviews it there
+	// once with a fresh call (a cached deep review is not served for it).
 	ActionDeep ReviewAction = "deep"
 	// ActionSkip skips the group's review (tier none, logged).
 	ActionSkip ReviewAction = "skip"

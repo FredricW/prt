@@ -94,7 +94,13 @@ func (r *Replay) Review(_ context.Context, req Request) (Result, error) {
 		}
 		return Result{}, fmt.Errorf("%w %s in %s (run make record-review)", ErrNoRecording, key, r.Dir)
 	}
-	return reanchor(rec.Result, req)
+	res := rec.Result
+	if res.InputTokens > 0 || res.OutputTokens > 0 {
+		// Cost follows the current price table, not the one in force when
+		// the call was recorded (token counts are what was billed).
+		res.Cost = Cost(r.Name, res.InputTokens, res.OutputTokens)
+	}
+	return reanchor(res, req)
 }
 
 // reanchor re-parses a recorded TaskReview response against the request's

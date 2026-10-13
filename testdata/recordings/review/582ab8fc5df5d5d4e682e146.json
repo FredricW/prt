@@ -1,0 +1,38 @@
+{
+  "key": "582ab8fc5df5d5d4e682e146",
+  "model": "anthropic:claude-opus-5-5",
+  "request": {
+    "task": "review",
+    "tier": "deep",
+    "groupId": "3da202398ddf253ff5e28e37ddb4b834b31e56e8285e6d54f787c40da4281939",
+    "system": "You are a senior code reviewer. You review one group of related change units from a pull request and report the problems a careful reviewer would raise: bugs, broken contracts, missing error handling, security holes, data loss, races, and risky code without tests.\n\nRules:\n- Report findings only. Never restate, summarise or praise the diff.\n- Anchor every finding to a file path and a line number printed in the diff: the new-side number, or the old-side number for a deleted line.\n- One finding per problem. \"claim\" is one sentence; \"fix\" is a short suggested change.\n- severity: \"high\" breaks callers, loses data or opens a security hole; \"medium\" is a likely bug or missing handling; \"low\" is a minor risk.\n- Never invent numbers, metrics, line numbers or code that is not shown.\n- The hints are machine labels (probabilities 0-1, risk 1-5). Use them to decide where to look, not as facts.\n- The Context section, when present, is unchanged background (callers, types, tests, config). Report a finding there only when the change breaks it, anchored to the changed line that causes it.\n- verdict: \"approve\" when nothing needs changing, \"comment\" for low findings or questions only, \"request_changes\" when a finding must be fixed before merging.\n- confidence: a number from 0 to 1, how sure you are that the findings and the verdict are right given what you were shown.\n\nAnswer with JSON only, no prose and no code fence, in exactly this shape:\n{\"findings\":[{\"file\":\"path/to/file\",\"line\":12,\"severity\":\"low|medium|high\",\"claim\":\"one sentence\",\"fix\":\"suggested fix\"}],\"verdict\":\"approve|comment|request_changes\",\"confidence\":0.8}\nUse \"findings\": [] when there is nothing to report.\n\nSecurity focus: check authentication and authorisation paths, secrets or personal data reaching logs, responses or storage, injection, unsafe deserialisation, and money handling (rounding, double charges).",
+    "prompt": "# Pull request\nTitle: refactor(web): rename fetchJSON to requestJSON\nDescription bullets:\n- Rename `fetchJSON` to `requestJSON` in `api/client.ts`\n- Update every import and call site (19 files)\n\n# Group\nName: Rename `fetchJSON` to `requestJSON` in `api/client.ts`\nImplements bullet: Rename `fetchJSON` to `requestJSON` in `api/client.ts`\n\n# Units in review order\nEach diff line starts with its old and new line numbers.\n\n## Unit 1 of 2: web/src/api/client.ts (modified, new lines 76-79)\nsymbol: updateUser\nsignature: export async function updateUser(id: string, patch: Partial\u003cPick\u003cUser, \"displayName\" | \"teamId\"\u003e\u003e): Promise\u003cUser\u003e\nhints: kind=refactor risk=4 tags=data_write,pii breaking=0.17 contract=none covered=0.73 untested=no\n```diff\n   76    76  \n   77    77  export async function updateUser(id: string, patch: Partial\u003cPick\u003cUser, \"displayName\" | \"teamId\"\u003e\u003e): Promise\u003cUser\u003e {\n   78       -  return fetchJSON\u003cUser\u003e(`/users/${encodeURIComponent(id)}`, { method: \"PATCH\", body: patch });\n         78 +  return requestJSON\u003cUser\u003e(`/users/${encodeURIComponent(id)}`, { method: \"PATCH\", body: patch });\n   79    79  }\n```\n\n## Unit 2 of 2: web/src/api/index.ts (modified, new lines 1-4)\nhints: kind=refactor risk=4 tags=none breaking=0.66 contract=signature covered=0.79 untested=no\n```diff\n    1       -export { API_BASE, ApiError, fetchJSON, getCurrentUser, getUser, updateUser } from \"./client\";\n          1 +export { API_BASE, ApiError, requestJSON, getCurrentUser, getUser, updateUser } from \"./client\";\n    2     2  export type { RequestOptions, User } from \"./client\";\n    3     3  export * from \"./users\";\n    4     4  export * from \"./teams\";\n```\n\nReview these units and answer with the JSON object only.\n",
+    "context": [
+      "### types: type web/src/api/client.ts requestJSON\nweb/src/api/client.ts:36-42\nexport async function requestJSON\u003cT\u003e(path: string, opts: RequestOptions = {}): Promise\u003cT\u003e\n   return token ? { Authorization: `Bearer ${token}` } : {};\n }\n \n-export async function fetchJSON\u003cT\u003e(path: string, opts: RequestOptions = {}): Promise\u003cT\u003e {\n+export async function requestJSON\u003cT\u003e(path: string, opts: RequestOptions = {}): Promise\u003cT\u003e {\n   const url = API_BASE + path + formatQuery(opts.query ?? {});\n   const res = await fetch(url, {\n     method: opts.method ?? \"GET\",",
+      "### types: type web/src/api/client.ts getUser\nweb/src/api/client.ts:67-71\nexport async function getUser(id: string): Promise\u003cUser\u003e\n }\n \n export async function getUser(id: string): Promise\u003cUser\u003e {\n-  return fetchJSON\u003cUser\u003e(`/users/${encodeURIComponent(id)}`);\n+  return requestJSON\u003cUser\u003e(`/users/${encodeURIComponent(id)}`);\n }",
+      "### types: type web/src/api/client.ts getCurrentUser\nweb/src/api/client.ts:72-75\nexport async function getCurrentUser(): Promise\u003cUser\u003e\n \n export async function getCurrentUser(): Promise\u003cUser\u003e {\n-  return fetchJSON\u003cUser\u003e(\"/users/me\");\n+  return requestJSON\u003cUser\u003e(\"/users/me\");\n }"
+    ],
+    "maxTokens": 2048
+  },
+  "result": {
+    "text": "{\"findings\":[{\"file\":\"web/src/api/index.ts\",\"line\":1,\"severity\":\"low\",\"claim\":\"Dropping the `fetchJSON` re-export from the public API barrel breaks any consumer outside the 19 updated files, such as other packages, tests or in-flight branches, with no deprecation path.\",\"fix\":\"Temporarily keep `/** @deprecated */ export const fetchJSON = requestJSON;` in client.ts and re-export it, or confirm via repo-wide search that no other importers exist.\"}],\"verdict\":\"comment\",\"confidence\":0.8}",
+    "findings": [
+      {
+        "unitId": "c9543d12bb3849017293db20f51919a203826703a249fe4c8fe4e2ddd5f320f2",
+        "path": "web/src/api/index.ts",
+        "line": 1,
+        "severity": "low",
+        "claim": "Dropping the `fetchJSON` re-export from the public API barrel breaks any consumer outside the 19 updated files, such as other packages, tests or in-flight branches, with no deprecation path.",
+        "fix": "Temporarily keep `/** @deprecated */ export const fetchJSON = requestJSON;` in client.ts and re-export it, or confirm via repo-wide search that no other importers exist."
+      }
+    ],
+    "verdict": "comment",
+    "confidence": 0.8,
+    "model": "anthropic:claude-opus-5-5",
+    "inputTokens": 1865,
+    "outputTokens": 325,
+    "cost": 0.01396,
+    "ms": 4126,
+    "stopReason": "end_turn"
+  }
+}

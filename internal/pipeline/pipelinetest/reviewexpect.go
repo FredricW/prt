@@ -20,7 +20,10 @@ import (
 //	(e) when reviewers ran (Agg.Review set without a degradation note):
 //	    every routed row done or failed (queued only over the cost cap,
 //	    with a note) and the TL;DR non-empty and ≤ 160 runes;
-//	(f) urgency: #101 (review requested, breaking, risky) above #104.
+//	(f) urgency: #101 (review requested, breaking, risky) above #104;
+//	(g) when reviewers ran: at least three quarters of #101's routed groups
+//	    are done under the item's cap (the default $0.40 must review the
+//	    flagship 400-line PR, not queue it) and they report a finding.
 //
 // Empty when all hold. The review recorder prints them as warnings after a
 // live run.
@@ -33,6 +36,9 @@ func ReviewExpectations(outs map[int]Outcome) []string {
 			out = append(out, rowsFinished(n, o)...)
 			out = append(out, tldrOK(n, o)...)
 		}
+	}
+	if reviewed(outs[101]) {
+		out = append(out, mostReviewed101(outs[101])...)
 	}
 	out = append(out, mechanicalNone102(outs[102])...)
 	out = append(out, allNone104(outs[104])...)
@@ -88,6 +94,29 @@ func rowsFinished(n int, o Outcome) []string {
 		default:
 			out = append(out, fmt.Sprintf("#%d: group %q (%s) status %q, want done or failed", n, r.GroupName, r.Tier, r.Status))
 		}
+	}
+	return out
+}
+
+// mostReviewed101 checks (g).
+func mostReviewed101(o Outcome) []string {
+	routed, done, findings := 0, 0, 0
+	for _, r := range o.Reviews {
+		if r.Tier == model.TierNone {
+			continue
+		}
+		routed++
+		if r.Status == model.ReviewDone {
+			done++
+			findings += len(r.Findings)
+		}
+	}
+	var out []string
+	if routed > 0 && done*4 < routed*3 {
+		out = append(out, fmt.Sprintf("#101: %d of %d routed groups done, want at least three quarters (cap %.2f, %d over it)", done, routed, o.Agg.Review.CapUSD, o.Agg.Review.OverCap))
+	}
+	if done > 0 && findings == 0 {
+		out = append(out, "#101: no findings on any reviewed group")
 	}
 	return out
 }

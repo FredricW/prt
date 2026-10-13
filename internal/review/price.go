@@ -15,14 +15,13 @@ type Price struct {
 
 // Prices maps a model name (without "anthropic:") to its price.
 //
-// The published prices of claude-haiku-5-5 and claude-opus-5-5 could not be
-// confirmed offline, so both rows are Assumed and deliberately high: $1/$5
-// (fast) and $15/$75 (deep) per million input/output tokens. Budgets and
-// caps compare against these, so spend is over- rather than under-counted.
-// Replace a row (and drop Assumed) once the price is confirmed.
+// Rows are the published base prices (platform.claude.com pricing page,
+// checked 2026-10-13): claude-haiku-5-5 $0.10/$0.50 (prompts up to 100,000
+// tokens; review requests are capped far below that) and claude-opus-5-5
+// $4/$20 per million input/output tokens. Prompt caching is not used.
 var Prices = map[string]Price{
-	"claude-haiku-5-5": {InPerMTok: 1, OutPerMTok: 5, Assumed: true},
-	"claude-opus-5-5":  {InPerMTok: 15, OutPerMTok: 75, Assumed: true},
+	"claude-haiku-5-5": {InPerMTok: 0.10, OutPerMTok: 0.50},
+	"claude-opus-5-5":  {InPerMTok: 4, OutPerMTok: 20},
 }
 
 // UnknownPrice is used for any model not in Prices (the most expensive
@@ -74,6 +73,22 @@ func EstimateInputTokens(req Request) int {
 // never below the actual cost of a response that stays within MaxTokens.
 func EstimateCost(model string, req Request) float64 {
 	return Cost(model, EstimateInputTokens(req), maxTokens(req))
+}
+
+// ExpectedOutputTokens is the output length a planned review is budgeted
+// at: above every recorded review response (at most 315 output tokens on
+// the fixture PRs, reasoning included), well below the review max_tokens
+// (1024 fast, 2048 deep).
+const ExpectedOutputTokens = 512
+
+// PlanCost is the cost the item's cap is charged for a call before it
+// runs: the conservative input estimate plus ExpectedOutputTokens of output
+// (MaxTokens when lower). Unlike EstimateCost it is not a hard upper bound:
+// a response that runs to max_tokens costs more, so an item can overshoot
+// its cap by that margin. Charging every call its max_tokens let only two
+// of fifteen deep groups of a 400-line PR fit the default $0.40 cap.
+func PlanCost(model string, req Request) float64 {
+	return Cost(model, EstimateInputTokens(req), min(maxTokens(req), ExpectedOutputTokens))
 }
 
 // DefaultMaxTokens is the output cap used when a Request leaves MaxTokens 0.

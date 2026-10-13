@@ -80,9 +80,10 @@ func TestReviewGuardRefusesOverTotalCap(t *testing.T) {
 }
 
 func TestReviewGuardReservesInFlight(t *testing.T) {
-	next := &costReviewer{cost: 0.0001, block: make(chan struct{})}
 	req1, req2 := tldrReq("one"), tldrReq("two")
 	est := review.EstimateCost(haiku, req1)
+	// A call costs a tenth of its estimate, so after settling the second fits.
+	next := &costReviewer{cost: est / 10, block: make(chan struct{})}
 	// Room for one estimate, not two.
 	b := &reviewBudget{capUSD: est * 1.5, totalCap: 5}
 	g := &reviewGuard{next: next, dir: t.TempDir(), budget: b}
@@ -111,7 +112,7 @@ func TestReviewGuardReservesInFlight(t *testing.T) {
 		t.Fatal(firstErr)
 	}
 	spent, refused := b.totals()
-	if spent != 0.0001 || refused != 1 || b.reserved > 1e-12 || b.reserved < -1e-12 {
+	if spent != est/10 || refused != 1 || b.reserved > 1e-12 || b.reserved < -1e-12 {
 		t.Fatalf("spent %v refused %d reserved %v", spent, refused, b.reserved)
 	}
 	// The reservation is released: the second request fits now.

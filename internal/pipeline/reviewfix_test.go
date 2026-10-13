@@ -83,6 +83,57 @@ func TestKeepReviewedPinsDoneRows(t *testing.T) {
 	}
 }
 
+// A cached review is served only when the tier's model and the review
+// prompt version still match: changing the fast model re-reviews.
+func TestCachedReviewMissesOnModelOrPromptChange(t *testing.T) {
+	e, p, _ := m3Env(t, review.FakeRespond(0.9))
+	e.run(t, p)
+	first := reviewCalls(p.d.Reviewers.Fast)
+	if first == 0 {
+		t.Fatal("no fast reviews")
+	}
+	e.run(t, p)
+	if n := reviewCalls(p.d.Reviewers.Fast); n != first {
+		t.Fatalf("same model re-reviewed: %d calls, want %d", n, first)
+	}
+	newFast := &review.Fake{Name: "fake:fast-2", Respond: review.FakeRespond(0.9)}
+	p.d.Reviewers.Fast = newFast
+	e.run(t, p)
+	if n := reviewCalls(newFast); n != first {
+		t.Errorf("new fast model made %d review calls, want %d (cache must miss)", n, first)
+	}
+	// A cached row from an older prompt version is a miss too.
+	ctx := context.Background()
+	var groupID string
+	for _, r := range itemRows(t, e) {
+		if r.Tier == model.TierFast {
+			groupID = r.GroupID
+			break
+		}
+	}
+	rv, ok, err := e.st.Review(ctx, groupID, model.TierFast)
+	if err != nil || !ok {
+		t.Fatalf("cached review: %v %v", ok, err)
+	}
+	if _, hit := p.cachedReview(ctx, groupID, model.TierFast, rv.Prompts); !hit {
+		t.Fatal("current cached review missed")
+	}
+	rv.Prompt = "review/v0"
+	if err := e.st.PutReview(ctx, rv); err != nil {
+		t.Fatal(err)
+	}
+	if _, hit := p.cachedReview(ctx, groupID, model.TierFast, rv.Prompts); hit {
+		t.Error("old prompt version served from the cache")
+	}
+	rv.Prompt = review.PromptReviewV1
+	if err := e.st.PutReview(ctx, rv); err != nil {
+		t.Fatal(err)
+	}
+	if _, hit := p.cachedReview(ctx, groupID, model.TierFast, append(rv.Prompts, model.PromptPerformance)); hit {
+		t.Error("different specialist prompts served from the cache")
+	}
+}
+
 // keepReviewed leaves user overrides and unreviewed rows to the new rules.
 func TestKeepReviewedSkipsOverridesAndUnreviewed(t *testing.T) {
 	e := newLabelEnv(t)

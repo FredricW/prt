@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -115,6 +116,40 @@ func TestNoFastReviewerKeepsPlaceholders(t *testing.T) {
 	}
 }
 
+// notReadyReviewer is a reviewer whose key is missing.
+type notReadyReviewer struct{ review.Reviewer }
+
+func (notReadyReviewer) Ready() error { return fmt.Errorf("%w: key not set", review.ErrUnavailable) }
+
+// Prose already paid for (TL;DR, group titles) is served from the cache
+// when the fast reviewer later has no key; nothing is called.
+func TestCachedProseServedWithoutKey(t *testing.T) {
+	e, p, _ := m3Env(t, review.FakeRespond(0.9))
+	e.run(t, p)
+	if agg := e.agg(t); agg.TLDR == "" {
+		t.Fatal("no TL;DR on the first run")
+	}
+	fast := &review.Fake{Name: "fake:fast", Respond: review.FakeRespond(0.9)}
+	p.d.Reviewers.Fast = notReadyReviewer{fast}
+	e.run(t, p)
+	if agg := e.agg(t); agg.TLDR != review.FakeTLDR {
+		t.Errorf("TL;DR without key = %q, want the cached text", agg.TLDR)
+	}
+	groups, _ := e.st.Groups(context.Background(), e.item.ID)
+	titled := 0
+	for _, g := range groups {
+		if g.NameSource == model.NameAI {
+			titled++
+		}
+	}
+	if titled != 2 {
+		t.Errorf("%d groups titled without key, want the 2 cached titles", titled)
+	}
+	if len(fast.Calls) != 0 {
+		t.Errorf("%d calls without key", len(fast.Calls))
+	}
+}
+
 func TestSetRoutingKeepsRulesOnError(t *testing.T) {
 	e := newLabelEnv(t)
 	p := e.pipeline(nil)
@@ -158,15 +193,51 @@ func TestSetGroupOverrideValidates(t *testing.T) {
 	if err := p.SetGroupOverride(ctx, e.item.ID, "g", model.TierDeep); err != nil {
 		t.Fatal(err)
 	}
-	ovs, err := p.groupOverrides(ctx, e.item.ID, []model.Group{{ID: "g"}, {ID: "h"}})
-	if err != nil || len(ovs) != 1 || ovs["g"] != model.TierDeep {
-		t.Fatalf("overrides = %v, %v", ovs, err)
+	ovs, fresh, err := p.groupOverrides(ctx, e.item.ID, []model.Group{{ID: "g"}, {ID: "h"}})
+	if err != nil || len(ovs) != 1 || ovs["g"] != model.TierDeep || !fresh["g"] {
+		t.Fatalf("overrides = %v, fresh %v, %v", ovs, fresh, err)
+	}
+	p.clearFresh(ctx, e.item.ID, "g")
+	if ovs, fresh, _ := p.groupOverrides(ctx, e.item.ID, []model.Group{{ID: "g"}}); ovs["g"] != model.TierDeep || fresh["g"] {
+		t.Errorf("after clearFresh = %v, fresh %v", ovs, fresh)
 	}
 	if err := p.SetGroupOverride(ctx, e.item.ID, "g", ""); err != nil {
 		t.Fatal(err)
 	}
-	if ovs, _ := p.groupOverrides(ctx, e.item.ID, []model.Group{{ID: "g"}}); len(ovs) != 0 {
+	if ovs, _, _ := p.groupOverrides(ctx, e.item.ID, []model.Group{{ID: "g"}}); len(ovs) != 0 {
 		t.Errorf("after reset = %v", ovs)
+	}
+}
+
+// R (or D) on a group whose deep review is cached makes one fresh deep
+// call; the run after that serves the cache again.
+func TestForcedDeepReReviewsOnce(t *testing.T) {
+	e, p, _ := m3Env(t, review.FakeRespond(0.9), func(d *Deps) {
+		d.Routing.Rules = []config.Rule{{When: "true", Tier: "deep"}}
+	})
+	e.run(t, p)
+	deep := p.d.Reviewers.Deep
+	first := reviewCalls(deep)
+	var groupID string
+	for _, r := range itemRows(t, e) {
+		if r.Tier == model.TierDeep && r.Status == model.ReviewDone {
+			groupID = r.GroupID
+			break
+		}
+	}
+	if first == 0 || groupID == "" {
+		t.Fatalf("no done deep rows (%d calls)", first)
+	}
+	if err := p.SetGroupOverride(context.Background(), e.item.ID, groupID, model.TierDeep); err != nil {
+		t.Fatal(err)
+	}
+	e.run(t, p)
+	if n := reviewCalls(deep); n != first+1 {
+		t.Fatalf("re-review made %d deep calls, want 1", n-first)
+	}
+	e.run(t, p)
+	if n := reviewCalls(deep); n != first+1 {
+		t.Errorf("a later run made %d more deep calls, want the cache", n-first-1)
 	}
 }
 
@@ -177,14 +248,16 @@ func TestApplyUserTiers(t *testing.T) {
 		{GroupID: "c", Tier: model.TierNone, RuleIndex: 1},
 		{GroupID: "d", Tier: model.TierNone, Words: "no rule matched"},
 	}
-	auto := func(id string) []string { return []string{model.CtxCallers, "auto-" + id} }
+	auto := func(id string) ([]string, []string) {
+		return []string{model.CtxCallers, "auto-" + id}, []string{model.PromptPerformance}
+	}
 	out, flags := applyUserTiers(decs, map[string]model.Tier{"a": model.TierDeep, "b": model.TierNone, "d": model.TierDeep}, auto)
-	if a := out[0]; a.Tier != model.TierDeep || a.RuleIndex != 0 || a.Words != wordsForcedDeep || len(a.Context) != 1 || !flags["a"].forced {
+	if a := out[0]; a.Tier != model.TierDeep || a.RuleIndex != 0 || a.Words != wordsForcedDeep || len(a.Context) != 1 || a.Prompts != nil || !flags["a"].forced {
 		t.Errorf("forced = %+v", a)
 	}
-	// A group routed none carries no context: forcing it deep attaches the
-	// stage-6 automatic context.
-	if d := out[3]; d.Tier != model.TierDeep || len(d.Context) != 2 || d.Context[1] != "auto-d" {
+	// A group routed none carries no context or prompts: forcing it deep
+	// attaches the stage-6 automatic context and the fired prompts.
+	if d := out[3]; d.Tier != model.TierDeep || len(d.Context) != 2 || d.Context[1] != "auto-d" || len(d.Prompts) != 1 {
 		t.Errorf("forced from none = %+v", d)
 	}
 	if b := out[1]; b.Tier != model.TierNone || b.Words != wordsSkipped || b.Prompts != nil || b.Context != nil || !flags["b"].skipped {
@@ -192,6 +265,27 @@ func TestApplyUserTiers(t *testing.T) {
 	}
 	if c := out[2]; c.RuleIndex != 1 || flags["c"] != (userFlags{}) {
 		t.Errorf("untouched = %+v", c)
+	}
+}
+
+// A mechanical group's review carries only its example unit, as its
+// prompt says; other groups carry every member.
+func TestReviewUnitsMechanicalExampleOnly(t *testing.T) {
+	units := []model.ChangeUnit{{ID: "a"}, {ID: "b"}, {ID: "c"}}
+	aggs := []model.UnitAgg{{UnitID: "a"}, {UnitID: "b"}, {UnitID: "c"}}
+	labels := []model.Label{{UnitID: "a", Question: "q"}, {UnitID: "b", Question: "q"}, {UnitID: "c", Question: "q"}}
+	f := route.GroupFacts{Group: model.Group{ID: "g", Mechanical: true, ExampleUnit: "b"}, Units: units, Aggs: aggs, Labels: labels}
+	u, a, l := reviewUnits(f)
+	if len(u) != 1 || u[0].ID != "b" || len(a) != 1 || a[0].UnitID != "b" || len(l) != 1 || l[0].UnitID != "b" {
+		t.Errorf("mechanical = %v %v %v, want the example b only", u, a, l)
+	}
+	f.Group.ExampleUnit = ""
+	if u, _, _ := reviewUnits(f); len(u) != 1 || u[0].ID != "a" {
+		t.Errorf("no example = %v, want the first member", u)
+	}
+	f.Group.Mechanical = false
+	if u, a, l := reviewUnits(f); len(u) != 3 || len(a) != 3 || len(l) != 3 {
+		t.Errorf("plain group = %v %v %v, want every member", u, a, l)
 	}
 }
 

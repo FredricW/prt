@@ -6,6 +6,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -192,12 +194,15 @@ func TestReplayFlags(t *testing.T) {
 	}
 }
 
-// The fixture snapshot with recorded answers renders the by-change screen.
+// The fixture snapshot with recorded answers renders the by-change screen,
+// and the replayed reviews land: on #101's Pipeline page most routed groups
+// are done (under the default cap) and findings are counted.
 func TestSnapshotReplay(t *testing.T) {
 	isolate(t)
 	repo := testutil.FixtureRepo(t)
 	rec := filepath.Join("..", "..", "testdata", "recordings")
 	code, out, errOut := runPrt("--offline", "--snapshot", "--now", "2026-10-13T12:00:00Z",
+		"--width", "140", "--height", "60",
 		"--jev-replay", filepath.Join(rec, "jev"), "--embed-replay", filepath.Join(rec, "embed"),
 		"--review-replay", filepath.Join(rec, "review"),
 		"--repo", repo, "--fixtures", testutil.FixturePRs(t), "--max-items", "1")
@@ -206,6 +211,23 @@ func TestSnapshotReplay(t *testing.T) {
 	}
 	if !strings.Contains(out, "code-by-change") {
 		t.Errorf("snapshot lacks the by-change screen:\n%s", out)
+	}
+	_, pipe, ok := strings.Cut(out, "=== screen: picker + pipeline · pr:101 ===")
+	if !ok {
+		t.Fatalf("snapshot lacks #101's pipeline screen:\n%s", out)
+	}
+	m := regexp.MustCompile(`(\d+) groups: done (\d+)`).FindStringSubmatch(pipe)
+	if m == nil {
+		t.Fatalf("pipeline screen lacks the totals status line:\n%s", pipe)
+	}
+	groups, _ := strconv.Atoi(m[1])
+	done, _ := strconv.Atoi(m[2])
+	if groups == 0 || done*4 < groups*3 {
+		t.Errorf("#101: %d of %d groups reviewed in the replay snapshot, want at least three quarters", done, groups)
+	}
+	f := regexp.MustCompile(`findings (\d+)`).FindStringSubmatch(pipe)
+	if f == nil || f[1] == "0" {
+		t.Errorf("#101: no findings in the replay snapshot (%v)", f)
 	}
 }
 

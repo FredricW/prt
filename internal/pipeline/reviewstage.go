@@ -265,10 +265,13 @@ func (rr *reviewRun) phase1(ctx context.Context, fastErr, deepErr error) {
 		if !ok || pl.Tier == model.TierNone {
 			continue
 		}
-		if c, hit := rr.serveCached(ctx, pl.GroupID, pl.Tier, purposeRouted); hit {
-			res := fromCache(c)
-			rr.update(ctx, i, func(row *model.Review) { applyResult(row, res); row.QueueNote = "" })
-			continue
+		// A user's D/R asks for one fresh deep review: the cache is skipped.
+		if fresh := pl.Tier == model.TierDeep && rr.ro.fresh[pl.GroupID]; !fresh {
+			if c, hit := rr.serveCached(ctx, pl.GroupID, pl.Tier, purposeRouted); hit {
+				res := fromCache(c)
+				rr.update(ctx, i, func(row *model.Review) { applyResult(row, res); row.QueueNote = "" })
+				continue
+			}
 		}
 		if err := readiness(pl.Tier, fastErr, deepErr); err != nil {
 			rr.update(ctx, i, func(row *model.Review) { row.Status, row.QueueNote = model.ReviewSkipped, skipReason(err) })
@@ -328,6 +331,9 @@ func (rr *reviewRun) runRouted(ctx context.Context, j reviewJob) {
 	})
 	if res.err == nil {
 		rr.cache(ctx, j, res)
+		if j.tier == model.TierDeep && rr.ro.fresh[j.groupID] {
+			rr.p.clearFresh(ctx, rr.r.it.ID, j.groupID)
+		}
 	}
 }
 
@@ -405,7 +411,7 @@ func (rr *reviewRun) serveCached(ctx context.Context, groupID string, tier model
 	if rr.ignoreCache {
 		return model.Review{}, false
 	}
-	c, ok := rr.p.cachedReview(ctx, groupID, tier)
+	c, ok := rr.p.cachedReview(ctx, groupID, tier, rr.ro.inputs[groupID].Prompts)
 	if !ok {
 		return model.Review{}, false
 	}
@@ -540,11 +546,11 @@ func (rr *reviewRun) phase2(ctx context.Context) {
 // followUpEstimate is a deep follow-up's estimate (0 when cached).
 func (rr *reviewRun) followUpEstimate(ctx context.Context, j reviewJob) float64 {
 	if !rr.ignoreCache {
-		if _, hit := rr.p.cachedReview(ctx, j.groupID, j.tier); hit {
+		if _, hit := rr.p.cachedReview(ctx, j.groupID, j.tier, rr.ro.inputs[j.groupID].Prompts); hit {
 			return 0
 		}
 	}
-	return review.EstimateCost(rr.p.tierModel(j.tier), j.req)
+	return review.PlanCost(rr.p.tierModel(j.tier), j.req)
 }
 
 // sampled reports whether a fast-routed group is a calibration sample: the

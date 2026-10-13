@@ -1,0 +1,21 @@
+{
+  "key": "873ee48509cb6aedd59db204",
+  "model": "anthropic:claude-haiku-5-5",
+  "request": {
+    "task": "tldr",
+    "tier": "fast",
+    "system": "You write the one-sentence TL;DR shown at the top of a pull request overview, for a reviewer deciding how to spend their time. Use only the facts given; they were computed from machine labels and git. Never invent numbers, names or claims that are not in the facts. At most 160 characters. One plain sentence: no markdown, no quotes, no lead-in such as \"TL;DR\".",
+    "prompt": "Facts about this pull request:\n- size: +334 -64 lines, about 382 lines that matter, about 162 min to review\n- noise: 16 changed lines are formatting, generated or moved code\n- units: 48 total, 30 need careful reading\n- composition: feature 71%, test 22%, refactor 7%\n- highest unit risk: 4 of 5\n- risk tags: async (43 units), auth (30 units), data_write (1 unit), date_tz (6 units), error_path (45 units), io_in_loop (1 unit), pii (48 units)\n- test gap: 8 of 41 risky units untested\n- headlines:\n  - breaking at web/src/api/index.ts:2: web/src/api/index.ts (p 0.83)\n  - breaking at web/src/components/UserList.tsx:3: web/src/components/UserList.tsx (p 0.79)\n  - breaking at web/src/components/ProfilePage.tsx:4: web/src/components/ProfilePage.tsx (p 0.78)\n  - breaking at web/src/api/client.ts:66: getUser (p 0.75)\n  - breaking at web/src/api/client.ts:32: web/src/api/client.ts (p 0.73)\n  - breaking at web/src/__tests__/client.test.ts:24: web/src/__tests__/client.test.ts (p 0.72)\n  - breaking at web/src/components/UserCard.tsx:4: web/src/components/UserCard.tsx (p 0.72)\n  - breaking at web/src/__tests__/client.test.ts:4: web/src/__tests__/client.test.ts (p 0.70)\n  - and 89 more\n- check before approving:\n  - web/src/components/Avatar.tsx:11 The `broken` flag is never\n  - web/src/api/client.ts:34 auth, crash\n  - web/src/components/UserCard.tsx:30 error-path, crash, untested\n- description: 5 of 6 bullets implemented (fidelity 0.83)\n  - implemented: `getUser` takes a required `GetUserOptions` argument (`include`, `fresh`, `signal`); all callers updated\n  - implemented: Move `ApiError`, auth headers and error parsing into `api/errors.ts` and add `isNotFound`\n  - implemented: Add `useProfileCache`: stale-while-revalidate cache with a 5 minute TTL and request de-duplication\n  - implemented: Add `Avatar` and `ProfileHeader` components; `ProfilePage` uses the cache and shows save errors\n  - not found: Invalidate the profile cache on logout\n  - implemented: server: return `avatarUrl` when `include=avatar` is requested\n- undocumented changes: 2 units not described\n\nWrite the TL;DR sentence.\n",
+    "maxTokens": 1024
+  },
+  "result": {
+    "text": "Adds a required GetUserOptions argument to getUser and a 5 minute profile cache; logout invalidation is missing and 8 of 41 risky units are untested.",
+    "confidence": 0,
+    "model": "anthropic:claude-haiku-5-5",
+    "inputTokens": 1051,
+    "outputTokens": 616,
+    "cost": 0.0004131,
+    "ms": 6199,
+    "stopReason": "end_turn"
+  }
+}
