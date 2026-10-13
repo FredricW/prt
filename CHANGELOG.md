@@ -388,6 +388,22 @@ exercised against `gh.Fake`.
 - A finding with an ai-draft (or accepted/dismissed) is no longer also drawn
   as an inline finding row by file.
 
+#### Fixed (M4 review; details in DECISIONS)
+
+- A V range from a deleted line to an added line is kept and sent as a
+  LEFT→RIGHT range (was collapsed or refused), and re-anchors each end on
+  its own side.
+- "Since you looked" judges each comment against the diff from the commit it
+  was made on, so a fix pushed earlier still counts.
+- The pipeline takes the daemon's per-item comment lock, so a run can no
+  longer revert a just-posted draft (double post) or an edit.
+- Pending comments left by a crash mid-submission are drafts again at
+  start-up.
+- Outdated GitHub threads are no longer drawn under an unrelated unit;
+  replies keep their thread's side.
+- `ctrl+c` with the composer open saves the text as a draft before quitting.
+- README covers the M4 keys and `--drafts`.
+
 #### Known limitations
 
 - Without colour Glamour shows bold as literal `**` (ai-draft bodies start

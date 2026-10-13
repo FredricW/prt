@@ -9,7 +9,8 @@ every number on screen traces back to a label, a rule or a git fact.
 > Status: early development. M0 (a fast PR browser) and M1 (change units and
 > Jev labels: Overview page, labelled Code page), M2 (grouped change units,
 > Code page by change) and M3 (routed fast/deep LLM reviews, TL;DR, urgency
-> ranking, Pipeline page) are done; GitHub comments come in M4. See
+> ranking, Pipeline page) and M4 (review comments, AI drafts, review
+> submission, create PR, "Since you looked") are done. See
 > [`docs/spec.md`](docs/spec.md) for the design and
 > [`CHANGELOG.md`](CHANGELOG.md) for what works today.
 
@@ -76,6 +77,17 @@ prt                 # picker on the left, the selected PR/branch on the right
   it, `r` re-runs, `e` edits the rules in `$EDITOR`, `c` shows the raw LLM
   calls and `$` raises the cost cap for this item. `w` on the Overview shows
   how the urgency score was computed.
+- Review comments on the Code page: `C` comments on the line under the
+  cursor, `V` selects a range of lines (then `C`), `ctrl-s` saves the draft
+  (`esc` discards; quitting with a composer open saves it). AI findings show
+  as dimmed drafts: `a` accepts one, `d` dismisses it, `!` dismisses it and
+  marks a label wrong. `t` opens a GitHub thread in the side panel (type a
+  reply and `ctrl-s` sends it; `ctrl-r` resolves). `tab` reaches the Comments strip at the bottom, which
+  lists every draft and thread. `S` submits your drafts as one review (`a`
+  approve, `A` request changes preselect the verdict); on a branch without
+  a PR, `S` opens the create-PR form instead and posts the branch's drafts
+  on the new PR. The Overview's "Since you looked" lists what changed since
+  your last review or visit and which of your comments look addressed.
 - `r` re-runs analysis for the selected item; `?` shows every key; `q` quits.
 - `prt daemon` keeps analysis warm in the background (one per repo); `prt`
   connects to it automatically, or runs everything in-process with `--no-daemon`.
@@ -92,7 +104,8 @@ make snapshot   # non-interactive
 Both run with `--offline` and replay the answers recorded in
 `testdata/recordings` (`--jev-replay`, `--embed-replay`, `--review-replay`),
 so no model is called but the fixture PRs show real labels, groups, reviews
-and TL;DRs. Anything not recorded (the local branch) shows the `labels
+and TL;DRs. They also pass `--drafts testdata/fixtures/drafts.json`, which
+seeds a few local draft comments (drafts you already have are kept). Anything not recorded (the local branch) shows the `labels
 unavailable` mode; most deep groups of the larger PRs stay queued over the
 default $0.40 per-item cost cap.
 
